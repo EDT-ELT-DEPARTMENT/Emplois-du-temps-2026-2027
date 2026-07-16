@@ -554,21 +554,30 @@ with st.sidebar:
         st.session_state["user_data"] = None
         st.rerun()
 # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
+# --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
 if is_admin and mode_view == "✍️ Éditeur de données":
     st.divider()
-    st.subheader("✍️ Plateforme de gestion des emplois du temps 2025-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+    st.subheader("✍️ Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
 
-    # 1. STRUCTURE ET NETTOYAGE
+    # 1. VÉRIFICATION DE L'EXISTENCE DE df
+    if 'df' not in locals() and 'df' not in globals():
+        st.error("Erreur : Les données (df) n'ont pas été chargées. Veuillez vérifier votre source de données.")
+        st.stop() # Arrête l'exécution pour éviter le plantage
+
+    # 2. STRUCTURE ET NETTOYAGE
     cols_format = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion', 'Chevauchement']
 
     if 'df_admin' not in st.session_state:
-        temp_df = df.copy()
-        for col in cols_format:
-            if col not in temp_df.columns:
-                temp_df[col] = ""
-            temp_df[col] = temp_df[col].astype(str).replace(['nan', 'None', '<NA>'], '')
-        st.session_state.df_admin = temp_df
-
+        # On s'assure que df est bien un DataFrame valide avant de le copier
+        if df is not None:
+            temp_df = df.copy()
+            for col in cols_format:
+                if col not in temp_df.columns:
+                    temp_df[col] = ""
+                temp_df[col] = temp_df[col].astype(str).replace(['nan', 'None', '<NA>'], '')
+            st.session_state.df_admin = temp_df
+        else:
+            st.warning("Le DataFrame est vide ou non initialisé.")
     # 2. PRÉPARATION DES OPTIONS
     horaires_ref = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h00", "14h00 - 15h30", "15h30 - 17h00"]
     h_existants = [h for h in st.session_state.df_admin["Horaire"].unique() if h and h.strip() != ""]
