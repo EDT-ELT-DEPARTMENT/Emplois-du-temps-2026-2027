@@ -1286,13 +1286,6 @@ if df is not None:
                     use_container_width=True,
                     key="btn_indiv_xl_pro_v1"
                 )
-                    data=buf_ex.getvalue(),
-                    file_name="EDT_Individuel_2027.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="btn_indiv_xl_final_v12"
-                )
-
                 # --- 2. EXPORT HTML ---
                 if not df_f.empty:
                     style_css_safe = style_css if 'style_css' in locals() else ""
