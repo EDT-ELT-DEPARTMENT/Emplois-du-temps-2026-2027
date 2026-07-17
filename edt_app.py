@@ -477,7 +477,7 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
     try:
         from reportlab.lib import colors as rl_colors
         from reportlab.lib.pagesizes import A4, landscape
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import cm
 
@@ -512,7 +512,7 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
         elements = []
         
         # === EN-TÊTE ===
-        elements.append(Paragraph(f'📅 Emploi du Temps — {promo}', title_style))
+        elements.append(Paragraph(f'Emploi du Temps — {promo}', title_style))
         elements.append(Paragraph('Semestre 2 | Dimanche–Jeudi | Électrotechnique', subtitle_style))
         elements.append(Spacer(1, 0.3*cm))
 
@@ -577,7 +577,7 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
         elements.append(Spacer(1, 0.4*cm))
 
         # === RÉCAPITULATIF PAR JOUR ===
-        elements.append(Paragraph('📊 Récapitulatif par Jour', section_style))
+        elements.append(Paragraph('Récapitulatif par Jour', section_style))
         
         recap_data = [['Jour', 'Cours', 'TD', 'TP', 'Stage', 'Total', 'Heures']]
         for day in days:
@@ -614,7 +614,7 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
         elements.append(Spacer(1, 0.5*cm))
 
         # === TABLEAU EDT DÉTAILLÉ ===
-        elements.append(Paragraph('📅 Emploi du Temps Détaillé', section_style))
+        elements.append(Paragraph('Emploi du Temps Détaillé', section_style))
         
         color_map = {
             'Cours': rl_colors.HexColor('#1a5276'),
@@ -622,13 +622,6 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
             'TP': rl_colors.HexColor('#e67e22'),
             'Stage': rl_colors.HexColor('#9b59b6'),
             'Autre': rl_colors.HexColor('#7f8c8d')
-        }
-        light_color_map = {
-            'Cours': rl_colors.HexColor('#d4e6f1'),
-            'TD': rl_colors.HexColor('#d5f5e3'),
-            'TP': rl_colors.HexColor('#fdebd0'),
-            'Stage': rl_colors.HexColor('#e8daef'),
-            'Autre': rl_colors.HexColor('#d5dbdb')
         }
 
         data = [['Jour / Heure', '8h-9h30', '9h30-11h', '11h-12h30', '12h30-14h', '14h-15h30', '15h30-17h']]
@@ -686,7 +679,7 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
             fontSize=8, textColor=rl_colors.HexColor('#6c757d'),
             alignment=1
         )
-        elements.append(Paragraph('Plateforme de gestion des emplois du temps 2026-2027 — Département d\'Électrotechnique — UDL SBA', footer_style))
+        elements.append(Paragraph('Plateforme de gestion des emplois du temps 2026-2027 — Departement d\'Electrotechnique — UDL SBA', footer_style))
 
         doc.build(elements)
         return buffer.getvalue()
@@ -965,7 +958,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
             st.error(f"Erreur lors de la sauvegarde : {e}")
 
 # ==========================================
-# ESPACE PROMOTION (ADMIN) - 15 ONGLETS AVEC TÉLÉCHARGEMENTS
+# ESPACE PROMOTION (ADMIN) - TOUS LES ONGLETS AVEC TÉLÉCHARGEMENTS
 # ==========================================
 if is_admin and mode_view == "Promotion":
     st.subheader(f"📊 Emplois du Temps par Promotion — {len(all_promos)} Promotions")
@@ -1063,7 +1056,7 @@ if is_admin and mode_view == "Promotion":
                             key=f"dl_pdf_{promo}"
                         )
                     else:
-                        st.error("❌ Erreur génération PDF")
+                        st.error("❌ Erreur génération PDF (reportlab manquant)")
 
                 st.divider()
 
@@ -1250,4 +1243,9 @@ elif is_admin and mode_view == "🚩 Vérificateur de conflits":
                     'Créneau': slot,
                     'Nombre de séances': count
                 })
-  
+    
+    if room_conflicts:
+        st.warning(f"⚠️ {len(room_conflicts)} conflit(s) détecté(s) dans les salles !")
+        st.dataframe(pd.DataFrame(room_conflicts), use_container_width=True)
+    else:
+        st.success("✅ Aucun conflit détecté dans les salles.")
