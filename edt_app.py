@@ -3980,4 +3980,3 @@ if doc_choisi == "Bordereau d'envoi":
 
 
 
-
