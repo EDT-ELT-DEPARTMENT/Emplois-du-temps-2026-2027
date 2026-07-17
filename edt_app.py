@@ -1578,577 +1578,569 @@ if df is not None:
             total_p_cours = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('COURS', case=False, na=False)])
             total_p_td = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('TD', case=False, na=False)])
             total_p_tp = len(df_unique_matieres[~df_unique_matieres['Code'].str.contains('COURS|TD', case=False, na=False)])
+            
             # --- 8. BOUTONS DE TÉLÉCHARGEMENT ---
-            st.markdown("---")
-            cp1, cp2, cp3 = st.columns(3)
-
-            # --- 8.1. Export Excel Promotion ---
-            import io
-            buf_p = io.BytesIO()
-            df_export = df_p.drop(columns=['h_norm', 'j_norm', 'Type_Tmp'], errors='ignore')
-            df_export.to_excel(buf_p, index=False)
+            # ==========================================
+            # SECTION CORRIGÉE : GÉNÉRATION DES FICHIERS EDT
+            # Remplace TOUTE la section "8. BOUTONS DE TÉLÉCHARGEMENT" 
+            # ==========================================
             
-            cp1.download_button(
-                label=f"📥 Liste {p_sel} (Excel)",
-                data=buf_p.getvalue(),
-                file_name=f"EDT_{p_sel}_2027.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key=f"btn_xl_v8_{p_sel}" 
-            )
-
-            # --- 8.2. Export HTML Promotion ---
-            content_html_fixed = content_html.replace('\\n', '<br>').replace('\n', '<br>')
-            full_html_doc = f"<!DOCTYPE html><html lang='fr'><head><meta charset='UTF-8'><title>EDT {p_sel}</title>{style_css}</head><body>{content_html_fixed}</body></html>"
+            # --- CALCUL DES STATS (DOIT ÊTRE AVANT LES BOUTONS) ---
+            # On retire les doublons basés sur le nom de l'enseignement et le code
+            df_unique_matieres = df_p.drop_duplicates(subset=['Enseignements', 'Code'])
             
-            cp2.download_button(
-                label=f"🌐 Tableau {p_sel} (HTML)",
-                data=full_html_doc,
-                file_name=f"EDT_{p_sel}_2027.html",
-                mime="text/html",
-                use_container_width=True,
-                key=f"btn_html_v8_{p_sel}"
-            )
-
-            # --- 8.3. Export PDF Promotion (Correction CoreFont) ---
-            try:
-                from fpdf import FPDF
-                import re
-
-                class EDT_PDF(FPDF):
-                    def header(self):
-                        self.set_font('Arial', 'B', 10)
-                        title = "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
-                        self.cell(0, 8, title.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
-                        self.ln(2)
-
-                    def get_nb_lines(self, w, txt):
-                        """Calcule le nombre de lignes réelles après retour à la ligne automatique"""
-                        if not txt: return 1
-                        lines = 0
-                        for paragraph in txt.split('\n'):
-                            # get_string_width donne la largeur totale du texte sans retours
-                            width = self.get_string_width(paragraph)
-                            # On ajoute le nombre de lignes créées par le wrap automatique
-                            lines += max(1, int((width + (2 * self.c_margin)) / (w - (2 * self.c_margin))) + 1)
-                        return lines
-
-                def clean_text_for_pdf(html_str):
-                    if not html_str: return ""
-                    t = str(html_str).replace('</div>', '\n').replace('<br>', '\n').replace('<br/>', '\n')
-                    t = t.replace('<b>','').replace('</b>','')
-                    t = t.replace('👤', '- ').replace('📘', '').replace('📗', '').replace('🔴', '').replace('📍', '').replace('Lieu:', '').replace('Lieu', '')
-                    t = re.sub(r'<[^>]+>', '', t)
-                    lines = [l.strip() for l in t.split('\n') if l.strip()]
-                    return "\n".join([line.encode('latin-1', 'replace').decode('latin-1') for line in lines])
-
-                pdf = EDT_PDF(orientation="L", unit="mm", format="A4")
-                pdf.set_margins(left=5, top=10, right=5)
-                pdf.add_page()
-
-                pdf.set_font("Arial", "B", 11)
-                pdf.cell(0, 8, f"PROMOTION : {p_sel}".encode('latin-1', 'replace').decode('latin-1'), 0, 1, "C")
-                pdf.ln(2)
-
-                grid_pdf = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
-                grid_pdf = grid_pdf.reindex(index=idx_h, columns=cols_j).fillna("")
-                grid_pdf = grid_pdf[grid_pdf.any(axis=1)] 
-                grid_pdf.index = [map_h.get(i, i) for i in grid_pdf.index]
-                grid_pdf.columns = [map_j.get(c, c) for c in grid_pdf.columns]
-
-                # --- Dimensions ---
-                col_h_w = 25
-                col_j_w = (pdf.w - 35) / len(grid_pdf.columns)
-                interline = 3.5
-                padding_v = 2
-
-                # En-tête
-                pdf.set_font("Arial", "B", 8)
-                pdf.set_fill_color(220, 220, 220)
-                pdf.cell(col_h_w, 9, "HORAIRE", 1, 0, "C", True)
-                for jour in grid_pdf.columns:
-                    pdf.cell(col_j_w, 9, jour.encode('latin-1', 'replace').decode('latin-1'), 1, 0, "C", True)
-                pdf.ln()
-
-                # Corps
-                for heure, row in grid_pdf.iterrows():
-                    row_texts = []
-                    max_h = 10
-                    
-                    # Balayage pour hauteur
-                    pdf.set_font("Arial", "", 6)
-                    for jour in grid_pdf.columns:
-                        txt = clean_text_for_pdf(row[jour])
-                        row_texts.append(txt)
-                        nb_l = pdf.get_nb_lines(col_j_w, txt)
-                        h_calc = (nb_l * interline) + (padding_v * 2)
-                        if h_calc > max_h: max_h = h_calc
-
-                    # Rendu Heure
-                    pdf.set_font("Arial", "B", 7)
-                    pdf.set_fill_color(248, 248, 248)
-                    pdf.cell(col_h_w, max_h, str(heure), 1, 0, "C", True)
-
-                    # Rendu Cours
-                    pdf.set_font("Arial", "", 6)
-                    for idx, jour in enumerate(grid_pdf.columns):
-                        content = row_texts[idx]
-                        raw_c = str(row[jour]).upper()
-                        
-                        if "COURS" in raw_c: pdf.set_fill_color(225, 238, 255)
-                        elif "TD" in raw_c: pdf.set_fill_color(232, 252, 235)
-                        elif "TP" in raw_c: pdf.set_fill_color(255, 235, 235)
-                        else: pdf.set_fill_color(255, 255, 255)
-
-                        x, y = pdf.get_x(), pdf.get_y()
-                        pdf.rect(x, y, col_j_w, max_h, 'FD')
-                        
-                        nb_l = pdf.get_nb_lines(col_j_w, content)
-                        pdf.set_xy(x, y + (max_h - (nb_l * interline)) / 2)
-                        pdf.multi_cell(col_j_w, interline, content, 0, "C")
-                        pdf.set_xy(x + col_j_w, y)
-                    pdf.ln(max_h)
-
-                pdf_bytes = pdf.output()
-                cp3.download_button(
-                    label=f"📄 Emploi du temps {p_sel} (PDF)",
-                    data=bytes(pdf_bytes),
-                    file_name=f"EDT_{p_sel}_2027.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                    key=f"btn_pdf_v8_{p_sel}" 
-                )
-            except Exception as e:
-                cp3.error(f"Erreur technique PDF : {e}")
-            # Affichage du bandeau récapitulatif global
+            total_p_cours = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('COURS', case=False, na=False)])
+            total_p_td = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('TD', case=False, na=False)])
+            total_p_tp = len(df_unique_matieres[~df_unique_matieres['Code'].str.contains('COURS|TD', case=False, na=False)])
+            total_p_stage = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('STAGE', case=False, na=False)])
+            total_p_seances = total_p_cours + total_p_td + total_p_tp + total_p_stage
+            
+            # --- AFFICHAGE DU BANDEAU RÉCAPITULATIF GLOBAL ---
             st.markdown(f"""
-            <div style='display: flex; justify-content: space-around; background-color: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 20px; text-align: center;'>
+            <div style='display: flex; justify-content: space-around; background: linear-gradient(135deg, #f8fafc, #e2e8f0); padding: 20px; border-radius: 15px; border: 1px solid #cbd5e1; margin-bottom: 25px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.08);'>
                 <div>
-                    <div style='font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: bold;'>Total Cours</div>
-                    <div style='font-size: 22px; font-weight: bold; color: #1e40af;'>📘 {total_p_cours}</div>
+                    <div style='font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;'>Total Cours</div>
+                    <div style='font-size: 26px; font-weight: 800; color: #1e40af; margin-top: 5px;'>📘 {total_p_cours}</div>
                 </div>
-                <div style='border-left: 1px solid #e2e8f0; height: 40px;'></div>
+                <div style='border-left: 2px solid #cbd5e1; height: 45px;'></div>
                 <div>
-                    <div style='font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: bold;'>Total TD</div>
-                    <div style='font-size: 22px; font-weight: bold; color: #166534;'>📗 {total_p_td}</div>
+                    <div style='font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;'>Total TD</div>
+                    <div style='font-size: 26px; font-weight: 800; color: #166534; margin-top: 5px;'>📗 {total_p_td}</div>
                 </div>
-                <div style='border-left: 1px solid #e2e8f0; height: 40px;'></div>
+                <div style='border-left: 2px solid #cbd5e1; height: 45px;'></div>
                 <div>
-                    <div style='font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: bold;'>Total TP</div>
-                    <div style='font-size: 22px; font-weight: bold; color: #991b1b;'>🔴 {total_p_tp}</div>
+                    <div style='font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;'>Total TP</div>
+                    <div style='font-size: 26px; font-weight: 800; color: #991b1b; margin-top: 5px;'>🔴 {total_p_tp}</div>
+                </div>
+                <div style='border-left: 2px solid #cbd5e1; height: 45px;'></div>
+                <div>
+                    <div style='font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;'>Total Séances</div>
+                    <div style='font-size: 26px; font-weight: 800; color: #0f3460; margin-top: 5px;'>📊 {total_p_seances}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
-
-            # --- 1. Extraction et tri des enseignants uniques de la promotion ---
-            enseignants_promo = sorted(df_p["Enseignants"].unique())
             
-            for ens in enseignants_promo:
-                # Filtrer les matières pour cet enseignant précis
-                df_ens = df_p[df_p["Enseignants"] == ens].copy()
-                
-                # 2. Organisation par type (Ordre : COURS > TD > TP) sans doublons pour l'affichage des badges
-                matieres_brutes = df_ens.drop_duplicates(subset=['Enseignements', 'Code'])
-                
-                cours_list = matieres_brutes[matieres_brutes['Code'].str.contains('COURS', case=False, na=False)]['Enseignements'].unique()
-                td_list = matieres_brutes[matieres_brutes['Code'].str.contains('TD', case=False, na=False)]['Enseignements'].unique()
-                tp_list = matieres_brutes[~matieres_brutes['Code'].str.contains('COURS|TD', case=False, na=False)]['Enseignements'].unique()
-                
-                # 3. Calcul du nombre de séances par enseignant (avec groupes)
-                n_cours = len(df_ens[df_ens['Code'].str.contains('COURS', case=False, na=False)])
-                n_td = len(df_ens[df_ens['Code'].str.contains('TD', case=False, na=False)])
-                n_tp = len(df_ens[~df_ens['Code'].str.contains('COURS|TD', case=False, na=False)])
-                
-                # 4. Construction de l'affichage HTML pour l'enseignant (Couleurs claires)
-                items_html = ""
-                for c in cours_list:
-                    items_html += f"<span style='background-color:#dbeafe; color:#1e40af; padding:4px 10px; border-radius:15px; margin:3px; display:inline-block; font-size:12px; border:1px solid #bfdbfe;'>📘 {c}</span>"
-                for t in td_list:
-                    items_html += f"<span style='background-color:#dcfce7; color:#166534; padding:4px 10px; border-radius:15px; margin:3px; display:inline-block; font-size:12px; border:1px solid #bbf7d0;'>📗 {t}</span>"
-                for p in tp_list:
-                    items_html += f"<span style='background-color:#fee2e2; color:#991b1b; padding:4px 10px; border-radius:15px; margin:3px; display:inline-block; font-size:12px; border:1px solid #fecaca;'>🔴 {p}</span>"
-                
-                # 5. Affichage final dans un conteneur stylisé
-                if items_html: 
-                    st.markdown(f"""
-                    <div style='padding:15px; border:1px solid #e2e8f0; border-radius:10px; margin-bottom:15px; background-color:white; box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>
-                        <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;'>
-                            <div style='font-weight:bold; color:#1e293b; font-size:16px;'>👤 M. {ens}</div>
-                            <div style='font-size:11px; color:#64748b; font-weight: 600;'>
-                                <span style='margin-left:8px;'>📘 {n_cours} Séc.</span>
-                                <span style='margin-left:8px;'>📗 {n_td} Groupes</span>
-                                <span style='margin-left:8px;'>🔴 {n_tp} Groupes</span>
-                            </div>
-                        </div>
-                        <div>{items_html}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
             # --- 8. BOUTONS DE TÉLÉCHARGEMENT ---
             st.markdown("---")
+            st.markdown("### 📥 Téléchargements de l'Emploi du Temps")
+            
             cp1, cp2, cp3 = st.columns(3)
-
-            # --- 8.1. Export Excel Promotion ---
+            
+            # --- 8.1. Export Excel Promotion (amélioré avec couleurs) ---
             import io
+            from openpyxl import Workbook
+            from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
+            
             buf_p = io.BytesIO()
-            df_export = df_p.drop(columns=['h_norm', 'j_norm', 'Type_Tmp'], errors='ignore')
-            df_export.to_excel(buf_p, index=False)
+            wb = Workbook()
+            ws = wb.active
+            ws.title = f"EDT {p_sel}"
+            
+            # Styles colorés
+            header_fill = PatternFill(start_color='0f3460', end_color='0f3460', fill_type='solid')
+            header_font = Font(color='FFFFFF', bold=True, size=11)
+            title_font = Font(size=16, bold=True, color='0f3460')
+            center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            thin_border = Border(
+                left=Side(style='thin', color='e2e8f0'),
+                right=Side(style='thin', color='e2e8f0'),
+                top=Side(style='thin', color='e2e8f0'),
+                bottom=Side(style='thin', color='e2e8f0')
+            )
+            
+            # Titre
+            ws.merge_cells('A1:G1')
+            ws['A1'] = f'Emploi du Temps — {p_sel} — S2 2027'
+            ws['A1'].font = title_font
+            ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+            ws.row_dimensions[1].height = 30
+            
+            # En-têtes
+            headers = ['Jour', '08h-9h30', '9h30-11h', '11h-12h30', '12h30-14h', '14h-15h30', '15h30-17h']
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=3, column=col, value=h)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = center_align
+                cell.border = thin_border
+            
+            ws.column_dimensions['A'].width = 14
+            for col in range(2, 8):
+                ws.column_dimensions[get_column_letter(col)].width = 38
+            
+            # Données du tableau
+            row_idx = 4
+            for day in cols_j:
+                day_label = map_j.get(day, day)
+                ws.cell(row=row_idx, column=1, value=day_label).font = Font(bold=True, size=10, color='334155')
+                ws.cell(row=row_idx, column=1).alignment = center_align
+                ws.cell(row=row_idx, column=1).fill = PatternFill(start_color='f1f5f9', end_color='f1f5f9', fill_type='solid')
+                ws.cell(row=row_idx, column=1).border = thin_border
+            
+                for col_idx, slot in enumerate(idx_h, 2):
+                    slot_label = map_h.get(slot, slot)
+                    
+                    # Récupérer le contenu de la cellule depuis grid_p
+                    if slot_label in grid_p.index and day_label in grid_p.columns:
+                        cell_data = grid_p.loc[slot_label, day_label]
+                    else:
+                        cell_data = ""
+                    
+                    if cell_data and str(cell_data).strip() and str(cell_data) != 'nan':
+                        cell = ws.cell(row=row_idx, column=col_idx)
+                        # Nettoyage du HTML pour Excel
+                        clean_val = str(cell_data).replace('<br>', '\n').replace('<div', '').replace('</div>', '').replace('<b>', '').replace('</b>', '')
+                        clean_val = clean_val.replace('👤', '').replace('📘', '').replace('📗', '').replace('🔴', '').replace('📍', '').replace('Lieu:', '').strip()
+                        cell.value = clean_val
+                        cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                        cell.border = thin_border
+                        
+                        # Détection du type pour couleur
+                        raw = str(cell_data).upper()
+                        if 'COURS' in raw:
+                            cell.fill = PatternFill(start_color='d4e6f1', end_color='d4e6f1', fill_type='solid')
+                        elif 'TD' in raw:
+                            cell.fill = PatternFill(start_color='d5f5e3', end_color='d5f5e3', fill_type='solid')
+                        elif 'TP' in raw:
+                            cell.fill = PatternFill(start_color='fdebd0', end_color='fdebd0', fill_type='solid')
+                        elif 'STAGE' in raw:
+                            cell.fill = PatternFill(start_color='e8daef', end_color='e8daef', fill_type='solid')
+                    else:
+                        cell = ws.cell(row=row_idx, column=col_idx, value='—')
+                        cell.alignment = center_align
+                        cell.border = thin_border
+                        cell.font = Font(color='cbd5e1', italic=True)
+            
+                ws.row_dimensions[row_idx].height = 90
+                row_idx += 1
+            
+            # Feuille récapitulatif
+            ws2 = wb.create_sheet("Récapitulatif")
+            ws2['A1'] = f'Récapitulatif — {p_sel} S2 2027'
+            ws2['A1'].font = title_font
+            
+            recap_headers = ['Jour', 'Cours', 'TD', 'TP', 'Stage', 'Total', 'Heures']
+            for col, h in enumerate(recap_headers, 1):
+                cell = ws2.cell(row=3, column=col, value=h)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = center_align
+                cell.border = thin_border
+            
+            # Calcul du récap par jour
+            row_idx = 4
+            for day in cols_j:
+                day_label = map_j.get(day, day)
+                day_data = df_p[df_p['Jours'].apply(normalize) == day]
+                c = len(day_data[day_data['Code'].str.contains('COURS', case=False, na=False)])
+                t = len(day_data[day_data['Code'].str.contains('TD', case=False, na=False)])
+                p = len(day_data[~day_data['Code'].str.contains('COURS|TD', case=False, na=False)])
+                s = len(day_data[day_data['Code'].str.contains('STAGE', case=False, na=False)])
+                h_approx = (c + t + p + s) * 1.5
+                
+                ws2.cell(row=row_idx, column=1, value=day_label).font = Font(bold=True)
+                ws2.cell(row=row_idx, column=2, value=c)
+                ws2.cell(row=row_idx, column=3, value=t)
+                ws2.cell(row=row_idx, column=4, value=p)
+                ws2.cell(row=row_idx, column=5, value=s)
+                ws2.cell(row=row_idx, column=6, value=c+t+p+s)
+                ws2.cell(row=row_idx, column=7, value=f"{h_approx:.1f}h")
+            
+                for col in range(1, 8):
+                    ws2.cell(row=row_idx, column=col).border = thin_border
+                    ws2.cell(row=row_idx, column=col).alignment = center_align
+            
+                if row_idx % 2 == 0:
+                    for col in range(1, 8):
+                        ws2.cell(row=row_idx, column=col).fill = PatternFill(start_color='f8f9fa', end_color='f8f9fa', fill_type='solid')
+            
+                row_idx += 1
+            
+            for col in range(1, 8):
+                ws2.column_dimensions[get_column_letter(col)].width = 15
+            
+            wb.save(buf_p)
+            buf_p.seek(0)
             
             cp1.download_button(
-                label=f"📥 Liste {p_sel} (Excel)",
+                label=f"📊 Excel Coloré",
                 data=buf_p.getvalue(),
                 file_name=f"EDT_{p_sel}_2027.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
-                key=f"btn_xl_{p_sel}"
+                key=f"btn_xl_v10_{p_sel}" 
             )
-
-            # --- 8.2. Export HTML Promotion ---
-            content_html_fixed = content_html.replace('\\n', '<br>').replace('\n', '<br>')
-            full_html_doc = f"<!DOCTYPE html><html lang='fr'><head><meta charset='UTF-8'><title>EDT {p_sel}</title>{style_css}</head><body>{content_html_fixed}</body></html>"
+            
+            # --- 8.2. Export HTML Promotion (ultra-coloré et moderne) ---
+            style_css_v2 = """
+            <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+            * { margin:0; padding:0; box-sizing:border-box; }
+            body { font-family:'Inter','Segoe UI',system-ui,sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height:100vh; padding:20px; color:#1a1a2e; }
+            .container { max-width:1600px; margin:0 auto; background:white; border-radius:20px; box-shadow:0 25px 50px rgba(0,0,0,0.25); overflow:hidden; }
+            
+            .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%); color:white; padding:35px; text-align:center; position:relative; overflow:hidden; }
+            .header::before { content:''; position:absolute; top:-50%; left:-50%; width:200%; height:200%; background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%); }
+            .header h1 { font-size:2.2em; margin-bottom:10px; position:relative; z-index:1; text-shadow:0 2px 10px rgba(0,0,0,0.3); }
+            .header p { font-size:1.1em; opacity:0.85; position:relative; z-index:1; }
+            
+            .stats-row { display:flex; justify-content:center; gap:15px; padding:25px; background:#f8fafc; flex-wrap:wrap; }
+            .stat-card { background:white; padding:18px 28px; border-radius:16px; box-shadow:0 4px 15px rgba(0,0,0,0.08); text-align:center; min-width:120px; transition:transform 0.3s, box-shadow 0.3s; border-top:4px solid; }
+            .stat-card:hover { transform:translateY(-5px); box-shadow:0 8px 25px rgba(0,0,0,0.15); }
+            .stat-card.total { border-color:#0f3460; }
+            .stat-card.cours { border-color:#1a5276; }
+            .stat-card.td { border-color:#27ae60; }
+            .stat-card.tp { border-color:#e67e22; }
+            .stat-card.stage { border-color:#9b59b6; }
+            .stat-value { font-size:2em; font-weight:700; color:#0f3460; line-height:1; }
+            .stat-label { font-size:0.75em; color:#6c757d; text-transform:uppercase; margin-top:6px; font-weight:600; letter-spacing:0.5px; }
+            
+            .legend-bar { display:flex; justify-content:center; gap:25px; padding:15px; background:white; flex-wrap:wrap; }
+            .legend-item { display:flex; align-items:center; gap:10px; padding:8px 16px; border-radius:10px; background:#f8fafc; font-size:0.9em; font-weight:600; }
+            .legend-dot { width:16px; height:16px; border-radius:50%; box-shadow:0 2px 8px rgba(0,0,0,0.2); }
+            
+            .table-wrapper { padding:20px; overflow-x:auto; }
+            .edt-main { width:100%; border-collapse:separate; border-spacing:0; font-size:0.85em; border-radius:12px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.1); }
+            .edt-main th { background: linear-gradient(135deg, #0f3460, #1a5276); color:white; padding:14px 10px; font-weight:700; text-align:center; position:sticky; top:0; white-space:nowrap; font-size:0.95em; letter-spacing:0.5px; }
+            .edt-main th:first-child { border-radius:12px 0 0 0; }
+            .edt-main th:last-child { border-radius:0 12px 0 0; }
+            .edt-main td { border:1px solid #e2e8f0; padding:8px; vertical-align:top; min-width:200px; height:85px; background:white; transition:background 0.2s; }
+            .edt-main td:hover { background:#f8fafc; }
+            .edt-main td.time-col { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); font-weight:700; text-align:center; color:#334155; width:100px; min-width:100px; font-size:1em; vertical-align:middle; }
+            .edt-main tr:nth-child(even) td:not(.time-col) { background:#fafbfc; }
+            .edt-main tr:nth-child(even) td.time-col { background: linear-gradient(135deg, #e2e8f0, #cbd5e1); }
+            
+            .course-cell { border-radius:10px; padding:6px; margin-bottom:4px; color:white; font-size:0.82em; line-height:1.4; box-shadow:0 3px 10px rgba(0,0,0,0.15); display:block; animation:fadeIn 0.5s ease-out; }
+            @keyframes fadeIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
+            .course-cell .title { font-weight:700; font-size:0.95em; margin-bottom:3px; }
+            .course-cell .meta { font-size:0.8em; opacity:0.9; }
+            .course-cell .badge { display:inline-block; background:rgba(255,255,255,0.25); padding:2px 8px; border-radius:12px; font-size:0.72em; margin-top:4px; font-weight:600; }
+            
+            .cell-cours { background: linear-gradient(135deg, #1a5276, #2980b9); }
+            .cell-td { background: linear-gradient(135deg, #27ae60, #2ecc71); }
+            .cell-tp { background: linear-gradient(135deg, #e67e22, #f39c12); }
+            .cell-stage { background: linear-gradient(135deg, #9b59b6, #bb8fce); }
+            
+            .empty-cell { color:#cbd5e1; font-style:italic; text-align:center; padding-top:30px; font-size:1.1em; }
+            
+            .recap-section { padding:25px; background: linear-gradient(135deg, #f8fafc, #f1f5f9); }
+            .recap-title { color:#0f3460; font-size:1.5em; font-weight:700; margin-bottom:20px; text-align:center; }
+            .recap-table { width:100%; border-collapse:separate; border-spacing:0; border-radius:12px; overflow:hidden; box-shadow:0 4px 15px rgba(0,0,0,0.08); }
+            .recap-table th { background:#1a1a2e; color:white; padding:12px; font-size:0.85em; font-weight:600; }
+            .recap-table td { padding:12px; text-align:center; border-bottom:1px solid #e2e8f0; background:white; }
+            .recap-table tr:nth-child(even) td { background:#f8f9fa; }
+            .recap-table tr:hover td { background:#e2e8f0; transition:background 0.2s; }
+            
+            .download-bar { display:flex; justify-content:center; gap:15px; padding:20px; background:white; flex-wrap:wrap; }
+            .dl-btn { padding:12px 28px; border-radius:12px; border:none; font-size:1em; font-weight:700; cursor:pointer; color:white; text-decoration:none; display:inline-flex; align-items:center; gap:10px; transition:all 0.3s; box-shadow:0 4px 15px rgba(0,0,0,0.15); }
+            .dl-btn:hover { transform:translateY(-3px); box-shadow:0 8px 25px rgba(0,0,0,0.25); }
+            .dl-html { background: linear-gradient(135deg, #667eea, #764ba2); }
+            .dl-pdf { background: linear-gradient(135deg, #f093fb, #f5576c); }
+            .dl-excel { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+            
+            .footer { text-align:center; padding:20px; color:#6c757d; font-size:0.85em; background:#f8fafc; border-top:1px solid #e2e8f0; }
+            
+            @media print { body { background:white; } .container { box-shadow:none; border-radius:0; } .download-bar { display:none; } }
+            </style>
+            """
+            
+            # Construction du contenu HTML
+            content_html_v2 = f"<div class='container'><div class='header'><h1>📅 Emploi du Temps — {p_sel}</h1><p>Semestre 2 | Dimanche–Jeudi | Électrotechnique</p></div>"
+            
+            # Stats
+            content_html_v2 += "<div class='stats-row'>"
+            content_html_v2 += f"<div class='stat-card total'><div class='stat-value'>{total_p_seances}</div><div class='stat-label'>Séances</div></div>"
+            content_html_v2 += f"<div class='stat-card cours'><div class='stat-value'>{total_p_cours}</div><div class='stat-label'>Cours</div></div>"
+            content_html_v2 += f"<div class='stat-card td'><div class='stat-value'>{total_p_td}</div><div class='stat-label'>TD</div></div>"
+            content_html_v2 += f"<div class='stat-card tp'><div class='stat-value'>{total_p_tp}</div><div class='stat-label'>TP</div></div>"
+            if total_p_stage > 0:
+                content_html_v2 += f"<div class='stat-card stage'><div class='stat-value'>{total_p_stage}</div><div class='stat-label'>Stage</div></div>"
+            content_html_v2 += "</div>"
+            
+            # Légende
+            content_html_v2 += "<div class='legend-bar'>"
+            content_html_v2 += "<div class='legend-item'><div class='legend-dot' style='background:linear-gradient(135deg,#1a5276,#2980b9)'></div><span>Cours</span></div>"
+            content_html_v2 += "<div class='legend-item'><div class='legend-dot' style='background:linear-gradient(135deg,#27ae60,#2ecc71)'></div><span>TD</span></div>"
+            content_html_v2 += "<div class='legend-item'><div class='legend-dot' style='background:linear-gradient(135deg,#e67e22,#f39c12)'></div><span>TP</span></div>"
+            if total_p_stage > 0:
+                content_html_v2 += "<div class='legend-item'><div class='legend-dot' style='background:linear-gradient(135deg,#9b59b6,#bb8fce)'></div><span>Stage</span></div>"
+            content_html_v2 += "</div>"
+            
+            # Tableau EDT
+            content_html_v2 += "<div class='table-wrapper'><table class='edt-main'><thead><tr><th>Jour / Heure</th>"
+            for slot in ['08h00–09h30', '09h30–11h00', '11h00–12h30', '12h30–14h00', '14h30–16h00', '16h00–17h30']:
+                content_html_v2 += f"<th>{slot}</th>"
+            content_html_v2 += "</tr></thead><tbody>"
+            
+            # Construction des lignes du tableau avec couleurs
+            for time_label, row in grid_p.iterrows():
+                content_html_v2 += f"<tr><td class='time-col'>{time_label}</td>"
+                for day_label in grid_p.columns:
+                    cell_content = str(row[day_label])
+                    if cell_content and cell_content.strip() and cell_content != 'nan':
+                        raw = cell_content.upper()
+                        css_class = 'cell-cours' if 'COURS' in raw else 'cell-td' if 'TD' in raw else 'cell-tp' if 'TP' in raw else 'cell-stage' if 'STAGE' in raw else 'cell-cours'
+                        
+                        clean_text = cell_content.replace('<br>', ' | ').replace('<div', '').replace('</div>', '').replace('<b>', '').replace('</b>', '')
+                        clean_text = clean_text.replace('👤', '').replace('📘', '').replace('📗', '').replace('🔴', '').replace('📍', '').replace('Lieu:', '').strip()
+                        
+                        parts = clean_text.split('|')
+                        title = parts[0].strip() if parts else ""
+                        meta = '|'.join(parts[1:]).strip() if len(parts) > 1 else ""
+                        
+                        content_html_v2 += f"<td><div class='course-cell {css_class}'>"
+                        content_html_v2 += f"<div class='title'>{title}</div>"
+                        if meta:
+                            content_html_v2 += f"<div class='meta'>{meta}</div>"
+                        content_html_v2 += f"<div class='badge'>{css_class.replace('cell-', '').upper()}</div>"
+                        content_html_v2 += "</div></td>"
+                    else:
+                        content_html_v2 += "<td><div class='empty-cell'>—</div></td>"
+                content_html_v2 += "</tr>"
+            
+            content_html_v2 += "</tbody></table></div>"
+            
+            # Section récap
+            content_html_v2 += "<div class='recap-section'><div class='recap-title'>📊 Récapitulatif par Jour</div>"
+            content_html_v2 += "<table class='recap-table'><thead><tr><th>Jour</th><th>Cours</th><th>TD</th><th>TP</th><th>Stage</th><th>Total</th><th>Heures</th></tr></thead><tbody>"
+            
+            for day in cols_j:
+                day_label = map_j.get(day, day)
+                day_data = df_p[df_p['Jours'].apply(normalize) == day]
+                c = len(day_data[day_data['Code'].str.contains('COURS', case=False, na=False)])
+                t = len(day_data[day_data['Code'].str.contains('TD', case=False, na=False)])
+                p = len(day_data[~day_data['Code'].str.contains('COURS|TD', case=False, na=False)])
+                s = len(day_data[day_data['Code'].str.contains('STAGE', case=False, na=False)])
+                total_day = c + t + p + s
+                h_approx = total_day * 1.5
+                
+                content_html_v2 += f"<tr><td><strong>{day_label}</strong></td><td>{c}</td><td>{t}</td><td>{p}</td><td>{s}</td><td><strong>{total_day}</strong></td><td>{h_approx:.1f}h</td></tr>"
+            
+            content_html_v2 += "</tbody></table></div>"
+            
+            # Footer
+            content_html_v2 += "<div class='footer'>Plateforme de gestion des emplois du temps 2026-2027 — Département d'Électrotechnique — UDL SBA</div></div>"
+            
+            # Assemblage final HTML
+            full_html_doc = f"<!DOCTYPE html><html lang='fr'><head><meta charset='UTF-8'><title>EDT {p_sel}</title>{style_css_v2}</head><body>{content_html_v2}</body></html>"
             
             cp2.download_button(
-                label=f"🌐 Tableau {p_sel} (HTML)",
+                label="🌐 HTML Ultra-Coloré",
                 data=full_html_doc,
                 file_name=f"EDT_{p_sel}_2027.html",
                 mime="text/html",
                 use_container_width=True,
-                key=f"btn_html_{p_sel}"
+                key=f"btn_html_v10_{p_sel}"
             )
-
-            # --- 8.3. Export PDF Promotion (Haute Lisibilité) ---
+            
+            # --- 8.3. Export PDF Promotion (fpdf2 moderne avec couleurs) ---
             try:
                 from fpdf import FPDF
-                import re
-
-                class EDT_PDF(FPDF):
+                
+                class EDT_PDF_V2(FPDF):
+                    def __init__(self):
+                        super().__init__(orientation="L", unit="mm", format="A4")
+                        self.set_auto_page_break(auto=True, margin=15)
+                        self.set_margins(left=8, top=10, right=8)
+                        
                     def header(self):
-                        self.set_font('Arial', 'B', 10)
-                        # Rappel du titre officiel
-                        self.cell(0, 8, "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA", 0, 1, 'C')
+                        self.set_fill_color(15, 23, 42)
+                        self.rect(0, 0, self.w, 22, 'F')
+                        self.set_font('Arial', 'B', 9)
+                        self.set_text_color(255, 255, 255)
+                        title = "Plateforme EDT 2026-2027 - Dept Electrotechnique - UDL SBA"
+                        self.cell(0, 10, title, 0, 1, 'C')
                         self.ln(2)
-                    def footer(self): pass
-
-                def clean_text_for_pdf(html_str):
-                    if not html_str: return ""
-                    t = str(html_str).replace('</div>', '\n').replace('<br>', '\n').replace('<br/>', '\n')
-                    t = t.replace('<b>','').replace('</b>','')
-                    t = re.sub(r'<[^>]+>', '', t)
-                    t = re.sub(r'[^\x00-\x7F]+', '', t) 
-                    lines = [l.strip() for l in t.split('\n') if l.strip()]
-                    return "\n".join(lines)
-
-                # Initialisation PDF Paysage
-                pdf = EDT_PDF(orientation="L", unit="mm", format="A4")
-                pdf.set_margins(left=7, top=7, right=7)
-                pdf.set_auto_page_break(auto=True, margin=10)
+                        
+                    def footer(self):
+                        self.set_y(-15)
+                        self.set_font('Arial', 'I', 8)
+                        self.set_text_color(128, 128, 128)
+                        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+            
+                pdf = EDT_PDF_V2()
                 pdf.add_page()
-
-                # Titre de la promotion
-                pdf.set_font("Arial", "B", 12)
-                pdf.cell(0, 10, f"PROMOTION : {p_sel}", 0, 1, "C")
-                pdf.ln(2)
-
-                # Reconstruction de la grille pour le PDF
-                grid_pdf = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
-                grid_pdf = grid_pdf.reindex(index=idx_h, columns=cols_j).fillna("")
-                grid_pdf = grid_pdf[grid_pdf.any(axis=1)] 
-                grid_pdf.index = [map_h.get(i, i) for i in grid_pdf.index]
-                grid_pdf.columns = [map_j.get(c, c) for c in grid_pdf.columns]
-
-                # Paramètres de style
-                col_h_w = 26
-                col_j_w = (pdf.w - col_h_w - 20) / len(grid_pdf.columns)
-                interline = 3.5
-                padding_v = 3
-
+            
+                # Titre promotion
+                pdf.set_font("Arial", "B", 16)
+                pdf.set_text_color(15, 52, 96)
+                pdf.cell(0, 12, f"PROMOTION : {p_sel}", 0, 1, "C")
+                pdf.ln(3)
+            
+                # === STATS EN HAUT ===
+                stats = [
+                    ("SEANCES", total_p_seances, (15, 52, 96)),
+                    ("COURS", total_p_cours, (26, 82, 118)),
+                    ("TD", total_p_td, (39, 174, 96)),
+                    ("TP", total_p_tp, (230, 126, 34)),
+                ]
+                if total_p_stage > 0:
+                    stats.append(("STAGE", total_p_stage, (155, 89, 182)))
+                
+                card_w = (pdf.w - 20) / len(stats)
+                for label, val, color in stats:
+                    pdf.set_fill_color(*color)
+                    pdf.set_draw_color(*color)
+                    pdf.rounded_rect(pdf.get_x(), pdf.get_y(), card_w - 2, 18, 3, 'DF')
+                    pdf.set_text_color(255, 255, 255)
+                    pdf.set_font("Arial", "B", 11)
+                    pdf.set_xy(pdf.get_x() + (card_w - 2)/2, pdf.get_y() + 3)
+                    pdf.cell(0, 0, str(val), 0, 0, "C")
+                    pdf.set_font("Arial", "", 7)
+                    pdf.set_xy(pdf.get_x() - (card_w - 2)/2, pdf.get_y() + 8)
+                    pdf.cell(0, 0, label, 0, 0, "C")
+                    pdf.set_x(pdf.get_x() + (card_w - 2)/2 + 2)
+                
+                pdf.ln(22)
+            
+                # === LÉGENDE ===
+                pdf.set_font("Arial", "B", 8)
+                pdf.set_text_color(50, 50, 50)
+                pdf.cell(0, 6, "LEGENDE :", 0, 1, "L")
+                
+                legend_items = [
+                    ("COURS", (26, 82, 118)),
+                    ("TD", (39, 174, 96)),
+                    ("TP", (230, 126, 34)),
+                ]
+                if total_p_stage > 0:
+                    legend_items.append(("STAGE", (155, 89, 182)))
+                
+                for label, color in legend_items:
+                    pdf.set_fill_color(*color)
+                    pdf.set_draw_color(*color)
+                    pdf.cell(8, 6, "", 1, 0, "C", True)
+                    pdf.set_text_color(50, 50, 50)
+                    pdf.cell(20, 6, label, 0, 0, "L")
+                pdf.ln(10)
+            
+                # === TABLEAU PRINCIPAL ===
+                # Utiliser grid_p déjà calculé
+                grid_pdf = grid_p.copy()
+            
+                # Dimensions
+                col_h_w = 22
+                col_j_w = (pdf.w - 20) / len(grid_pdf.columns)
+                interline = 3.2
+            
                 # En-tête du tableau
-                pdf.set_font("Arial", "B", 9)
-                pdf.set_fill_color(230, 230, 230)
+                pdf.set_fill_color(15, 52, 96)
+                pdf.set_text_color(255, 255, 255)
+                pdf.set_font("Arial", "B", 8)
                 pdf.cell(col_h_w, 10, "HORAIRE", 1, 0, "C", True)
                 for jour in grid_pdf.columns:
-                    pdf.cell(col_j_w, 10, jour, 1, 0, "C", True)
+                    pdf.cell(col_j_w, 10, jour.encode('latin-1', 'replace').decode('latin-1'), 1, 0, "C", True)
                 pdf.ln()
-
-                # Remplissage du tableau
+            
+                # Corps du tableau avec couleurs
                 for heure, row in grid_pdf.iterrows():
-                    # Calcul hauteur de ligne
-                    max_h_needed = 14
-                    row_texts = []
+                    max_h = 12
+                    texts = []
                     for jour in grid_pdf.columns:
-                        txt_propre = clean_text_for_pdf(row[jour])
-                        row_texts.append(txt_propre)
-                        nb_l = txt_propre.count('\n') + 1
-                        h_calc = (nb_l * interline) + (padding_v * 2)
-                        if h_calc > max_h_needed: max_h_needed = h_calc
-
-                    # Cellule Heure
-                    pdf.set_font("Arial", "B", 7.5)
-                    pdf.set_fill_color(245, 245, 245)
-                    pdf.cell(col_h_w, max_h_needed, heure, 1, 0, "C", True)
-
-                    # Cellules Cours
-                    pdf.set_font("Arial", "", 6.5)
-                    for idx, jour in enumerate(grid_pdf.columns):
-                        content = row_texts[idx]
-                        raw_val = str(row[jour]).upper()
+                        raw = str(row[jour])
+                        txt = raw.replace('<br>', '\n').replace('</div>', '\n').replace('<div', '').replace('<b>', '').replace('</b>', '')
+                        txt = txt.replace('👤', '').replace('📘', '').replace('📗', '').replace('🔴', '').replace('📍', '').replace('Lieu:', '').strip()
+                        txt = txt.encode('latin-1', 'replace').decode('latin-1')
+                        texts.append(txt)
                         
-                        if "COURS" in raw_val: pdf.set_fill_color(225, 238, 255)
-                        elif "TD" in raw_val: pdf.set_fill_color(232, 252, 235)
-                        elif "TP" in raw_val: pdf.set_fill_color(255, 235, 235)
-                        else: pdf.set_fill_color(255, 255, 255)
-
-                        cur_x, cur_y = pdf.get_x(), pdf.get_y()
-                        pdf.rect(cur_x, cur_y, col_j_w, max_h_needed, 'FD')
+                        if txt:
+                            lines = txt.count('\n') + 1
+                            h_needed = lines * interline + 4
+                            if h_needed > max_h:
+                                max_h = h_needed
+            
+                    # Colonne heure
+                    pdf.set_fill_color(241, 245, 249)
+                    pdf.set_text_color(51, 65, 85)
+                    pdf.set_font("Arial", "B", 7)
+                    pdf.cell(col_h_w, max_h, str(heure), 1, 0, "C", True)
+            
+                    # Colonnes jours
+                    pdf.set_font("Arial", "", 6)
+                    for idx_j, jour in enumerate(grid_pdf.columns):
+                        content = texts[idx_j]
+                        raw_upper = str(row[jour]).upper()
                         
-                        text_block_h = (content.count('\n') + 1) * interline
-                        margin_top = (max_h_needed - text_block_h) / 2
+                        if "COURS" in raw_upper:
+                            pdf.set_fill_color(212, 230, 241)
+                        elif "TD" in raw_upper:
+                            pdf.set_fill_color(213, 245, 227)
+                        elif "TP" in raw_upper:
+                            pdf.set_fill_color(253, 235, 208)
+                        elif "STAGE" in raw_upper:
+                            pdf.set_fill_color(232, 218, 239)
+                        else:
+                            pdf.set_fill_color(255, 255, 255)
+            
+                        x, y = pdf.get_x(), pdf.get_y()
+                        pdf.rect(x, y, col_j_w, max_h, 'DF')
                         
-                        pdf.set_xy(cur_x, cur_y + margin_top)
-                        pdf.multi_cell(col_j_w, interline, content, 0, "C")
-                        pdf.set_xy(cur_x + col_j_w, cur_y)
-                    pdf.ln(max_h_needed)
-
+                        if content:
+                            pdf.set_xy(x, y + 2)
+                            pdf.set_text_color(50, 50, 50)
+                            pdf.multi_cell(col_j_w, interline, content, 0, "C")
+                        
+                        pdf.set_xy(x + col_j_w, y)
+                    
+                    pdf.ln(max_h)
+            
+                # === RÉCAPITULATIF PAR JOUR (Page 2) ===
+                pdf.add_page()
+                pdf.set_font("Arial", "B", 14)
+                pdf.set_text_color(15, 52, 96)
+                pdf.cell(0, 12, "RECAPITULATIF PAR JOUR", 0, 1, "C")
+                pdf.ln(5)
+            
+                recap_cols = ['Jour', 'Cours', 'TD', 'TP', 'Stage', 'Total', 'Heures']
+                col_w = (pdf.w - 20) / len(recap_cols)
+                
+                pdf.set_fill_color(26, 26, 46)
+                pdf.set_text_color(255, 255, 255)
+                pdf.set_font("Arial", "B", 9)
+                for col in recap_cols:
+                    pdf.cell(col_w, 10, col, 1, 0, "C", True)
+                pdf.ln()
+            
+                pdf.set_font("Arial", "", 8)
+                pdf.set_text_color(50, 50, 50)
+                
+                for i, day in enumerate(cols_j):
+                    day_label = map_j.get(day, day)
+                    day_data = df_p[df_p['Jours'].apply(normalize) == day]
+                    c = len(day_data[day_data['Code'].str.contains('COURS', case=False, na=False)])
+                    t = len(day_data[day_data['Code'].str.contains('TD', case=False, na=False)])
+                    p = len(day_data[~day_data['Code'].str.contains('COURS|TD', case=False, na=False)])
+                    s = len(day_data[day_data['Code'].str.contains('STAGE', case=False, na=False)])
+                    total_day = c + t + p + s
+                    h_approx = total_day * 1.5
+                    
+                    if (i % 2) == 0:
+                        pdf.set_fill_color(248, 249, 250)
+                    else:
+                        pdf.set_fill_color(255, 255, 255)
+                    
+                    pdf.cell(col_w, 8, day_label.encode('latin-1', 'replace').decode('latin-1'), 1, 0, "C", True)
+                    pdf.cell(col_w, 8, str(c), 1, 0, "C", True)
+                    pdf.cell(col_w, 8, str(t), 1, 0, "C", True)
+                    pdf.cell(col_w, 8, str(p), 1, 0, "C", True)
+                    pdf.cell(col_w, 8, str(s), 1, 0, "C", True)
+                    pdf.cell(col_w, 8, str(total_day), 1, 0, "C", True)
+                    pdf.cell(col_w, 8, f"{h_approx:.1f}h", 1, 1, "C", True)
+            
                 pdf_bytes = pdf.output()
-
                 cp3.download_button(
-                    label=f"📄 Emploi du temps {p_sel} (PDF)",
+                    label="📄 PDF Coloré Complet",
                     data=bytes(pdf_bytes),
                     file_name=f"EDT_{p_sel}_2027.pdf",
                     mime="application/pdf",
                     use_container_width=True,
-                    key=f"btn_pdf_{p_sel}"
+                    key=f"btn_pdf_v10_{p_sel}" 
                 )
+                
             except Exception as e:
-                cp3.error(f"Erreur lors de la génération PDF : {e}")
-            # --- 8.2. EXPORT PACK HTML (CORRIGÉ & NETTOYÉ) ---
-            st.markdown("---") # <--- Vérifiez que cette ligne est alignée avec le "if" précédent
-            if st.button("📦 Générer le Pack de fichiers HTML (Version Finale)", use_container_width=True):
-                try:
-                    import io
-                    import zipfile
-                    import re
-
-                    zip_buffer = io.BytesIO()
-                    promos_disponibles = sorted(df["Promotion"].unique())
-
-                    # Style CSS amélioré
-                    style_edt_html = """
-                    <style>
-                        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f8fafc; padding: 15px; }
-                        .container { max-width: 1000px; margin: auto; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-                        h2 { color: #1e293b; text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 15px; table-layout: fixed; }
-                        th { background-color: #1e293b; color: white; padding: 10px; border: 1px solid #cbd5e1; }
-                        td { border: 1px solid #cbd5e1; padding: 10px; vertical-align: top; text-align: center; font-size: 10px; line-height: 1.5; }
-                    </style>
-                    """
-
-                    def clean_html_content(text):
-                        """Remplace les \n par des sauts de ligne réels et nettoie le texte"""
-                        if not text or text == "None": return ""
-                        # Transforme les sauts de ligne en balises HTML <br>
-                        return str(text).replace('\\n', '<br>').replace('\n', '<br>')
-
-                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                        for p_name in promos_disponibles:
-                            df_p = df[df["Promotion"] == p_name].copy()
-                            
-                            # Reconstruction de la grille
-                            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
-                            grid_p = grid_p.reindex(index=idx_h, columns=cols_j).fillna("")
-                            grid_p = grid_p[grid_p.any(axis=1)]
-                            
-                            # Nettoyage des cellules avant conversion
-                            grid_p = grid_p.map(clean_html_content)
-                            
-                            grid_p.index = [map_h.get(i, i) for i in grid_p.index]
-                            grid_p.columns = [map_j.get(c, c) for c in grid_p.columns]
-
-                            # Conversion HTML (escape=False pour garder les <br>)
-                            table_html = grid_p.to_html(escape=False, classes='edt-table')
-
-                            full_html = f"""
-                            <!DOCTYPE html>
-                            <html lang='fr'>
-                            <head>
-                                <meta charset='UTF-8'>
-                                <title>EDT {p_name}</title>
-                                {style_edt_html}
-                            </head>
-                            <body>
-                                <div class='container'>
-                                    <h2>PROMOTION : {p_name}</h2>
-                                    <p style='text-align:center; color:#64748b;'>Faculté de Génie Électrique - UDL-SBA</p>
-                                    {table_html}
-                                </div>
-                            </body>
-                            </html>
-                            """
-                            zip_file.writestr(f"EDT_{p_name}_2027.html", full_html)
-
-                    st.success(f"✅ Pack généré ({len(promos_disponibles)} fichiers)")
-                    st.download_button(
-                        label="⬇️ Télécharger le Pack ZIP",
-                        data=zip_buffer.getvalue(),
-                        file_name="Pack_EDT_HTML_S2.zip",
-                        mime="application/zip",
-                        use_container_width=True
-                    )
-                except Exception as e:
-                    st.error(f"Erreur technique : {e}")
-            # --- 8.3. GÉNÉRATION DU PACK PDF (ANTI-COLLISION & HAUTEUR ADAPTATIVE) ---
-            st.markdown("---")
-            if st.button("📁 Générer le Pack PDF (Haute Lisibilité - Pleine Page)", use_container_width=True):
-                try:
-                    from fpdf import FPDF
-                    import re
-
-                    class EDT_PDF(FPDF):
-                        def header(self): pass
-                        def footer(self): pass
-
-                    def clean_text_for_pdf(html_str):
-                        """Nettoie le HTML en préservant la structure verticale pour la lisibilité"""
-                        if not html_str: return ""
-                        # Conversion des balises structurelles en sauts de ligne
-                        t = html_str.replace('</div>', '\n').replace('<br>', '\n').replace('<br/>', '\n')
-                        t = t.replace('<b>','').replace('</b>','')
-                        # Nettoyage HTML et suppression des caractères spéciaux/émojis
-                        t = re.sub(r'<[^>]+>', '', t)
-                        t = re.sub(r'[^\x00-\x7F]+', '', t) 
-                        lines = [l.strip() for l in t.split('\n') if l.strip()]
-                        return "\n".join(lines)
-
-                    # Initialisation en Paysage A4
-                    pdf = EDT_PDF(orientation="L", unit="mm", format="A4")
-                    # Marges minimales pour occuper toute la surface
-                    pdf.set_margins(left=7, top=7, right=7)
-                    pdf.set_auto_page_break(auto=True, margin=10)
-                    
-                    promotions_liste = sorted(df["Promotion"].unique())
-                    
-                    for p_name in promotions_liste:
-                        pdf.add_page()
-                        
-                        # Titre de la promotion centré et aéré
-                        pdf.set_font("Arial", "B", 12)
-                        pdf.set_text_color(0, 0, 0)
-                        pdf.cell(0, 10, f"PROMOTION : {p_name}", 0, 1, "C")
-                        pdf.ln(2)
-                        
-                        # Préparation des données de la promotion
-                        df_p = df[df["Promotion"] == p_name].copy()
-                        grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
-                        grid_p = grid_p.reindex(index=idx_h, columns=cols_j).fillna("")
-                        grid_p = grid_p[grid_p.any(axis=1)] # Ne garde que les créneaux avec des cours
-                        
-                        grid_p.index = [map_h.get(i, i) for i in grid_p.index]
-                        grid_p.columns = [map_j.get(c, c) for c in grid_p.columns]
-                        
-                        # Dimensions des colonnes
-                        col_h_w = 26
-                        col_j_w = (pdf.w - col_h_w - 20) / len(grid_p.columns)
-                        
-                        # --- EN-TÊTE DU TABLEAU ---
-                        pdf.set_font("Arial", "B", 9)
-                        pdf.set_fill_color(230, 230, 230)
-                        pdf.cell(col_h_w, 10, "HORAIRE", 1, 0, "C", True)
-                        for jour in grid_p.columns:
-                            pdf.cell(col_j_w, 10, jour, 1, 0, "C", True)
-                        pdf.ln()
-                        
-                        # --- CORPS DU TABLEAU ---
-                        # Police réduite pour la lisibilité des zones denses
-                        pdf.set_font("Arial", "", 6.5)
-                        interline = 3.5 # Hauteur d'une ligne de texte
-                        padding_v = 3   # Marge interne (padding) pour ne pas toucher les lignes
-                        
-                        for heure, row in grid_p.iterrows():
-                            # 1. Calculer la hauteur nécessaire pour la ligne (basé sur le jour le plus rempli)
-                            max_h_needed = 14 # Hauteur minimum
-                            row_texts = []
-                            
-                            for jour in grid_p.columns:
-                                txt_propre = clean_text_for_pdf(str(row[jour]))
-                                row_texts.append(txt_propre)
-                                
-                                # Calcul : (Nombre de lignes * hauteur de ligne) + padding haut et bas
-                                nb_l = txt_propre.count('\n') + 1
-                                h_calc = (nb_l * interline) + (padding_v * 2)
-                                if h_calc > max_h_needed:
-                                    max_h_needed = h_calc
-                            
-                            # 2. Rendu de la cellule Heure (Grise)
-                            pdf.set_font("Arial", "B", 7.5)
-                            pdf.set_fill_color(245, 245, 245)
-                            pdf.cell(col_h_w, max_h_needed, heure, 1, 0, "C", True)
-                            
-                            # 3. Rendu des cellules Jours (Colorées selon type)
-                            pdf.set_font("Arial", "", 6.5)
-                            for idx, jour in enumerate(grid_p.columns):
-                                content = row_texts[idx]
-                                raw_val = str(row[jour]).upper()
-                                
-                                # Attribution des couleurs
-                                if "COURS" in raw_val: pdf.set_fill_color(225, 238, 255)
-                                elif "TD" in raw_val: pdf.set_fill_color(232, 252, 235)
-                                elif "TP" in raw_val: pdf.set_fill_color(255, 235, 235)
-                                else: pdf.set_fill_color(255, 255, 255)
-                                
-                                cur_x, cur_y = pdf.get_x(), pdf.get_y()
-                                # Dessin de la bordure et du fond
-                                pdf.rect(cur_x, cur_y, col_j_w, max_h_needed, 'FD')
-                                
-                                # Calcul du centrage vertical pour le padding
-                                nb_l_c = content.count('\n') + 1
-                                text_block_h = nb_l_c * interline
-                                margin_top = (max_h_needed - text_block_h) / 2
-                                
-                                pdf.set_xy(cur_x, cur_y + margin_top)
-                                
-                                # Écriture du texte multi-ligne
-                                pdf.multi_cell(col_j_w, interline, content, 0, "C")
-                                pdf.set_xy(cur_x + col_j_w, cur_y)
-                            
-                            pdf.ln(max_h_needed)
-
-                    # --- EXPORT ---
-                    # Export PDF (existant)
-                    pdf_final = pdf.output()
-                    st.success(f"✅ Pack PDF généré avec succès ({len(promotions_liste)} pages).")
-                    
-                    st.download_button(
-                        label="⬇️ Télécharger le Pack PDF (Version Corrigée)",
-                        data=bytes(pdf_final),
-                        file_name="Pack_EDT_S2_2027_Lisible.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-
-                    # --- AJOUT EXPORT EXCEL ---
-                    import pandas as pd
-                    import io
-
-                    # Conversion des données en Excel (Utilise le DataFrame source de votre tableau)
-                    buffer = io.BytesIO()
-                    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                        # On suppose que 'df' est votre DataFrame contenant les colonnes :
-                        # Enseignements, Code, Enseignants, Horaire, Jours, Lieu, Promotion
-                        df.to_excel(writer, index=False, sheet_name='EDT_S2_2027')
-                    
-                    excel_data = buffer.getvalue()
-
-                    st.download_button(
-                        label="⬇️ Télécharger le Pack Excel (Format .xlsx)",
-                        data=excel_data,
-                        file_name="Pack_EDT_S2_2027.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-
-                except Exception as e:
-                    st.error(f"Une erreur est survenue lors de la génération : {e}")
+                cp3.error(f"❌ Erreur PDF : {e}")
+                cp3.info("💡 Installe fpdf2 : pip install fpdf2")
 
         elif is_admin and mode_view == "🏢 Planning Salles":
             s_sel = st.selectbox("Choisir Salle :", sorted(df["Lieu"].unique()))
