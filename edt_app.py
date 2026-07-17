@@ -1239,7 +1239,7 @@ if df is not None:
                         pdf.ln(4)
 
                         # --- LOGIQUE DE TRI & FUSION ---
-                        ordre_horaires = ["8h-9h30", "9h30-11h", "11h-12h30", "12h30-14h", "14h-15h30", "15h30-17h"]
+                        ordre_horaires = ["8h-9h30", "9h30-11h", "11h-12h30", "12h30-14h", "13h00-14h30", "14h-15h30", "15h30-17h"]
                         df_pdf = df_f.copy()
                         
                         def merge_info(row):
