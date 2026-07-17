@@ -1147,27 +1147,145 @@ if df is not None:
                 col_dl1, col_dl2, col_dl3 = st.columns(3)
                 
                 # --- 1. EXPORT EXCEL (AVEC INFOS ENSEIGNANT) ---
+                        
                 import io
                 buf_ex = io.BytesIO()
-    
-                # Création d'un mini-tableau d'entête pour l'Excel
-                df_infos = pd.DataFrame([
-                    ["Enseignant :", nom_complet_entete],
-                    ["Grade :", grade_entete],
-                    ["Qualité :", statut_entete],
-                    ["", ""] # Ligne vide de séparation
-                ])
-                
-                df_to_export = df_f.drop(columns=['h_norm', 'j_norm'], errors='ignore')
                 
                 with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
-                    # On écrit d'abord les infos en haut à gauche
-                    df_infos.to_excel(writer, index=False, header=False, sheet_name='Mon_EDT')
-                    # On écrit la liste des cours juste en dessous (ligne 5)
-                    df_to_export.to_excel(writer, index=False, startrow=5, sheet_name='Mon_EDT')
+                    workbook = writer.book
+                    
+                    # Formats professionnels
+                    title_format = workbook.add_format({
+                        'bold': True, 'font_size': 16, 'font_color': '#1E3A8A',
+                        'bg_color': '#F8FAFC', 'border': 2, 'border_color': '#1E3A8A',
+                        'align': 'center', 'valign': 'vcenter', 'text_wrap': True
+                    })
+                    info_format = workbook.add_format({
+                        'bold': True, 'font_size': 11, 'font_color': '#334155',
+                        'bg_color': '#E2E8F0', 'border': 1, 'align': 'left', 'valign': 'vcenter'
+                    })
+                    info_val_format = workbook.add_format({
+                        'font_size': 11, 'font_color': '#0F172A',
+                        'bg_color': '#F1F5F9', 'border': 1, 'align': 'left', 'valign': 'vcenter'
+                    })
+                    header_format = workbook.add_format({
+                        'bold': True, 'font_size': 11, 'font_color': 'white',
+                        'bg_color': '#1E3A8A', 'border': 1, 'align': 'center', 'valign': 'vcenter',
+                        'text_wrap': True
+                    })
+                    cell_format = workbook.add_format({
+                        'font_size': 10, 'border': 1, 'border_color': '#CBD5E1',
+                        'align': 'left', 'valign': 'top', 'text_wrap': True
+                    })
+                    cours_format = workbook.add_format({
+                        'font_size': 10, 'border': 1, 'border_color': '#CBD5E1',
+                        'bg_color': '#DBEAFE', 'align': 'left', 'valign': 'top', 'text_wrap': True
+                    })
+                    td_format = workbook.add_format({
+                        'font_size': 10, 'border': 1, 'border_color': '#CBD5E1',
+                        'bg_color': '#D1FAE5', 'align': 'left', 'valign': 'top', 'text_wrap': True
+                    })
+                    tp_format = workbook.add_format({
+                        'font_size': 10, 'border': 1, 'border_color': '#CBD5E1',
+                        'bg_color': '#FEF3C7', 'align': 'left', 'valign': 'top', 'text_wrap': True
+                    })
+                    stats_header = workbook.add_format({
+                        'bold': True, 'font_size': 12, 'font_color': 'white',
+                        'bg_color': '#0F3460', 'border': 1, 'align': 'center', 'valign': 'vcenter'
+                    })
+                    stats_label = workbook.add_format({
+                        'bold': True, 'font_size': 10, 'font_color': '#475569',
+                        'bg_color': '#F8FAFC', 'border': 1, 'align': 'left', 'valign': 'vcenter'
+                    })
+                    stats_value = workbook.add_format({
+                        'bold': True, 'font_size': 11, 'font_color': '#1E3A8A',
+                        'bg_color': '#EFF6FF', 'border': 1, 'align': 'center', 'valign': 'vcenter'
+                    })
+                    
+                    # Feuille 1 : Informations Enseignant
+                    ws_info = workbook.add_worksheet("Informations")
+                    ws_info.set_column('A:A', 25)
+                    ws_info.set_column('B:B', 40)
+                    ws_info.set_column('C:D', 20)
+                    
+                    ws_info.merge_range('A1:D1', 'PLATEFORME DE GESTION DES EDTs - S2 2027', title_format)
+                    ws_info.merge_range('A2:D2', 'Département d\'Électrotechnique - Faculté de Génie Électrique - UDL SBA', info_format)
+                    ws_info.write('A4', 'Enseignant :', info_format)
+                    ws_info.write('B4', nom_complet_entete, info_val_format)
+                    ws_info.write('A5', 'Grade :', info_format)
+                    ws_info.write('B5', grade_entete, info_val_format)
+                    ws_info.write('A6', 'Qualité :', info_format)
+                    ws_info.write('B6', statut_entete, info_val_format)
+                    ws_info.write('A7', 'Date d\'export :', info_format)
+                    ws_info.write('B7', datetime.now().strftime("%d/%m/%Y %H:%M"), info_val_format)
+                    
+                    ws_info.merge_range('A9:D9', 'STATISTIQUES DE CHARGE', stats_header)
+                    
+                    stats_data = [
+                        ['Type', 'Nombre', 'Équivalent', 'Heures'],
+                        ['Cours', nb_cours, nb_cours * 1.5, f"{nb_cours * 1.5}h"],
+                        ['TD', nb_td, nb_td * 1.0, f"{nb_td * 1.5}h"],
+                        ['TP', nb_tp, nb_tp * 1.0, f"{nb_tp * 1.5}h"],
+                        ['TOTAL', nb_cours + nb_td + nb_tp, round((nb_cours * 1.5) + nb_td + nb_tp, 2), f"{(nb_cours + nb_td + nb_tp) * 1.5}h"]
+                    ]
+                    
+                    for i, row in enumerate(stats_data):
+                        for j, val in enumerate(row):
+                            fmt = stats_header if i == 0 else (stats_label if j == 0 else stats_value)
+                            ws_info.write(10 + i, j, val, fmt)
+                    
+                    # Feuille 2 : Emploi du Temps Détaillé
+                    ws_edt = workbook.add_worksheet("Emploi du Temps")
+                    ws_edt.set_column('A:A', 30)
+                    ws_edt.set_column('B:B', 15)
+                    ws_edt.set_column('C:C', 20)
+                    ws_edt.set_column('D:D', 15)
+                    ws_edt.set_column('E:E', 12)
+                    ws_edt.set_column('F:F', 15)
+                    ws_edt.set_column('G:G', 15)
+                    
+                    ws_edt.merge_range('A1:G1', f'EMPLOI DU TEMPS INDIVIDUEL - {nom_complet_entete}', title_format)
+                    ws_edt.write('A3', 'Enseignements', header_format)
+                    ws_edt.write('B3', 'Code', header_format)
+                    ws_edt.write('C3', 'Enseignants', header_format)
+                    ws_edt.write('D3', 'Horaire', header_format)
+                    ws_edt.write('E3', 'Jours', header_format)
+                    ws_edt.write('F3', 'Lieu', header_format)
+                    ws_edt.write('G3', 'Promotion', header_format)
+                    
+                    df_export = df_f.drop(columns=['h_norm', 'j_norm', 'Type'], errors='ignore')
+                    for idx, row in df_export.iterrows():
+                        row_num = 4 + list(df_export.index).index(idx)
+                        code_str = str(row.get('Code', '')).upper()
+                        if 'COURS' in code_str:
+                            fmt = cours_format
+                        elif 'TD' in code_str:
+                            fmt = td_format
+                        elif 'TP' in code_str:
+                            fmt = tp_format
+                        else:
+                            fmt = cell_format
                         
+                        ws_edt.write(row_num, 0, row.get('Enseignements', ''), fmt)
+                        ws_edt.write(row_num, 1, row.get('Code', ''), fmt)
+                        ws_edt.write(row_num, 2, row.get('Enseignants', ''), fmt)
+                        ws_edt.write(row_num, 3, row.get('Horaire', ''), fmt)
+                        ws_edt.write(row_num, 4, row.get('Jours', ''), fmt)
+                        ws_edt.write(row_num, 5, row.get('Lieu', ''), fmt)
+                        ws_edt.write(row_num, 6, row.get('Promotion', ''), fmt)
+                        ws_edt.set_row(row_num, 30)
+                    
+                    ws_edt.freeze_panes(4, 0)
+                
+                buf_ex.seek(0)
                 col_dl1.download_button(
-                    label="📥 Liste (Excel)",
+                    label="📥 Liste Excel Pro (Multi-feuilles)",
+                    data=buf_ex.getvalue(),
+                    file_name=f"EDT_Individuel_{nom_complet_entete.replace(' ', '_')}_2027.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="btn_indiv_xl_pro_v1"
+                ),
                     data=buf_ex.getvalue(),
                     file_name="EDT_Individuel_2027.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1651,7 +1769,7 @@ if df is not None:
             
             # Titre
             ws.merge_cells('A1:G1')
-            ws['A1'] = f'Emploi du Temps — {p_sel} — S2 2027'
+            ws['A1'] = f'Emploi du Temps — {p_sel} — S1 2027'
             ws['A1'].font = title_font
             ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
             ws.row_dimensions[1].height = 30
@@ -1717,7 +1835,7 @@ if df is not None:
             
             # Feuille récapitulatif
             ws2 = wb.create_sheet("Récapitulatif")
-            ws2['A1'] = f'Récapitulatif — {p_sel} S2 2027'
+            ws2['A1'] = f'Récapitulatif — {p_sel} S1 2027'
             ws2['A1'].font = title_font
             
             recap_headers = ['Jour', 'Cours', 'TD', 'TP', 'Stage', 'Total', 'Heures']
