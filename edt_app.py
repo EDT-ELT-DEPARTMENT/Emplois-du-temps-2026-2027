@@ -1578,7 +1578,7 @@ if df is not None:
             total_p_cours = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('COURS', case=False, na=False)])
             total_p_td = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('TD', case=False, na=False)])
             total_p_tp = len(df_unique_matieres[~df_unique_matieres['Code'].str.contains('COURS|TD', case=False, na=False)])
-                    # --- 8. BOUTONS DE TÉLÉCHARGEMENT ---
+            # --- 8. BOUTONS DE TÉLÉCHARGEMENT ---
             st.markdown("---")
             cp1, cp2, cp3 = st.columns(3)
 
