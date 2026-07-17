@@ -160,7 +160,7 @@ def generate_pro_html(df_source, title, subtitle=""):
         <div class="header">
             <h1>{title}</h1>
             <p>{subtitle}</p>
-            <span class="badge">EDT S2-2027 - FGE/UDL-SBA</span>
+            <span class="badge">EDT Semestre 1-2027 - Département d'électrotechnuqe-FGE/UDL-SBA</span>
         </div>
         <div class="content">
             <div class="meta">
