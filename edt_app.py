@@ -1285,7 +1285,7 @@ if df is not None:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
                     key="btn_indiv_xl_pro_v1"
-                ),
+                )
                     data=buf_ex.getvalue(),
                     file_name="EDT_Individuel_2027.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
