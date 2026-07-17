@@ -1250,6 +1250,4 @@ elif is_admin and mode_view == "🚩 Vérificateur de conflits":
                     'Créneau': slot,
                     'Nombre de séances': count
                 })
-    
-    if room_conflicts:
-        st.warning(f"⚠️ {len(room_conflicts)} conflit(s) détecté(s) dans les sal
+  
