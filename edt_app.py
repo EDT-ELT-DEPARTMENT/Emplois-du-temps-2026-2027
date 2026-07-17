@@ -6,7 +6,16 @@ import io
 from datetime import datetime
 from supabase import create_client
 import streamlit as st
-
+# Masquer les éléments du menu supérieur (Share, Star, Edit, etc.)
+hide_st_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            header {visibility: hidden;}
+            footer {visibility: hidden;}
+            .stAppDeployButton {display:none;}
+            #stDecoration {display:none;}
+            </style>
+            """
 # =============================================================================
 # FONCTIONS UTILITAIRES PRO POUR L'EXPORT (PDF / HTML / EXCEL)
 # =============================================================================
@@ -311,41 +320,6 @@ def render_download_hub(df_global, user_data, is_admin):
         xlsx_data_s = generate_pro_excel(df_filtre_s, f"Planning {sel_salle}")
         c3.download_button("📊 Excel", xlsx_data_s, f"Planning_{sel_salle}_2027.xlsx", 
                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="sx")
-
-    if is_admin:
-        st.divider()
-        st.markdown("**🌍 Export Global (Admin)**")
-        cg1, cg2, cg3, cg4 = st.columns(4)
-        pdf_g, _ = generate_pro_pdf(df_global, "EDT GLOBAL S2-2027", "Departement d'Electrotechnique - Toutes promotions")
-        if pdf_g is not None:
-            cg1.download_button("📄 PDF Global", pdf_g, "EDT_GLOBAL_S2_2027.pdf", "application/pdf", use_container_width=True)
-        html_g = generate_pro_html(df_global, "EDT Global S2-2027", "Departement d'Electrotechnique - FGE/UDL-SBA")
-        cg2.download_button("🌐 HTML Global", html_g, "EDT_GLOBAL_S2_2027.html", "text/html", use_container_width=True)
-        xlsx_g = generate_pro_excel(df_global, "EDT Global S2-2027", "EDT_Global")
-        cg3.download_button("📊 Excel Global", xlsx_g, "EDT_GLOBAL_S2_2027.xlsx",
-                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            if pdf_g is not None:
-                zf.writestr("EDT_GLOBAL.pdf", pdf_g)
-            zf.writestr("EDT_GLOBAL.html", html_g)
-            zf.writestr("EDT_GLOBAL.xlsx", xlsx_g)
-        cg4.download_button("🗜️ Pack ZIP", zip_buffer.getvalue(), "Pack_EDT_GLOBAL_S2_2027.zip", "application/zip", use_container_width=True)
-
-    st.divider()
-
-
-# =============================================================================
-# Masquer les éléments du menu supérieur (Share, Star, Edit, etc.)
-hide_st_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            header {visibility: hidden;}
-            footer {visibility: hidden;}
-            .stAppDeployButton {display:none;}
-            #stDecoration {display:none;}
-            </style>
-            """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # --- CONFIGURATION DE LA PAGE ---
@@ -844,13 +818,6 @@ if user is None:
     st.stop() 
 
 is_admin = user.get("role") == "admin"
-
-# =============================================================================
-# >>>>> HUB DE TELECHARGEMENT RAPIDE (CENTRE DE TELECHARGEMENT) <<<<<
-# =============================================================================
-st.markdown("---")
-render_download_hub(df, user, is_admin)
-
 
 # 1. Définition précise de votre nouvelle liste d'horaires (14 créneaux)
 horaires_list = [
@@ -4271,6 +4238,7 @@ if doc_choisi == "Bordereau d'envoi":
                 )
             except Exception as error:
                 st.error(f"Échec de l'opération de génération : {str(error)}")
+
 
 
 
