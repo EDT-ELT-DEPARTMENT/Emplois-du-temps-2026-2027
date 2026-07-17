@@ -519,7 +519,7 @@ is_admin = user.get("role") == "admin"
 horaires_list = [
     "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
     "10h - 11h", "11h - 12h", "11h - 12h30", 
-    "12h - 13h", "12h30 - 14h", "13h - 14h", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+    "12h - 13h", "12h30 - 14h", "13h - 14h"30, "14h - 15h30", "14h - 16h", "15h30 - 17h"
 ]
 
 # 2. Définition des jours de la semaine
