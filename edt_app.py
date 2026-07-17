@@ -2660,7 +2660,24 @@ if df is not None:
         if not is_admin:
             st.error("🚫 ACCÈS RESTREINT.")
             st.stop()
-        
+
+        # --- CHARGEMENT DE SECOURS DU FICHIER EXCEL ---
+        if df is None or df.empty:
+            if os.path.exists(NOM_FICHIER_FIXE):
+                df = pd.read_excel(NOM_FICHIER_FIXE)
+                df.columns = [str(c).strip() for c in df.columns]
+                colonnes_cles = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+                for col in colonnes_cles:
+                    if col in df.columns: 
+                        df[col] = df[col].fillna("Non défini").astype(str).str.strip()
+                    else:
+                        df[col] = "Non défini"
+                df['h_norm'] = df['Horaire'].apply(normalize)
+                df['j_norm'] = df['Jours'].apply(normalize)
+            else:
+                st.error(f"❌ Le fichier {NOM_FICHIER_FIXE} est introuvable. Veuillez vérifier le chemin.")
+                st.stop()
+
         # --- EN-TÊTE ---
         col_l, col_t = st.columns([1, 5])
         with col_l:
@@ -3434,7 +3451,7 @@ if portail == "🎓 Portail mise à jour EDT":
     st.markdown("### 📋 Consultation par Promotion")
     
     # Récupération sécurisée des promotions
-    if not df.empty:
+    if df is not None and not df.empty:
         liste_promotions = sorted(df["Promotion"].unique().tolist())
     else:
         liste_promotions = ["ING1", "L3-ELT", "M1-RE", "M2-RE"] # Valeurs par défaut si fichier vide
