@@ -105,27 +105,6 @@ st.markdown("""
 .edt-tp { background-color: #e67e22 !important; color: white !important; }
 .edt-stage { background-color: #9b59b6 !important; color: white !important; }
 
-/* === BOUTONS TÉLÉCHARGEMENT === */
-.btn-download {
-    padding: 10px 20px;
-    border-radius: 10px;
-    border: none;
-    font-weight: 600;
-    cursor: pointer;
-    color: white;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.2s;
-    margin: 5px;
-}
-.btn-download:hover { transform: scale(1.05); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
-.btn-html { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-.btn-pdf { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-.btn-excel { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-.btn-view { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: #1a1a2e; }
-
 /* === TABLEAU EDT === */
 .edt-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 10px; background-color: white; }
 .edt-table th { background-color: #0f3460 !important; color: white !important; border: 1px solid #000; padding: 8px; text-align: center; font-size: 11px; }
@@ -196,11 +175,11 @@ def map_to_slot(horaire):
         return '9h30-11h'
     elif h in ['11h-12h30']:
         return '11h-12h30'
-    elif h in ['12h30-14h', '13h-14h30']:
+    elif h in ['12h30-14h', '13h-14h30', '13h-14h30']:
         return '12h30-14h'
-    elif h in ['14h-15h30', '14h30-16h']:
+    elif h in ['14h-15h30', '14h30-16h', '14h-16h']:
         return '14h-15h30'
-    elif h in ['15h30-17h', '14h-16h']:
+    elif h in ['15h30-17h']:
         return '15h30-17h'
     return h
 
@@ -494,14 +473,13 @@ def generer_edt_excel(promo, df_promo, time_slots, days):
 
 
 def generer_edt_pdf(promo, df_promo, time_slots, days):
-    """Génère un fichier PDF pour une promotion"""
+    """Génère un fichier PDF complet avec stats, récap et tableau coloré"""
     try:
         from reportlab.lib import colors as rl_colors
         from reportlab.lib.pagesizes import A4, landscape
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import cm
-        import re
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), 
@@ -509,18 +487,135 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
                                topMargin=1*cm, bottomMargin=1*cm)
 
         styles = getSampleStyleSheet()
+        
+        # Style titre
         title_style = ParagraphStyle(
             'CustomTitle', parent=styles['Heading1'],
-            fontSize=18, textColor=rl_colors.HexColor('#0f3460'),
+            fontSize=20, textColor=rl_colors.HexColor('#0f3460'),
+            spaceAfter=16, alignment=1, fontName='Helvetica-Bold'
+        )
+        
+        # Style sous-titre
+        subtitle_style = ParagraphStyle(
+            'CustomSubtitle', parent=styles['Normal'],
+            fontSize=12, textColor=rl_colors.HexColor('#6c757d'),
             spaceAfter=20, alignment=1
+        )
+        
+        # Style section
+        section_style = ParagraphStyle(
+            'SectionTitle', parent=styles['Heading2'],
+            fontSize=14, textColor=rl_colors.HexColor('#0f3460'),
+            spaceAfter=12, spaceBefore=16, fontName='Helvetica-Bold'
         )
 
         elements = []
-        elements.append(Paragraph(f'Emploi du Temps — {promo} S2 2027', title_style))
+        
+        # === EN-TÊTE ===
+        elements.append(Paragraph(f'📅 Emploi du Temps — {promo}', title_style))
+        elements.append(Paragraph('Semestre 2 | Dimanche–Jeudi | Électrotechnique', subtitle_style))
         elements.append(Spacer(1, 0.3*cm))
 
-        data = [['Jour / Heure', '8h-9h30', '9h30-11h', '11h-12h30', '12h30-14h', '14h-15h30', '15h30-17h']]
+        # === STATS ===
+        total = len(df_promo)
+        cours_count = len(df_promo[df_promo['Type'] == 'Cours'])
+        td_count = len(df_promo[df_promo['Type'] == 'TD'])
+        tp_count = len(df_promo[df_promo['Type'] == 'TP'])
+        stage_count = len(df_promo[df_promo['Type'] == 'Stage'])
+        total_hours = sum(df_promo['Horaire'].apply(calc_hours))
 
+        stats_data = [
+            ['STATISTIQUES GÉNÉRALES'],
+            ['Séances', 'Cours', 'TD', 'TP', 'Stage', 'Total Heures'],
+            [str(total), str(cours_count), str(td_count), str(tp_count), str(stage_count), f"{total_hours:.1f}h"]
+        ]
+        stats_table = Table(stats_data, colWidths=[3.5*cm]*6)
+        stats_table.setStyle(TableStyle([
+            ('SPAN', (0, 0), (-1, 0)),
+            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1a1a2e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('BACKGROUND', (0, 1), (-1, 1), rl_colors.HexColor('#0f3460')),
+            ('TEXTCOLOR', (0, 1), (-1, 1), rl_colors.whitesmoke),
+            ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 1), (-1, 1), 9),
+            ('BACKGROUND', (0, 2), (-1, 2), rl_colors.HexColor('#f8f9fa')),
+            ('FONTSIZE', (0, 2), (-1, 2), 11),
+            ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
+            ('TEXTCOLOR', (0, 2), (-1, 2), rl_colors.HexColor('#0f3460')),
+            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#e2e8f0')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        elements.append(stats_table)
+        elements.append(Spacer(1, 0.4*cm))
+
+        # === LÉGENDE ===
+        legend_data = [['LÉGENDE:', 'Cours', 'TD', 'TP', 'Stage']]
+        legend = Table(legend_data, colWidths=[3*cm, 3*cm, 3*cm, 3*cm, 3*cm])
+        legend.setStyle(TableStyle([
+            ('SPAN', (0, 0), (0, 0)),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('BACKGROUND', (0, 0), (0, 0), rl_colors.HexColor('#1a1a2e')),
+            ('TEXTCOLOR', (0, 0), (0, 0), rl_colors.whitesmoke),
+            ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
+            ('TEXTCOLOR', (1, 0), (1, 0), rl_colors.HexColor('#1a5276')),
+            ('TEXTCOLOR', (2, 0), (2, 0), rl_colors.HexColor('#27ae60')),
+            ('TEXTCOLOR', (3, 0), (3, 0), rl_colors.HexColor('#e67e22')),
+            ('TEXTCOLOR', (4, 0), (4, 0), rl_colors.HexColor('#9b59b6')),
+            ('FONTNAME', (1, 0), (4, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#e2e8f0')),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(legend)
+        elements.append(Spacer(1, 0.4*cm))
+
+        # === RÉCAPITULATIF PAR JOUR ===
+        elements.append(Paragraph('📊 Récapitulatif par Jour', section_style))
+        
+        recap_data = [['Jour', 'Cours', 'TD', 'TP', 'Stage', 'Total', 'Heures']]
+        for day in days:
+            day_data = df_promo[df_promo['Jours'] == day]
+            c = len(day_data[day_data['Type'] == 'Cours'])
+            t = len(day_data[day_data['Type'] == 'TD'])
+            p = len(day_data[day_data['Type'] == 'TP'])
+            s = len(day_data[day_data['Type'] == 'Stage'])
+            h = sum(day_data['Horaire'].apply(calc_hours))
+            recap_data.append([day, str(c), str(t), str(p), str(s), str(c+t+p+s), f"{h:.1f}h"])
+
+        recap_table = Table(recap_data, colWidths=[3*cm, 2*cm, 2*cm, 2*cm, 2*cm, 2.5*cm, 2.5*cm])
+        recap_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#0f3460')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#e2e8f0')),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        
+        # Alternance de couleurs
+        for i in range(1, len(recap_data)):
+            if i % 2 == 0:
+                recap_table.setStyle(TableStyle([('BACKGROUND', (0, i), (-1, i), rl_colors.HexColor('#f8f9fa'))]))
+        
+        elements.append(recap_table)
+        elements.append(Spacer(1, 0.5*cm))
+
+        # === TABLEAU EDT DÉTAILLÉ ===
+        elements.append(Paragraph('📅 Emploi du Temps Détaillé', section_style))
+        
         color_map = {
             'Cours': rl_colors.HexColor('#1a5276'),
             'TD': rl_colors.HexColor('#27ae60'),
@@ -528,6 +623,15 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
             'Stage': rl_colors.HexColor('#9b59b6'),
             'Autre': rl_colors.HexColor('#7f8c8d')
         }
+        light_color_map = {
+            'Cours': rl_colors.HexColor('#d4e6f1'),
+            'TD': rl_colors.HexColor('#d5f5e3'),
+            'TP': rl_colors.HexColor('#fdebd0'),
+            'Stage': rl_colors.HexColor('#e8daef'),
+            'Autre': rl_colors.HexColor('#d5dbdb')
+        }
+
+        data = [['Jour / Heure', '8h-9h30', '9h30-11h', '11h-12h30', '12h30-14h', '14h-15h30', '15h30-17h']]
 
         for day in days:
             row = [Paragraph(f'<b>{day}</b>', styles['Normal'])]
@@ -538,10 +642,14 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
                     for _, r in slot_data.iterrows():
                         t_type = r['Type']
                         color = color_map.get(t_type, rl_colors.grey)
-                        texts.append(f"<font color='#{color.hexval()[2:]}'><b>{r['Enseignements']}</b></font><br/>({t_type}) {r['Groupe']}<br/><font size=8>{r['Lieu']} | {r['Enseignants']}</font>")
+                        texts.append(
+                            f"<font color='#{color.hexval()[2:]}'><b>{r['Enseignements']}</b></font><br/>"
+                            f"<font size=8>({t_type}) | {r['Groupe']}</font><br/>"
+                            f"<font size=7>{r['Lieu']} | {r['Enseignants']}</font>"
+                        )
                     row.append(Paragraph('<br/>'.join(texts), styles['Normal']))
                 else:
-                    row.append(Paragraph('—', styles['Normal']))
+                    row.append(Paragraph('<font color="#cbd5e1">—</font>', styles['Normal']))
             data.append(row)
 
         t = Table(data, colWidths=[2.5*cm] + [6*cm]*6)
@@ -554,6 +662,8 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
             ('FONTSIZE', (0, 0), (-1, 0), 10),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (0, -1), rl_colors.HexColor('#f1f5f9')),
+            ('TEXTCOLOR', (0, 1), (0, -1), rl_colors.HexColor('#334155')),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#e2e8f0')),
             ('LEFTPADDING', (0, 0), (-1, -1), 4),
             ('RIGHTPADDING', (0, 0), (-1, -1), 4),
@@ -562,24 +672,21 @@ def generer_edt_pdf(promo, df_promo, time_slots, days):
             ('FONTSIZE', (0, 1), (-1, -1), 7),
         ]))
 
+        # Alternance de couleurs pour les lignes
         for i in range(1, len(data)):
             if i % 2 == 0:
                 t.setStyle(TableStyle([('BACKGROUND', (1, i), (-1, i), rl_colors.HexColor('#f8f9fa'))]))
 
         elements.append(t)
-        elements.append(Spacer(1, 0.5*cm))
 
-        legend_data = [['Légende:', 'Cours', 'TD', 'TP', 'Stage'], ['', '■', '■', '■', '■']]
-        legend = Table(legend_data, colWidths=[3*cm, 3*cm, 3*cm, 3*cm, 3*cm])
-        legend.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('TEXTCOLOR', (1, 1), (1, 1), rl_colors.HexColor('#1a5276')),
-            ('TEXTCOLOR', (2, 1), (2, 1), rl_colors.HexColor('#27ae60')),
-            ('TEXTCOLOR', (3, 1), (3, 1), rl_colors.HexColor('#e67e22')),
-            ('TEXTCOLOR', (4, 1), (4, 1), rl_colors.HexColor('#9b59b6')),
-            ('FONTSIZE', (0, 1), (-1, 1), 20),
-        ]))
-        elements.append(legend)
+        # Pied de page
+        elements.append(Spacer(1, 0.5*cm))
+        footer_style = ParagraphStyle(
+            'Footer', parent=styles['Normal'],
+            fontSize=8, textColor=rl_colors.HexColor('#6c757d'),
+            alignment=1
+        )
+        elements.append(Paragraph('Plateforme de gestion des emplois du temps 2026-2027 — Département d\'Électrotechnique — UDL SBA', footer_style))
 
         doc.build(elements)
         return buffer.getvalue()
@@ -634,11 +741,11 @@ df['Slot'] = df['Horaire'].apply(map_to_slot)
 import re
 def extract_group(enseignement):
     text = str(enseignement)
-    match = re.search(r'\\(G(\\d+)\\)', text)
+    match = re.search(r'\(G(\d+)\)', text)
     if match: return f"G{match.group(1)}"
-    match = re.search(r'\\(SG(\\d+)\\)', text)
+    match = re.search(r'\(SG(\d+)\)', text)
     if match: return f"SG{match.group(1)}"
-    match = re.search(r'SG(\\d+)', text)
+    match = re.search(r'SG(\d+)', text)
     if match: return f"SG{match.group(1)}"
     return 'TOUS'
 
@@ -810,146 +917,339 @@ map_j = {normalize(j): j for j in jours_list}
 time_slots = ['8h-9h30', '9h30-11h', '11h-12h30', '12h30-14h', '14h-15h30', '15h30-17h']
 days = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi']
 
-# Promotions ELT
-elt_promos = ['L2ELT', 'L3ELT', 'ING3EI', 'ING3RSE', 'ING4', 'M1CE', 'M1ER', 'M1RE']
+# ==========================================
+# DÉTECTION DYNAMIQUE DES PROMOTIONS
+# ==========================================
+# Récupérer les promotions uniques depuis les données
+if df is not None and len(df) > 0:
+    all_promos = sorted(df['Promotion'].unique())
+else:
+    all_promos = []
+
+# Dictionnaire des noms complets (complété dynamiquement)
 promo_names = {
-    'L2ELT': 'Licence 2 Électrotechnique',
-    'L3ELT': 'Licence 3 Électrotechnique',
+    'ING1': 'ING1 Sciences et Technologies',
+    'ING2': 'ING2 Électrotechnique',
     'ING3EI': 'ING3 Électrotechnique Industrielle',
     'ING3RSE': 'ING3 Réseaux & Systèmes Électriques',
     'ING4': 'ING4 Électrotechnique',
+    'L1MCIL': 'Licence 1 MCIL',
+    'L2ELT': 'Licence 2 Électrotechnique',
+    'L2MCIL': 'Licence 2 MCIL',
+    'L3ELT': 'Licence 3 Électrotechnique',
     'M1CE': 'Master 1 Commande Électrique',
     'M1ER': 'Master 1 Énergies Renouvelables',
-    'M1RE': 'Master 1 Réseaux Électriques'
+    'M1MCIL': 'Master 1 MCIL',
+    'M1ME': 'Master 1 Machines Électriques',
+    'M1RE': 'Master 1 Réseaux Électriques',
+    'MCIL3': 'Master 3 MCIL',
 }
 
 # ==========================================
 # ESPACE ÉDITEUR AVANCÉ (ADMIN)
 # ==========================================
 if is_admin and mode_view == "✍️ Éditeur de données":
-    # ... [garder le code existant de l'éditeur] ...
-    pass
+    st.subheader("✍️ Éditeur de Données EDT")
+    st.info("🛠️ Cet espace permet de modifier directement les données de l'emploi du temps.")
+    
+    # Afficher le dataframe editable
+    edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+    
+    if st.button("💾 Sauvegarder les modifications", type="primary"):
+        try:
+            # Sauvegarder dans le fichier Excel local
+            edited_df.to_excel(NOM_FICHIER_FIXE, index=False)
+            st.success("✅ Données sauvegardées avec succès !")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erreur lors de la sauvegarde : {e}")
 
 # ==========================================
-# ESPACE PROMOTION (ADMIN) - AVEC BOUTONS TÉLÉCHARGEMENT
+# ESPACE PROMOTION (ADMIN) - 15 ONGLETS AVEC TÉLÉCHARGEMENTS
 # ==========================================
 if is_admin and mode_view == "Promotion":
-    st.subheader("📊 Emplois du Temps par Promotion - Téléchargements")
+    st.subheader(f"📊 Emplois du Temps par Promotion — {len(all_promos)} Promotions")
+    
+    if len(all_promos) == 0:
+        st.warning("Aucune promotion trouvée dans les données.")
+    else:
+        # Créer les onglets pour TOUTES les promotions détectées dynamiquement
+        tabs = st.tabs([f"🎓 {p}" for p in all_promos])
 
-    # Créer les onglets pour chaque promotion ELT
-    tabs = st.tabs([f"🎓 {p}" for p in elt_promos])
+        for idx, promo in enumerate(all_promos):
+            with tabs[idx]:
+                promo_data = df[df['Promotion'] == promo].copy()
 
-    for idx, promo in enumerate(elt_promos):
-        with tabs[idx]:
-            promo_data = df[df['Promotion'] == promo].copy()
+                if len(promo_data) == 0:
+                    st.warning(f"Aucune donnée pour {promo}")
+                    continue
 
-            if len(promo_data) == 0:
-                st.warning(f"Aucune donnée pour {promo}")
-                continue
+                # Stats
+                total = len(promo_data)
+                cours_count = len(promo_data[promo_data['Type'] == 'Cours'])
+                td_count = len(promo_data[promo_data['Type'] == 'TD'])
+                tp_count = len(promo_data[promo_data['Type'] == 'TP'])
+                stage_count = len(promo_data[promo_data['Type'] == 'Stage'])
+                total_hours = sum(promo_data['Horaire'].apply(calc_hours))
 
-            # Stats
-            total = len(promo_data)
-            cours_count = len(promo_data[promo_data['Type'] == 'Cours'])
-            td_count = len(promo_data[promo_data['Type'] == 'TD'])
-            tp_count = len(promo_data[promo_data['Type'] == 'TP'])
-            stage_count = len(promo_data[promo_data['Type'] == 'Stage'])
-            total_hours = sum(promo_data['Horaire'].apply(calc_hours))
+                # Affichage des stats avec couleurs
+                st.markdown("""
+                <style>
+                .stat-row { display: flex; gap: 10px; margin-bottom: 15px; }
+                .stat-card { flex: 1; padding: 15px; border-radius: 10px; text-align: center; color: white; font-weight: bold; }
+                .stat-cours { background: linear-gradient(135deg, #1a5276, #3B82F6); }
+                .stat-td { background: linear-gradient(135deg, #27ae60, #22c55e); }
+                .stat-tp { background: linear-gradient(135deg, #e67e22, #f59e0b); }
+                .stat-stage { background: linear-gradient(135deg, #9b59b6, #c084fc); }
+                .stat-total { background: linear-gradient(135deg, #1a1a2e, #0f3460); }
+                .stat-hours { background: linear-gradient(135deg, #b45309, #d97706); }
+                .stat-value { font-size: 1.8em; }
+                .stat-label { font-size: 0.75em; text-transform: uppercase; opacity: 0.9; }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                st.markdown(f"""
+                <div class="stat-row">
+                    <div class="stat-card stat-total"><div class="stat-value">{total}</div><div class="stat-label">Séances</div></div>
+                    <div class="stat-card stat-cours"><div class="stat-value">{cours_count}</div><div class="stat-label">Cours</div></div>
+                    <div class="stat-card stat-td"><div class="stat-value">{td_count}</div><div class="stat-label">TD</div></div>
+                    <div class="stat-card stat-tp"><div class="stat-value">{tp_count}</div><div class="stat-label">TP</div></div>
+                    <div class="stat-card stat-stage"><div class="stat-value">{stage_count}</div><div class="stat-label">Stage</div></div>
+                    <div class="stat-card stat-hours"><div class="stat-value">{total_hours:.1f}h</div><div class="stat-label">Total</div></div>
+                </div>
+                """, unsafe_allow_html=True)
 
-            # Affichage des stats
-            col1, col2, col3, col4, col5, col6 = st.columns(6)
-            col1.metric("Séances", total)
-            col2.metric("Cours", cours_count)
-            col3.metric("TD", td_count)
-            col4.metric("TP", tp_count)
-            col5.metric("Stage", stage_count)
-            col6.metric("Heures", f"{total_hours:.1f}h")
+                st.divider()
 
-            st.divider()
+                # === BOUTONS DE TÉLÉCHARGEMENT ===
+                st.markdown("### 📥 Téléchargements")
 
-            # === BOUTONS DE TÉLÉCHARGEMENT ===
-            st.markdown("### 📥 Téléchargements")
+                col_dl1, col_dl2, col_dl3 = st.columns(3)
 
-            col_dl1, col_dl2, col_dl3 = st.columns(3)
-
-            # 1. HTML
-            with col_dl1:
-                html_content = generer_edt_html(promo, promo_data, time_slots, days)
-                st.download_button(
-                    label="📄 Télécharger HTML",
-                    data=html_content,
-                    file_name=f"EDT_{promo}_S2_2027.html",
-                    mime="text/html",
-                    use_container_width=True,
-                    key=f"dl_html_{promo}"
-                )
-
-            # 2. Excel
-            with col_dl2:
-                excel_content = generer_edt_excel(promo, promo_data, time_slots, days)
-                st.download_button(
-                    label="📊 Télécharger Excel",
-                    data=excel_content,
-                    file_name=f"EDT_{promo}_S2_2027.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key=f"dl_excel_{promo}"
-                )
-
-            # 3. PDF
-            with col_dl3:
-                pdf_content = generer_edt_pdf(promo, promo_data, time_slots, days)
-                if pdf_content:
+                # 1. HTML
+                with col_dl1:
+                    html_content = generer_edt_html(promo, promo_data, time_slots, days)
                     st.download_button(
-                        label="📑 Télécharger PDF",
-                        data=pdf_content,
-                        file_name=f"EDT_{promo}_S2_2027.pdf",
-                        mime="application/pdf",
+                        label="📄 Télécharger HTML",
+                        data=html_content,
+                        file_name=f"EDT_{promo}_S2_2027.html",
+                        mime="text/html",
                         use_container_width=True,
-                        key=f"dl_pdf_{promo}"
+                        key=f"dl_html_{promo}"
                     )
 
-            st.divider()
+                # 2. Excel
+                with col_dl2:
+                    excel_content = generer_edt_excel(promo, promo_data, time_slots, days)
+                    st.download_button(
+                        label="📊 Télécharger Excel",
+                        data=excel_content,
+                        file_name=f"EDT_{promo}_S2_2027.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key=f"dl_excel_{promo}"
+                    )
 
-            # === AFFICHAGE DU TABLEAU EDT DANS STREAMLIT ===
-            st.markdown("### 📅 Aperçu de l'Emploi du Temps")
+                # 3. PDF
+                with col_dl3:
+                    pdf_content = generer_edt_pdf(promo, promo_data, time_slots, days)
+                    if pdf_content:
+                        st.download_button(
+                            label="📑 Télécharger PDF",
+                            data=pdf_content,
+                            file_name=f"EDT_{promo}_S2_2027.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key=f"dl_pdf_{promo}"
+                        )
+                    else:
+                        st.error("❌ Erreur génération PDF")
 
-            # Construire le tableau HTML pour l'affichage
-            def format_edt_cell(rows):
-                items = []
-                for _, r in rows.iterrows():
-                    color_class = get_color_class(r['Type'])
-                    items.append(f'<div class="{color_class}" style="border-radius:4px;padding:3px;margin:2px;font-size:9px;">'
-                                f'<b>{r["Enseignements"]}</b><br/>'
-                                f'{r["Type"]} | {r["Groupe"]}<br/>'
-                                f'<small>{r["Lieu"]} | {r["Enseignants"]}</small>'
-                                f'</div>')
-                return "".join(items)
+                st.divider()
 
-            grid = promo_data.groupby(['h_norm', 'j_norm']).apply(format_edt_cell, include_groups=False).unstack('j_norm')
-            grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
-            grid.index = [map_h.get(i, i) for i in grid.index]
-            grid.columns = [map_j.get(c, c) for c in grid.columns]
+                # === AFFICHAGE DU TABLEAU EDT DANS STREAMLIT ===
+                st.markdown("### 📅 Aperçu de l'Emploi du Temps")
 
-            st.write(grid.to_html(escape=False, classes='edt-table'), unsafe_allow_html=True)
+                # Construire le tableau HTML pour l'affichage
+                def format_edt_cell(rows):
+                    items = []
+                    for _, r in rows.iterrows():
+                        color_class = get_color_class(r['Type'])
+                        items.append(f'<div class="{color_class}" style="border-radius:4px;padding:3px;margin:2px;font-size:9px;">'
+                                    f'<b>{r["Enseignements"]}</b><br/>'
+                                    f'{r["Type"]} | {r["Groupe"]}<br/>'
+                                    f'<small>{r["Lieu"]} | {r["Enseignants"]}</small>'
+                                    f'</div>')
+                    return "".join(items)
 
-            # Légende des couleurs
-            st.markdown("""
-            <div style="display:flex; justify-content:center; gap:20px; margin-top:10px;">
-            <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#1a5276;border-radius:3px;"></div><span>Cours</span></div>
-            <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#27ae60;border-radius:3px;"></div><span>TD</span></div>
-            <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#e67e22;border-radius:3px;"></div><span>TP</span></div>
-            <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#9b59b6;border-radius:3px;"></div><span>Stage</span></div>
-            </div>
-            """, unsafe_allow_html=True)
+                grid = promo_data.groupby(['h_norm', 'j_norm']).apply(format_edt_cell, include_groups=False).unstack('j_norm')
+                grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
+                grid.index = [map_h.get(i, i) for i in grid.index]
+                grid.columns = [map_j.get(c, c) for c in grid.columns]
+
+                st.write(grid.to_html(escape=False, classes='edt-table'), unsafe_allow_html=True)
+
+                # Légende des couleurs
+                st.markdown("""
+                <div style="display:flex; justify-content:center; gap:20px; margin-top:10px;">
+                <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#1a5276;border-radius:3px;"></div><span>Cours</span></div>
+                <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#27ae60;border-radius:3px;"></div><span>TD</span></div>
+                <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#e67e22;border-radius:3px;"></div><span>TP</span></div>
+                <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#9b59b6;border-radius:3px;"></div><span>Stage</span></div>
+                </div>
+                """, unsafe_allow_html=True)
 
 # ==========================================
 # ESPACE ENSEIGNANT (PERSONNEL)
 # ==========================================
 elif mode_view == "Personnel" or (is_admin and mode_view == "Enseignant"):
-    # ... [garder le code existant de l'affichage individuel avec les boutons de téléchargement] ...
-    pass
+    st.subheader("👨‍🏫 Mon Emploi du Temps Personnel")
+    
+    # Déterminer le nom de l'enseignant
+    if is_admin and mode_view == "Enseignant":
+        # En mode admin, permettre la sélection d'un enseignant
+        all_teachers = sorted(df['Enseignants'].unique())
+        selected_teacher = st.selectbox("Sélectionner un enseignant", all_teachers)
+        teacher_data = df[df['Enseignants'] == selected_teacher].copy()
+        teacher_name = selected_teacher
+    else:
+        # Mode personnel
+        teacher_name = user.get('nom_officiel', '')
+        teacher_data = df[df['Enseignants'] == teacher_name].copy()
+    
+    if len(teacher_data) == 0:
+        st.info("Aucune séance trouvée pour cet enseignant.")
+    else:
+        # Stats personnelles
+        total = len(teacher_data)
+        cours_count = len(teacher_data[teacher_data['Type'] == 'Cours'])
+        td_count = len(teacher_data[teacher_data['Type'] == 'TD'])
+        tp_count = len(teacher_data[teacher_data['Type'] == 'TP'])
+        total_hours = sum(teacher_data['Horaire'].apply(calc_hours))
+        
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Séances", total)
+        col2.metric("Cours", cours_count)
+        col3.metric("TD", td_count)
+        col4.metric("TP", tp_count)
+        col5.metric("Heures", f"{total_hours:.1f}h")
+        
+        st.divider()
+        
+        # Tableau personnel
+        st.markdown("### 📅 Mon Planning")
+        
+        def format_teacher_cell(rows):
+            items = []
+            for _, r in rows.iterrows():
+                color_class = get_color_class(r['Type'])
+                items.append(f'<div class="{color_class}" style="border-radius:4px;padding:3px;margin:2px;font-size:9px;">'
+                            f'<b>{r["Enseignements"]}</b><br/>'
+                            f'{r["Type"]} | {r["Promotion"]}<br/>'
+                            f'<small>{r["Lieu"]} | {r["Groupe"]}</small>'
+                            f'</div>')
+            return "".join(items)
+        
+        grid = teacher_data.groupby(['h_norm', 'j_norm']).apply(format_teacher_cell, include_groups=False).unstack('j_norm')
+        grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
+        grid.index = [map_h.get(i, i) for i in grid.index]
+        grid.columns = [map_j.get(c, c) for c in grid.columns]
+        
+        st.write(grid.to_html(escape=False, classes='edt-table'), unsafe_allow_html=True)
+        
+        # Légende
+        st.markdown("""
+        <div style="display:flex; justify-content:center; gap:20px; margin-top:10px;">
+        <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#1a5276;border-radius:3px;"></div><span>Cours</span></div>
+        <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#27ae60;border-radius:3px;"></div><span>TD</span></div>
+        <div style="display:flex; align-items:center; gap:5px;"><div style="width:15px;height:15px;background:#e67e22;border-radius:3px;"></div><span>TP</span></div>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ==========================================
-# AUTRES ESPACES (garder le code existant)
+# ESPACE PLANNING SALLES (ADMIN)
 # ==========================================
-# ... [Surveillances, Générateur, Portail Enseignants, etc.] ...
+elif is_admin and mode_view == "🏢 Planning Salles":
+    st.subheader("🏢 Planning des Salles")
+    
+    all_rooms = sorted(df['Lieu'].unique())
+    selected_room = st.selectbox("Sélectionner une salle", all_rooms)
+    
+    room_data = df[df['Lieu'] == selected_room].copy()
+    
+    if len(room_data) == 0:
+        st.info("Aucune séance trouvée pour cette salle.")
+    else:
+        col1, col2 = st.columns(2)
+        col1.metric("Séances", len(room_data))
+        col2.metric("Heures", f"{sum(room_data['Horaire'].apply(calc_hours)):.1f}h")
+        
+        st.divider()
+        
+        def format_room_cell(rows):
+            items = []
+            for _, r in rows.iterrows():
+                color_class = get_color_class(r['Type'])
+                items.append(f'<div class="{color_class}" style="border-radius:4px;padding:3px;margin:2px;font-size:9px;">'
+                            f'<b>{r["Enseignements"]}</b><br/>'
+                            f'{r["Type"]} | {r["Promotion"]}<br/>'
+                            f'<small>{r["Enseignants"]} | {r["Groupe"]}</small>'
+                            f'</div>')
+            return "".join(items)
+        
+        grid = room_data.groupby(['h_norm', 'j_norm']).apply(format_room_cell, include_groups=False).unstack('j_norm')
+        grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
+        grid.index = [map_h.get(i, i) for i in grid.index]
+        grid.columns = [map_j.get(c, c) for c in grid.columns]
+        
+        st.write(grid.to_html(escape=False, classes='edt-table'), unsafe_allow_html=True)
+
+# ==========================================
+# ESPACE VÉRIFICATEUR DE CONFLITS (ADMIN)
+# ==========================================
+elif is_admin and mode_view == "🚩 Vérificateur de conflits":
+    st.subheader("🚩 Vérificateur de Conflits")
+    st.info("Cet outil détecte les chevauchements de séances pour les enseignants et les salles.")
+    
+    # Conflits enseignants
+    st.markdown("### 👨‍🏫 Conflits Enseignants")
+    teacher_conflicts = []
+    for teacher in df['Enseignants'].unique():
+        teacher_df = df[df['Enseignants'] == teacher]
+        conflicts = teacher_df.groupby(['Jours', 'Slot']).size()
+        conflicts = conflicts[conflicts > 1]
+        if len(conflicts) > 0:
+            for (day, slot), count in conflicts.items():
+                teacher_conflicts.append({
+                    'Enseignant': teacher,
+                    'Jour': day,
+                    'Créneau': slot,
+                    'Nombre de séances': count
+                })
+    
+    if teacher_conflicts:
+        st.warning(f"⚠️ {len(teacher_conflicts)} conflit(s) détecté(s) chez les enseignants !")
+        st.dataframe(pd.DataFrame(teacher_conflicts), use_container_width=True)
+    else:
+        st.success("✅ Aucun conflit détecté chez les enseignants.")
+    
+    st.divider()
+    
+    # Conflits salles
+    st.markdown("### 🏢 Conflits Salles")
+    room_conflicts = []
+    for room in df['Lieu'].unique():
+        room_df = df[df['Lieu'] == room]
+        conflicts = room_df.groupby(['Jours', 'Slot']).size()
+        conflicts = conflicts[conflicts > 1]
+        if len(conflicts) > 0:
+            for (day, slot), count in conflicts.items():
+                room_conflicts.append({
+                    'Salle': room,
+                    'Jour': day,
+                    'Créneau': slot,
+                    'Nombre de séances': count
+                })
+    
+    if room_conflicts:
+        st.warning(f"⚠️ {len(room_conflicts)} conflit(s) détecté(s) dans les sal
