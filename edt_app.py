@@ -20,7 +20,7 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
-    page_title="EDT UDL 2026",
+    page_title="EDT UDL 2027",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -132,8 +132,8 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- CHARGEMENT DES DONNÉES ---
-NOM_FICHIER_FIXE = "dataEDT-ELT-S2-2026.xlsx"
-NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2025-2026.xlsx"
+NOM_FICHIER_FIXE = "dataEDT-ELT-S2-2027.xlsx"
+NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
 
 df = None
 repertoire_source = {}        # Pour stocker les Emails : { "NOM": "email" }
@@ -297,7 +297,7 @@ if user is None:
 is_admin = user.get("role") == "admin"
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
-    page_title="EDT UDL 2026",
+    page_title="EDT UDL 2027",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -409,7 +409,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- CHARGEMENT DES DONNÉES ---
-NOM_FICHIER_FIXE = "dataEDT-ELT-S2-2026.xlsx"
+NOM_FICHIER_FIXE = "dataEDT-ELT-S2-2027.xlsx"
 df = None
 
 def normalize(s):
@@ -557,7 +557,7 @@ with st.sidebar:
 # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
 if is_admin and mode_view == "✍️ Éditeur de données":
     st.divider()
-    st.subheader("✍️ Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+    st.subheader("✍️ Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
 
     # 1. VÉRIFICATION DE L'EXISTENCE DE df
     if 'df' not in locals() and 'df' not in globals():
@@ -676,7 +676,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
 
    
 
-   # --- ÉDITEUR DE TABLEAU (VERSION CORRIGÉE 2026) ---
+   # --- ÉDITEUR DE TABLEAU (VERSION CORRIGÉE 2027) ---
     st.markdown("### 📝 Modification des données")
     
     # Changement de la clé pour éviter le conflit StreamlitDuplicateElementKey
@@ -863,7 +863,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
         st.download_button(
             label="📥 Télécharger le Rapport d'Erreurs Excel",
             data=buffer.getvalue(),
-            file_name=f"Rapport_Conflits_EDT_2026.xlsx",
+            file_name=f"Rapport_Conflits_EDT_2027.xlsx",
             mime="application/vnd.ms-excel",
             use_container_width=True
         ) 
@@ -879,7 +879,7 @@ with col_logo:
         st.markdown("🏛️") # Secours si le fichier est manquant
 
 with col_titre:
-    st.markdown("<h1 class='main-title' style='border-bottom: none; margin-top: 0;'>Plateforme de gestion des emplois du temps 2025-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title' style='border-bottom: none; margin-top: 0;'>Plateforme de gestion des emplois du temps 2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h1>", unsafe_allow_html=True)
 
 with col_date:
     st.markdown(f"<div class='date-badge' style='float: right;'>📅 {nom_jour_fr}<br>{date_str}</div>", unsafe_allow_html=True)
@@ -1112,7 +1112,7 @@ if df is not None:
                     st.download_button(
                         label="📥 Télécharger le fichier Excel Global",
                         data=buf.getvalue(),
-                        file_name="Bilan_Global_Charges_2026.xlsx",
+                        file_name="Bilan_Global_Charges_2027.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
@@ -1169,7 +1169,7 @@ if df is not None:
                 col_dl1.download_button(
                     label="📥 Liste (Excel)",
                     data=buf_ex.getvalue(),
-                    file_name="EDT_Individuel_2026.xlsx",
+                    file_name="EDT_Individuel_2027.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
                     key="btn_indiv_xl_final_v12"
@@ -1183,7 +1183,7 @@ if df is not None:
                     col_dl2.download_button(
                         label="🌐 Tableau (HTML)",
                         data=f"<!DOCTYPE html><html><head><meta charset='UTF-8'>{style_css_safe}</head><body>{content_html_safe}</body></html>",
-                        file_name="EDT_Individuel_2026.html",
+                        file_name="EDT_Individuel_2027.html",
                         mime="text/html",
                         use_container_width=True,
                         key="btn_indiv_html_final_v12"
@@ -1197,7 +1197,7 @@ if df is not None:
                         class INDIV_PDF(FPDF):
                             def header(self):
                                 self.set_font('Arial', 'B', 10)
-                                t = "Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+                                t = "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
                                 self.cell(0, 8, t.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
                                 self.ln(2)
                             
@@ -1322,7 +1322,7 @@ if df is not None:
                         col_dl3.download_button(
                             label="📄 Emploi du temps individuel (PDF)",
                             data=bytes(pdf.output()),
-                            file_name="EDT_Individuel_2026.pdf",
+                            file_name="EDT_Individuel_2027.pdf",
                             mime="application/pdf",
                             use_container_width=True,
                             key="btn_indiv_pdf_v12_final"
@@ -1441,7 +1441,7 @@ if df is not None:
                         <a href="#" class="btn-print" onclick="window.print();return false;">🖨️ Imprimer la page (A4 Paysage)</a>
 
                         <div class="header-box">
-                            <div class="main-title">Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</div>
+                            <div class="main-title">Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</div>
                             <div class="prof-name">Enseignant (e) : {nom_affiche}</div>
                         </div>
 
@@ -1591,7 +1591,7 @@ if df is not None:
             cp1.download_button(
                 label=f"📥 Liste {p_sel} (Excel)",
                 data=buf_p.getvalue(),
-                file_name=f"EDT_{p_sel}_2026.xlsx",
+                file_name=f"EDT_{p_sel}_2027.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 key=f"btn_xl_v8_{p_sel}" 
@@ -1604,7 +1604,7 @@ if df is not None:
             cp2.download_button(
                 label=f"🌐 Tableau {p_sel} (HTML)",
                 data=full_html_doc,
-                file_name=f"EDT_{p_sel}_2026.html",
+                file_name=f"EDT_{p_sel}_2027.html",
                 mime="text/html",
                 use_container_width=True,
                 key=f"btn_html_v8_{p_sel}"
@@ -1618,7 +1618,7 @@ if df is not None:
                 class EDT_PDF(FPDF):
                     def header(self):
                         self.set_font('Arial', 'B', 10)
-                        title = "Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+                        title = "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
                         self.cell(0, 8, title.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
                         self.ln(2)
 
@@ -1713,7 +1713,7 @@ if df is not None:
                 cp3.download_button(
                     label=f"📄 Emploi du temps {p_sel} (PDF)",
                     data=bytes(pdf_bytes),
-                    file_name=f"EDT_{p_sel}_2026.pdf",
+                    file_name=f"EDT_{p_sel}_2027.pdf",
                     mime="application/pdf",
                     use_container_width=True,
                     key=f"btn_pdf_v8_{p_sel}" 
@@ -1797,7 +1797,7 @@ if df is not None:
             cp1.download_button(
                 label=f"📥 Liste {p_sel} (Excel)",
                 data=buf_p.getvalue(),
-                file_name=f"EDT_{p_sel}_2026.xlsx",
+                file_name=f"EDT_{p_sel}_2027.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 key=f"btn_xl_{p_sel}"
@@ -1810,7 +1810,7 @@ if df is not None:
             cp2.download_button(
                 label=f"🌐 Tableau {p_sel} (HTML)",
                 data=full_html_doc,
-                file_name=f"EDT_{p_sel}_2026.html",
+                file_name=f"EDT_{p_sel}_2027.html",
                 mime="text/html",
                 use_container_width=True,
                 key=f"btn_html_{p_sel}"
@@ -1825,7 +1825,7 @@ if df is not None:
                     def header(self):
                         self.set_font('Arial', 'B', 10)
                         # Rappel du titre officiel
-                        self.cell(0, 8, "Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA", 0, 1, 'C')
+                        self.cell(0, 8, "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA", 0, 1, 'C')
                         self.ln(2)
                     def footer(self): pass
 
@@ -1914,7 +1914,7 @@ if df is not None:
                 cp3.download_button(
                     label=f"📄 Emploi du temps {p_sel} (PDF)",
                     data=bytes(pdf_bytes),
-                    file_name=f"EDT_{p_sel}_2026.pdf",
+                    file_name=f"EDT_{p_sel}_2027.pdf",
                     mime="application/pdf",
                     use_container_width=True,
                     key=f"btn_pdf_{p_sel}"
@@ -1985,7 +1985,7 @@ if df is not None:
                             </body>
                             </html>
                             """
-                            zip_file.writestr(f"EDT_{p_name}_2026.html", full_html)
+                            zip_file.writestr(f"EDT_{p_name}_2027.html", full_html)
 
                     st.success(f"✅ Pack généré ({len(promos_disponibles)} fichiers)")
                     st.download_button(
@@ -2121,7 +2121,7 @@ if df is not None:
                     st.download_button(
                         label="⬇️ Télécharger le Pack PDF (Version Corrigée)",
                         data=bytes(pdf_final),
-                        file_name="Pack_EDT_S2_2026_Lisible.pdf",
+                        file_name="Pack_EDT_S2_2027_Lisible.pdf",
                         mime="application/pdf",
                         use_container_width=True
                     )
@@ -2135,14 +2135,14 @@ if df is not None:
                     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                         # On suppose que 'df' est votre DataFrame contenant les colonnes :
                         # Enseignements, Code, Enseignants, Horaire, Jours, Lieu, Promotion
-                        df.to_excel(writer, index=False, sheet_name='EDT_S2_2026')
+                        df.to_excel(writer, index=False, sheet_name='EDT_S2_2027')
                     
                     excel_data = buffer.getvalue()
 
                     st.download_button(
                         label="⬇️ Télécharger le Pack Excel (Format .xlsx)",
                         data=excel_data,
-                        file_name="Pack_EDT_S2_2026.xlsx",
+                        file_name="Pack_EDT_S2_2027.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
@@ -2178,7 +2178,7 @@ if df is not None:
             cs1.download_button(
                 label=f"📥 Liste {s_sel} (Excel)",
                 data=buf_ex.getvalue() if 'buf_ex' in locals() else buf_s.getvalue(), # Sécurité buffer
-                file_name=f"Planning_{s_sel}_2026.xlsx",
+                file_name=f"Planning_{s_sel}_2027.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 key=f"xl_salle_{s_sel}"
@@ -2192,7 +2192,7 @@ if df is not None:
                 class SALLE_PDF(FPDF):
                     def header(self):
                         self.set_font('Arial', 'B', 10)
-                        t = "Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+                        t = "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
                         self.cell(0, 8, t.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
                         self.ln(2)
                     
@@ -2277,7 +2277,7 @@ if df is not None:
                 cs2.download_button(
                     label=f"📄 Planning {s_sel} (PDF)",
                     data=bytes(pdf.output()),
-                    file_name=f"Planning_{s_sel}_2026.pdf",
+                    file_name=f"Planning_{s_sel}_2027.pdf",
                     mime="application/pdf",
                     use_container_width=True,
                     key=f"pdf_salle_{s_sel}"
@@ -2520,7 +2520,7 @@ if df is not None:
                     st.download_button(
                         label="💾 Télécharger le Tableau des Solutions (Excel)",
                         data=buf_sol.getvalue(),
-                        file_name=f"Solutions_Conflits_EDT_S2_2026.xlsx",
+                        file_name=f"Solutions_Conflits_EDT_S2_2027.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                         type="primary"
@@ -2539,7 +2539,7 @@ if df is not None:
                 st.success("✅ Félicitations ! Aucun conflit détecté dans l'emploi du temps actuel.")
                 st.balloons()
     elif portail == "📅 Surveillances Examens":
-        FILE_S = "surveillances_2026.xlsx"
+        FILE_S = "surveillances_2027.xlsx"
         if os.path.exists(FILE_S):
             df_surv = pd.read_excel(FILE_S)
             df_surv.columns = [str(c).strip() for c in df_surv.columns]
@@ -2594,7 +2594,7 @@ if df is not None:
             else:
                 st.warning(f"⚠️ Aucune surveillance trouvée pour : {prof_sel}")
         else:
-            st.error("Le fichier 'surveillances_2026.xlsx' est absent.")
+            st.error("Le fichier 'surveillances_2027.xlsx' est absent.")
 
     elif portail == "🤖 Générateur Automatique":
         if not is_admin:
@@ -2611,7 +2611,7 @@ if df is not None:
                     st.session_state.effectifs_db = {row["Promotion"]: [int(row["Effectif Total"]), int(row["Nb de Salles"])] for _, row in edited_eff.iterrows()}
                     st.success("Mis à jour !")
 
-            SRC = "surveillances_2026.xlsx"
+            SRC = "surveillances_2027.xlsx"
             if os.path.exists(SRC):
                 df_src = pd.read_excel(SRC)
                 df_src.columns = [str(c).strip() for c in df_src.columns]
@@ -2645,7 +2645,7 @@ if df is not None:
                                         if not any(t for t in tracker if t['D']==row[C_DATE] and t['H']==row[C_HEURE] and t['N']==p):
                                             equipe.append(p); stats[p] += 1
                                             tracker.append({'D': row[C_DATE], 'H': row[C_HEURE], 'N': p})
-                                res_list.append({"Enseignements": row[C_MAT], "Code": "S2-2026", "Enseignants": " & ".join(equipe) if len(equipe) >= 2 else "⚠️ BESOIN RENFORT", "Horaire": row[C_HEURE], "Jours": row[C_DATE], "Lieu": f"Salle {s_idx}" if nb_salles > 1 else row[C_SALLE], "Promotion": f"{p_name} (S{s_idx})" if nb_salles > 1 else p_name})
+                                res_list.append({"Enseignements": row[C_MAT], "Code": "S2-2027", "Enseignants": " & ".join(equipe) if len(equipe) >= 2 else "⚠️ BESOIN RENFORT", "Horaire": row[C_HEURE], "Jours": row[C_DATE], "Lieu": f"Salle {s_idx}" if nb_salles > 1 else row[C_SALLE], "Promotion": f"{p_name} (S{s_idx})" if nb_salles > 1 else p_name})
                     st.session_state.df_genere = pd.DataFrame(res_list)
                     st.session_state.stats_charge = stats
                     st.rerun()
@@ -2654,7 +2654,7 @@ if df is not None:
                     st.dataframe(st.session_state.df_genere, use_container_width=True, hide_index=True)
                     xlsx_buf = io.BytesIO()
                     with pd.ExcelWriter(xlsx_buf, engine='xlsxwriter') as writer: st.session_state.df_genere.to_excel(writer, index=False)
-                    st.download_button("📥 TÉLÉCHARGER LE PLANNING", xlsx_buf.getvalue(), "EDT_Surveillances_2026.xlsx")
+                    st.download_button("📥 TÉLÉCHARGER LE PLANNING", xlsx_buf.getvalue(), "EDT_Surveillances_2027.xlsx")
 
     elif portail == "👥 Portail Enseignants":
         if not is_admin:
@@ -2667,7 +2667,7 @@ if df is not None:
             st.image("logo.PNG", width=80)
         with col_t:
             st.header("🏢 Répertoire et Envoi Automatisé")
-            st.write("Plateforme de gestion des emplois du temps 2025-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+            st.write("Plateforme de gestion des emplois du temps 2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
 
         # 1. RÉCUPÉRATION DES DONNÉES (Supabase + Répertoire Source Excel)
         res_auth = supabase.table("enseignants_auth").select("nom_officiel, email, last_sent").execute()
@@ -2741,7 +2741,7 @@ if df is not None:
                             nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
 
                             msg = MIMEMultipart()
-                            msg['Subject'] = f"Votre Emploi du Temps S2-2026 - {row['Enseignant']}"
+                            msg['Subject'] = f"Votre Emploi du Temps S2-2027 - {row['Enseignant']}"
                             
                             # --- CORRECTION DES EN-TÊTES ---
                             msg['From'] = f"{nom_affichage} <{expediteur_email}>"
@@ -2752,13 +2752,13 @@ if df is not None:
                             <html>
                             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                                 <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                    Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
+                                    Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
                                 </h2>
                                 
                                 <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
                                 
                                 <div style="background-color: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 15px;">
-                                    <b>📊 Récapitulatif de votre charge (S2-2026) :</b><br>
+                                    <b>📊 Récapitulatif de votre charge (S2-2027) :</b><br>
                                     <ul>
                                         <li>Nombre de Cours : <b>{nb_cours}</b></li>
                                         <li>Nombre de TD : <b>{nb_td}</b></li>
@@ -2822,7 +2822,7 @@ if df is not None:
                             part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
                             part.set_payload(buffer.read())
                             encoders.encode_base64(part)
-                            part.add_header('Content-Disposition', f'attachment; filename="EDT_S2_2026_{row["Enseignant"]}.xlsx"')
+                            part.add_header('Content-Disposition', f'attachment; filename="EDT_S2_2027_{row["Enseignant"]}.xlsx"')
                             msg.attach(part)
                             
                             server.send_message(msg)
@@ -2909,7 +2909,7 @@ def envoyer_emails(liste_destinataires, promotion_label="Individuel"):
             nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
 
             msg = MIMEMultipart()
-            msg['Subject'] = f"Votre Emploi du Temps S2-2026 - {nom_ens}"
+            msg['Subject'] = f"Votre Emploi du Temps S2-2027 - {nom_ens}"
             msg['From'] = f"Département d'Électrotechnique <{EMAIL_EXPEDITEUR}>"
             msg['To'] = email_ens
             
@@ -2919,7 +2919,7 @@ def envoyer_emails(liste_destinataires, promotion_label="Individuel"):
             <html>
             <body style="font-family: Arial, sans-serif;">
                 <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; border: 1px solid #1E3A8A;">
-                    <h2 style="color: #1E3A8A; text-align: center;">Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h2>
+                    <h2 style="color: #1E3A8A; text-align: center;">Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h2>
                     <p>Sallem M./Mme <b>{nom_ens}</b>,</p>
                     <p><b>Récapitulatif de votre charge :</b> {nb_cours} Cours, {nb_td} TD, {nb_tp} TP.</p>
                     <p style="font-weight: bold; color: #b91c1c;">Objet : Urgent : Vérification de l’emploi du temps – Semestre 2</p>
@@ -2948,7 +2948,7 @@ def envoyer_emails(liste_destinataires, promotion_label="Individuel"):
             part = MIMEBase('application', 'octet-stream')
             part.set_payload(buf.read())
             encoders.encode_base64(part)
-            part.add_header('Content-Disposition', f'attachment; filename="EDT_S2_2026_{nom_ens}.xlsx"')
+            part.add_header('Content-Disposition', f'attachment; filename="EDT_S2_2027_{nom_ens}.xlsx"')
             msg.attach(part)
             
             server.send_message(msg)
@@ -3014,7 +3014,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
         st.download_button(
             label=f"🟢 Télécharger la liste Excel ({choix_promo})",
             data=buffer,
-            file_name=f"Emails_{choix_promo}_S2_2026.xlsx",
+            file_name=f"Emails_{choix_promo}_S2_2027.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
@@ -3067,7 +3067,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
 
                             msg = MIMEMultipart()
-                            msg['Subject'] = f"Votre Emploi du Temps S2-2026 - {nom}"
+                            msg['Subject'] = f"Votre Emploi du Temps S2-2027 - {nom}"
                             msg['From'] = st.secrets["EMAIL_USER"]
                             msg['To'] = info_ens["Email"]
 
@@ -3076,13 +3076,13 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             <html>
                             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                                 <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                    Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
+                                    Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
                                 </h2>
                                 
                                 <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
                                 
                                 <div style="background-color: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 15px;">
-                                    <b>📊 Récapitulatif de votre charge (S2-2026) :</b><br>
+                                    <b>📊 Récapitulatif de votre charge (S2-2027) :</b><br>
                                     <ul>
                                         <li>Nombre de Cours : <b>{nb_cours}</b></li>
                                         <li>Nombre de TD : <b>{nb_td}</b></li>
@@ -3158,7 +3158,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             part = MIMEBase('application', 'octet-stream')
                             part.set_payload(buffer.read())
                             encoders.encode_base64(part)
-                            part.add_header('Content-Disposition', f'attachment; filename="EDT_S2_2026_{nom}.xlsx"')
+                            part.add_header('Content-Disposition', f'attachment; filename="EDT_S2_2027_{nom}.xlsx"')
                             msg.attach(part)
                             
                             # Envoi effectif
@@ -3202,7 +3202,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             df_m = df_p[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
                             
                             msg = MIMEMultipart()
-                            msg['Subject'] = f"Votre Emploi du Temps S2-2026 - {row['Enseignant']}"
+                            msg['Subject'] = f"Votre Emploi du Temps S2-2027 - {row['Enseignant']}"
                             
                             # --- MODIFICATION DES EN-TÊTES ---
                             msg['From'] = f"{nom_aff} <{exp_mail}>"
@@ -3213,7 +3213,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             <html>
                             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                                 <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                    Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
+                                    Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
                                 </h2>
                                 
                                 <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
@@ -3243,7 +3243,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                                     <p><b>Saha Ftourkoum</b></p>
                                 </div>
 
-                                <p>Voici le récapitulatif de votre emploi du temps pour le semestre 02 (S2-2026) :</p>
+                                <p>Voici le récapitulatif de votre emploi du temps pour le semestre 02 (S2-2027) :</p>
 
                                 <div style="margin: 20px 0;">
                                     {df_m.to_html(index=False, border=1, justify='center')}
@@ -3269,7 +3269,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             part = MIMEBase('application', 'octet-stream')
                             part.set_payload(buf.read())
                             encoders.encode_base64(part)
-                            part.add_header('Content-Disposition', f'attachment; filename="EDT_2026_{row["Enseignant"]}.xlsx"')
+                            part.add_header('Content-Disposition', f'attachment; filename="EDT_2027_{row["Enseignant"]}.xlsx"')
                             msg.attach(part)
                             
                             server.send_message(msg)
@@ -3428,7 +3428,7 @@ if portail == "🎓 Portail mise à jour EDT":
     st.subheader("📚 Espace mise à jour EDT")
     
     # Rappel du titre obligatoire
-    st.info("Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+    st.info("Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
 
     # --- 1. AFFICHAGE DE L'EMPLOI DU TEMPS (VUE ÉTUDIANT) ---
     st.markdown("### 📋 Consultation par Promotion")
@@ -3540,7 +3540,7 @@ from datetime import datetime
 # ==========================================
 # CONFIGURATION ET CONSTANTES
 # ==========================================
-TITRE_PLATEFORME = "Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+TITRE_PLATEFORME = "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 
 DEPARTEMENTS = [
     "Département d'Électrotechnique",
@@ -3636,7 +3636,7 @@ def generer_bordereau_iso(departement, donnees):
         
         # Premier saut vers le centre pour y écrire le code de référence
         footer_p.add_run("\t")
-        r_ref_fixe = footer_p.add_run("Réf : UDL-GEL-ER-004-2026")
+        r_ref_fixe = footer_p.add_run("Réf : UDL-GEL-ER-004-2027")
         r_ref_fixe.font.name = 'Calibri'
         r_ref_fixe.font.size = Pt(11)
         
@@ -3716,7 +3716,7 @@ def generer_bordereau_iso(departement, donnees):
     # 2. RÉFÉRENCE CHRONOLOGIQUE
     p_ref = doc.add_paragraph()
     p_ref.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    r_ref = p_ref.add_run(f"N° : {donnees['num_reference']}/ F.G.E/ V.D.E.Q.L.E/2026")
+    r_ref = p_ref.add_run(f"N° : {donnees['num_reference']}/ F.G.E/ V.D.E.Q.L.E/2027")
     r_ref.font.size = Pt(10)
     r_ref.font.name = 'Calibri'
     r_ref.bold = True
@@ -3917,7 +3917,6 @@ if doc_choisi == "Bordereau d'envoi":
                 )
             except Exception as error:
                 st.error(f"Échec de l'opération de génération : {str(error)}")
-
 
 
 
