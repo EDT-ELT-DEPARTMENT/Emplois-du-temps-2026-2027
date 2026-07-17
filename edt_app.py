@@ -409,7 +409,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- CHARGEMENT DES DONNÉES ---
-NOM_FICHIER_FIXE = "dataEDT-ELT-S2-2027.xlsx"
+NOM_FICHIER_FIXE = "dataEDT-ELT-S2-2026.xlsx"
 df = None
 
 def normalize(s):
