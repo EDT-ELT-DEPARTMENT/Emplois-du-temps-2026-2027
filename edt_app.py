@@ -896,7 +896,7 @@ with st.sidebar:
 # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
 if is_admin and mode_view == "✍️ Éditeur de données":
     st.divider()
-    st.subheader("✍️ Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+    st.subheader("✍️ Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
 
     # 1. VÉRIFICATION DE L'EXISTENCE DE df
     if 'df' not in locals() and 'df' not in globals():
@@ -1536,7 +1536,7 @@ if df is not None:
                         class INDIV_PDF(FPDF):
                             def header(self):
                                 self.set_font('Arial', 'B', 10)
-                                t = "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+                                t = "Plateforme de gestion des EDTs-Semeste 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
                                 self.cell(0, 8, t.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
                                 self.ln(2)
                             
@@ -1780,7 +1780,7 @@ if df is not None:
                         <a href="#" class="btn-print" onclick="window.print();return false;">🖨️ Imprimer la page (A4 Paysage)</a>
 
                         <div class="header-box">
-                            <div class="main-title">Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</div>
+                            <div class="main-title">Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</div>
                             <div class="prof-name">Enseignant (e) : {nom_affiche}</div>
                         </div>
 
@@ -1957,7 +1957,7 @@ if df is not None:
                 class EDT_PDF(FPDF):
                     def header(self):
                         self.set_font('Arial', 'B', 10)
-                        title = "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+                        title = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
                         self.cell(0, 8, title.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
                         self.ln(2)
 
@@ -2164,7 +2164,7 @@ if df is not None:
                     def header(self):
                         self.set_font('Arial', 'B', 10)
                         # Rappel du titre officiel
-                        self.cell(0, 8, "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA", 0, 1, 'C')
+                        self.cell(0, 8, "Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA", 0, 1, 'C')
                         self.ln(2)
                     def footer(self): pass
 
@@ -2531,7 +2531,7 @@ if df is not None:
                 class SALLE_PDF(FPDF):
                     def header(self):
                         self.set_font('Arial', 'B', 10)
-                        t = "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+                        t = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
                         self.cell(0, 8, t.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
                         self.ln(2)
                     
@@ -3108,7 +3108,7 @@ if df is not None:
                             <html>
                             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                                 <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                    Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
+                                    Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
                                 </h2>
                                 
                                 <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
@@ -3275,7 +3275,7 @@ def envoyer_emails(liste_destinataires, promotion_label="Individuel"):
             <html>
             <body style="font-family: Arial, sans-serif;">
                 <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; border: 1px solid #1E3A8A;">
-                    <h2 style="color: #1E3A8A; text-align: center;">Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h2>
+                    <h2 style="color: #1E3A8A; text-align: center;">Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h2>
                     <p>Sallem M./Mme <b>{nom_ens}</b>,</p>
                     <p><b>Récapitulatif de votre charge :</b> {nb_cours} Cours, {nb_td} TD, {nb_tp} TP.</p>
                     <p style="font-weight: bold; color: #b91c1c;">Objet : Urgent : Vérification de l’emploi du temps – Semestre 2</p>
@@ -3432,7 +3432,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             <html>
                             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                                 <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                    Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
+                                    Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
                                 </h2>
                                 
                                 <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
@@ -3569,7 +3569,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             <html>
                             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                                 <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                    Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
+                                    Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
                                 </h2>
                                 
                                 <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
@@ -3784,7 +3784,7 @@ if portail == "🎓 Portail mise à jour EDT":
     st.subheader("📚 Espace mise à jour EDT")
     
     # Rappel du titre obligatoire
-    st.info("Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+    st.info("Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
 
     # --- 1. AFFICHAGE DE L'EMPLOI DU TEMPS (VUE ÉTUDIANT) ---
     st.markdown("### 📋 Consultation par Promotion")
@@ -3896,7 +3896,7 @@ from datetime import datetime
 # ==========================================
 # CONFIGURATION ET CONSTANTES
 # ==========================================
-TITRE_PLATEFORME = "Plateforme de gestion des EDTs-S2-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+TITRE_PLATEFORME = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 
 DEPARTEMENTS = [
     "Département d'Électrotechnique",
