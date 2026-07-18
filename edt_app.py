@@ -298,7 +298,7 @@ def render_download_hub(df_global, user_data, is_admin):
 
     with col3:
         st.markdown("**🏢 Par Lieu**")
-        sel_salle = st.selectbox("Choisir salle", ["Toutes"] + salles, key="hub_salle")
+        sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", ["Toutes"] + salles, key="hub_salle")
         df_filtre_s = df_global.copy()
         if sel_salle != "Toutes":
             df_filtre_s = df_filtre_s[df_filtre_s["Lieu"] == sel_salle]
