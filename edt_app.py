@@ -297,7 +297,7 @@ def render_download_hub(df_global, user_data, is_admin):
                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="dx")
 
     with col3:
-        st.markdown("**🏢 Par Salle**")
+        st.markdown("**🏢 Par Lieu**")
         sel_salle = st.selectbox("Choisir salle", ["Toutes"] + salles, key="hub_salle")
         df_filtre_s = df_global.copy()
         if sel_salle != "Toutes":
