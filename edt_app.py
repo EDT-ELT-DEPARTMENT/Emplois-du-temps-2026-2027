@@ -254,16 +254,20 @@ def render_download_hub(df_global, user_data, is_admin):
         st.warning("Aucune donnee chargee. Verifiez votre connexion Supabase ou votre fichier Excel.")
         return
 
-    promos = sorted([p for p in df_global["Promotion"].unique() if p and p != "Non defini"])
-    profs = sorted([p for p in df_global["Enseignants"].unique() if p and p != "Non defini"])
-    salles = sorted([s for s in df_global["Lieu"].unique() if s and s != "Non defini"])
+    # Nettoyage : suppression des colonnes techniques internes pour tous les exports
+    COLONNES_CACHEES = ['h_norm', 'j_norm']
+    df_propre = df_global.drop(columns=[c for c in COLONNES_CACHEES if c in df_global.columns], errors='ignore')
+
+    promos = sorted([p for p in df_propre["Promotion"].unique() if p and p != "Non defini"])
+    profs = sorted([p for p in df_propre["Enseignants"].unique() if p and p != "Non defini"])
+    salles = sorted([s for s in df_propre["Lieu"].unique() if s and s != "Non defini"])
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.markdown("**🎓 Par Promotion**")
         sel_promo = st.selectbox("Choisir promotion", ["Toutes"] + promos, key="hub_promo")
-        df_filtre = df_global.copy()
+        df_filtre = df_propre.copy()
         if sel_promo != "Toutes":
             df_filtre = df_filtre[df_filtre["Promotion"] == sel_promo]
         c1, c2, c3 = st.columns(3)
@@ -281,7 +285,7 @@ def render_download_hub(df_global, user_data, is_admin):
     with col2:
         st.markdown("**👤 Par Enseignant**")
         sel_prof = st.selectbox("Choisir enseignant", ["Tous"] + profs, key="hub_prof")
-        df_filtre_p = df_global.copy()
+        df_filtre_p = df_propre.copy()
         if sel_prof != "Tous":
             df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
         c1, c2, c3 = st.columns(3)
@@ -299,7 +303,7 @@ def render_download_hub(df_global, user_data, is_admin):
     with col3:
         st.markdown("**🏢 Par Lieu**")
         sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", ["Toutes"] + salles, key="hub_salle")
-        df_filtre_s = df_global.copy()
+        df_filtre_s = df_propre.copy()
         if sel_salle != "Toutes":
             df_filtre_s = df_filtre_s[df_filtre_s["Lieu"] == sel_salle]
         c1, c2, c3 = st.columns(3)
@@ -318,12 +322,12 @@ def render_download_hub(df_global, user_data, is_admin):
         st.divider()
         st.markdown("**🌍 Export Global (Admin)**")
         cg1, cg2, cg3, cg4 = st.columns(4)
-        pdf_g, _ = generate_pro_pdf(df_global, "EDT GLOBAL S2-2027", "Departement d'Electrotechnique - Toutes promotions")
+        pdf_g, _ = generate_pro_pdf(df_propre, "EDT GLOBAL S2-2027", "Departement d'Electrotechnique - Toutes promotions")
         if pdf_g is not None:
             cg1.download_button("📄 PDF Global", pdf_g, "EDT_GLOBAL_S1_2027.pdf", "application/pdf", use_container_width=True)
-        html_g = generate_pro_html(df_global, "EDT Global S2-2027", "Departement d'Electrotechnique - FGE/UDL-SBA")
+        html_g = generate_pro_html(df_propre, "EDT Global S2-2027", "Departement d'Electrotechnique - FGE/UDL-SBA")
         cg2.download_button("🌐 HTML Global", html_g, "EDT_GLOBAL_S1_2027.html", "text/html", use_container_width=True)
-        xlsx_g = generate_pro_excel(df_global, "EDT Global S2-2027", "EDT_Global")
+        xlsx_g = generate_pro_excel(df_propre, "EDT Global S2-2027", "EDT_Global")
         cg3.download_button("📊 Excel Global", xlsx_g, "EDT_GLOBAL_S1_2027.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         zip_buffer = io.BytesIO()
@@ -335,7 +339,6 @@ def render_download_hub(df_global, user_data, is_admin):
         cg4.download_button("🗜️ Pack ZIP", zip_buffer.getvalue(), "Pack_EDT_GLOBAL_S1_2027.zip", "application/zip", use_container_width=True)
 
     st.divider()
-
 
 # =============================================================================
 # Masquer les éléments du menu supérieur (Share, Star, Edit, etc.)
