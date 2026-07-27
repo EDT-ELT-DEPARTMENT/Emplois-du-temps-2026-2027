@@ -303,7 +303,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
             
             infos = [
                 "Code : PPER.03",
-                "Revision : 00",
+                "Révision : 00",
                 "Date : 16/05/2026",
                 f"Pages : {self.page_no()}/{{nb}}"
             ]
@@ -546,7 +546,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
                 # Entete : X/X ou X est le nombre TOTAL de pages (ex: 115/115)
                 infos = [
                     "Code : PPER.03",
-                    "Revision : 00",
+                    "Révision : 00",
                     "Date : 16/05/2026",
                     f"Pages : {total_pages}/{total_pages}"
                 ]
