@@ -524,7 +524,6 @@ def generate_edt_tous_enseignants_pdf(df_source):
     # FONCTION FACTORISEE DE CONSTRUCTION PDF
     # ═══════════════════════════════════════════════════════════════
     def _build_pdf(total_pages=0, just_count=False):
-        """Si just_count=True, on ne retourne que le PDF pour compter les pages."""
         
         class EDTGlobalPDF(FPDF):
             def header(self):
@@ -578,7 +577,7 @@ def generate_edt_tous_enseignants_pdf(df_source):
                 self.cell(0, 10, f"Page {self.page_no()}/{pg}", 0, 0, "R")
         
         pdf = EDTGlobalPDF(orientation="L", unit="mm", format="A4")
-        pdf.set_auto_page_break(auto=False, margin=15)  # On gère les sauts manuellement
+        pdf.set_auto_page_break(auto=False, margin=15)
         
         for ens in enseignants:
             df_ens = df[df['Enseignants'] == ens].copy()
@@ -626,31 +625,24 @@ def generate_edt_tous_enseignants_pdf(df_source):
             interline = 3.2
             
             # ═══════════════════════════════════════════════════════
-            # CALCUL HAUTEURS LIGNES (anti-coupure)
+            # CALCUL HAUTEURS LIGNES (anti-coupure) - CORRIGE
             # ═══════════════════════════════════════════════════════
             row_heights = []
             for idx, (jour, row) in enumerate(grid.iterrows()):
                 max_lines = 1
                 for val in row:
                     if val and str(val).strip():
-                        txt = str(val)
+                        # ⚠️ CORRECTION : nettoyer AVANT get_string_width
+                        txt_propre = sanitize_for_pdf(str(val))
                         lines = 0
                         pdf.set_font("Arial", "", 5.5)
-                        for para in txt.split('\n'):
+                        for para in txt_propre.split('\n'):
                             w_txt = pdf.get_string_width(para)
                             lines += max(1, int(w_txt / (col_h_w - 1.5)) + 1)
                         if lines > max_lines:
                             max_lines = lines
                 h = max(7, min(max_lines * interline + 2.5, 40))
                 row_heights.append(h)
-            
-            # Vérification si tout tient sur la page
-            y_start = pdf.get_y()
-            total_table_h = sum(row_heights) + 8  # + header
-            if y_start + total_table_h > pdf.h - 15:
-                # Si trop grand, on réduit la taille de police
-                pdf.set_font("Arial", "", 5)
-                interline = 2.8
             
             # En-tetes tableau
             pdf.set_font("Arial", "B", 7)
