@@ -320,11 +320,11 @@ def render_download_hub(df_global, user_data, is_admin):
         cg1, cg2, cg3, cg4 = st.columns(4)
         pdf_g, _ = generate_pro_pdf(df_global, "EDT GLOBAL S2-2027", "Departement d'Electrotechnique - Toutes promotions")
         if pdf_g is not None:
-            cg1.download_button("📄 PDF Global", pdf_g, "EDT_GLOBAL_S2_2027.pdf", "application/pdf", use_container_width=True)
+            cg1.download_button("📄 PDF Global", pdf_g, "EDT_GLOBAL_S1_2027.pdf", "application/pdf", use_container_width=True)
         html_g = generate_pro_html(df_global, "EDT Global S2-2027", "Departement d'Electrotechnique - FGE/UDL-SBA")
-        cg2.download_button("🌐 HTML Global", html_g, "EDT_GLOBAL_S2_2027.html", "text/html", use_container_width=True)
+        cg2.download_button("🌐 HTML Global", html_g, "EDT_GLOBAL_S1_2027.html", "text/html", use_container_width=True)
         xlsx_g = generate_pro_excel(df_global, "EDT Global S2-2027", "EDT_Global")
-        cg3.download_button("📊 Excel Global", xlsx_g, "EDT_GLOBAL_S2_2027.xlsx",
+        cg3.download_button("📊 Excel Global", xlsx_g, "EDT_GLOBAL_S1_2027.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -332,7 +332,7 @@ def render_download_hub(df_global, user_data, is_admin):
                 zf.writestr("EDT_GLOBAL.pdf", pdf_g)
             zf.writestr("EDT_GLOBAL.html", html_g)
             zf.writestr("EDT_GLOBAL.xlsx", xlsx_g)
-        cg4.download_button("🗜️ Pack ZIP", zip_buffer.getvalue(), "Pack_EDT_GLOBAL_S2_2027.zip", "application/zip", use_container_width=True)
+        cg4.download_button("🗜️ Pack ZIP", zip_buffer.getvalue(), "Pack_EDT_GLOBAL_S1_2027.zip", "application/zip", use_container_width=True)
 
     st.divider()
 
@@ -2460,7 +2460,7 @@ if df is not None:
                     st.download_button(
                         label="⬇️ Télécharger le Pack PDF (Version Corrigée)",
                         data=bytes(pdf_final),
-                        file_name="Pack_EDT_S2_2027_Lisible.pdf",
+                        file_name="Pack_EDT_S1_2027_Lisible.pdf",
                         mime="application/pdf",
                         use_container_width=True
                     )
@@ -2474,14 +2474,14 @@ if df is not None:
                     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                         # On suppose que 'df' est votre DataFrame contenant les colonnes :
                         # Enseignements, Code, Enseignants, Horaire, Jours, Lieu, Promotion
-                        df.to_excel(writer, index=False, sheet_name='EDT_S2_2027')
+                        df.to_excel(writer, index=False, sheet_name='EDT_S1_2027')
                     
                     excel_data = buffer.getvalue()
 
                     st.download_button(
                         label="⬇️ Télécharger le Pack Excel (Format .xlsx)",
                         data=excel_data,
-                        file_name="Pack_EDT_S2_2027.xlsx",
+                        file_name="Pack_EDT_S1_2027.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
@@ -2859,7 +2859,7 @@ if df is not None:
                     st.download_button(
                         label="💾 Télécharger le Tableau des Solutions (Excel)",
                         data=buf_sol.getvalue(),
-                        file_name=f"Solutions_Conflits_EDT_S2_2027.xlsx",
+                        file_name=f"Solutions_Conflits_EDT_S1_2027.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                         type="primary"
@@ -3178,7 +3178,7 @@ if df is not None:
                             part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
                             part.set_payload(buffer.read())
                             encoders.encode_base64(part)
-                            part.add_header('Content-Disposition', f'attachment; filename="EDT_S2_2027_{row["Enseignant"]}.xlsx"')
+                            part.add_header('Content-Disposition', f'attachment; filename="EDT_S1_2027_{row["Enseignant"]}.xlsx"')
                             msg.attach(part)
                             
                             server.send_message(msg)
@@ -3304,7 +3304,7 @@ def envoyer_emails(liste_destinataires, promotion_label="Individuel"):
             part = MIMEBase('application', 'octet-stream')
             part.set_payload(buf.read())
             encoders.encode_base64(part)
-            part.add_header('Content-Disposition', f'attachment; filename="EDT_S2_2027_{nom_ens}.xlsx"')
+            part.add_header('Content-Disposition', f'attachment; filename="EDT_S1_2027_{nom_ens}.xlsx"')
             msg.attach(part)
             
             server.send_message(msg)
@@ -3370,7 +3370,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
         st.download_button(
             label=f"🟢 Télécharger la liste Excel ({choix_promo})",
             data=buffer,
-            file_name=f"Emails_{choix_promo}_S2_2027.xlsx",
+            file_name=f"Emails_{choix_promo}_S1_2027.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
@@ -3514,7 +3514,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             part = MIMEBase('application', 'octet-stream')
                             part.set_payload(buffer.read())
                             encoders.encode_base64(part)
-                            part.add_header('Content-Disposition', f'attachment; filename="EDT_S2_2027_{nom}.xlsx"')
+                            part.add_header('Content-Disposition', f'attachment; filename="EDT_S1_2027_{nom}.xlsx"')
                             msg.attach(part)
                             
                             # Envoi effectif
