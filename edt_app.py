@@ -51,7 +51,7 @@ def generate_pro_pdf(df_source, title, subtitle="", orientation="L"):
         def header(self):
             self.set_font('Arial', 'B', 9)
             self.set_text_color(30, 58, 138)
-            header_text = sanitize_for_pdf("Plateforme de gestion des EDTs-Semestre 01_2026-2027 - Departement d'Electrotechnique - FGE/UDL-SBA")
+            header_text = sanitize_for_pdf("Plateforme de gestion des EDTs-Semestre 01_2026-2027 - Département d'Electrotechnique - FGE/UDL-SBA")
             self.cell(0, 6, header_text, 0, 1, 'C')
             self.set_draw_color(212, 175, 55)
             self.line(10, self.get_y(), self.w - 10, self.get_y())
