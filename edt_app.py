@@ -593,16 +593,17 @@ def generate_edt_tous_enseignants_pdf(df_source):
     pdf.alias_nb_pages()  # Active la pagination X/total
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Boucle sur chaque enseignant
+    # ═══════════════════════════════════════════════════════════════
+    # BOUCLE SUR CHAQUE ENSEIGNANT - CORRECTION : add_page() pour TOUS
+    # ═══════════════════════════════════════════════════════════════
     for idx_ens, ens in enumerate(enseignants):
         df_ens = df[df['Enseignants'] == ens].copy()
         
         if df_ens.empty:
             continue
         
-        # Nouvelle page pour chaque enseignant (sauf le premier)
-        if idx_ens > 0:
-            pdf.add_page()
+        # ⚠️ CORRECTION CRITIQUE : add_page() pour chaque enseignant, y compris le premier
+        pdf.add_page()
         
         # Construction de la grille
         grouped = df_ens.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
