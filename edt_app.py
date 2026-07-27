@@ -3833,7 +3833,8 @@ if is_admin:
     # SECTION IMPORT EXCEL
     # ═══════════════════════════════════════════════════════════════
     # ═══════════════════════════════════════════════════════════════
-    # SECTION IMPORT EXCEL - CORRIGÉE
+    # ═══════════════════════════════════════════════════════════════
+    # SECTION IMPORT EXCEL - CORRIGÉE (sans conflit session_state)
     # ═══════════════════════════════════════════════════════════════
     with st.expander("📥 Importer des données depuis un fichier Excel", expanded=False):
         st.markdown("**Format attendu :** `Enseignements | Code | Enseignants | Horaire | Jours | Lieu | Promotion`")
@@ -3871,14 +3872,12 @@ if is_admin:
                     st.dataframe(df_import, use_container_width=True)
                     
                     # Choix du mode d'intégration
+                    # ⚠️ NE PAS faire st.session_state['mode_import'] = ... car key="mode_import" est déjà utilisé par le widget
                     mode_import = st.radio(
                         "Mode d'intégration :",
                         options=["➕ Ajouter (fusionner avec l'existant)", "🔄 Remplacer (supprimer l'ancien pour cette promotion)"],
                         key="mode_import"
                     )
-                    
-                    # Stockage dans le session state pour fiabilité au clic
-                    st.session_state['mode_import'] = mode_import
                     
                     # Sélection de la promotion cible pour le remplacement
                     promo_cible = None
@@ -3890,18 +3889,19 @@ if is_admin:
                             options=promos_import,
                             key="promo_remplacement"
                         )
-                        st.session_state['promo_cible'] = str(promo_cible).strip()
+                        # Stockage sous une clé DIFFÉRENTE du widget pour éviter le conflit
+                        st.session_state['promo_cible_import'] = str(promo_cible).strip()
                         st.warning(f"🗑️ **Mode Remplacer actif** : les anciennes lignes de la promotion **{promo_cible}** seront supprimées avant l'ajout.")
                     else:
-                        st.session_state['promo_cible'] = None
+                        st.session_state['promo_cible_import'] = None
                         st.info("➕ **Mode Ajouter actif** : les nouvelles lignes seront fusionnées avec les existantes.")
                     
                     # Bouton d'intégration
                     if st.button("💾 Intégrer les données importées", key="btn_integrer"):
                         try:
-                            # Récupération fiable depuis le session state
+                            # Récupération fiable : mode_import vient du widget, promo_cible du session_state
                             current_mode = st.session_state.get('mode_import', mode_import)
-                            current_promo = st.session_state.get('promo_cible')
+                            current_promo = st.session_state.get('promo_cible_import')
                             
                             # Chargement du fichier maître (création si inexistant)
                             if os.path.exists(NOM_FICHIER_FIXE):
