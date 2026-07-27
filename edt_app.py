@@ -240,7 +240,46 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     
     if df_source is None or df_source.empty:
         return None, "Aucune donnee"
-    
+    # ═══════════════════════════════════════════════════════════════
+    # CLASSE PDF AVEC EN-TETE PPER.03
+    # ═══════════════════════════════════════════════════════════════
+    class EDTIndivPDF(FPDF):
+        def header(self):
+            # --- COLONNE 1 : LOGO ---
+            if os.path.exists("logo.PNG"):
+                self.image("logo.PNG", x=10, y=8, w=16)
+            else:
+                self.set_xy(10, 8)
+                self.set_font('Arial', 'I', 7)
+                self.cell(16, 12, "[LOGO]", 0, 0, "C")
+            
+            # --- COLONNE 2 : TITRE CENTRE ---
+            self.set_xy(35, 9)
+            self.set_font('Arial', 'B', 11)
+            self.cell(0, 7, "UNIVERSITE DJILLALI LIABES", 0, 2, "C")
+            self.set_font('Arial', '', 10)
+            self.cell(0, 6, "Sidi Bel Abbes", 0, 2, "C")
+            
+            # --- COLONNE 3 : BLOC INFO DROITE ---
+            self.set_xy(self.w - 70, 9)
+            self.set_font('Arial', '', 9)
+            self.cell(60, 5.5, "Code : PPER.03", 0, 2, "R")
+            self.cell(60, 5.5, "Revision : 00", 0, 2, "R")
+            self.cell(60, 5.5, "Date : 16/05/2026", 0, 2, "R")
+            # {nb} sera remplace automatiquement par le nombre total de pages
+            self.cell(60, 5.5, f"Pages : {self.page_no()}/{{nb}}", 0, 2, "R")
+            
+            # Ligne de separation doree
+            self.set_draw_color(212, 175, 55)
+            self.set_line_width(0.5)
+            self.line(10, 30, self.w - 10, 30)
+            self.ln(10)
+        
+        def footer(self):
+            self.set_y(-12)
+            self.set_font('Arial', 'I', 7)
+            self.set_text_color(128, 128, 128)
+            self.cell(0, 10, sanitize_for_pdf(f"Document genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"), 0, 0, "C")
     # Ordres de reference
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     horaires_ordre = [
