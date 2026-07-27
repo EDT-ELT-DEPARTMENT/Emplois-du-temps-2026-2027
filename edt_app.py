@@ -3833,8 +3833,7 @@ if is_admin:
     # SECTION IMPORT EXCEL
     # ═══════════════════════════════════════════════════════════════
     # ═══════════════════════════════════════════════════════════════
-    # ═══════════════════════════════════════════════════════════════
-    # SECTION IMPORT EXCEL - CORRIGÉE (sans conflit session_state)
+    # SECTION IMPORT EXCEL - CORRIGÉE (avec "Remplacer tout" par enseignant)
     # ═══════════════════════════════════════════════════════════════
     with st.expander("📥 Importer des données depuis un fichier Excel", expanded=False):
         st.markdown("**Format attendu :** `Enseignements | Code | Enseignants | Horaire | Jours | Lieu | Promotion`")
@@ -3872,7 +3871,6 @@ if is_admin:
                     st.dataframe(df_import, use_container_width=True)
                     
                     # Choix du mode d'intégration
-                    # ⚠️ NE PAS faire st.session_state['mode_import'] = ... car key="mode_import" est déjà utilisé par le widget
                     mode_import = st.radio(
                         "Mode d'intégration :",
                         options=["➕ Ajouter (fusionner avec l'existant)", "🔄 Remplacer (supprimer l'ancien pour cette promotion)"],
@@ -3881,17 +3879,30 @@ if is_admin:
                     
                     # Sélection de la promotion cible pour le remplacement
                     promo_cible = None
+                    
                     if "Remplacer" in mode_import:
-                        # Conversion explicite en string pour éviter les conflits int/str
                         promos_import = sorted([str(p) for p in df_import['Promotion'].unique()])
+                        
+                        # ═══════════════════════════════════════════════════════
+                        # NOUVEAUTÉ : Option "Remplacer tout" par enseignant
+                        # ═══════════════════════════════════════════════════════
+                        options_promo = promos_import.copy()
+                        if enseignant_filtre != "Tous les enseignants":
+                            options_promo.insert(0, f"🗑️ TOUTES LES LIGNES DE {enseignant_filtre}")
+                        
                         promo_cible = st.selectbox(
                             "Promotion à remplacer :",
-                            options=promos_import,
+                            options=options_promo,
                             key="promo_remplacement"
                         )
-                        # Stockage sous une clé DIFFÉRENTE du widget pour éviter le conflit
-                        st.session_state['promo_cible_import'] = str(promo_cible).strip()
-                        st.warning(f"🗑️ **Mode Remplacer actif** : les anciennes lignes de la promotion **{promo_cible}** seront supprimées avant l'ajout.")
+                        
+                        # Détection du mode "Tout remplacer"
+                        if enseignant_filtre != "Tous les enseignants" and isinstance(promo_cible, str) and promo_cible.startswith("🗑️ TOUTES"):
+                            st.session_state['promo_cible_import'] = "TOUT_ENSEIGNANT"
+                            st.warning(f"🗑️ **Mode Remplacer TOUT actif** : toutes les lignes de **{enseignant_filtre}** seront supprimées avant l'ajout.")
+                        else:
+                            st.session_state['promo_cible_import'] = str(promo_cible).strip()
+                            st.warning(f"🗑️ **Mode Remplacer actif** : les anciennes lignes de la promotion **{promo_cible}** seront supprimées avant l'ajout.")
                     else:
                         st.session_state['promo_cible_import'] = None
                         st.info("➕ **Mode Ajouter actif** : les nouvelles lignes seront fusionnées avec les existantes.")
@@ -3899,7 +3910,7 @@ if is_admin:
                     # Bouton d'intégration
                     if st.button("💾 Intégrer les données importées", key="btn_integrer"):
                         try:
-                            # Récupération fiable : mode_import vient du widget, promo_cible du session_state
+                            # Récupération fiable depuis le session state
                             current_mode = st.session_state.get('mode_import', mode_import)
                             current_promo = st.session_state.get('promo_cible_import')
                             
@@ -3917,21 +3928,35 @@ if is_admin:
                             # ═══════════════════════════════════════════════════════
                             if 'Promotion' in df_master.columns:
                                 df_master['Promotion'] = df_master['Promotion'].astype(str).str.strip()
+                            if 'Enseignants' in df_master.columns:
+                                df_master['Enseignants'] = df_master['Enseignants'].astype(str).str.strip()
                             df_import['Promotion'] = df_import['Promotion'].astype(str).str.strip()
+                            df_import['Enseignants'] = df_import['Enseignants'].astype(str).str.strip()
                             
                             lignes_avant = len(df_master)
                             lignes_supprimees = 0
                             
                             if "Remplacer" in current_mode and current_promo is not None:
-                                # MODE REMPLACER : suppression stricte de la promotion cible
-                                masque_suppr = df_master['Promotion'] == str(current_promo).strip()
-                                lignes_supprimees = int(masque_suppr.sum())
-                                
-                                if lignes_supprimees > 0:
-                                    df_master = df_master[~masque_suppr].copy()
-                                    st.info(f"🗑️ {lignes_supprimees} ligne(s) de la promotion '{current_promo}' supprimée(s).")
+                                if current_promo == "TOUT_ENSEIGNANT":
+                                    # MODE REMPLACER TOUT : suppression par enseignant
+                                    masque_suppr = df_master['Enseignants'] == str(enseignant_filtre).strip()
+                                    lignes_supprimees = int(masque_suppr.sum())
+                                    
+                                    if lignes_supprimees > 0:
+                                        df_master = df_master[~masque_suppr].copy()
+                                        st.info(f"🗑️ {lignes_supprimees} ligne(s) de l'enseignant '{enseignant_filtre}' supprimée(s).")
+                                    else:
+                                        st.warning(f"⚠️ Aucune ligne trouvée pour l'enseignant '{enseignant_filtre}' dans le fichier actuel.")
                                 else:
-                                    st.warning(f"⚠️ Aucune ligne trouvée pour la promotion '{current_promo}' dans le fichier actuel.")
+                                    # MODE REMPLACER PROMOTION : suppression par promotion
+                                    masque_suppr = df_master['Promotion'] == str(current_promo).strip()
+                                    lignes_supprimees = int(masque_suppr.sum())
+                                    
+                                    if lignes_supprimees > 0:
+                                        df_master = df_master[~masque_suppr].copy()
+                                        st.info(f"🗑️ {lignes_supprimees} ligne(s) de la promotion '{current_promo}' supprimée(s).")
+                                    else:
+                                        st.warning(f"⚠️ Aucune ligne trouvée pour la promotion '{current_promo}' dans le fichier actuel.")
                             
                             # Ajout des nouvelles lignes (dans les deux modes)
                             df_final = pd.concat([df_master, df_import], ignore_index=True)
