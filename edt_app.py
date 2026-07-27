@@ -677,13 +677,13 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
     """Genere un PDF unique avec l'EDT de TOUTES les promotions (en-tete PPER.03 + pagination X/Y)."""
     try:
         from fpdf import FPDF
+        import math
     except ImportError:
         return None, "fpdf non installe"
     
     if df_source is None or df_source.empty:
         return None, "Aucune donnee"
     
-    # Dimensions identiques a l'en-tete PPER.03 standard
     W_LOGO = 1.19 * 25.4
     W_MILIEU = 3.70 * 25.4
     W_INFO = 1.40 * 25.4
@@ -810,8 +810,8 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
             pdf.set_text_color(100, 100, 100)
             pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
             pdf.ln(3)
-                        
-            if grid.empty:
+            
+            if grid.empty or (len(grid.columns) == 1 and grid.columns[0] == "Aucun"):
                 pdf.set_font("Arial", "", 10)
                 pdf.cell(0, 10, "Aucun cours programme.", 0, 1, "C")
                 continue
@@ -820,8 +820,12 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
             page_w = pdf.w - 20
             col_jour_w = 22
             col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
-            interline = 3.2
+            interline = 3.0
+            margin_h = 3.0
+            padding_v = 2.5
             
+            # === CALCUL ROBUSTE DES HAUTEURS ===
+            pdf.set_font("Arial", "", 5.5)
             row_heights = []
             for _, row in grid.iterrows():
                 max_lines = 1
@@ -829,14 +833,18 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                     if val and str(val).strip():
                         txt_propre = sanitize_for_pdf(str(val))
                         lines = 0
-                        pdf.set_font("Arial", "", 5.5)
                         for para in txt_propre.split('\n'):
                             w_txt = pdf.get_string_width(para)
-                            lines += max(1, int(w_txt / (col_h_w - 1.5)) + 1)
+                            if w_txt == 0:
+                                lines += 1
+                            else:
+                                lines += max(1, math.ceil(w_txt / (col_h_w - margin_h)))
                         if lines > max_lines:
                             max_lines = lines
-                row_heights.append(max(7, min(max_lines * interline + 2.5, 40)))
+                h_needed = max_lines * interline + padding_v * 2
+                row_heights.append(max(10, min(h_needed, 55)))
             
+            # === EN-TETE DU TABLEAU ===
             pdf.set_font("Arial", "B", 7)
             pdf.set_fill_color(30, 58, 138)
             pdf.set_text_color(255, 255, 255)
@@ -848,14 +856,13 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                 pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
             pdf.ln()
             
+            # === DONNEES DU TABLEAU ===
             pdf.set_text_color(0, 0, 0)
             for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
-                if idx % 2 == 0:
-                    pdf.set_fill_color(248, 250, 252)
-                else:
-                    pdf.set_fill_color(255, 255, 255)
+                bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
                 
                 pdf.set_font("Arial", "B", 7)
+                pdf.set_fill_color(*bg_color)
                 pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
                 
                 pdf.set_font("Arial", "", 5.5)
@@ -872,25 +879,35 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                         elif "TP" in raw_up:
                             pdf.set_fill_color(255, 235, 235)
                         else:
-                            pdf.set_fill_color(248, 250, 252) if idx % 2 == 0 else pdf.set_fill_color(255, 255, 255)
+                            pdf.set_fill_color(*bg_color)
+                    else:
+                        pdf.set_fill_color(*bg_color)
+                    
+                    pdf.rect(x, y, col_h_w, row_h, 'FD')
+                    
+                    if cell_text.strip():
+                        n_lines = 0
+                        for para in cell_text.split('\n'):
+                            w_txt = pdf.get_string_width(para)
+                            if w_txt == 0:
+                                n_lines += 1
+                            else:
+                                n_lines += max(1, math.ceil(w_txt / (col_h_w - margin_h)))
+                        text_block_h = n_lines * interline
+                        offset_y = (row_h - text_block_h) / 2
                         
-                        pdf.rect(x, y, col_h_w, row_h, 'FD')
-                        pdf.set_xy(x + 0.8, y + 1)
-                        pdf.multi_cell(col_h_w - 1.6, interline, cell_text, 0, "L")
+                        pdf.set_xy(x + margin_h/2, y + max(offset_y, 1))
+                        pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
                         pdf.set_xy(x + col_h_w, y)
                     else:
-                        pdf.set_fill_color(248, 250, 252) if idx % 2 == 0 else pdf.set_fill_color(255, 255, 255)
-                        pdf.rect(x, y, col_h_w, row_h, 'FD')
                         pdf.set_xy(x + col_h_w, y)
                 pdf.ln(row_h)
         
         return pdf
     
-    # PASSE 1 : Comptage silencieux
     pdf_count = _build_pdf(total_pages=0, show_progress=False)
     total_pages = pdf_count.page_no()
     
-    # PASSE 2 : Generation finale avec bonne pagination
     if progress_bar is not None:
         progress_bar.progress(0, text=f"Generation finale sur {total_pages} pages...")
     
