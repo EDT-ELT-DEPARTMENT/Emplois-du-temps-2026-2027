@@ -835,9 +835,11 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                 grid.index = [map_j.get(i, i) for i in grid.index]
                 grid.columns = [map_h.get(c, c) for c in grid.columns]
             
-            draw_title(pdf, promo)
-            
+            # === CAS VIDE : titre seul ===
             if grid.empty or (len(grid.columns) == 1 and grid.columns[0] == "Aucun"):
+                if pdf.get_y() + 16 > pdf.h - MARGE_BAS:
+                    pdf.add_page()
+                draw_title(pdf, promo)
                 pdf.set_font("Arial", "", 10)
                 pdf.cell(0, 10, "Aucun cours programme.", 0, 1, "C")
                 continue
@@ -870,16 +872,13 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                 h_needed = max_lines * interline + padding_v * 2
                 row_heights.append(max(10, min(h_needed, 55)))
             
-            # === VERIFICATION TITRE + EN-TETE TABLEAU ===
+            # === VERIFICATION PLACE POUR TITRE + HEADER + 1ERE LIGNE ===
             title_h = 8 + 5 + 3
             header_h = 8
-            if pdf.get_y() + title_h + header_h > pdf.h - MARGE_BAS:
+            if pdf.get_y() + title_h + header_h + row_heights[0] > pdf.h - MARGE_BAS:
                 pdf.add_page()
-            draw_title(pdf, promo)
             
-            if pdf.get_y() + header_h > pdf.h - MARGE_BAS:
-                pdf.add_page()
-                draw_title(pdf, promo)
+            draw_title(pdf, promo)
             draw_table_header(pdf, grid, col_jour_w, col_h_w)
             
             # === DONNEES DU TABLEAU AVEC SAUT DE PAGE LIGNE PAR LIGNE ===
