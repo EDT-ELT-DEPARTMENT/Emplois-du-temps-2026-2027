@@ -231,7 +231,162 @@ def generate_pro_excel(df_source, title, sheet_name="Donnees"):
     buffer.seek(0)
     return buffer.getvalue()
 
-
+def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
+    """Genere un PDF individuel avec Jours en lignes et Horaires en colonnes."""
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return None, "fpdf non installe"
+    
+    if df_source is None or df_source.empty:
+        return None, "Aucune donnee"
+    
+    # Ordres de reference
+    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+    horaires_ordre = [
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
+        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
+        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+    ]
+    
+    def norm(x):
+        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
+            return "vide"
+        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
+        s = s.replace(":00", "").replace("h00", "h")
+        return s
+    
+    map_j = {norm(j): j for j in jours_ordre}
+    map_h = {norm(h): h for h in horaires_ordre}
+    
+    df = df_source.copy()
+    df['Jours_Norm'] = df['Jours'].apply(norm)
+    df['Horaire_Norm'] = df['Horaire'].apply(norm)
+    
+    def format_cell(rows):
+        items = []
+        for _, r in rows.iterrows():
+            code_up = str(r.get('Code', '')).upper()
+            if 'COURS' in code_up:
+                nat = '📘'
+            elif 'TD' in code_up:
+                nat = '📗'
+            else:
+                nat = '🔴'
+            txt = f"{nat} {r.get('Enseignements', '')}\n({r.get('Code', '')})\n{r.get('Lieu', '')}\n{r.get('Promotion', '')}"
+            items.append(txt)
+        return "\n".join(items)
+    
+    # Pivot : Jours en lignes, Horaires en colonnes
+    grouped = df.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+    if grouped.empty:
+        grid = pd.DataFrame(index=[norm(j) for j in jours_ordre], columns=[norm(h) for h in horaires_ordre]).fillna("")
+    else:
+        grid = grouped.unstack(fill_value="")
+    
+    # Reordonner
+    jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
+    horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
+    
+    if not jours_present or not horaires_present:
+        grid = pd.DataFrame(index=["Aucun"], columns=["Aucun"]).fillna("Aucun cours")
+    else:
+        grid = grid.reindex(index=jours_present, columns=horaires_present)
+        grid.index = [map_j.get(i, i) for i in grid.index]
+        grid.columns = [map_h.get(c, c) for c in grid.columns]
+    
+    # PDF
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+    
+    # Header
+    pdf.set_font("Arial", "B", 11)
+    pdf.set_text_color(30, 58, 138)
+    pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
+    pdf.set_font("Arial", "I", 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+    pdf.ln(3)
+    
+    if grid.empty or (grid.shape[0] == 1 and grid.shape[1] == 1):
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 10, "Aucun cours programme pour cet enseignant.", 0, 1, "C")
+        return bytes(pdf.output()), None
+    
+    n_cols = len(grid.columns)
+    page_w = pdf.w - 16
+    col_jour_w = 22
+    col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
+    
+    # En-tetes
+    pdf.set_font("Arial", "B", 7)
+    pdf.set_fill_color(30, 58, 138)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+    for h in grid.columns:
+        h_txt = sanitize_for_pdf(str(h))
+        if len(h_txt) > 12:
+            h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+        pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+    pdf.ln()
+    
+    # Donnees
+    pdf.set_text_color(0, 0, 0)
+    
+    for idx, (jour, row) in enumerate(grid.iterrows()):
+        # Couleur alternee
+        if idx % 2 == 0:
+            pdf.set_fill_color(248, 250, 252)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+        
+        # Calcul hauteur
+        max_lines = 1
+        for val in row:
+            if val and str(val).strip():
+                lines = str(val).count('\n') + 1
+                if lines > max_lines:
+                    max_lines = lines
+        row_h = max(7, min(max_lines * 3.8, 35))
+        
+        # Cellule Jour
+        pdf.set_font("Arial", "B", 7)
+        pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
+        
+        # Cellules horaires
+        pdf.set_font("Arial", "", 5.5)
+        for val in row:
+            cell_text = sanitize_for_pdf(str(val)) if val else ""
+            
+            x, y = pdf.get_x(), pdf.get_y()
+            pdf.rect(x, y, col_h_w, row_h, 'FD')
+            
+            if cell_text.strip():
+                raw_up = str(val).upper()
+                if "COURS" in raw_up:
+                    pdf.set_fill_color(225, 238, 255)
+                elif "TD" in raw_up:
+                    pdf.set_fill_color(232, 252, 235)
+                elif "TP" in raw_up:
+                    pdf.set_fill_color(255, 235, 235)
+                else:
+                    pdf.set_fill_color(248, 250, 252) if idx % 2 == 0 else pdf.set_fill_color(255, 255, 255)
+                
+                pdf.rect(x, y, col_h_w, row_h, 'FD')
+                pdf.set_xy(x + 0.5, y + 0.8)
+                pdf.multi_cell(col_h_w - 1, 3.2, cell_text, 0, "L")
+                pdf.set_xy(x + col_h_w, y)
+            else:
+                pdf.cell(col_h_w, row_h, "", 1, 0, "C", True)
+        pdf.ln(row_h)
+    
+    pdf.ln(3)
+    pdf.set_font("Arial", "I", 7)
+    pdf.set_text_color(128, 128, 128)
+    pdf.cell(0, 5, sanitize_for_pdf(f"Document genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"), 0, 0, "R")
+    
+    return bytes(pdf.output()), None
 def render_download_hub(df_global, user_data, is_admin):
     """Affiche un hub de telechargement rapide en haut de page."""
     st.markdown("""
@@ -283,17 +438,25 @@ def render_download_hub(df_global, user_data, is_admin):
                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
     with col2:
+        
         st.markdown("**👤 Par Enseignant**")
         sel_prof = st.selectbox("Choisir enseignant", ["Tous"] + profs, key="hub_prof")
         df_filtre_p = df_propre.copy()
         if sel_prof != "Tous":
             df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
         c1, c2, c3 = st.columns(3)
-        pdf_data_p, _ = generate_pro_pdf(df_filtre_p, f"Emploi du temps individuel de {sel_prof}", "Semestre 01")
+        
+        # PDF : format classique EDT individuel (Jours en lignes, Horaires en colonnes)
+        if sel_prof != "Tous":
+            pdf_data_p, _ = generate_edt_individuel_pdf_classique(df_filtre_p, sel_prof)
+        else:
+            pdf_data_p, _ = generate_pro_pdf(df_filtre_p, "EDT - Tous les enseignants", "Export global")
+            
         if pdf_data_p is not None:
             c1.download_button("📄 PDF", pdf_data_p, f"EDT_{sel_prof}_2027.pdf", "application/pdf", use_container_width=True, key="dp")
         else:
             c1.button("📄 PDF", disabled=True, use_container_width=True, key="dp")
+            
         html_data_p = generate_pro_html(df_filtre_p, f"EDT {sel_prof}", "Faculte de Genie Electrique - UDL-SBA")
         c2.download_button("🌐 HTML", html_data_p, f"EDT_{sel_prof}_2027.html", "text/html", use_container_width=True, key="dh")
         xlsx_data_p = generate_pro_excel(df_filtre_p, f"EDT {sel_prof}")
