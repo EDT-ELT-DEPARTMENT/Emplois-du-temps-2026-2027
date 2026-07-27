@@ -3818,11 +3818,7 @@ if portail == "🎓 Portail mise à jour EDT":
         # Export HTML
         st.download_button("📄 Télécharger HTML (Vue actuelle)", df_vue.to_html(index=False), f"EDT_{choix_promo}.html", "text/html")
 
-    # --- 2. ESPACE ADMINISTRATEUR (ÉDITION & AJOUT DE LIGNE) ---
-    import streamlit as st
-import pandas as pd
-import io
-
+    
 # --- 2. ESPACE ADMINISTRATEUR (ÉDITION & AJOUT DE LIGNE) ---
 if is_admin:
     st.write("---")
@@ -3991,6 +3987,23 @@ if is_admin:
     # ═══════════════════════════════════════════════════════════════
     # BARRE DE RECHERCHE
     # ═══════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════
+    # BARRE DE RECHERCHE & ÉDITEUR
+    # ═══════════════════════════════════════════════════════════════
+    
+    # Définition locale (sécurité contre NameError)
+    colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+    
+    # Vérification que df est bien chargé
+    if df is None or df.empty:
+        st.error("❌ Les données (df) ne sont pas chargées. Impossible d'afficher l'éditeur.")
+        st.stop()
+    
+    # S'assurer que toutes les colonnes existent dans df
+    for col in colonnes_ordonnees:
+        if col not in df.columns:
+            df[col] = ""
+    
     recherche = st.text_input("🔍 Rechercher une ligne (Enseignant, Salle ou Code) :", key="admin_search_bar")
 
     # Préparation du DataFrame maître
@@ -4003,7 +4016,7 @@ if is_admin:
     else:
         df_edition = df_master.copy()
 
-    # Affichage du compteur de lignes pour le suivi de l'index (Ex: 532)
+    # Affichage du compteur de lignes pour le suivi de l'index
     total_lignes = len(df)
     st.caption(f"Lignes totales dans le fichier source : {total_lignes} | Prochain index : {total_lignes}")
 
@@ -4035,6 +4048,9 @@ if is_admin:
 
             # Nettoyage : suppression des lignes vides (si on a cliqué sur + sans écrire)
             df_final = df_final.dropna(subset=['Enseignements'])
+            # Suppression des lignes où Enseignements est vide ou "nan"
+            df_final = df_final[df_final['Enseignements'].astype(str).str.strip() != '']
+            df_final = df_final[df_final['Enseignements'].astype(str).str.lower() != 'nan']
             
             # Tri pour l'organisation
             df_final = df_final.sort_values(by=["Promotion", "Jours", "Horaire"])
@@ -4089,7 +4105,6 @@ if is_admin:
                 st.dataframe(surcharge.sort_values('Duree', ascending=False), use_container_width=True)
             else:
                 st.success("✅ Aucune surcharge détectée.")
-
 # --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
 else:
     st.subheader("📅 Emploi du Temps - Vue Publique")
