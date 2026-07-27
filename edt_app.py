@@ -51,7 +51,7 @@ def generate_pro_pdf(df_source, title, subtitle="", orientation="L"):
         def header(self):
             self.set_font('Arial', 'B', 9)
             self.set_text_color(30, 58, 138)
-            header_text = sanitize_for_pdf("Plateforme de gestion des EDTs-S2-2027 - Departement d'Electrotechnique - FGE/UDL-SBA")
+            header_text = sanitize_for_pdf("Plateforme de gestion des EDTs-Semestre 01_2026-2027 - Departement d'Electrotechnique - FGE/UDL-SBA")
             self.cell(0, 6, header_text, 0, 1, 'C')
             self.set_draw_color(212, 175, 55)
             self.line(10, self.get_y(), self.w - 10, self.get_y())
@@ -289,7 +289,7 @@ def render_download_hub(df_global, user_data, is_admin):
         if sel_prof != "Tous":
             df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
         c1, c2, c3 = st.columns(3)
-        pdf_data_p, _ = generate_pro_pdf(df_filtre_p, f"EDT - {sel_prof}", "Emploi du temps individuel")
+        pdf_data_p, _ = generate_pro_pdf(df_filtre_p, f"Emploi du temps individuel de {sel_prof}", "Semestre 01")
         if pdf_data_p is not None:
             c1.download_button("📄 PDF", pdf_data_p, f"EDT_{sel_prof}_2027.pdf", "application/pdf", use_container_width=True, key="dp")
         else:
