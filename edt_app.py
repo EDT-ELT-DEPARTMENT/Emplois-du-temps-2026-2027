@@ -510,7 +510,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
     enseignants = sorted([e for e in df['Enseignants'].unique() 
                           if e and str(e).strip() not in ["", "nan", "None", "Non defini"]])
     if not enseignants:
-        return None, "Aucun enseignant trouve"
+        return None, "Aucun enseignant trouvé"
     
     def _build_pdf(total_pages, show_progress=False):
         class EDTGlobalPDF(FPDF):
@@ -595,12 +595,12 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
             pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {str(ens).upper()}"), 0, 1, "C")
             pdf.set_font("Arial", "I", 8)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
             pdf.ln(3)
-            
-            if grid.empty or (grid.shape[0] == 1 and grid.shape[1] == 1):
+                        
+            if grid.empty:
                 pdf.set_font("Arial", "", 10)
-                pdf.cell(0, 10, "Aucun cours programme.", 0, 1, "C")
+                pdf.cell(0, 10, "Aucun cours programmé.", 0, 1, "C")
                 continue
             
             n_cols = len(grid.columns)
