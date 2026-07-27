@@ -170,7 +170,7 @@ def generate_pro_html(df_source, title, subtitle=""):
             {table_html}
         </div>
         <div class="footer">
-            Plateforme de gestion des EDTs - Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA
+            Plateforme de gestion des EDTs - Département d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA
         </div>
     </div>
 </body>
@@ -485,10 +485,10 @@ def render_download_hub(df_global, user_data, is_admin):
         st.divider()
         st.markdown("**🌍 Export Global (Admin)**")
         cg1, cg2, cg3, cg4 = st.columns(4)
-        pdf_g, _ = generate_pro_pdf(df_propre, "EDT GLOBAL S2-2027", "Departement d'Electrotechnique - Toutes promotions")
+        pdf_g, _ = generate_pro_pdf(df_propre, "EDT GLOBAL S2-2027", "Département d'Electrotechnique - Toutes promotions")
         if pdf_g is not None:
             cg1.download_button("📄 PDF Global", pdf_g, "EDT_GLOBAL_S1_2027.pdf", "application/pdf", use_container_width=True)
-        html_g = generate_pro_html(df_propre, "EDT Global S2-2027", "Departement d'Electrotechnique - FGE/UDL-SBA")
+        html_g = generate_pro_html(df_propre, "EDT Global S2-2027", "Département d'Electrotechnique - FGE/UDL-SBA")
         cg2.download_button("🌐 HTML Global", html_g, "EDT_GLOBAL_S1_2027.html", "text/html", use_container_width=True)
         xlsx_g = generate_pro_excel(df_propre, "EDT Global S2-2027", "EDT_Global")
         cg3.download_button("📊 Excel Global", xlsx_g, "EDT_GLOBAL_S1_2027.xlsx",
@@ -4398,7 +4398,7 @@ def ajouter_champ_page(run, type_champ):
 # ==========================================
 # GÉNÉRATEUR DE BORDEREAU ISO STRICT
 # ==========================================
-def generer_bordereau_iso(departement, donnees):
+def generer_bordereau_iso(département, donnees):
     doc = Document()
     
     # Configuration des marges globales de la page (0.8 pouce partout)
@@ -4505,7 +4505,7 @@ def generer_bordereau_iso(departement, donnees):
     r2.font.size = Pt(10)
     r2.font.name = 'Calibri'
     
-    r_dept = p_en_tete.add_run(f"{departement.upper()}\n")
+    r_dept = p_en_tete.add_run(f"{département.upper()}\n")
     r_dept.bold = True
     r_dept.font.size = Pt(11)
     r_dept.font.name = 'Calibri'
@@ -4616,11 +4616,11 @@ def generer_bordereau_iso(departement, donnees):
 
     return doc
 
-def generer_pv_generique(departement, type_pv, donnees):
+def generer_pv_generique(département, type_pv, donnees):
     """Générateur secondaire de secours (Calibri)."""
     doc = Document()
     p = doc.add_paragraph()
-    run = p.add_run(f"{type_pv} - {departement}\nDocument en cours.")
+    run = p.add_run(f"{type_pv} - {département}\nDocument en cours.")
     run.font.name = 'Calibri'
     return doc
 
