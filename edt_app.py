@@ -160,7 +160,7 @@ def generate_pro_html(df_source, title, subtitle=""):
         <div class="header">
             <h1>{title}</h1>
             <p>{subtitle}</p>
-            <span class="badge">EDT Semestre 1-2027 - Département d'électrotechnuqe-FGE/UDL-SBA</span>
+            <span class="badge">EDT Semestre 01_2026-2027 - Département d'électrotechnuqe-FGE/UDL-SBA</span>
         </div>
         <div class="content">
             <div class="meta">
@@ -303,10 +303,10 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     # Header
     pdf.set_font("Arial", "B", 11)
     pdf.set_text_color(30, 58, 138)
-    pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
+    pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL_2026-2027 de {nom_enseignant.upper()}"), 0, 1, "C")
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
     pdf.ln(3)
     
     if grid.empty or (grid.shape[0] == 1 and grid.shape[1] == 1):
@@ -459,8 +459,8 @@ def render_download_hub(df_global, user_data, is_admin):
             
         html_data_p = generate_pro_html(df_filtre_p, f"EDT {sel_prof}", "Faculte de Genie Electrique - UDL-SBA")
         c2.download_button("🌐 HTML", html_data_p, f"EDT_{sel_prof}_2027.html", "text/html", use_container_width=True, key="dh")
-        xlsx_data_p = generate_pro_excel(df_filtre_p, f"Emploi du temps individuel de {sel_prof}_Semestre 01")
-        c3.download_button("📊 Excel", xlsx_data_p, f"Emploi du temps individuel de {sel_prof}_2027.xlsx", 
+        xlsx_data_p = generate_pro_excel(df_filtre_p, f"Emploi du temps individuel de {sel_prof}_Semestre 01_2026-2027")
+        c3.download_button("📊 Excel", xlsx_data_p, f"Emploi du temps individuel de {sel_prof}_Semestre 01_2026-2027.xlsx", 
                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="dx")
 
     with col3:
