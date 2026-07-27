@@ -757,7 +757,7 @@ def render_download_hub(df_global, user_data, is_admin):
                     if pdf_data_all:
                         st.session_state['pdf_all_data'] = pdf_data_all
                         st.session_state['pdf_all_ready'] = True
-                        st.success(f"✅ PDF genere : {len(enseignants)} enseignants")
+                        st.success(f"✅ PDF genere : {len(profs)} enseignants")
                         st.rerun()
                     else:
                         st.error(f"❌ Erreur : {err_all}")
@@ -781,7 +781,7 @@ def render_download_hub(df_global, user_data, is_admin):
                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
                               use_container_width=True, key="dx")
         else:
-            c3.button("📊 Excel", disabled=True, use_container_width=True, key="dx")        
+            c3.button("📊 Excel", disabled=True, use_container_width=True, key="dx")                
             
     with col3:
         st.markdown("**🏢 Par Lieu**")
