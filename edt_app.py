@@ -776,9 +776,9 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
             if 'COURS' in code_up:
                 nat = '[C]'
             elif 'TD' in code_up:
-                nat = '[T]'
+                nat = '[TD]'
             else:
-                nat = '[P]'
+                nat = '[TP]'
             
             txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nSalle: {r.get('Lieu', '')}"
             items.append(txt)
