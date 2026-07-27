@@ -387,7 +387,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
     pdf.ln(3)
     
     if grid.empty or (grid.shape[0] == 1 and grid.shape[1] == 1):
