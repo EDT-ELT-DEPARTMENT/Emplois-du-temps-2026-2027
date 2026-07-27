@@ -389,8 +389,8 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
     pdf.ln(3)
-    
-    if grid.empty or (grid.shape[0] == 1 and grid.shape[1] == 1):
+        
+    if grid.empty:
         pdf.set_font("Arial", "", 10)
         pdf.cell(0, 10, "Aucun cours programmé pour cet enseignant.", 0, 1, "C")
         return bytes(pdf.output()), None
