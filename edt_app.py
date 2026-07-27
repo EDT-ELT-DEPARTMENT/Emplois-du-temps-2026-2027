@@ -289,7 +289,7 @@ def render_download_hub(df_global, user_data, is_admin):
         if sel_prof != "Tous":
             df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
         c1, c2, c3 = st.columns(3)
-        pdf_data_p, _ = generate_pro_pdf(df_filtre_p, f"EDT - {sel_prof}", "Export individuel")
+        pdf_data_p, _ = generate_pro_pdf(df_filtre_p, f"EDT - {sel_prof}", "Emploi du temps individuel")
         if pdf_data_p is not None:
             c1.download_button("📄 PDF", pdf_data_p, f"EDT_{sel_prof}_2027.pdf", "application/pdf", use_container_width=True, key="dp")
         else:
