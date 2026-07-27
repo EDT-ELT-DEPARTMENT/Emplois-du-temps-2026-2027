@@ -779,7 +779,8 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                 nat = '[T]'
             else:
                 nat = '[P]'
-            txt = f"{nat} {r.get('Enseignements', '')}\n({r.get('Code', '')})\nProf: {r.get('Enseignants', '')}\nSalle: {r.get('Lieu', '')}"
+            
+            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nSalle: {r.get('Lieu', '')}"
             items.append(txt)
         return "\n".join(items)
     
