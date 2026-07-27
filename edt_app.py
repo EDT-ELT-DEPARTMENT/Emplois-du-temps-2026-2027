@@ -232,7 +232,7 @@ def generate_pro_excel(df_source, title, sheet_name="Donnees"):
     return buffer.getvalue()
 
 def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
-    """Genere un PDF individuel avec Jours en lignes et Horaires en colonnes + en-tete PPER.03."""
+    """Genere un PDF individuel avec en-tete PPER.03 cadre + Jours en lignes / Horaires en colonnes."""
     try:
         from fpdf import FPDF
     except ImportError:
@@ -242,39 +242,67 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
         return None, "Aucune donnee"
     
     # ═══════════════════════════════════════════════════════════════
-    # CLASSE PDF AVEC EN-TETE PPER.03
+    # CLASSE PDF AVEC EN-TETE PPER.03 CADRE
     # ═══════════════════════════════════════════════════════════════
     class EDTIndivPDF(FPDF):
         def header(self):
+            # --- DIMENSIONS DE L'EN-TETE ---
+            y0 = 10
+            h_total = 30
+            x1 = 10
+            w1 = 25       # Logo
+            x2 = x1 + w1  # 35
+            w2 = 177      # Titre centre
+            x3 = x2 + w2  # 212
+            w3 = 75       # Info droite
+            y_sep = y0 + 12  # Ligne sep dans colonne 2
+            
+            self.set_draw_color(0, 0, 0)
+            self.set_line_width(0.3)
+            
+            # Bordure exterieure du tableau
+            self.rect(x1, y0, w1 + w2 + w3, h_total, 'D')
+            
+            # Lignes verticales separant les 3 colonnes
+            self.line(x2, y0, x2, y0 + h_total)
+            self.line(x3, y0, x3, y0 + h_total)
+            
+            # Ligne horizontale dans colonne 2 (separe haut/bas)
+            self.line(x2, y_sep, x3, y_sep)
+            
             # --- COLONNE 1 : LOGO ---
             if os.path.exists("logo.PNG"):
-                self.image("logo.PNG", x=10, y=8, w=16)
-            else:
-                self.set_xy(10, 8)
-                self.set_font('Arial', 'I', 7)
-                self.cell(16, 12, "[LOGO]", 0, 0, "C")
+                logo_w = 16
+                logo_h = 20
+                self.image("logo.PNG", x=x1 + (w1 - logo_w)/2, y=y0 + (h_total - logo_h)/2, w=logo_w)
             
-            # --- COLONNE 2 : TITRE CENTRE ---
-            self.set_xy(35, 9)
+            # --- COLONNE 2 : TITRE ---
+            self.set_xy(x2, y0 + 1.5)
             self.set_font('Arial', 'B', 11)
-            self.cell(0, 7, "UNIVERSITE DJILLALI LIABES", 0, 2, "C")
+            self.cell(w2, 5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
             self.set_font('Arial', '', 10)
-            self.cell(0, 6, "Sidi Bel Abbes", 0, 2, "C")
+            self.cell(w2, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
             
-            # --- COLONNE 3 : BLOC INFO DROITE ---
-            self.set_xy(self.w - 70, 9)
+            # Bas de colonne 2 : EMPLOI DU TEMPS
+            self.set_xy(x2, y_sep + 1)
+            self.set_font('Arial', 'B', 12)
+            self.cell(w2, h_total - (y_sep - y0) - 2, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
+            
+            # --- COLONNE 3 : INFOS ALIGNÉES À DROITE ---
             self.set_font('Arial', '', 9)
-            self.cell(60, 5.5, "Code : PPER.03", 0, 2, "R")
-            self.cell(60, 5.5, "Revision : 00", 0, 2, "R")
-            self.cell(60, 5.5, "Date : 16/05/2026", 0, 2, "R")
-            # {nb} sera remplace automatiquement par le nombre total de pages
-            self.cell(60, 5.5, f"Pages : {self.page_no()}/{{nb}}", 0, 2, "R")
+            line_h = 7
+            infos = [
+                "Code : PPER.03",
+                "Revision : 00",
+                "Date : 16/05/2026",
+                f"Pages : {self.page_no()}/{{nb}}"
+            ]
+            for i, info in enumerate(infos):
+                self.set_xy(x3 + 2, y0 + 1 + i * line_h)
+                self.cell(w3 - 4, line_h, sanitize_for_pdf(info), 0, 2, "R")
             
-            # Ligne de separation doree
-            self.set_draw_color(212, 175, 55)
-            self.set_line_width(0.5)
-            self.line(10, 30, self.w - 10, 30)
-            self.ln(10)
+            # Espace apres l'en-tete
+            self.set_y(y0 + h_total + 5)
         
         def footer(self):
             self.set_y(-12)
@@ -338,7 +366,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     
     # PDF
     pdf = EDTIndivPDF(orientation="L", unit="mm", format="A4")
-    pdf.alias_nb_pages()  # Active le remplacement de {nb}
+    pdf.alias_nb_pages()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
@@ -361,7 +389,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     col_jour_w = 22
     col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
     
-    # En-tetes du tableau
+    # En-tetes du tableau EDT
     pdf.set_font("Arial", "B", 7)
     pdf.set_fill_color(30, 58, 138)
     pdf.set_text_color(255, 255, 255)
@@ -373,7 +401,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
         pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
     pdf.ln()
     
-    # Donnees
+    # Donnees du tableau EDT
     pdf.set_text_color(0, 0, 0)
     
     for idx, (jour, row) in enumerate(grid.iterrows()):
