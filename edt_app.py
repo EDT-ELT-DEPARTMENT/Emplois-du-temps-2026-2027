@@ -3124,7 +3124,7 @@ if df is not None:
 
                                 <div style="background-color: #fff4e5; border-left: 5px solid #ffa500; padding: 15px; margin: 20px 0;">
                                     <p style="font-weight: bold; color: #d97706; margin-top: 0;">
-                                        Objet : Urgent : Vérification de l’emploi du temps – Semestre 2
+                                        Objet : Urgent : Vérification de l’emploi du temps – Semestre 1
                                     </p>
                                     
                                     <p>Cher collègue, Sallem,</p>
