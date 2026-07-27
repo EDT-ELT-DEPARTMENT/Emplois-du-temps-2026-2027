@@ -392,7 +392,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     
     if grid.empty or (grid.shape[0] == 1 and grid.shape[1] == 1):
         pdf.set_font("Arial", "", 10)
-        pdf.cell(0, 10, "Aucun cours programme pour cet enseignant.", 0, 1, "C")
+        pdf.cell(0, 10, "Aucun cours programmé pour cet enseignant.", 0, 1, "C")
         return bytes(pdf.output()), None
     
     n_cols = len(grid.columns)
