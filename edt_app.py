@@ -3962,7 +3962,113 @@ if is_admin:
             df_final = df_final.dropna(subset=['Enseignements'])
             
             # Tri pour l'organisation
-            df_final = df_final.sort_values(by=["Promotion", "
+            df_final = df_final.sort_values(by=["Promotion", "Jours", "Horaire"])
+
+            # Sauvegarde dans le fichier maître
+            if NOM_FICHIER_FIXE.endswith('.xlsx'):
+                df_final.to_excel(NOM_FICHIER_FIXE, index=False)
+            else:
+                df_final.to_csv(NOM_FICHIER_FIXE, index=False)
+
+            st.success(f"✅ Modifications sauvegardées avec succès ! {len(df_final)} lignes enregistrées.")
+            st.balloons()
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ Erreur lors de la sauvegarde : {e}")
+
+    # --- 4. GESTION DES DOUBLONS & CONFLITS ---
+    st.write("---")
+    st.subheader("🔍 Vérificateur de Conflits")
+
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🔎 Détecter les doublons de séances"):
+            doublons = df_master[df_master.duplicated(subset=['Enseignements', 'Code', 'Promotion'], keep=False)]
+            if not doublons.empty:
+                st.warning(f"⚠️ {len(doublons)} doublons trouvés :")
+                st.dataframe(doublons.sort_values(by=["Promotion", "Enseignements"]), use_container_width=True)
+            else:
+                st.success("✅ Aucun doublon détecté.")
+
+    with col2:
+        if st.button("🏫 Détecter les conflits de salles"):
+            conflits_salle = df_master.groupby(['Jours', 'Horaire', 'Lieu']).size().reset_index(name='count')
+            conflits_salle = conflits_salle[conflits_salle['count'] > 1]
+            if not conflits_salle.empty:
+                st.warning(f"⚠️ {len(conflits_salle)} conflits de salle trouvés :")
+                st.dataframe(conflits_salle, use_container_width=True)
+            else:
+                st.success("✅ Aucun conflit de salle détecté.")
+
+    with col3:
+        if st.button("👨‍🏫 Détecter les surcharges enseignants"):
+            # Comptage des heures par enseignant
+            df_h = df_master.copy()
+            df_h['Duree'] = df_h['Horaire'].str.extract(r'(\d+)').astype(float)
+            surcharge = df_h.groupby('Enseignants')['Duree'].sum().reset_index()
+            surcharge = surcharge[surcharge['Duree'] > 20]  # Seuil arbitraire
+            if not surcharge.empty:
+                st.warning(f"⚠️ {len(surcharge)} enseignants potentiellement surchargés :")
+                st.dataframe(surcharge.sort_values('Duree', ascending=False), use_container_width=True)
+            else:
+                st.success("✅ Aucune surcharge détectée.")
+
+# --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
+else:
+    st.subheader("📅 Emploi du Temps - Vue Publique")
+    
+    # Filtres publics
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        promo_pub = st.selectbox(
+            "🎓 Filtrer par promotion :",
+            options=["Toutes"] + sorted(df['Promotion'].dropna().unique().tolist()),
+            key="pub_promo"
+        )
+    with col_f2:
+        jour_pub = st.selectbox(
+            "📆 Filtrer par jour :",
+            options=["Tous"] + sorted(df['Jours'].dropna().unique().tolist()),
+            key="pub_jour"
+        )
+
+    df_pub = df.copy()
+    if promo_pub != "Toutes":
+        df_pub = df_pub[df_pub['Promotion'] == promo_pub]
+    if jour_pub != "Tous":
+        df_pub = df_pub[df_pub['Jours'] == jour_pub]
+
+    # Affichage stylisé
+    st.dataframe(
+        df_pub[colonnes_ordonnees],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Enseignements": st.column_config.TextColumn("Matière", width="large"),
+            "Code": st.column_config.TextColumn("Code", width="small"),
+            "Enseignants": st.column_config.TextColumn("Intervenant", width="medium"),
+            "Horaire": st.column_config.TextColumn("Horaire", width="small"),
+            "Jours": st.column_config.TextColumn("Jour", width="small"),
+            "Lieu": st.column_config.TextColumn("Salle", width="small"),
+            "Promotion": st.column_config.TextColumn("Promo", width="small"),
+        }
+    )
+
+    # Export public
+    st.write("---")
+    c1, c2 = st.columns(2)
+    with c1:
+        out_pub = io.BytesIO()
+        df_pub.to_excel(out_pub, index=False)
+        st.download_button("📊 Télécharger la vue (Excel)", out_pub.getvalue(), "EDT_Vue_Publique.xlsx")
+    with c2:
+        st.download_button("📄 Télécharger la vue (HTML)", df_pub.to_html(index=False), "EDT_Vue_Publique.html", "text/html")
+
+# --- 6. PIED DE PAGE ---
+st.write("---")
+st.caption("🛠️ Application de gestion d'emploi du temps | Mode Admin : {}".format("✅ Actif" if is_admin else "❌ Inactif"))
 import streamlit as st
 from docx import Document
 from docx.shared import Inches, Pt
