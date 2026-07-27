@@ -3882,7 +3882,10 @@ if is_admin:
                             options=sorted(df_import['Promotion'].unique()),
                             key="promo_remplacement"
                         )
-                    
+                    st.write("Debug types :")
+                    st.write(f"• Type promo_cible : {type(promo_cible)} | Valeur : '{promo_cible}'")
+                    st.write(f"• Types uniques dans df_master['Promotion'] : {df_master['Promotion'].apply(type).unique()}")
+                    st.write(f"• Types uniques dans df_import['Promotion'] : {df_import['Promotion'].apply(type).unique()}")
                     if st.button("💾 Intégrer les données importées", key="btn_integrer"):
                         try:
                             # Chargement du fichier maître
