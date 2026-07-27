@@ -297,7 +297,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
             self.set_font('Arial', 'B', 12)
             self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
             
-            # --- COLONNE 3 : INFOS ALIGNÉES À DROITE ---
+            # --- COLONNE 3 : INFOS ALIGNÉES À GAUCHE ---
             self.set_font('Arial', '', 9)
             line_h = H_ENTETE / 4
             
