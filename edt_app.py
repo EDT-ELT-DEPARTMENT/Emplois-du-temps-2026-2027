@@ -232,7 +232,7 @@ def generate_pro_excel(df_source, title, sheet_name="Donnees"):
     return buffer.getvalue()
 
 def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
-    """Genere un PDF individuel avec en-tete PPER.03 cadre + Jours en lignes / Horaires en colonnes."""
+    """Genere un PDF individuel avec en-tete PPER.03 aux dimensions exactes."""
     try:
         from fpdf import FPDF
     except ImportError:
@@ -242,55 +242,65 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
         return None, "Aucune donnee"
     
     # ═══════════════════════════════════════════════════════════════
+    # DIMENSIONS EXACTES (1 pouce = 25.4 mm)
+    # ═══════════════════════════════════════════════════════════════
+    W_LOGO = 1.19 * 25.4           # 30.23 mm  (colonne 1)
+    W_MILIEU = 3.70 * 25.4         # 93.98 mm  (colonne 2) ← CORRIGÉ
+    W_INFO = 1.40 * 25.4           # 35.56 mm  (colonne 3)
+    H_ENTETE = 1.04 * 25.4         # 26.42 mm  (hauteur totale)
+    H_HAUT_MILIEU = 0.60 * 25.4    # 15.24 mm  (Universite + Ville)
+    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU  # 11.18 mm (EMPLOI DU TEMPS)
+    
+    # Positionnement
+    X0 = 10
+    Y0 = 10
+    W_TOT = W_LOGO + W_MILIEU + W_INFO  # 159.77 mm (total du cadre)
+    
+    X_LOGO = X0
+    X_MILIEU = X_LOGO + W_LOGO         # 40.23
+    X_INFO = X_MILIEU + W_MILIEU      # 134.21
+    Y_SEP = Y0 + H_HAUT_MILIEU        # Ligne sep à 0.6 pouce du haut
+    
+    # ═══════════════════════════════════════════════════════════════
     # CLASSE PDF AVEC EN-TETE PPER.03 CADRE
     # ═══════════════════════════════════════════════════════════════
     class EDTIndivPDF(FPDF):
         def header(self):
-            # --- DIMENSIONS DE L'EN-TETE ---
-            y0 = 10
-            h_total = 30
-            x1 = 10
-            w1 = 25       # Logo
-            x2 = x1 + w1  # 35
-            w2 = 177      # Titre centre
-            x3 = x2 + w2  # 212
-            w3 = 75       # Info droite
-            y_sep = y0 + 12  # Ligne sep dans colonne 2
-            
             self.set_draw_color(0, 0, 0)
             self.set_line_width(0.3)
             
-            # Bordure exterieure du tableau
-            self.rect(x1, y0, w1 + w2 + w3, h_total, 'D')
+            # Bordure exterieure du tableau d'en-tete
+            self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
             
             # Lignes verticales separant les 3 colonnes
-            self.line(x2, y0, x2, y0 + h_total)
-            self.line(x3, y0, x3, y0 + h_total)
+            self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
+            self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
             
-            # Ligne horizontale dans colonne 2 (separe haut/bas)
-            self.line(x2, y_sep, x3, y_sep)
+            # Ligne horizontale dans colonne 2 (à 0.6 pouce du haut)
+            self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
             
             # --- COLONNE 1 : LOGO ---
             if os.path.exists("logo.PNG"):
-                logo_w = 16
-                logo_h = 20
-                self.image("logo.PNG", x=x1 + (w1 - logo_w)/2, y=y0 + (h_total - logo_h)/2, w=logo_w)
+                logo_w = W_LOGO - 4
+                logo_h = H_ENTETE - 4
+                self.image("logo.PNG", x=X_LOGO + 2, y=Y0 + 2, w=logo_w, h=logo_h)
             
-            # --- COLONNE 2 : TITRE ---
-            self.set_xy(x2, y0 + 1.5)
+            # --- COLONNE 2 : PARTIE HAUTE (0.6 pouce) ---
+            self.set_xy(X_MILIEU, Y0 + 1.5)
             self.set_font('Arial', 'B', 11)
-            self.cell(w2, 5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
+            self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
             self.set_font('Arial', '', 10)
-            self.cell(w2, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
+            self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
             
-            # Bas de colonne 2 : EMPLOI DU TEMPS
-            self.set_xy(x2, y_sep + 1)
+            # --- COLONNE 2 : PARTIE BASSE (0.44 pouce) ---
+            self.set_xy(X_MILIEU, Y_SEP + 0.5)
             self.set_font('Arial', 'B', 12)
-            self.cell(w2, h_total - (y_sep - y0) - 2, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
+            self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
             
             # --- COLONNE 3 : INFOS ALIGNÉES À DROITE ---
             self.set_font('Arial', '', 9)
-            line_h = 7
+            line_h = H_ENTETE / 4
+            
             infos = [
                 "Code : PPER.03",
                 "Revision : 00",
@@ -298,11 +308,11 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
                 f"Pages : {self.page_no()}/{{nb}}"
             ]
             for i, info in enumerate(infos):
-                self.set_xy(x3 + 2, y0 + 1 + i * line_h)
-                self.cell(w3 - 4, line_h, sanitize_for_pdf(info), 0, 2, "R")
+                self.set_xy(X_INFO + 1, Y0 + 0.5 + i * line_h)
+                self.cell(W_INFO - 2, line_h, sanitize_for_pdf(info), 0, 2, "R")
             
             # Espace apres l'en-tete
-            self.set_y(y0 + h_total + 5)
+            self.set_y(Y0 + H_ENTETE + 5)
         
         def footer(self):
             self.set_y(-12)
@@ -370,7 +380,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Titre sous l'en-tete
+    # Sous-titre
     pdf.set_font("Arial", "B", 11)
     pdf.set_text_color(30, 58, 138)
     pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
@@ -405,13 +415,11 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     pdf.set_text_color(0, 0, 0)
     
     for idx, (jour, row) in enumerate(grid.iterrows()):
-        # Couleur alternee
         if idx % 2 == 0:
             pdf.set_fill_color(248, 250, 252)
         else:
             pdf.set_fill_color(255, 255, 255)
         
-        # Calcul hauteur
         max_lines = 1
         for val in row:
             if val and str(val).strip():
@@ -420,15 +428,12 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
                     max_lines = lines
         row_h = max(7, min(max_lines * 3.8, 35))
         
-        # Cellule Jour
         pdf.set_font("Arial", "B", 7)
         pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
         
-        # Cellules horaires
         pdf.set_font("Arial", "", 5.5)
         for val in row:
             cell_text = sanitize_for_pdf(str(val)) if val else ""
-            
             x, y = pdf.get_x(), pdf.get_y()
             pdf.rect(x, y, col_h_w, row_h, 'FD')
             
