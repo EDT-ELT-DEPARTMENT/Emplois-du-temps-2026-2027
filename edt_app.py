@@ -3832,6 +3832,9 @@ if is_admin:
     # ═══════════════════════════════════════════════════════════════
     # SECTION IMPORT EXCEL
     # ═══════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════
+    # SECTION IMPORT EXCEL - CORRIGÉE
+    # ═══════════════════════════════════════════════════════════════
     with st.expander("📥 Importer des données depuis un fichier Excel", expanded=False):
         st.markdown("**Format attendu :** `Enseignements | Code | Enseignants | Horaire | Jours | Lieu | Promotion`")
         
@@ -3868,31 +3871,69 @@ if is_admin:
                     st.dataframe(df_import, use_container_width=True)
                     
                     # Choix du mode d'intégration
-                    
                     mode_import = st.radio(
                         "Mode d'intégration :",
                         options=["➕ Ajouter (fusionner avec l'existant)", "🔄 Remplacer (supprimer l'ancien pour cette promotion)"],
                         key="mode_import"
                     )
                     
+                    # Stockage dans le session state pour fiabilité au clic
+                    st.session_state['mode_import'] = mode_import
+                    
                     # Sélection de la promotion cible pour le remplacement
+                    promo_cible = None
                     if "Remplacer" in mode_import:
+                        # Conversion explicite en string pour éviter les conflits int/str
+                        promos_import = sorted([str(p) for p in df_import['Promotion'].unique()])
                         promo_cible = st.selectbox(
                             "Promotion à remplacer :",
-                            options=sorted(df_import['Promotion'].unique()),
+                            options=promos_import,
                             key="promo_remplacement"
                         )
+                        st.session_state['promo_cible'] = str(promo_cible).strip()
+                        st.warning(f"🗑️ **Mode Remplacer actif** : les anciennes lignes de la promotion **{promo_cible}** seront supprimées avant l'ajout.")
+                    else:
+                        st.session_state['promo_cible'] = None
+                        st.info("➕ **Mode Ajouter actif** : les nouvelles lignes seront fusionnées avec les existantes.")
                     
+                    # Bouton d'intégration
                     if st.button("💾 Intégrer les données importées", key="btn_integrer"):
                         try:
-                            # Chargement du fichier maître
-                            df_master = pd.read_excel(NOM_FICHIER_FIXE) if NOM_FICHIER_FIXE.endswith('.xlsx') else pd.read_csv(NOM_FICHIER_FIXE)
+                            # Récupération fiable depuis le session state
+                            current_mode = st.session_state.get('mode_import', mode_import)
+                            current_promo = st.session_state.get('promo_cible')
                             
-                            if "Remplacer" in mode_import:
-                                # Suppression des anciennes lignes de cette promotion
-                                df_master = df_master[df_master['Promotion'] != promo_cible]
+                            # Chargement du fichier maître (création si inexistant)
+                            if os.path.exists(NOM_FICHIER_FIXE):
+                                if NOM_FICHIER_FIXE.endswith('.xlsx'):
+                                    df_master = pd.read_excel(NOM_FICHIER_FIXE)
+                                else:
+                                    df_master = pd.read_csv(NOM_FICHIER_FIXE)
+                            else:
+                                df_master = pd.DataFrame(columns=colonnes_requises)
                             
-                            # Ajout des nouvelles lignes
+                            # ═══════════════════════════════════════════════════════
+                            # CORRECTION CRITIQUE : uniformiser les types en string
+                            # ═══════════════════════════════════════════════════════
+                            if 'Promotion' in df_master.columns:
+                                df_master['Promotion'] = df_master['Promotion'].astype(str).str.strip()
+                            df_import['Promotion'] = df_import['Promotion'].astype(str).str.strip()
+                            
+                            lignes_avant = len(df_master)
+                            lignes_supprimees = 0
+                            
+                            if "Remplacer" in current_mode and current_promo is not None:
+                                # MODE REMPLACER : suppression stricte de la promotion cible
+                                masque_suppr = df_master['Promotion'] == str(current_promo).strip()
+                                lignes_supprimees = int(masque_suppr.sum())
+                                
+                                if lignes_supprimees > 0:
+                                    df_master = df_master[~masque_suppr].copy()
+                                    st.info(f"🗑️ {lignes_supprimees} ligne(s) de la promotion '{current_promo}' supprimée(s).")
+                                else:
+                                    st.warning(f"⚠️ Aucune ligne trouvée pour la promotion '{current_promo}' dans le fichier actuel.")
+                            
+                            # Ajout des nouvelles lignes (dans les deux modes)
                             df_final = pd.concat([df_master, df_import], ignore_index=True)
                             
                             # Nettoyage et tri
@@ -3905,11 +3946,19 @@ if is_admin:
                             else:
                                 df_final.to_csv(NOM_FICHIER_FIXE, index=False)
                             
-                            st.success(f"✅ Importation réussie ! Fichier mis à jour : {len(df_final)} lignes totales.")
+                            st.success(
+                                f"✅ Importation terminée !\n\n"
+                                f"• Lignes avant import : **{lignes_avant}**\n"
+                                f"• Lignes supprimées : **{lignes_supprimees}**\n"
+                                f"• Lignes importées : **{len(df_import)}**\n"
+                                f"• **Total après import : {len(df_final)}**"
+                            )
                             st.rerun()
                             
                         except Exception as e:
                             st.error(f"❌ Erreur lors de l'intégration : {e}")
+                            import traceback
+                            st.code(traceback.format_exc())
                             
             except Exception as e:
                 st.error(f"❌ Erreur de lecture du fichier : {e}")
