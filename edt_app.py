@@ -673,6 +673,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
                 pdf.ln(row_h)
         
         return pdf
+
 def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
     """Genere un PDF unique avec l'EDT de TOUTES les promotions (en-tete PPER.03 + pagination X/Y)."""
     try:
@@ -691,6 +692,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
     H_HAUT_MILIEU = 0.60 * 25.4
     H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
     W_TOT = W_LOGO + W_MILIEU + W_INFO
+    MARGE_BAS = 15
     
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     horaires_ordre = [
@@ -777,7 +779,37 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                 self.cell(0, 10, f"{self.page_no()}/{total_pages}", 0, 0, "R")
         
         pdf = EDTGlobalPromoPDF(orientation="L", unit="mm", format="A4")
-        pdf.set_auto_page_break(auto=False, margin=15)
+        pdf.set_auto_page_break(auto=False, margin=MARGE_BAS)
+        
+        def draw_title(pdf, promo):
+            pdf.set_font("Arial", "B", 11)
+            pdf.set_text_color(30, 58, 138)
+            pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS - {str(promo).upper()}"), 0, 1, "C")
+            pdf.set_font("Arial", "I", 8)
+            pdf.set_text_color(100, 100, 100)
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.ln(3)
+        
+        def draw_table_header(pdf, grid, col_jour_w, col_h_w):
+            pdf.set_font("Arial", "B", 7)
+            pdf.set_fill_color(30, 58, 138)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+            for h in grid.columns:
+                h_txt = sanitize_for_pdf(str(h))
+                if len(h_txt) > 12:
+                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_text_color(0, 0, 0)
+        
+        def check_new_page(pdf, needed_h, promo, grid, col_jour_w, col_h_w):
+            if pdf.get_y() + needed_h > pdf.h - MARGE_BAS:
+                pdf.add_page()
+                draw_title(pdf, promo)
+                draw_table_header(pdf, grid, col_jour_w, col_h_w)
+                return True
+            return False
         
         n_prom = len(promotions)
         for idx_prom, promo in enumerate(promotions):
@@ -803,13 +835,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                 grid.index = [map_j.get(i, i) for i in grid.index]
                 grid.columns = [map_h.get(c, c) for c in grid.columns]
             
-            pdf.set_font("Arial", "B", 11)
-            pdf.set_text_color(30, 58, 138)
-            pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS - {str(promo).upper()}"), 0, 1, "C")
-            pdf.set_font("Arial", "I", 8)
-            pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
-            pdf.ln(3)
+            draw_title(pdf, promo)
             
             if grid.empty or (len(grid.columns) == 1 and grid.columns[0] == "Aucun"):
                 pdf.set_font("Arial", "", 10)
@@ -844,21 +870,22 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                 h_needed = max_lines * interline + padding_v * 2
                 row_heights.append(max(10, min(h_needed, 55)))
             
-            # === EN-TETE DU TABLEAU ===
-            pdf.set_font("Arial", "B", 7)
-            pdf.set_fill_color(30, 58, 138)
-            pdf.set_text_color(255, 255, 255)
-            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
-            for h in grid.columns:
-                h_txt = sanitize_for_pdf(str(h))
-                if len(h_txt) > 12:
-                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
-                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
-            pdf.ln()
+            # === VERIFICATION TITRE + EN-TETE TABLEAU ===
+            title_h = 8 + 5 + 3
+            header_h = 8
+            if pdf.get_y() + title_h + header_h > pdf.h - MARGE_BAS:
+                pdf.add_page()
+            draw_title(pdf, promo)
             
-            # === DONNEES DU TABLEAU ===
-            pdf.set_text_color(0, 0, 0)
+            if pdf.get_y() + header_h > pdf.h - MARGE_BAS:
+                pdf.add_page()
+                draw_title(pdf, promo)
+            draw_table_header(pdf, grid, col_jour_w, col_h_w)
+            
+            # === DONNEES DU TABLEAU AVEC SAUT DE PAGE LIGNE PAR LIGNE ===
             for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
+                check_new_page(pdf, row_h, promo, grid, col_jour_w, col_h_w)
+                
                 bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
                 
                 pdf.set_font("Arial", "B", 7)
