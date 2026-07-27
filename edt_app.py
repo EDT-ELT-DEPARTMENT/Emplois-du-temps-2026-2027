@@ -232,7 +232,7 @@ def generate_pro_excel(df_source, title, sheet_name="Donnees"):
     return buffer.getvalue()
 
 def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
-    """Genere un PDF individuel avec en-tete PPER.03 aux dimensions exactes."""
+    """Genere un PDF individuel avec en-tete PPER.03 centree et texte infos aligne a gauche."""
     try:
         from fpdf import FPDF
     except ImportError:
@@ -244,28 +244,28 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     # ═══════════════════════════════════════════════════════════════
     # DIMENSIONS EXACTES (1 pouce = 25.4 mm)
     # ═══════════════════════════════════════════════════════════════
-    W_LOGO = 1.19 * 25.4           # 30.23 mm  (colonne 1)
-    W_MILIEU = 3.70 * 25.4         # 93.98 mm  (colonne 2) ← CORRIGÉ
-    W_INFO = 1.40 * 25.4           # 35.56 mm  (colonne 3)
-    H_ENTETE = 1.04 * 25.4         # 26.42 mm  (hauteur totale)
-    H_HAUT_MILIEU = 0.60 * 25.4    # 15.24 mm  (Universite + Ville)
-    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU  # 11.18 mm (EMPLOI DU TEMPS)
-    
-    # Positionnement
-    X0 = 10
-    Y0 = 10
-    W_TOT = W_LOGO + W_MILIEU + W_INFO  # 159.77 mm (total du cadre)
-    
-    X_LOGO = X0
-    X_MILIEU = X_LOGO + W_LOGO         # 40.23
-    X_INFO = X_MILIEU + W_MILIEU      # 134.21
-    Y_SEP = Y0 + H_HAUT_MILIEU        # Ligne sep à 0.6 pouce du haut
+    W_LOGO = 1.19 * 25.4           # 30.23 mm
+    W_MILIEU = 3.70 * 25.4         # 93.98 mm
+    W_INFO = 1.40 * 25.4           # 35.56 mm
+    H_ENTETE = 1.04 * 25.4         # 26.42 mm
+    H_HAUT_MILIEU = 0.60 * 25.4    # 15.24 mm
+    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU  # 11.18 mm
+    W_TOT = W_LOGO + W_MILIEU + W_INFO       # 159.77 mm
     
     # ═══════════════════════════════════════════════════════════════
-    # CLASSE PDF AVEC EN-TETE PPER.03 CADRE
+    # CLASSE PDF AVEC EN-TETE PPER.03 CADRE CENTRE
     # ═══════════════════════════════════════════════════════════════
     class EDTIndivPDF(FPDF):
         def header(self):
+            # Le tableau EDT utilise la largeur self.w - 20 (marges 10 mm)
+            # On centre le cadre PPER.03 par rapport a cette zone
+            X0 = 10 + ((self.w - 20) - W_TOT) / 2
+            Y0 = 10
+            
+            X_MILIEU = X0 + W_LOGO
+            X_INFO = X_MILIEU + W_MILIEU
+            Y_SEP = Y0 + H_HAUT_MILIEU
+            
             self.set_draw_color(0, 0, 0)
             self.set_line_width(0.3)
             
@@ -276,14 +276,14 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
             self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
             self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
             
-            # Ligne horizontale dans colonne 2 (à 0.6 pouce du haut)
+            # Ligne horizontale dans colonne 2 (a 0.6 pouce du haut)
             self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
             
             # --- COLONNE 1 : LOGO ---
             if os.path.exists("logo.PNG"):
                 logo_w = W_LOGO - 4
                 logo_h = H_ENTETE - 4
-                self.image("logo.PNG", x=X_LOGO + 2, y=Y0 + 2, w=logo_w, h=logo_h)
+                self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=logo_w, h=logo_h)
             
             # --- COLONNE 2 : PARTIE HAUTE (0.6 pouce) ---
             self.set_xy(X_MILIEU, Y0 + 1.5)
@@ -308,8 +308,9 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
                 f"Pages : {self.page_no()}/{{nb}}"
             ]
             for i, info in enumerate(infos):
-                self.set_xy(X_INFO + 1, Y0 + 0.5 + i * line_h)
-                self.cell(W_INFO - 2, line_h, sanitize_for_pdf(info), 0, 2, "R")
+                self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
+                # "L" = aligne a gauche (extrémité gauche de la cellule)
+                self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
             
             # Espace apres l'en-tete
             self.set_y(Y0 + H_ENTETE + 5)
@@ -393,6 +394,70 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
         pdf.set_font("Arial", "", 10)
         pdf.cell(0, 10, "Aucun cours programme pour cet enseignant.", 0, 1, "C")
         return bytes(pdf.output()), None
+    
+    n_cols = len(grid.columns)
+    page_w = pdf.w - 20
+    col_jour_w = 22
+    col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
+    
+    # En-tetes du tableau EDT
+    pdf.set_font("Arial", "B", 7)
+    pdf.set_fill_color(30, 58, 138)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+    for h in grid.columns:
+        h_txt = sanitize_for_pdf(str(h))
+        if len(h_txt) > 12:
+            h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+        pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+    pdf.ln()
+    
+    # Donnees du tableau EDT
+    pdf.set_text_color(0, 0, 0)
+    
+    for idx, (jour, row) in enumerate(grid.iterrows()):
+        if idx % 2 == 0:
+            pdf.set_fill_color(248, 250, 252)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+        
+        max_lines = 1
+        for val in row:
+            if val and str(val).strip():
+                lines = str(val).count('\n') + 1
+                if lines > max_lines:
+                    max_lines = lines
+        row_h = max(7, min(max_lines * 3.8, 35))
+        
+        pdf.set_font("Arial", "B", 7)
+        pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
+        
+        pdf.set_font("Arial", "", 5.5)
+        for val in row:
+            cell_text = sanitize_for_pdf(str(val)) if val else ""
+            x, y = pdf.get_x(), pdf.get_y()
+            pdf.rect(x, y, col_h_w, row_h, 'FD')
+            
+            if cell_text.strip():
+                raw_up = str(val).upper()
+                if "COURS" in raw_up:
+                    pdf.set_fill_color(225, 238, 255)
+                elif "TD" in raw_up:
+                    pdf.set_fill_color(232, 252, 235)
+                elif "TP" in raw_up:
+                    pdf.set_fill_color(255, 235, 235)
+                else:
+                    pdf.set_fill_color(248, 250, 252) if idx % 2 == 0 else pdf.set_fill_color(255, 255, 255)
+                
+                pdf.rect(x, y, col_h_w, row_h, 'FD')
+                pdf.set_xy(x + 0.5, y + 0.8)
+                pdf.multi_cell(col_h_w - 1, 3.2, cell_text, 0, "L")
+                pdf.set_xy(x + col_h_w, y)
+            else:
+                pdf.cell(col_h_w, row_h, "", 1, 0, "C", True)
+        pdf.ln(row_h)
+    
+    return bytes(pdf.output()), None
     
     n_cols = len(grid.columns)
     page_w = pdf.w - 20
