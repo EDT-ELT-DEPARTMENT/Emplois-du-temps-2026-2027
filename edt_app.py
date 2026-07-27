@@ -3868,6 +3868,10 @@ if is_admin:
                     st.dataframe(df_import, use_container_width=True)
                     
                     # Choix du mode d'intégration
+                    st.write("Debug types :")
+                    st.write(f"• Type promo_cible : {type(promo_cible)} | Valeur : '{promo_cible}'")
+                    st.write(f"• Types uniques dans df_master['Promotion'] : {df_master['Promotion'].apply(type).unique()}")
+                    st.write(f"• Types uniques dans df_import['Promotion'] : {df_import['Promotion'].apply(type).unique()}")
                     mode_import = st.radio(
                         "Mode d'intégration :",
                         options=["➕ Ajouter (fusionner avec l'existant)", "🔄 Remplacer (supprimer l'ancien pour cette promotion)"],
