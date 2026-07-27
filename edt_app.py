@@ -3819,69 +3819,150 @@ if portail == "🎓 Portail mise à jour EDT":
         st.download_button("📄 Télécharger HTML (Vue actuelle)", df_vue.to_html(index=False), f"EDT_{choix_promo}.html", "text/html")
 
     # --- 2. ESPACE ADMINISTRATEUR (ÉDITION & AJOUT DE LIGNE) ---
-    if is_admin:
-        st.write("---")
-        st.subheader("✍️ Espace Éditeur de Données (Admin)")
-        st.info("💡 Pour ajouter une charge : Filtrez pour isoler l'EDT concerné, puis cliquez sur le (+) en bas du tableau.")
+    import streamlit as st
+import pandas as pd
+import io
 
-        # Barre de recherche pour filtrer l'éditeur
-        recherche = st.text_input("🔍 Rechercher une ligne (Enseignant, Salle ou Code) :", key="admin_search_bar")
+# --- 2. ESPACE ADMINISTRATEUR (ÉDITION & AJOUT DE LIGNE) ---
+if is_admin:
+    st.write("---")
+    st.subheader("✍️ Espace Éditeur de Données (Admin)")
+    st.info("💡 Pour ajouter une charge : Filtrez pour isoler l'EDT concerné, puis cliquez sur le (+) en bas du tableau.")
 
-        # Préparation du DataFrame maître
-        df_master = df[colonnes_ordonnees].copy()
+    # ═══════════════════════════════════════════════════════════════
+    # SECTION IMPORT EXCEL
+    # ═══════════════════════════════════════════════════════════════
+    with st.expander("📥 Importer des données depuis un fichier Excel", expanded=False):
+        st.markdown("**Format attendu :** `Enseignements | Code | Enseignants | Horaire | Jours | Lieu | Promotion`")
         
-        # Application du filtre si recherche active
-        if recherche:
-            masque = df_master.apply(lambda r: r.astype(str).str.contains(recherche, case=False).any(), axis=1)
-            df_edition = df_master[masque].copy()
-        else:
-            df_edition = df_master.copy()
-
-        # Affichage du compteur de lignes pour le suivi de l'index (Ex: 532)
-        total_lignes = len(df)
-        st.caption(f"Lignes totales dans le fichier source : {total_lignes} | Prochain index : {total_lignes}")
-
-        # L'ÉDITEUR DYNAMIQUE
-        # num_rows="dynamic" permet d'ajouter la ligne 533 etc.
-        df_edite = st.data_editor(
-            df_edition,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="admin_data_editor_main"
+        # Liste déroulante des enseignants pour filtrage pré-import
+        liste_enseignants = sorted(df['Enseignants'].dropna().unique().tolist())
+        enseignant_filtre = st.selectbox(
+            "👤 Filtrer par enseignant avant l'import (optionnel) :",
+            options=["Tous les enseignants"] + liste_enseignants,
+            key="import_enseignant_filter"
         )
-
-        # Boutons de téléchargement pour l'éditeur (données filtrées)
-        ca1, ca2 = st.columns(2)
-        with ca1:
-            out_ed = io.BytesIO()
-            df_edite.to_excel(out_ed, index=False)
-            st.download_button("📊 Télécharger l'EDT filtré (Excel)", out_ed.getvalue(), "EDT_Edition.xlsx")
-        with ca2:
-            st.download_button("📄 Télécharger l'EDT filtré (HTML)", df_edite.to_html(index=False), "EDT_Edition.html", "text/html")
-
-        # --- 3. LOGIQUE DE SAUVEGARDE ET AUTO-INDEXATION ---
-        if st.button("💾 Sauvegarder les modifications et la nouvelle charge"):
+        
+        uploaded_file = st.file_uploader(
+            "Choisir un fichier Excel (.xlsx) :",
+            type=["xlsx"],
+            key="excel_uploader"
+        )
+        
+        if uploaded_file is not None:
             try:
-                if recherche:
-                    # On fusionne : (Tout ce qui n'était pas affiché) + (Ce qui est dans l'éditeur + ajouts)
-                    df_final = pd.concat([df_master[~masque], df_edite], ignore_index=True)
+                df_import = pd.read_excel(uploaded_file)
+                
+                # Vérification des colonnes requises
+                colonnes_requises = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+                colonnes_manquantes = [c for c in colonnes_requises if c not in df_import.columns]
+                
+                if colonnes_manquantes:
+                    st.error(f"❌ Colonnes manquantes dans le fichier : {', '.join(colonnes_manquantes)}")
                 else:
-                    df_final = df_edite
-
-                # Nettoyage : suppression des lignes vides (si on a cliqué sur + sans écrire)
-                df_final = df_final.dropna(subset=['Enseignements'])
-                
-                # Tri pour l'organisation
-                df_final = df_final.sort_values(by=["Promotion", "Jours", "Horaire"])
-                
-                # Sauvegarde sur le fichier Excel source
-                df_final.to_excel(NOM_FICHIER_FIXE, index=False)
-                
-                st.success(f"✅ Enregistrement réussi ! Le fichier contient maintenant {len(df_final)} lignes.")
-                st.rerun()
-                
+                    # Filtrage par enseignant si sélectionné
+                    if enseignant_filtre != "Tous les enseignants":
+                        df_import = df_import[df_import['Enseignants'] == enseignant_filtre]
+                    
+                    st.success(f"✅ {len(df_import)} lignes prêtes à être importées")
+                    st.dataframe(df_import, use_container_width=True)
+                    
+                    # Choix du mode d'intégration
+                    mode_import = st.radio(
+                        "Mode d'intégration :",
+                        options=["➕ Ajouter (fusionner avec l'existant)", "🔄 Remplacer (supprimer l'ancien pour cette promotion)"],
+                        key="mode_import"
+                    )
+                    
+                    # Sélection de la promotion cible pour le remplacement
+                    if "Remplacer" in mode_import:
+                        promo_cible = st.selectbox(
+                            "Promotion à remplacer :",
+                            options=sorted(df_import['Promotion'].unique()),
+                            key="promo_remplacement"
+                        )
+                    
+                    if st.button("💾 Intégrer les données importées", key="btn_integrer"):
+                        try:
+                            # Chargement du fichier maître
+                            df_master = pd.read_excel(NOM_FICHIER_FIXE) if NOM_FICHIER_FIXE.endswith('.xlsx') else pd.read_csv(NOM_FICHIER_FIXE)
+                            
+                            if "Remplacer" in mode_import:
+                                # Suppression des anciennes lignes de cette promotion
+                                df_master = df_master[df_master['Promotion'] != promo_cible]
+                            
+                            # Ajout des nouvelles lignes
+                            df_final = pd.concat([df_master, df_import], ignore_index=True)
+                            
+                            # Nettoyage et tri
+                            df_final = df_final.dropna(subset=['Enseignements'])
+                            df_final = df_final.sort_values(by=["Promotion", "Jours", "Horaire"])
+                            
+                            # Sauvegarde
+                            if NOM_FICHIER_FIXE.endswith('.xlsx'):
+                                df_final.to_excel(NOM_FICHIER_FIXE, index=False)
+                            else:
+                                df_final.to_csv(NOM_FICHIER_FIXE, index=False)
+                            
+                            st.success(f"✅ Importation réussie ! Fichier mis à jour : {len(df_final)} lignes totales.")
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"❌ Erreur lors de l'intégration : {e}")
+                            
             except Exception as e:
-                st.error(f"❌ Erreur technique lors de la sauvegarde : {e}")
+                st.error(f"❌ Erreur de lecture du fichier : {e}")
+
+    # ═══════════════════════════════════════════════════════════════
+    # BARRE DE RECHERCHE
+    # ═══════════════════════════════════════════════════════════════
+    recherche = st.text_input("🔍 Rechercher une ligne (Enseignant, Salle ou Code) :", key="admin_search_bar")
+
+    # Préparation du DataFrame maître
+    df_master = df[colonnes_ordonnees].copy()
+    
+    # Application du filtre si recherche active
+    if recherche:
+        masque = df_master.apply(lambda r: r.astype(str).str.contains(recherche, case=False).any(), axis=1)
+        df_edition = df_master[masque].copy()
+    else:
+        df_edition = df_master.copy()
+
+    # Affichage du compteur de lignes pour le suivi de l'index (Ex: 532)
+    total_lignes = len(df)
+    st.caption(f"Lignes totales dans le fichier source : {total_lignes} | Prochain index : {total_lignes}")
+
+    # L'ÉDITEUR DYNAMIQUE
+    df_edite = st.data_editor(
+        df_edition,
+        use_container_width=True,
+        num_rows="dynamic",
+        key="admin_data_editor_main"
+    )
+
+    # Boutons de téléchargement pour l'éditeur (données filtrées)
+    ca1, ca2 = st.columns(2)
+    with ca1:
+        out_ed = io.BytesIO()
+        df_edite.to_excel(out_ed, index=False)
+        st.download_button("📊 Télécharger l'EDT filtré (Excel)", out_ed.getvalue(), "EDT_Edition.xlsx")
+    with ca2:
+        st.download_button("📄 Télécharger l'EDT filtré (HTML)", df_edite.to_html(index=False), "EDT_Edition.html", "text/html")
+
+    # --- 3. LOGIQUE DE SAUVEGARDE ET AUTO-INDEXATION ---
+    if st.button("💾 Sauvegarder les modifications et la nouvelle charge"):
+        try:
+            if recherche:
+                # On fusionne : (Tout ce qui n'était pas affiché) + (Ce qui est dans l'éditeur + ajouts)
+                df_final = pd.concat([df_master[~masque], df_edite], ignore_index=True)
+            else:
+                df_final = df_edite
+
+            # Nettoyage : suppression des lignes vides (si on a cliqué sur + sans écrire)
+            df_final = df_final.dropna(subset=['Enseignements'])
+            
+            # Tri pour l'organisation
+            df_final = df_final.sort_values(by=["Promotion", "
 import streamlit as st
 from docx import Document
 from docx.shared import Inches, Pt
