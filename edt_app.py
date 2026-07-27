@@ -232,7 +232,7 @@ def generate_pro_excel(df_source, title, sheet_name="Donnees"):
     return buffer.getvalue()
 
 def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
-    """Genere un PDF individuel avec Jours en lignes et Horaires en colonnes."""
+    """Genere un PDF individuel avec Jours en lignes et Horaires en colonnes + en-tete PPER.03."""
     try:
         from fpdf import FPDF
     except ImportError:
@@ -240,6 +240,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     
     if df_source is None or df_source.empty:
         return None, "Aucune donnee"
+    
     # ═══════════════════════════════════════════════════════════════
     # CLASSE PDF AVEC EN-TETE PPER.03
     # ═══════════════════════════════════════════════════════════════
@@ -280,6 +281,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
             self.set_font('Arial', 'I', 7)
             self.set_text_color(128, 128, 128)
             self.cell(0, 10, sanitize_for_pdf(f"Document genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"), 0, 0, "C")
+    
     # Ordres de reference
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     horaires_ordre = [
@@ -335,17 +337,18 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
         grid.columns = [map_h.get(c, c) for c in grid.columns]
     
     # PDF
-    pdf = FPDF(orientation="L", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf = EDTIndivPDF(orientation="L", unit="mm", format="A4")
+    pdf.alias_nb_pages()  # Active le remplacement de {nb}
+    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Header
+    # Titre sous l'en-tete
     pdf.set_font("Arial", "B", 11)
     pdf.set_text_color(30, 58, 138)
-    pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL_2026-2027 de {nom_enseignant.upper()}"), 0, 1, "C")
+    pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
     pdf.ln(3)
     
     if grid.empty or (grid.shape[0] == 1 and grid.shape[1] == 1):
@@ -354,11 +357,11 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
         return bytes(pdf.output()), None
     
     n_cols = len(grid.columns)
-    page_w = pdf.w - 16
+    page_w = pdf.w - 20
     col_jour_w = 22
     col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
     
-    # En-tetes
+    # En-tetes du tableau
     pdf.set_font("Arial", "B", 7)
     pdf.set_fill_color(30, 58, 138)
     pdf.set_text_color(255, 255, 255)
@@ -419,11 +422,6 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
             else:
                 pdf.cell(col_h_w, row_h, "", 1, 0, "C", True)
         pdf.ln(row_h)
-    
-    pdf.ln(3)
-    pdf.set_font("Arial", "I", 7)
-    pdf.set_text_color(128, 128, 128)
-    pdf.cell(0, 5, sanitize_for_pdf(f"Document genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"), 0, 0, "R")
     
     return bytes(pdf.output()), None
 def render_download_hub(df_global, user_data, is_admin):
