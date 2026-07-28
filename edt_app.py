@@ -912,6 +912,7 @@ def render_download_hub(df_global, user_data, is_admin):
             c3.button("📊 Excel", disabled=True, use_container_width=True, key="dx")                
             
     with col3:
+        
         st.markdown("**🏢 Par **")
         sel_salle = st.selectbox("Choisir  (Salle, Amphi, Labo, Autres)", ["Toutes"] + salles, key="hub_salle")
         df_filtre_s = df_propre.copy()
