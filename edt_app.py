@@ -848,7 +848,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
         def draw_title(pdf, promo):
             pdf.set_font("Arial", "B", 12)
             pdf.set_text_color(30, 58, 138)
-            pdf.cell(0, 8, sanitize_for_pdf(f"PROMOTION {str(promo).upper()}")- Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA, 0, 1, "C")
+            pdf.cell(0, 8, sanitize_for_pdf(f"PROMOTION {str(promo).upper()}"), 0, 1, "C")
             pdf.set_font("Arial", "I", 8)
             pdf.set_text_color(100, 100, 100)
             pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
