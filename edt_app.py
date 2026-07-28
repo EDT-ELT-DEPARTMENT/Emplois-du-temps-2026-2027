@@ -5278,7 +5278,7 @@ OPTIONS_EXPEDITEURS = [
     "Chef de département",
     "Chef de département adjoint",
     "Chef service de scolarité",
-    "Chef de service d'enseignements",
+    "Chef service d'enseignements",
     "Signataire"
 ]
 # ==========================================
