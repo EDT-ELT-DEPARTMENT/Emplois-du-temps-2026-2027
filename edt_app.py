@@ -572,7 +572,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
             pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {str(ens).upper()}"), 0, 1, "C")
             pdf.set_font("Arial", "I", 8)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
             pdf.ln(3)
         
         def draw_table_header(pdf, grid, col_jour_w, col_h_w):
