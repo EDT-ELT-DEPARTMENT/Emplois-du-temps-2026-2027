@@ -5567,6 +5567,7 @@ def get_prochaine_reference():
         return 1
     except Exception:
         return 1
+
 def afficher_historique_bordereaux():
     """Affiche l'historique des bordereaux avec export Excel et effacement sécurisé."""
     try:
