@@ -339,7 +339,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
             line_h = H_ENTETE / 4
             infos = [
                 "Code : PPER.03",
-                "Revision : 00",
+                "Révision : 00",
                 "Date : 16/05/2026",
                 f"Pages : {self.page_no()}/{{nb}}"
             ]
@@ -366,7 +366,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
     pdf.ln(3)
         
     if grid.empty:
@@ -590,7 +590,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                 line_h = H_ENTETE / 4
                 infos = [
                     "Code : PPER.03",
-                    "Revision : 00",
+                    "Révision : 00",
                     "Date : 16/05/2026",
                     f"Pages : {total_pages}/{total_pages}"
                 ]
@@ -2188,7 +2188,7 @@ if df is not None:
                         nb_td = len(df_f[df_f['Enseignements'].str.contains('Td', case=False, na=False)])
                         nb_tp = len(df_f[df_f['Enseignements'].str.contains('Tp', case=False, na=False)])
                         pdf.set_font("Arial", "I", 9)
-                        pdf.cell(0, 6, f"Recapitulatif : {nb_cours} Cours | {nb_td} TD | {nb_tp} TP", 0, 1, "C")
+                        pdf.cell(0, 6, f"Récapitulatif : {nb_cours} Cours | {nb_td} TD | {nb_tp} TP", 0, 1, "C")
                         pdf.ln(4)
 
                         # --- LOGIQUE DE TRI & FUSION ---
