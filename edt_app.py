@@ -5731,7 +5731,7 @@ def afficher_historique_bordereaux():
                     c1, c2, c3, c4, c5 = st.columns(5)
                     c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '—')}")
                     c2.markdown(f"**🏛️ Département**\n{row.get('departement', '—')}")
-                    c3.markdown(f"**📤 Expéditeur**\n{exp}")
+                    c3.markdown(f"**📤 Expéditeur**\n{row.get('expediteur_qualite', '—')}")
                     c4.markdown(f"**📅 Date**\n{date_str}")
                     c5.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '—')}")
                     
