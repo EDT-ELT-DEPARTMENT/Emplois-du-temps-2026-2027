@@ -245,12 +245,12 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     
     # Dimensions exactes PPER.03
     W_LOGO = 1.19 * 25.4
-    W_MILIEU = 3.70 * 25.4
+    W_MI = 3.70 * 25.4
     W_INFO = 1.40 * 25.4
     H_ENTETE = 1.04 * 25.4
-    H_HAUT_MILIEU = 0.60 * 25.4
-    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
-    W_TOT = W_LOGO + W_MILIEU + W_INFO
+    H_HAUT_MI = 0.60 * 25.4
+    H_BAS_MI = H_ENTETE - H_HAUT_MI
+    W_TOT = W_LOGO + W_MI + W_INFO
     
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     horaires_ordre = [
@@ -280,7 +280,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
                 nat = '[T]'
             else:
                 nat = '[P]'
-            txt = f"{nat} {r.get('Enseignements', '')}\n{r.get('Lieu', '')}\n{r.get('Promotion', '')}"
+            txt = f"{nat} {r.get('Enseignements', '')}\n{r.get('', '')}\n{r.get('Promotion', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -309,31 +309,31 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
         def header(self):
             X0 = 10 + ((self.w - 20) - W_TOT) / 2
             Y0 = 10
-            X_MILIEU = X0 + W_LOGO
-            X_INFO = X_MILIEU + W_MILIEU
-            Y_SEP = Y0 + H_HAUT_MILIEU
+            X_MI = X0 + W_LOGO
+            X_INFO = X_MI + W_MI
+            Y_SEP = Y0 + H_HAUT_MI
             
             self.set_draw_color(0, 0, 0)
             self.set_line_width(0.3)
             self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
-            self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
+            self.line(X_MI, Y0, X_MI, Y0 + H_ENTETE)
             self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
-            self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
+            self.line(X_MI, Y_SEP, X_INFO, Y_SEP)
             
             if os.path.exists("logo.PNG"):
                 logo_w = W_LOGO - 4
                 logo_h = H_ENTETE - 4
                 self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=logo_w, h=logo_h)
             
-            self.set_xy(X_MILIEU, Y0 + 1.5)
+            self.set_xy(X_MI, Y0 + 1.5)
             self.set_font('Arial', 'B', 11)
-            self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
+            self.cell(W_MI, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
             self.set_font('Arial', '', 10)
-            self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
+            self.cell(W_MI, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
             
-            self.set_xy(X_MILIEU, Y_SEP + 0.5)
+            self.set_xy(X_MI, Y_SEP + 0.5)
             self.set_font('Arial', 'B', 12)
-            self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
+            self.cell(W_MI, H_BAS_MI - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
             
             self.set_font('Arial', '', 9)
             line_h = H_ENTETE / 4
@@ -508,12 +508,12 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
     
     # Dimensions en-tete PPER.03 (inch -> mm)
     W_LOGO = 1.19 * 25.4
-    W_MILIEU = 3.70 * 25.4
+    W_MI = 3.70 * 25.4
     W_INFO = 1.40 * 25.4
     H_ENTETE = 1.04 * 25.4
-    H_HAUT_MILIEU = 0.60 * 25.4
-    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
-    W_TOT = W_LOGO + W_MILIEU + W_INFO
+    H_HAUT_MI = 0.60 * 25.4
+    H_BAS_MI = H_ENTETE - H_HAUT_MI
+    W_TOT = W_LOGO + W_MI + W_INFO
     MARGE_BAS = 15
     
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
@@ -544,7 +544,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
             else:
                 nat = '[TP]'
             
-            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nSalle: {r.get('Lieu', '')}"
+            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nSalle: {r.get('', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -562,29 +562,29 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
             def header(self):
                 X0 = 10 + ((self.w - 20) - W_TOT) / 2
                 Y0 = 10
-                X_MILIEU = X0 + W_LOGO
-                X_INFO = X_MILIEU + W_MILIEU
-                Y_SEP = Y0 + H_HAUT_MILIEU
+                X_MI = X0 + W_LOGO
+                X_INFO = X_MI + W_MI
+                Y_SEP = Y0 + H_HAUT_MI
                 
                 self.set_draw_color(0, 0, 0)
                 self.set_line_width(0.3)
                 self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
-                self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
+                self.line(X_MI, Y0, X_MI, Y0 + H_ENTETE)
                 self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
-                self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
+                self.line(X_MI, Y_SEP, X_INFO, Y_SEP)
                 
                 if os.path.exists("logo.PNG"):
                     self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
                 
-                self.set_xy(X_MILIEU, Y0 + 1.5)
+                self.set_xy(X_MI, Y0 + 1.5)
                 self.set_font('Arial', 'B', 11)
-                self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
+                self.cell(W_MI, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
                 self.set_font('Arial', '', 10)
-                self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
+                self.cell(W_MI, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
                 
-                self.set_xy(X_MILIEU, Y_SEP + 0.5)
+                self.set_xy(X_MI, Y_SEP + 0.5)
                 self.set_font('Arial', 'B', 12)
-                self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
+                self.cell(W_MI, H_BAS_MI - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
                 
                 self.set_font('Arial', '', 9)
                 line_h = H_ENTETE / 4
@@ -808,7 +808,7 @@ def render_download_hub(df_global, user_data, is_admin):
 
     promos = sorted([p for p in df_propre["Promotion"].unique() if p and p != "Non defini"])
     profs = sorted([p for p in df_propre["Enseignants"].unique() if p and p != "Non defini"])
-    salles = sorted([s for s in df_propre["Lieu"].unique() if s and s != "Non defini"])
+    salles = sorted([s for s in df_propre[""].unique() if s and s != "Non defini"])
 
     col1, col2, col3 = st.columns(3)
 
@@ -912,11 +912,11 @@ def render_download_hub(df_global, user_data, is_admin):
             c3.button("📊 Excel", disabled=True, use_container_width=True, key="dx")                
             
     with col3:
-        st.markdown("**🏢 Par Lieu**")
-        sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", ["Toutes"] + salles, key="hub_salle")
+        st.markdown("**🏢 Par **")
+        sel_salle = st.selectbox("Choisir  (Salle, Amphi, Labo, Autres)", ["Toutes"] + salles, key="hub_salle")
         df_filtre_s = df_propre.copy()
         if sel_salle != "Toutes":
-            df_filtre_s = df_filtre_s[df_filtre_s["Lieu"] == sel_salle]
+            df_filtre_s = df_filtre_s[df_filtre_s[""] == sel_salle]
         c1, c2, c3 = st.columns(3)
         pdf_data_s, _ = generate_pro_pdf(df_filtre_s, f"Planning - {sel_salle}", "Export salle")
         if pdf_data_s is not None:
@@ -1103,7 +1103,7 @@ def charger_donnees_supabase():
             df_temp['j_norm'] = df_temp['Jours'].apply(normalize)
             return df_temp
         else:
-            colonnes = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+            colonnes = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', '', 'Promotion']
             return pd.DataFrame(columns=colonnes)
     except Exception as e:
         st.error(f"Erreur lors du chargement Supabase : {e}")
@@ -1376,7 +1376,7 @@ if os.path.exists(NOM_FICHIER_FIXE):
         'Enseignants', 
         'Horaire', 
         'Jours', 
-        'Lieu', 
+        '', 
         'Promotion'
     ]
     
@@ -4979,7 +4979,6 @@ if is_admin:
                 st.success("✅ Aucun conflit de salle détecté.")
 
     with col3:
-    
         st.markdown("**🏢 Par Lieu**")
         sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", ["Toutes"] + salles, key="hub_salle")
         df_filtre_s = df_propre.copy()
