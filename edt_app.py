@@ -5543,7 +5543,7 @@ def enregistrer_historique_bordereau(donnees, departement, user_email):
         st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
 
 def afficher_historique_bordereaux():
-    """Affiche l'historique des bordereaux générés avec les pièces jointes."""
+    """Affiche l'historique des bordereaux avec tableau détaillé des pièces."""
     try:
         res = supabase.table("bordereaux_historique")\
                       .select("*")\
@@ -5551,48 +5551,69 @@ def afficher_historique_bordereaux():
                       .limit(50)\
                       .execute()
         if res.data:
-            # Préparation des données
-            rows = []
+            # ═══════════════════════════════════════════════
+            # 1. TABLEAU RÉCAPITULATIF GLOBAL (vue d'ensemble)
+            # ═══════════════════════════════════════════════
+            rows_recap = []
             for row in res.data:
-                # Extraction des désignations de pièces depuis le JSON
-                pieces = row.get('pieces_details', [])
-                if isinstance(pieces, list) and len(pieces) > 0:
-                    designations = [str(p.get('Désignation des pièces', '')).strip() 
-                                   for p in pieces 
-                                   if str(p.get('Désignation des pièces', '')).strip()]
-                    pieces_str = " ; ".join(designations) if designations else "—"
-                else:
-                    pieces_str = "—"
-                
-                rows.append({
+                rows_recap.append({
                     'Date': pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M'),
                     'Généré par': row.get('generated_by', '—'),
                     'Département': row.get('departement', '—'),
                     'Destinataire': row.get('destinataire', '—'),
                     'N° Référence': row.get('num_reference', '—'),
-                    'Désignation des pièces': pieces_str,
                     'Nb pièces': row.get('nombre_pieces', 0),
                     'Fichier': row.get('fichier_nom', '—')
                 })
             
-            df_histo = pd.DataFrame(rows)
+            df_recap = pd.DataFrame(rows_recap)
+            st.markdown("**📊 Vue d'ensemble des bordereaux**")
+            st.dataframe(df_recap, use_container_width=True, hide_index=True)
             
-            # Configuration des colonnes pour un affichage optimal
-            st.dataframe(
-                df_histo,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    'Date': st.column_config.TextColumn('Date', width='small'),
-                    'Généré par': st.column_config.TextColumn('Généré par', width='medium'),
-                    'Département': st.column_config.TextColumn('Département', width='medium'),
-                    'Destinataire': st.column_config.TextColumn('Destinataire', width='medium'),
-                    'N° Référence': st.column_config.TextColumn('N° Réf.', width='small'),
-                    'Désignation des pièces': st.column_config.TextColumn('Désignation des pièces', width='large'),
-                    'Nb pièces': st.column_config.NumberColumn('Nb', width='small'),
-                    'Fichier': st.column_config.TextColumn('Fichier', width='medium'),
-                }
-            )
+            st.divider()
+            st.markdown("**📋 Détail par bordereau**")
+            
+            # ═══════════════════════════════════════════════
+            # 2. DÉTAIL DE CHAQUE BORDEREAU (tableau fidèle)
+            # ═══════════════════════════════════════════════
+            for i, row in enumerate(res.data):
+                date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
+                ref = row.get('num_reference', '—')
+                dest = row.get('destinataire', '—')
+                
+                with st.expander(
+                    f"📝 Bordereau N° {ref}/F.G.E/V.D.E.Q.L.E/2027 — {dest} — {date_str}", 
+                    expanded=(i == 0)
+                ):
+                    # Métadonnées en colonnes
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '—')}")
+                    c2.markdown(f"**🏛️ Département**\n{row.get('departement', '—')}")
+                    c3.markdown(f"**📅 Date**\n{date_str}")
+                    c4.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '—')}")
+                    
+                    st.markdown("---")
+                    st.markdown("**Tableau de transmission :**")
+                    
+                    # Récupération et affichage fidèle des pièces
+                    pieces = row.get('pieces_details', [])
+                    if isinstance(pieces, list) and len(pieces) > 0:
+                        df_pieces = pd.DataFrame(pieces)
+                        
+                        # Réordonner les colonnes exactement comme le bordereau
+                        cols_ordre = []
+                        for col in ['Désignation des pièces', 'Nbre', 'Observations']:
+                            if col in df_pieces.columns:
+                                cols_ordre.append(col)
+                        
+                        if cols_ordre:
+                            df_pieces = df_pieces[cols_ordre]
+                            st.dataframe(df_pieces, use_container_width=True, hide_index=True)
+                        else:
+                            st.json(pieces)  # Fallback si les noms de colonnes diffèrent
+                    else:
+                        st.info("Aucune pièce enregistrée pour ce bordereau.")
+                    
         else:
             st.info("📭 Aucun bordereau enregistré dans l'historique.")
     except Exception as e:
