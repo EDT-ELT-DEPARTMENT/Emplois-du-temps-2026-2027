@@ -5311,7 +5311,7 @@ def ajouter_entete_pper03(doc, titre_sous_doc=""):
     tabs.append(tab_r)
     pPr.append(tabs)
 
-    r_ref = footer_p.add_run("Réf : UDL-GEL-ER-004-2027")
+    r_ref = footer_p.add_run("Réf : UDL-GEL-ER-004-2026")
     r_ref.font.name = 'Calibri'
     r_ref.font.size = Pt(10)
     footer_p.add_run("\t")
@@ -5402,6 +5402,210 @@ def ajouter_entete_pper03(doc, titre_sous_doc=""):
 # -----------------------------------------------------------------------------
 # GÉNÉRATEURS DE DOCUMENTS
 # -----------------------------------------------------------------------------
+# =============================================================================
+# EN-TÊTE SPÉCIFIQUE BORDEREAU (Logo + Texte centré gras 12 + Réf + Pagination)
+# =============================================================================
+
+def ajouter_entete_bordereau(doc):
+    """En-tête officielle du bordereau : logo à gauche, texte centré gras 12, réf centrée, pagination droite."""
+    section = doc.sections[0]
+    section.top_margin = Mm(20)
+    section.bottom_margin = Mm(20)
+    section.left_margin = Mm(20)
+    section.right_margin = Mm(20)
+    section.different_first_page_header_footer = False
+
+    # --- PIED DE PAGE : Référence centrée + Pagination à droite ---
+    footer = section.footer
+    footer_p = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    footer_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    
+    pPr = footer_p._p.get_or_add_pPr()
+    tabs = OxmlElement('w:tabs')
+    
+    # Taquet centre pour la référence
+    tab_c = OxmlElement('w:tab')
+    tab_c.set(qn('w:val'), 'center')
+    tab_c.set(qn('w:pos'), '4968')
+    tabs.append(tab_c)
+    
+    # Taquet droite pour la pagination
+    tab_r = OxmlElement('w:tab')
+    tab_r.set(qn('w:val'), 'right')
+    tab_r.set(qn('w:pos'), '9936')
+    tabs.append(tab_r)
+    pPr.append(tabs)
+
+    # (Gauche vide)
+    # Centre : Référence
+    r_ref = footer_p.add_run("Réf : UDL-GEL-ER-004-2027")
+    r_ref.font.name = 'Calibri'
+    r_ref.font.size = Pt(10)
+    
+    # Droite : Pagination
+    footer_p.add_run("\t")
+    r_page = footer_p.add_run()
+    r_page.font.name = 'Calibri'
+    r_page.font.size = Pt(10)
+    ajouter_champ_page(r_page, "PAGE")
+    r_sep = footer_p.add_run("/")
+    r_sep.font.name = 'Calibri'
+    r_sep.font.size = Pt(10)
+    r_tot = footer_p.add_run()
+    r_tot.font.name = 'Calibri'
+    r_tot.font.size = Pt(10)
+    ajouter_champ_page(r_tot, "NUMPAGES")
+
+    # --- EN-TÊTE : Logo à gauche + Texte centré ---
+    header_table = doc.add_table(rows=1, cols=2)
+    header_table.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    header_table.autofit = False
+    header_table.columns[0].width = Inches(1.2)
+    header_table.columns[1].width = Inches(5.7)
+
+    # Bordures invisibles
+    tblPr = header_table._tbl.tblPr
+    tblBorders = OxmlElement('w:tblBorders')
+    for b in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+        border = OxmlElement(f'w:{b}')
+        border.set(qn('w:val'), 'none')
+        tblBorders.append(border)
+    tblPr.append(tblBorders)
+
+    # Cellule Logo (gauche)
+    cell_logo = header_table.rows[0].cells[0]
+    p_logo = cell_logo.paragraphs[0]
+    p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    if os.path.exists("logo.PNG"):
+        p_logo.add_run().add_picture("logo.PNG", width=Inches(0.833))
+    else:
+        r = p_logo.add_run("[LOGO]")
+        r.font.italic = True
+        r.font.size = Pt(8)
+
+    # Cellule Texte (droite) - Centré, gras, taille 12
+    cell_texte = header_table.rows[0].cells[1]
+    p_texte = cell_texte.paragraphs[0]
+    p_texte.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    lignes = [
+        "République Algérienne Démocratique et populaire",
+        "Ministère de l'enseignement supérieur et de la recherche scientifiques",
+        "Université Djillali Liabes de Sidi Bel Abbés",
+        "Faculté de Génie Electrique"
+    ]
+    for i, ligne in enumerate(lignes):
+        r = p_texte.add_run(ligne)
+        r.bold = True
+        r.font.size = Pt(12)
+        r.font.name = 'Calibri'
+        if i < len(lignes) - 1:
+            p_texte.add_run("\n")
+
+    doc.add_paragraph()
+
+
+# =============================================================================
+# GÉNÉRATEUR BORDEREAU ISO (AVEC NOUVELLE EN-TÊTE)
+# =============================================================================
+
+def generer_bordereau_iso(donnees):
+    doc = Document()
+    ajouter_entete_bordereau(doc)  # <-- Nouvelle en-tête spécifique bordereau
+
+    # Référence en haut à gauche du corps
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r = p.add_run(f"N° : {donnees['num_reference']}/ F.G.E/ V.D.E.Q.L.E/2027")
+    r.bold = True
+    r.font.size = Pt(10)
+    r.font.name = 'Calibri'
+
+    doc.add_paragraph()
+
+    # Titre
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run("BORDEREAU D'ENVOI")
+    r.font.name = 'Calibri'
+    r.font.size = Pt(28)
+    r.italic = True
+    r.underline = True
+    r.bold = True
+
+    doc.add_paragraph()
+
+    # Destinataire
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r = p.add_run(f"A monsieur : {donnees['destinataire']}")
+    r.bold = True
+    r.font.size = Pt(12)
+    r.font.name = 'Calibri'
+
+    doc.add_paragraph()
+
+    # Tableau de transmission
+    nb_pieces = len(donnees['liste_pieces'])
+    table = doc.add_table(rows=2 + nb_pieces, cols=3)
+    table.style = 'Table Grid'
+    table.columns[0].width = Inches(4.0)
+    table.columns[1].width = Inches(0.8)
+    table.columns[2].width = Inches(1.8)
+
+    hdr = table.rows[0].cells
+    hdr[0].text = "Désignation des pièces"
+    hdr[1].text = "Nbre"
+    hdr[2].text = "Observations"
+    for cell in hdr:
+        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cell.paragraphs[0].runs[0].font.bold = True
+        cell.paragraphs[0].runs[0].font.name = 'Calibri'
+        cell.paragraphs[0].runs[0].font.size = Pt(10)
+        set_cell_margins(cell)
+
+    row_joint = table.rows[1].cells
+    row_joint[0].text = "Veuillez trouver ci-joint :"
+    row_joint[0].paragraphs[0].runs[0].font.italic = True
+    row_joint[0].paragraphs[0].runs[0].font.name = 'Calibri'
+    set_cell_margins(row_joint[0])
+
+    for idx, piece in enumerate(donnees['liste_pieces']):
+        r = table.rows[2 + idx].cells
+        r[0].text = str(piece.get("Désignation des pièces", ""))
+        r[1].text = str(piece.get("Nbre", ""))
+        r[2].text = str(piece.get("Observations", ""))
+        for i, cell in enumerate(r):
+            set_cell_margins(cell, top=120, bottom=120)
+            if cell.paragraphs[0].runs:
+                cell.paragraphs[0].runs[0].font.name = 'Calibri'
+                cell.paragraphs[0].runs[0].font.size = Pt(10)
+            if i == 1:
+                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.add_paragraph("\n\n")
+
+    # Signatures
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    date_str = donnees['date_creation'].strftime('%d/%m/%Y') if hasattr(donnees['date_creation'], 'strftime') else str(donnees['date_creation'])
+    r = p.add_run(f"Sidi bel Abbès le : {date_str}\t\t\t\tChef de département")
+    r.font.name = 'Calibri'
+    r.font.size = Pt(11)
+    r.bold = True
+
+    doc.add_paragraph("\n\n\n")
+
+    # Accusé de réception
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r = p.add_run("Accusé de réception    ")
+    r.font.name = 'Calibri'
+    r.font.size = Pt(10)
+    r.underline = True
+    r.bold = True
+
+    return doc
 
 def generer_bordereau_iso(donnees):
     doc = Document()
