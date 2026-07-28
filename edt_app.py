@@ -5812,40 +5812,7 @@ if doc_choisi == "Bordereau d'envoi":
     donnees_doc['liste_pieces'] = df_edite.to_dict(orient="records")
         
     # ----------------------------------------------------
-    # ZONE DESTINATAIRE : SÉLECTEUR ET CHAMP LIBRE DYNAMIQUE
-    # ----------------------------------------------------
-    st.markdown("##### Destinataire officiel")
-    choix_dest = st.selectbox(
-        "Sélectionnez le destinataire dans la liste :", 
-        OPTIONS_DESTINATAIRES,
-        index=0
-    )
     
-    if choix_dest == "Autres":
-        donnees_doc['destinataire'] = st.text_input("Veuillez saisir la destination personnalisée :", value="")
-    else:
-        donnees_doc['destinataire'] = choix_dest
-        
-    st.markdown("---")
-    st.write("**Configuration du Tableau de Transmission**")
-    
-    df_initial = pd.DataFrame([
-        {"Désignation des pièces": "Fiches de vœux du second semestre", "Nbre": 12, "Observations": "Pour examen"},
-        {"Désignation des pièces": "Procès-verbal de délibération", "Nbre": 2, "Observations": "Pour affichage"}
-    ])
-    
-    df_edite = st.data_editor(
-        df_initial, 
-        num_rows="dynamic", 
-        use_container_width=True,
-        column_config={
-            "Désignation des pièces": st.column_config.TextColumn(width="medium", required=True),
-            "Nbre": st.column_config.NumberColumn(width="small", min_value=1, required=True),
-            "Observations": st.column_config.TextColumn(width="medium")
-        }
-    )
-    donnees_doc['liste_pieces'] = df_edite.to_dict(orient="records")
-
 else:
     with st.form("form_autres"):
         donnees_doc['date_creation'] = st.date_input("Date", datetime.now())
