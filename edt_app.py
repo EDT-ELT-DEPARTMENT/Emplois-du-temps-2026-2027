@@ -5239,49 +5239,28 @@ else:
 # --- 6. PIED DE PAGE ---
 st.write("---")
 st.caption("🛠️ Application de gestion d'emploi du temps | Mode Admin : {}".format("✅ Actif" if is_admin else "❌ Inactif"))
-import streamlit as st
+
+# =============================================================================
+# FONCTIONS WORD & EN-TÊTE PPER.03 (À PLACER AVANT LA LOGIQUE STREAMLIT)
+# =============================================================================
+
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, Mm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 import io
-import os
-import pandas as pd
-from datetime import datetime
 
-# ==========================================
-# CONFIGURATION ET CONSTANTES
-# ==========================================
-TITRE_PLATEFORME = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+# Dimensions exactes PPER.03 (inch → mm)
+W_LOGO_MM   = Mm(1.19 * 25.4)
+W_MILIEU_MM = Mm(3.70 * 25.4)
+W_INFO_MM   = Mm(1.40 * 25.4)
+H_ENTETE_MM = Mm(1.04 * 25.4)
+H_HAUT_MM   = Mm(0.60 * 25.4)
+H_BAS_MM    = Mm((1.04 - 0.60) * 25.4)
+W_TOT_MM    = Mm((1.19 + 3.70 + 1.40) * 25.4)
 
-DEPARTEMENTS = [
-    "Département d'Électrotechnique",
-    "Département d'Électronique",
-    "Département d'Automatique",
-    "Département de Télécommunications"
-]
-
-TYPES_DOCUMENTS = [
-    "Bordereau d'envoi",
-    "Procès-verbal (PV) de réunion",
-    "PV de surveillance",
-    "PV du Comité Pédagogique",
-    "Réunion du Conseil de Discipline"
-]
-
-OPTIONS_DESTINATAIRES = [
-    "Le Doyen de la faculté",
-    "Le vice Doyen de la Post graduation",
-    "Le vice Doyen de la graduation",
-    "Autres"
-]
-
-# ==========================================
-# FONCTIONS TECHNIQUES DE STRUCTURE
-# ==========================================
 def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
-    """Définit l'espacement interne (padding) des cellules d'un tableau."""
     tc = cell._tc
     tcPr = tc.get_or_add_tcPr()
     tcMar = OxmlElement('w:tcMar')
@@ -5293,7 +5272,6 @@ def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
     tcPr.append(tcMar)
 
 def ajouter_champ_page(run, type_champ):
-    """Injecte un champ de numérotation dynamique (PAGE ou NUMPAGES) dans un paragraphe Word."""
     fldChar1 = OxmlElement('w:fldChar')
     fldChar1.set(qn('w:fldCharType'), 'begin')
     instrText = OxmlElement('w:instrText')
@@ -5303,346 +5281,623 @@ def ajouter_champ_page(run, type_champ):
     fldChar2.set(qn('w:fldCharType'), 'separate')
     fldChar3 = OxmlElement('w:fldChar')
     fldChar3.set(qn('w:fldCharType'), 'end')
-    
     run._r.append(fldChar1)
     run._r.append(instrText)
     run._r.append(fldChar2)
     run._r.append(fldChar3)
 
-# ==========================================
-# GÉNÉRATEUR DE BORDEREAU ISO STRICT
-# ==========================================
-def générer_bordereau_iso(département, donnees):
-    doc = Document()
-    
-    # Configuration des marges globales de la page (0.8 pouce partout)
-    for section in doc.sections:
-        section.top_margin = Inches(0.8)
-        section.bottom_margin = Inches(0.8)
-        section.left_margin = Inches(0.8)
-        section.right_margin = Inches(0.8)
-        
-        # Propagation du pied de page sur toutes les pages
-        section.different_first_page_header_footer = False
-        
-        # Structure du pied de page rectifié
-        footer = section.footer
-        footer_p = footer.paragraphs[0]
-        
-        footer_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        footer_pPr = footer_p._p.get_or_add_pPr()
-        tabs = OxmlElement('w:tabs')
-        
-        # 1. Taquet au centre pour la référence (Centre à ~ 3.45 pouces = 4968 dxa)
-        tab_centre = OxmlElement('w:tab')
-        tab_centre.set(qn('w:val'), 'center')
-        tab_centre.set(qn('w:pos'), '4968')
-        tabs.append(tab_centre)
-        
-        # 2. Taquet à l'extrême droite pour les numéros de page (Extrémité à 6.9 pouces = 9936 dxa)
-        tab_droite = OxmlElement('w:tab')
-        tab_droite.set(qn('w:val'), 'right')
-        tab_droite.set(qn('w:pos'), '9936')
-        tabs.append(tab_droite)
-        
-        footer_pPr.append(tabs)
-        
-        # Premier saut vers le centre pour y écrire le code de référence
-        footer_p.add_run("\t")
-        r_ref_fixe = footer_p.add_run("Réf : UDL-GEL-ER-004-2027")
-        r_ref_fixe.font.name = 'Calibri'
-        r_ref_fixe.font.size = Pt(11)
-        
-        # Deuxième saut vers l'extrême droite pour y loger la pagination automatique
-        footer_p.add_run("\t")
-        
-        r_page_actuelle = footer_p.add_run()
-        r_page_actuelle.font.name = 'Calibri'
-        r_page_actuelle.font.size = Pt(11)
-        ajouter_champ_page(r_page_actuelle, "PAGE")
-        
-        r_separateur = footer_p.add_run("/")
-        r_separateur.font.name = 'Calibri'
-        r_separateur.font.size = Pt(11)
-        
-        r_total_pages = footer_p.add_run()
-        r_total_pages.font.name = 'Calibri'
-        r_total_pages.font.size = Pt(11)
-        ajouter_champ_page(r_total_pages, "NUMPAGES")
+def ajouter_entete_pper03(doc, titre_sous_doc=""):
+    """Injecte l'en-tête ISO PPER.03 + pagination dans un Document Word."""
+    section = doc.sections[0]
+    section.top_margin = Mm(20)
+    section.bottom_margin = Mm(20)
+    section.left_margin = Mm(20)
+    section.right_margin = Mm(20)
+    section.different_first_page_header_footer = False
 
-    # 1. STRUCTURE DE L'EN-TÊTE VIA UN TABLEAU INVISIBLE
-    header_table = doc.add_table(rows=1, cols=2)
+    # Pied de page : pagination
+    footer = section.footer
+    footer_p = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    footer_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    pPr = footer_p._p.get_or_add_pPr()
+    tabs = OxmlElement('w:tabs')
+    tab_c = OxmlElement('w:tab')
+    tab_c.set(qn('w:val'), 'center')
+    tab_c.set(qn('w:pos'), '4968')
+    tabs.append(tab_c)
+    tab_r = OxmlElement('w:tab')
+    tab_r.set(qn('w:val'), 'right')
+    tab_r.set(qn('w:pos'), '9936')
+    tabs.append(tab_r)
+    pPr.append(tabs)
+
+    r_ref = footer_p.add_run("Réf : UDL-GEL-ER-004-2027")
+    r_ref.font.name = 'Calibri'
+    r_ref.font.size = Pt(10)
+    footer_p.add_run("\t")
+    r_page = footer_p.add_run()
+    r_page.font.name = 'Calibri'
+    r_page.font.size = Pt(10)
+    ajouter_champ_page(r_page, "PAGE")
+    r_sep = footer_p.add_run("/")
+    r_sep.font.name = 'Calibri'
+    r_sep.font.size = Pt(10)
+    r_tot = footer_p.add_run()
+    r_tot.font.name = 'Calibri'
+    r_tot.font.size = Pt(10)
+    ajouter_champ_page(r_tot, "NUMPAGES")
+
+    # Tableau en-tête PPER.03
+    header_table = doc.add_table(rows=1, cols=3)
     header_table.alignment = WD_ALIGN_PARAGRAPH.CENTER
     header_table.autofit = False
-    
-    header_table.columns[0].width = Inches(1.2)
-    header_table.columns[1].width = Inches(5.7)
-    
-    cell_logo = header_table.rows[0].cells[0]
-    cell_texte = header_table.rows[0].cells[1]
-    
+    header_table.columns[0].width = W_LOGO_MM
+    header_table.columns[1].width = W_MILIEU_MM
+    header_table.columns[2].width = W_INFO_MM
+
     tblPr = header_table._tbl.tblPr
     tblBorders = OxmlElement('w:tblBorders')
-    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-        border = OxmlElement(f'w:{border_name}')
+    for b in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+        border = OxmlElement(f'w:{b}')
         border.set(qn('w:val'), 'none')
         tblBorders.append(border)
     tblPr.append(tblBorders)
 
-    # Insertion du Logo (Largeur 80 pixels = 0.833 pouces)
+    # Bordures visibles sur chaque cellule
+    for cell in header_table.rows[0].cells:
+        tcPr = cell._tc.get_or_add_tcPr()
+        tcBorders = OxmlElement('w:tcBorders')
+        for b in ['top', 'bottom', 'left', 'right']:
+            border = OxmlElement(f'w:{b}')
+            border.set(qn('w:val'), 'single')
+            border.set(qn('w:sz'), '4')
+            border.set(qn('w:space'), '0')
+            border.set(qn('w:color'), '000000')
+            tcBorders.append(border)
+        tcPr.append(tcBorders)
+
+    cell_logo  = header_table.rows[0].cells[0]
+    cell_milieu = header_table.rows[0].cells[1]
+    cell_info   = header_table.rows[0].cells[2]
+
+    # Logo
     p_logo = cell_logo.paragraphs[0]
-    p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    
-    nom_fichier_logo = "logo.PNG"
-    if os.path.exists(nom_fichier_logo):
-        p_logo.add_run().add_picture(nom_fichier_logo, width=Inches(0.833))
+    p_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if os.path.exists("logo.PNG"):
+        p_logo.add_run().add_picture("logo.PNG", width=Mm(25))
     else:
-        r_alt = p_logo.add_run("[LOGO UNIVERSITÉ]")
-        r_alt.font.name = 'Calibri'
-        r_alt.font.size = Pt(8)
-        r_alt.font.italic = True
+        r = p_logo.add_run("[LOGO]")
+        r.font.italic = True
+        r.font.size = Pt(8)
 
-    # Insertion des textes officiels de l'en-tête (Calibri)
-    p_en_tete = cell_texte.paragraphs[0]
-    p_en_tete.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    r1 = p_en_tete.add_run("RÉPUBLIQUE ALGÉRIENNE DÉMOCRATIQUE ET POPULAIRE\n")
-    r1.bold = True
-    r1.font.size = Pt(11)
-    r1.font.name = 'Calibri'
-    
-    r2 = p_en_tete.add_run(
-        "Ministère de l'Enseignement Supérieur et de la Recherche Scientifique\n"
-        "Université Djillali Liabes - Sidi Bel Abbès\n"
-        "Faculté de Génie Électrique\n"
-    )
-    r2.font.size = Pt(10)
-    r2.font.name = 'Calibri'
-    
-    r_dept = p_en_tete.add_run(f"{département.upper()}\n")
-    r_dept.bold = True
-    r_dept.font.size = Pt(11)
-    r_dept.font.name = 'Calibri'
+    # Milieu
+    p_milieu = cell_milieu.paragraphs[0]
+    p_milieu.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r1 = p_milieu.add_run("Université Djillali Liabes\n")
+    r1.bold = True; r1.font.size = Pt(11); r1.font.name = 'Calibri'
+    r2 = p_milieu.add_run("Sidi Bel Abbes\n")
+    r2.font.size = Pt(10); r2.font.name = 'Calibri'
+    r3 = p_milieu.add_run("Faculté de Génie Electrique\n")
+    r3.font.size = Pt(10); r3.font.name = 'Calibri'
+    r4 = p_milieu.add_run(titre_sous_doc if titre_sous_doc else "EMPLOI DU TEMPS")
+    r4.bold = True; r4.font.size = Pt(12); r4.font.name = 'Calibri'
 
-    doc.add_paragraph("\n")
+    # Info (code, révision, date, page)
+    p_info = cell_info.paragraphs[0]
+    p_info.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    lignes_info = ["Code : PPER.03", "Révision : 00", "Date : 16/05/2026", "Page : "]
+    for i, txt in enumerate(lignes_info):
+        r = p_info.add_run(txt)
+        r.font.size = Pt(9); r.font.name = 'Calibri'
+        if i < len(lignes_info) - 1:
+            p_info.add_run("\n")
+    r_page_info = p_info.add_run()
+    ajouter_champ_page(r_page_info, "PAGE")
+    p_info.add_run("/")
+    r_tot_info = p_info.add_run()
+    ajouter_champ_page(r_tot_info, "NUMPAGES")
 
-    # 2. RÉFÉRENCE CHRONOLOGIQUE
-    p_ref = doc.add_paragraph()
-    p_ref.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    r_ref = p_ref.add_run(f"N° : {donnees['num_reference']}/ F.G.E/ V.D.E.Q.L.E/2027")
-    r_ref.font.size = Pt(10)
-    r_ref.font.name = 'Calibri'
-    r_ref.bold = True
+    doc.add_paragraph()
 
-    doc.add_paragraph("\n")
+# -----------------------------------------------------------------------------
+# GÉNÉRATEURS DE DOCUMENTS
+# -----------------------------------------------------------------------------
 
-    # 3. TITRE DU BORDEREAU (Taille 36, Calibri, Italique, Souligné)
-    p_titre = doc.add_paragraph()
-    p_titre.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r_titre = p_titre.add_run("BORDEREAU D’ENVOI")
-    r_titre.font.name = 'Calibri'
-    r_titre.font.size = Pt(36)
-    r_titre.italic = True
-    r_titre.underline = True
-    r_titre.bold = True
-    
-    doc.add_paragraph("\n")
+def generer_bordereau_iso(donnees):
+    doc = Document()
+    ajouter_entete_pper03(doc, "BORDEREAU D'ENVOI")
 
-    # 4. DESTINATAIRE CONSTRUIT DYNAMIQUEMENT (Calibri)
-    p_dest = doc.add_paragraph()
-    p_dest.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    r_dest = p_dest.add_run(f"A monsieur : {donnees['destinataire']}")
-    r_dest.bold = True
-    r_dest.font.size = Pt(12)
-    r_dest.font.name = 'Calibri'
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r = p.add_run(f"N° : {donnees['num_reference']}/ F.G.E/ V.D.E.Q.L.E/2027")
+    r.bold = True; r.font.size = Pt(10); r.font.name = 'Calibri'
 
-    doc.add_paragraph("\n")
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run("BORDEREAU D'ENVOI")
+    r.font.name = 'Calibri'; r.font.size = Pt(28); r.italic = True; r.underline = True; r.bold = True
 
-    # 5. TABLEAU DE TRANSMISSION MULTI-LIGNES
-    liste_pieces = donnees['liste_pieces']
-    nb_lignes_totatles = 2 + len(liste_pieces)
-    
-    table = doc.add_table(rows=nb_lignes_totatles, cols=3)
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r = p.add_run(f"A monsieur : {donnees['destinataire']}")
+    r.bold = True; r.font.size = Pt(12); r.font.name = 'Calibri'
+
+    doc.add_paragraph()
+    nb_pieces = len(donnees['liste_pieces'])
+    table = doc.add_table(rows=2 + nb_pieces, cols=3)
     table.style = 'Table Grid'
-    
-    table.columns[0].width = Inches(4.5)
+    table.columns[0].width = Inches(4.0)
     table.columns[1].width = Inches(0.8)
-    table.columns[2].width = Inches(1.7)
+    table.columns[2].width = Inches(1.8)
 
-    # Ligne 1 : En-têtes fixes
-    hdr_cells = table.rows[0].cells
-    hdr_cells[0].text = "Désignation des pièces"
-    hdr_cells[1].text = "Nbre"
-    hdr_cells[2].text = "Observations"
-    
-    for cell in hdr_cells:
+    hdr = table.rows[0].cells
+    hdr[0].text = "Désignation des pièces"
+    hdr[1].text = "Nbre"
+    hdr[2].text = "Observations"
+    for cell in hdr:
         cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         cell.paragraphs[0].runs[0].font.bold = True
         cell.paragraphs[0].runs[0].font.name = 'Calibri'
         cell.paragraphs[0].runs[0].font.size = Pt(10)
-        set_cell_margins(cell, top=120, bottom=120)
+        set_cell_margins(cell)
 
-    # Ligne 2 : Formule d'accompagnement
     row_joint = table.rows[1].cells
     row_joint[0].text = "Veuillez trouver ci-joint :"
     row_joint[0].paragraphs[0].runs[0].font.italic = True
     row_joint[0].paragraphs[0].runs[0].font.name = 'Calibri'
-    row_joint[0].paragraphs[0].runs[0].font.size = Pt(10)
-    set_cell_margins(row_joint[0], top=80, bottom=80)
+    set_cell_margins(row_joint[0])
 
-    # Lignes Dynamiques
-    for index, piece in enumerate(liste_pieces):
-        row_idx = 2 + index
-        current_row = table.rows[row_idx].cells
-        
-        current_row[0].text = str(piece["Désignation des pièces"])
-        current_row[1].text = str(piece["Nbre"])
-        current_row[2].text = str(piece["Observations"])
-        
-        for i, cell in enumerate(current_row):
-            set_cell_margins(cell, top=150, bottom=300)
-            if len(cell.paragraphs[0].runs) > 0:
+    for idx, piece in enumerate(donnees['liste_pieces']):
+        r = table.rows[2 + idx].cells
+        r[0].text = str(piece.get("Désignation des pièces", ""))
+        r[1].text = str(piece.get("Nbre", ""))
+        r[2].text = str(piece.get("Observations", ""))
+        for i, cell in enumerate(r):
+            set_cell_margins(cell, top=120, bottom=120)
+            if cell.paragraphs[0].runs:
                 cell.paragraphs[0].runs[0].font.name = 'Calibri'
                 cell.paragraphs[0].runs[0].font.size = Pt(10)
             if i == 1:
                 cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     doc.add_paragraph("\n\n")
-
-    # 6. SIGNATURES ET ACCUSÉ DE RÉCEPTION
-    p_signatures = doc.add_paragraph()
-    p_signatures.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    date_texte = donnees['date_creation'].strftime('%d/%m/%Y')
-    run_sig = p_signatures.add_run(f"Sidi bel Abbès le : {date_texte}\t\t\t\tChef de département")
-    run_sig.font.name = 'Calibri'
-    run_sig.font.size = Pt(11)
-    run_sig.bold = True
-
-    doc.add_paragraph("\n\n\n\n")
-
-    p_accuse = doc.add_paragraph()
-    p_accuse.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run_accuse = p_accuse.add_run("Accusé de réception    ")
-    run_accuse.font.name = 'Calibri'
-    run_accuse.font.size = Pt(10)
-    run_accuse.font.underline = True
-    run_accuse.bold = True
-
-    return doc
-
-def générer_pv_generique(département, type_pv, donnees):
-    """Générateur secondaire de secours (Calibri)."""
-    doc = Document()
     p = doc.add_paragraph()
-    run = p.add_run(f"{type_pv} - {département}\nDocument en cours.")
-    run.font.name = 'Calibri'
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    date_str = donnees['date_creation'].strftime('%d/%m/%Y') if hasattr(donnees['date_creation'], 'strftime') else str(donnees['date_creation'])
+    r = p.add_run(f"Sidi bel Abbès le : {date_str}\t\t\t\tChef de département")
+    r.font.name = 'Calibri'; r.font.size = Pt(11); r.bold = True
+
+    doc.add_paragraph("\n\n\n")
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r = p.add_run("Accusé de réception    ")
+    r.font.name = 'Calibri'; r.font.size = Pt(10); r.underline = True; r.bold = True
+
     return doc
 
-# ==========================================
-# INTERFACE UTILISATEUR STREAMLIT
-# ==========================================
-st.set_page_config(page_title="Générateur ISO Destinataire Dynamique", layout="wide")
+def generer_pv_surveillance(donnees):
+    doc = Document()
+    ajouter_entete_pper03(doc, "PV DE SURVEILLANCE")
 
-st.caption(TITRE_PLATEFORME)
-st.title("Gestion Administrative - Bordereaux & PVs")
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run("PROCÈS VERBAL DE SURVEILLANCE")
+    r.bold = True; r.underline = True; r.font.size = Pt(16); r.font.name = 'Calibri'
 
-col_dept, col_doc = st.columns(2)
-with col_dept:
-    dept_choisi = st.selectbox("Département émetteur :", DEPARTEMENTS)
-with col_doc:
-    doc_choisi = st.selectbox("Nature du document à générer :", TYPES_DOCUMENTS)
+    doc.add_paragraph()
+    infos = [
+        f"Examen : {donnees.get('examen', '')}",
+        f"Filière : {donnees.get('filiere', '')}",
+        f"Spécialité : {donnees.get('specialite', '')}",
+        f"Module : {donnees.get('module', '')}",
+        f"Date : {donnees.get('date_exam', '')}    Horaire : {donnees.get('horaire', '')}",
+        f"Lieu : {donnees.get('lieu', '')}",
+        f"Nombre d'étudiants inscrits : {donnees.get('nb_inscrits', '')}",
+        f"Nombre d'étudiants présents : {donnees.get('nb_presents', '')}",
+        f"Nombres de copies : {donnees.get('nb_copies', '')}",
+    ]
+    for info in infos:
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r = p.add_run(info)
+        r.font.size = Pt(11); r.font.name = 'Calibri'
 
-st.divider()
-st.subheader(f"Formulaire d'édition - {doc_choisi}")
+    doc.add_paragraph()
+    surveillants = donnees.get('surveillants', [])
+    table = doc.add_table(rows=1 + len(surveillants), cols=4)
+    table.style = 'Table Grid'
 
-donnees_doc = {}
+    hdr = table.rows[0].cells
+    hdr[0].text = "Nom et Prénom Surveillant"
+    hdr[1].text = "Grade"
+    hdr[2].text = "Emargement"
+    hdr[3].text = "Observations"
+    for cell in hdr:
+        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cell.paragraphs[0].runs[0].font.bold = True
+        cell.paragraphs[0].runs[0].font.name = 'Calibri'
+        cell.paragraphs[0].runs[0].font.size = Pt(10)
+        set_cell_margins(cell)
 
-if doc_choisi == "Bordereau d'envoi":
-    col_ref, col_date = st.columns(2)
-    with col_ref:
-        donnees_doc['num_reference'] = st.text_input("Référence séquentielle (Ex: 27)", value="27")
-    with col_date:
-        donnees_doc['date_creation'] = st.date_input("Date d'édition", datetime.now())
-        
-    # ----------------------------------------------------
-    # ZONE DESTINATAIRE : SÉLECTEUR ET CHAMP LIBRE DYNAMIQUE
-    # ----------------------------------------------------
-    st.markdown("##### Destinataire officiel")
-    choix_dest = st.selectbox(
-        "Sélectionnez le destinataire dans la liste :", 
-        OPTIONS_DESTINATAIRES,
-        index=0
-    )
-    
-    if choix_dest == "Autres":
-        donnees_doc['destinataire'] = st.text_input("Veuillez saisir la destination personnalisée :", value="")
-    else:
-        donnees_doc['destinataire'] = choix_dest
-        
-    st.markdown("---")
-    st.write("**Configuration du Tableau de Transmission**")
-    
-    df_initial = pd.DataFrame([
-        {"Désignation des pièces": "Fiches de vœux du second semestre", "Nbre": 12, "Observations": "Pour examen"},
-        {"Désignation des pièces": "Procès-verbal de délibération", "Nbre": 2, "Observations": "Pour affichage"}
-    ])
-    
-    df_edite = st.data_editor(
-        df_initial, 
-        num_rows="dynamic", 
-        use_container_width=True,
-        column_config={
-            "Désignation des pièces": st.column_config.TextColumn(width="medium", required=True),
-            "Nbre": st.column_config.NumberColumn(width="small", min_value=1, required=True),
-            "Observations": st.column_config.TextColumn(width="medium")
+    for idx, s in enumerate(surveillants):
+        r = table.rows[1 + idx].cells
+        r[0].text = str(s.get('Nom et Prénom', ''))
+        r[1].text = str(s.get('Grade', ''))
+        r[2].text = str(s.get('Emargement', ''))
+        r[3].text = str(s.get('Observations', ''))
+        for cell in r:
+            set_cell_margins(cell)
+            if cell.paragraphs[0].runs:
+                cell.paragraphs[0].runs[0].font.name = 'Calibri'
+                cell.paragraphs[0].runs[0].font.size = Pt(10)
+
+    doc.add_paragraph("\n\n")
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r = p.add_run("Nom, prénom et signature du responsable du module\t\t\tSignature du chef département")
+    r.font.name = 'Calibri'; r.font.size = Pt(11); r.bold = True
+
+    return doc
+
+def generer_justification_absence(donnees):
+    doc = Document()
+    ajouter_entete_pper03(doc, "JUSTIFICATION D'ABSENCE")
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run("ATTESTATION DE JUSTIFICATION D'ABSENCE")
+    r.bold = True; r.underline = True; r.font.size = Pt(16); r.font.name = 'Calibri'
+
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r = p.add_run("Le Département d'Électrotechnique atteste par la présente que l'étudiant(e) :")
+    r.font.size = Pt(11); r.font.name = 'Calibri'
+
+    doc.add_paragraph()
+    for label, key in [("Nom et prénom", 'nom_prenom'), ("Année d'étude", 'annee'), ("Spécialité", 'specialite')]:
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r = p.add_run(f"{label} : {donnees.get(key, '')}")
+        r.font.size = Pt(11); r.font.name = 'Calibri'
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r = p.add_run(f"a été absent(e) durant la période allant du : {donnees.get('date_debut', '')} au {donnees.get('date_fin', '')}")
+    r.font.size = Pt(11); r.font.name = 'Calibri'
+
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r = p.add_run("Pour le motif suivant :")
+    r.font.size = Pt(11); r.font.name = 'Calibri'
+
+    for m in ["Personnel", "Médical", "Autre"]:
+        checked = "☑" if donnees.get('motif') == m else "☐"
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r = p.add_run(f"{checked} {m}")
+        r.font.size = Pt(11); r.font.name = 'Calibri'
+
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    date_deliv = donnees.get('date_delivrance', '')
+    r = p.add_run(f"La présente attestation est délivrée à l'intéressé(e) pour servir et valoir ce que de droit.\n\nFait à : Sidi Bel Abbés. Le : {date_deliv}")
+    r.font.size = Pt(11); r.font.name = 'Calibri'
+
+    doc.add_paragraph("\n\n")
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r = p.add_run("Le Chef de Département")
+    r.bold = True; r.underline = True; r.font.size = Pt(12); r.font.name = 'Calibri'
+
+    return doc
+
+# -----------------------------------------------------------------------------
+# HISTORIQUE SUPABASE
+# -----------------------------------------------------------------------------
+def sauvegarder_historique(type_doc, reference, numero, date_delivrance, destination):
+    try:
+        data = {
+            "type_doc": type_doc,
+            "reference": reference,
+            "numero": str(numero),
+            "date_delivrance": str(date_delivrance),
+            "destination": destination
         }
-    )
-    donnees_doc['liste_pieces'] = df_edite.to_dict(orient="records")
+        supabase.table("historique_documents").insert(data).execute()
+    except Exception as e:
+        st.toast(f"⚠️ Historique non sauvegardé : {e}")
 
-else:
-    with st.form("form_autres"):
-        donnees_doc['date_creation'] = st.date_input("Date", datetime.now())
-        donnees_doc['contenu'] = st.text_area("Contenu textuel")
-        st.form_submit_button("Valider")
+def charger_historique():
+    try:
+        res = supabase.table("historique_documents").select("*").order("created_at", desc=True).limit(200).execute()
+        if res.data:
+            df = pd.DataFrame(res.data)
+            df = df.rename(columns={
+                "type_doc": "Type de document",
+                "reference": "Référence",
+                "numero": "Numéro",
+                "date_delivrance": "Date de délivrance",
+                "destination": "Destination",
+                "created_at": "Date d'enregistrement"
+            })
+            return df
+        return pd.DataFrame()
+    except Exception as e:
+        st.toast(f"⚠️ Impossible de charger l'historique : {e}")
+        return pd.DataFrame()
 
-# Action finale de compilation
-if doc_choisi == "Bordereau d'envoi":
-    if st.button("Compiler et Générer le Bordereau Officiel"):
-        # Blocage de sécurité si le choix "Autres" est laissé vide
-        if not donnees_doc['destinataire'].strip():
-            st.error("Erreur : Le champ de destination personnalisée ne peut pas être vide.")
+# =============================================================================
+# BLOC STREAMLIT : PORTAIL GESTION ADMINISTRATIVE
+# REMPLACEZ VOTRE ANCIEN BLOC if portail == "📢 Gestion Administrative ...":
+# =============================================================================
+
+if portail == "📢 Gestion Administrative - Bordereaux & PVs":
+
+    TITRE_PLATEFORME = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+    DEPARTEMENTS = [
+        "Département d'Électrotechnique",
+        "Département d'Électronique",
+        "Département d'Automatique",
+        "Département de Télécommunications"
+    ]
+    TYPES_DOCUMENTS = [
+        "Bordereau d'envoi",
+        "PV de surveillance",
+        "Justification d'absence",
+        "PV de réunion (générique)",
+        "PV du Comité Pédagogique",
+        "Réunion du Conseil de Discipline"
+    ]
+    OPTIONS_DESTINATAIRES = [
+        "Le Doyen de la faculté",
+        "Le vice Doyen de la Post graduation",
+        "Le vice Doyen de la graduation",
+        "Autres"
+    ]
+
+    st.caption(TITRE_PLATEFORME)
+    st.title("📢 Gestion Administrative - Bordereaux & PVs")
+
+    tab_gen, tab_hist = st.tabs(["📝 Génération de documents", "📜 Historique des délivrances"])
+
+    # =========================================================================
+    # ONGLET 1 : GÉNÉRATION
+    # =========================================================================
+    with tab_gen:
+        col_dept, col_doc = st.columns(2)
+        with col_dept:
+            dept_choisi = st.selectbox("Département émetteur :", DEPARTEMENTS)
+    with col_doc:
+        doc_choisi = st.selectbox("Nature du document à générer :", TYPES_DOCUMENTS)
+
+    st.divider()
+    st.subheader(f"Formulaire d'édition - {doc_choisi}")
+
+    donnees_doc = {}
+
+    # -------------------------------------------------------------------------
+    # FORMULAIRE : BORDEREAU D'ENVOI
+    # -------------------------------------------------------------------------
+    if doc_choisi == "Bordereau d'envoi":
+        col_ref, col_date = st.columns(2)
+        with col_ref:
+            donnees_doc['num_reference'] = st.text_input("Référence séquentielle (Ex: 27)", value="27")
+        with col_date:
+            donnees_doc['date_creation'] = st.date_input("Date d'édition", datetime.now())
+
+        st.markdown("##### Destinataire officiel")
+        choix_dest = st.selectbox(
+            "Sélectionnez le destinataire dans la liste :",
+            OPTIONS_DESTINATAIRES,
+            index=0
+        )
+
+        if choix_dest == "Autres":
+            donnees_doc['destinataire'] = st.text_input("Veuillez saisir la destination personnalisée :", value="")
+        else:
+            donnees_doc['destinataire'] = choix_dest
+
+        st.markdown("---")
+        st.write("**Configuration du Tableau de Transmission**")
+
+        df_initial = pd.DataFrame([
+            {"Désignation des pièces": "Fiches de vœux du second semestre", "Nbre": 12, "Observations": "Pour examen"},
+            {"Désignation des pièces": "Procès-verbal de délibération", "Nbre": 2, "Observations": "Pour affichage"}
+        ])
+
+        df_edite = st.data_editor(
+            df_initial,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Désignation des pièces": st.column_config.TextColumn(width="medium", required=True),
+                "Nbre": st.column_config.NumberColumn(width="small", min_value=1, required=True),
+                "Observations": st.column_config.TextColumn(width="medium")
+            }
+        )
+        donnees_doc['liste_pieces'] = df_edite.to_dict(orient="records")
+
+    # -------------------------------------------------------------------------
+    # FORMULAIRE : PV DE SURVEILLANCE
+    # -------------------------------------------------------------------------
+    elif doc_choisi == "PV de surveillance":
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            donnees_doc['examen'] = st.selectbox("Examen :", ["Exam Final S1", "Exam Final S2", "RATTRAPAGE"])
+        with c2:
+            donnees_doc['filiere'] = st.text_input("Filière :", value="Electrotechnique")
+        with c3:
+            donnees_doc['specialite'] = st.text_input("Spécialité :", value="")
+
+        c4, c5, c6 = st.columns(3)
+        with c4:
+            donnees_doc['module'] = st.text_input("Module :", value="")
+        with c5:
+            donnees_doc['date_exam'] = st.date_input("Date :", datetime.now())
+        with c6:
+            donnees_doc['horaire'] = st.text_input("Horaire :", value="08h00 - 10h00")
+
+        c7, c8, c9 = st.columns(3)
+        with c7:
+            donnees_doc['lieu'] = st.text_input("Lieu :", value="")
+        with c8:
+            donnees_doc['nb_inscrits'] = st.number_input("Nombre d'étudiants inscrits :", min_value=0, value=0, step=1)
+        with c9:
+            donnees_doc['nb_presents'] = st.number_input("Nombre d'étudiants présents :", min_value=0, value=0, step=1)
+
+        donnees_doc['nb_copies'] = st.number_input("Nombres de copies :", min_value=0, value=0, step=1)
+
+        st.markdown("---")
+        st.write("**Liste des surveillants**")
+        df_surv = pd.DataFrame([
+            {"Nom et Prénom": "", "Grade": "", "Emargement": "", "Observations": ""}
+        ])
+        df_surv_edite = st.data_editor(
+            df_surv,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Nom et Prénom": st.column_config.TextColumn(required=True),
+                "Grade": st.column_config.TextColumn(),
+                "Emargement": st.column_config.TextColumn(),
+                "Observations": st.column_config.TextColumn()
+            }
+        )
+        donnees_doc['surveillants'] = df_surv_edite.to_dict(orient="records")
+
+    # -------------------------------------------------------------------------
+    # FORMULAIRE : JUSTIFICATION D'ABSENCE
+    # -------------------------------------------------------------------------
+    elif doc_choisi == "Justification d'absence":
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            donnees_doc['nom_prenom'] = st.text_input("Nom et prénom :", value="")
+        with c2:
+            donnees_doc['annee'] = st.text_input("Année d'étude :", value="")
+        with c3:
+            donnees_doc['specialite'] = st.text_input("Spécialité :", value="")
+
+        c4, c5 = st.columns(2)
+        with c4:
+            donnees_doc['date_debut'] = st.date_input("Date début d'absence :", datetime.now())
+        with c5:
+            donnees_doc['date_fin'] = st.date_input("Date fin d'absence :", datetime.now())
+
+        donnees_doc['motif'] = st.radio("Motif :", ["Personnel", "Médical", "Autre"], horizontal=True)
+        donnees_doc['date_delivrance'] = st.date_input("Date de délivrance :", datetime.now()).strftime('%d/%m/%Y')
+
+    # -------------------------------------------------------------------------
+    # FORMULAIRE : AUTRES (GÉNÉRIQUE)
+    # -------------------------------------------------------------------------
+    else:
+        with st.form("form_autres"):
+            donnees_doc['date_creation'] = st.date_input("Date", datetime.now())
+            donnees_doc['contenu'] = st.text_area("Contenu textuel")
+            st.form_submit_button("Valider")
+
+    # -------------------------------------------------------------------------
+    # GÉNÉRATION DU DOCUMENT
+    # -------------------------------------------------------------------------
+    if st.button("🚀 Compiler et Générer le Document Officiel", type="primary", use_container_width=True):
+        if doc_choisi == "Bordereau d'envoi" and not donnees_doc['destinataire'].strip():
+            st.error("Erreur : Le champ de destination ne peut pas être vide.")
         else:
             try:
-                document_final = générer_bordereau_iso(dept_choisi, donnees_doc)
-                
+                if doc_choisi == "Bordereau d'envoi":
+                    document_final = generer_bordereau_iso(donnees_doc)
+                    ref_doc = f"{donnees_doc['num_reference']}/F.G.E/V.D.E.Q.L.E/2027"
+                    num_doc = donnees_doc['num_reference']
+                    dest_doc = donnees_doc['destinataire']
+                    date_doc = donnees_doc['date_creation']
+
+                elif doc_choisi == "PV de surveillance":
+                    document_final = generer_pv_surveillance(donnees_doc)
+                    ref_doc = f"PV-SURV-{donnees_doc.get('date_exam','')}-{donnees_doc.get('module','')}"
+                    num_doc = donnees_doc.get('module', 'N/A')
+                    dest_doc = "Service des Examens / Archives"
+                    date_doc = donnees_doc.get('date_exam', datetime.now())
+
+                elif doc_choisi == "Justification d'absence":
+                    document_final = generer_justification_absence(donnees_doc)
+                    ref_doc = f"JUST-ABS-{donnees_doc.get('nom_prenom','')}-{donnees_doc.get('date_delivrance','')}"
+                    num_doc = donnees_doc.get('nom_prenom', 'N/A')
+                    dest_doc = "Intéressé(e) / Scolarité"
+                    date_doc = donnees_doc.get('date_delivrance', datetime.now())
+
+                else:
+                    document_final = Document()
+                    ajouter_entete_pper03(document_final, doc_choisi.upper())
+                    p = document_final.add_paragraph()
+                    r = p.add_run(f"{doc_choisi} - {dept_choisi}\nDocument en cours.")
+                    r.font.name = 'Calibri'
+                    ref_doc = f"DOC-{doc_choisi.replace(' ', '-')}"
+                    num_doc = "N/A"
+                    dest_doc = "Non spécifiée"
+                    date_doc = donnees_doc.get('date_creation', datetime.now())
+
+                # Sauvegarde en mémoire
                 output_stream = io.BytesIO()
                 document_final.save(output_stream)
                 output_stream.seek(0)
-                
-                st.success("✓ Bordereau généré avec succès avec le destinataire sélectionné.")
-                
-                nom_fichier_export = f"Bordereau_{dept_choisi.replace(' ', '_')}.docx"
+
+                # Sauvegarde dans l'historique Supabase
+                sauvegarder_historique(
+                    type_doc=doc_choisi,
+                    reference=ref_doc,
+                    numero=num_doc,
+                    date_delivrance=date_doc,
+                    destination=dest_doc
+                )
+
+                st.success(f"✅ {doc_choisi} généré avec succès !")
+                st.info(f"📌 Référence : **{ref_doc}** | Destination : **{dest_doc}**")
+
+                nom_fichier_export = f"{doc_choisi.replace(' ', '_')}_{dept_choisi.replace(' ', '_')}.docx"
                 st.download_button(
                     label="⬇️ Télécharger le document (.docx)",
                     data=output_stream,
                     file_name=nom_fichier_export,
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
                 )
+
             except Exception as error:
                 st.error(f"Échec de l'opération de génération : {str(error)}")
 
+    # =========================================================================
+    # ONGLET 2 : HISTORIQUE
+    # =========================================================================
+    with tab_hist:
+        st.subheader("📜 Historique des documents délivrés")
+        st.caption("Données synchronisées depuis Supabase")
 
+        if st.button("🔄 Rafraîchir l'historique", use_container_width=True):
+            st.rerun()
 
+        df_hist = charger_historique()
 
+        if not df_hist.empty:
+            st.dataframe(df_hist, use_container_width=True, hide_index=True)
+            st.metric("Total de documents enregistrés", len(df_hist))
 
-
-
-
-
-
-
-
-
+            # Export Excel de l'historique
+            buf_hist = io.BytesIO()
+            with pd.ExcelWriter(buf_hist, engine='xlsxwriter') as writer:
+                df_hist.to_excel(writer, index=False, sheet_name='Historique')
+            st.download_button(
+                label="📊 Exporter l'historique (Excel)",
+                data=buf_hist.getvalue(),
+                file_name="Historique_Documents_Administratifs.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        else:
+            st.info("Aucun document enregistré dans l'historique pour le moment.")                               
 
 
 
