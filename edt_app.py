@@ -1188,8 +1188,10 @@ def render_download_hub(df_global, user_data, is_admin):
         st.markdown("**🏢 Par Lieu**")
         sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", ["Toutes"] + salles, key="hub_salle")
         df_filtre_s = df_propre.copy()
+        
         if sel_salle != "Toutes":
-            df_filtre_s = df_filtre_s[df_filtre_s["Lieu"] == sel_salle]
+            df_filtre_s = df_filtre_s[df_filtre_s["Lieu"].astype(str).str.startswith(sel_salle)]
+        
         c1, c2, c3 = st.columns(3)
         
         # ═══════════════════════════════════════════════════════
@@ -3403,8 +3405,8 @@ if df is not None:
                     st.error(f"Une erreur est survenue lors de la génération : {e}")
 
         elif is_admin and mode_view == "🏢 Planning Salles":
-            s_sel = st.selectbox("Choisir Salle :", sorted(df["Lieu"].unique()))
-            df_s = df[df["Lieu"] == s_sel]
+            s_sel = st.selectbox("Choisir Salle / Amphi :", sorted(df["Lieu"].unique()))
+            df_s = df[df["Lieu"].astype(str).str.startswith(s_sel)]
             
             def fmt_s(rows):
                 items = [f"<b>{r['Promotion']}</b><br>{r['Enseignements']}<br><i>{r['Enseignants']}</i>" for _, r in rows.iterrows()]
