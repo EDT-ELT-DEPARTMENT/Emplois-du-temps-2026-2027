@@ -5543,7 +5543,7 @@ def enregistrer_historique_bordereau(donnees, departement, user_email):
         st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
 
 def afficher_historique_bordereaux():
-    """Affiche l'historique des bordereaux générés."""
+    """Affiche l'historique des bordereaux générés avec les pièces jointes."""
     try:
         res = supabase.table("bordereaux_historique")\
                       .select("*")\
@@ -5551,18 +5551,48 @@ def afficher_historique_bordereaux():
                       .limit(50)\
                       .execute()
         if res.data:
-            df_histo = pd.DataFrame(res.data)
-            # Formatage lisible
-            df_histo['Date génération'] = pd.to_datetime(df_histo['created_at']).dt.strftime('%d/%m/%Y %H:%M')
-            df_histo = df_histo[[
-                'Date génération', 'generated_by', 'departement', 
-                'destinataire', 'num_reference', 'nombre_pieces', 'fichier_nom'
-            ]]
-            df_histo.columns = [
-                'Date', 'Généré par', 'Département', 'Destinataire', 
-                'N° Référence', 'Nb pièces', 'Fichier'
-            ]
-            st.dataframe(df_histo, use_container_width=True, hide_index=True)
+            # Préparation des données
+            rows = []
+            for row in res.data:
+                # Extraction des désignations de pièces depuis le JSON
+                pieces = row.get('pieces_details', [])
+                if isinstance(pieces, list) and len(pieces) > 0:
+                    designations = [str(p.get('Désignation des pièces', '')).strip() 
+                                   for p in pieces 
+                                   if str(p.get('Désignation des pièces', '')).strip()]
+                    pieces_str = " ; ".join(designations) if designations else "—"
+                else:
+                    pieces_str = "—"
+                
+                rows.append({
+                    'Date': pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M'),
+                    'Généré par': row.get('generated_by', '—'),
+                    'Département': row.get('departement', '—'),
+                    'Destinataire': row.get('destinataire', '—'),
+                    'N° Référence': row.get('num_reference', '—'),
+                    'Désignation des pièces': pieces_str,
+                    'Nb pièces': row.get('nombre_pieces', 0),
+                    'Fichier': row.get('fichier_nom', '—')
+                })
+            
+            df_histo = pd.DataFrame(rows)
+            
+            # Configuration des colonnes pour un affichage optimal
+            st.dataframe(
+                df_histo,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    'Date': st.column_config.TextColumn('Date', width='small'),
+                    'Généré par': st.column_config.TextColumn('Généré par', width='medium'),
+                    'Département': st.column_config.TextColumn('Département', width='medium'),
+                    'Destinataire': st.column_config.TextColumn('Destinataire', width='medium'),
+                    'N° Référence': st.column_config.TextColumn('N° Réf.', width='small'),
+                    'Désignation des pièces': st.column_config.TextColumn('Désignation des pièces', width='large'),
+                    'Nb pièces': st.column_config.NumberColumn('Nb', width='small'),
+                    'Fichier': st.column_config.TextColumn('Fichier', width='medium'),
+                }
+            )
         else:
             st.info("📭 Aucun bordereau enregistré dans l'historique.")
     except Exception as e:
