@@ -4115,7 +4115,7 @@ def envoyer_emails(liste_destinataires, promotion_label="Individuel"):
             nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
 
             msg = MIMEMultipart()
-            msg['Subject'] = f"Votre Emploi du Temps S2-2027 - {nom_ens}"
+            msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {nom_ens}"
             msg['From'] = f"Département d'Électrotechnique <{EMAIL_EXPEDITEUR}>"
             msg['To'] = email_ens
             
@@ -4273,7 +4273,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
 
                             msg = MIMEMultipart()
-                            msg['Subject'] = f"Votre Emploi du Temps S2-2027 - {nom}"
+                            msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {nom}"
                             msg['From'] = st.secrets["EMAIL_USER"]
                             msg['To'] = info_ens["Email"]
 
@@ -4298,12 +4298,12 @@ elif mode_envoi == "Par Promotion (Automatique)":
 
                                 <div style="background-color: #fff4e5; border-left: 5px solid #ffa500; padding: 15px; margin: 20px 0;">
                                     <p style="font-weight: bold; color: #d97706; margin-top: 0;">
-                                        Objet : Urgent : Vérification de l’emploi du temps – Semestre 2
+                                        Objet : Urgent : Vérification de l’emploi du temps – Semestre 1
                                     </p>
                                     
                                     <p>Cher collègue, Sallem,</p>
                                     
-                                    <p>Vous trouverez ci-joint votre emploi du temps individuel pour le second semestre.<br>
+                                    <p>Vous trouverez ci-joint votre emploi du temps individuel pour le premier semestre.<br>
                                     Afin de permettre au service des enseignements d'accomplir sa mission dans les meilleures conditions, il est impératif que vous procédiez à sa vérification immédiate. Cette étape est cruciale pour :</p>
                                     
                                     <ul style="margin-top: 5px;">
@@ -4408,7 +4408,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                             df_m = df_p[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
                             
                             msg = MIMEMultipart()
-                            msg['Subject'] = f"Votre Emploi du Temps S2-2027 - {row['Enseignant']}"
+                            msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {row['Enseignant']}"
                             
                             # --- MODIFICATION DES EN-TÊTES ---
                             msg['From'] = f"{nom_aff} <{exp_mail}>"
@@ -4426,12 +4426,12 @@ elif mode_envoi == "Par Promotion (Automatique)":
                                 
                                 <div style="background-color: #fff4e5; border-left: 5px solid #ffa500; padding: 15px; margin: 20px 0;">
                                     <p style="font-weight: bold; color: #d97706; margin-top: 0;">
-                                        Objet : Urgent : Vérification de l’emploi du temps – Semestre 2
+                                        Objet : Urgent : Vérification de l’emploi du temps – Semestre 1
                                     </p>
                                     
                                     <p>Cher collègue, Sallem,</p>
                                     
-                                    <p>Vous trouverez ci-joint votre emploi du temps individuel pour le second semestre.<br>
+                                    <p>Vous trouverez ci-joint votre emploi du temps individuel pour le prmier semestre.<br>
                                     Afin de permettre au service des enseignements d'accomplir sa mission dans les meilleures conditions, il est impératif que vous procédiez à sa vérification immédiate. Cette étape est cruciale pour :</p>
                                     
                                     <ul style="margin-top: 5px;">
@@ -4449,7 +4449,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                                     <p><b>Saha Ftourkoum</b></p>
                                 </div>
 
-                                <p>Voici le récapitulatif de votre emploi du temps pour le semestre 02 (S2-2027) :</p>
+                                <p>Voici le récapitulatif de votre emploi du temps pour le semestre 01 (S1-2027) :</p>
 
                                 <div style="margin: 20px 0;">
                                     {df_m.to_html(index=False, border=1, justify='center')}
