@@ -5719,14 +5719,13 @@ def afficher_historique_bordereaux():
             # ═══════════════════════════════════════════════
             for i, row in enumerate(res.data):
                 date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
-                ref = row.get('num_reference', '—')
+                ref_num = row.get('num_reference', '—')
+                ref_annee = row.get('annee_reference', datetime.now().year)
+                ref_full = construire_reference(ref_num, ref_annee)
                 dest = row.get('destinataire', '—')
-                exp = row.get('expediteur_qualite', '—')
                 
                 with st.expander(
-                    f"📝 Bordereau N° {ref_num = row.get('num_reference', '—')
-                ref_annee = row.get('annee_reference', datetime.now().year)
-                ref_full = construire_reference(ref_num, ref_annee)}", 
+                    f"📝 Bordereau N° {ref_full} — {dest} — {date_str}", 
                     expanded=(i == 0)
                 ):
                     c1, c2, c3, c4, c5 = st.columns(5)
