@@ -5585,9 +5585,11 @@ def afficher_historique_bordereaux():
             for row in res.data:
                 date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
                 
+                # Données récapitulatif (AVEC la colonne Expéditeur)
                 rows_recap.append({
                     'Date': date_str,
                     'Généré par': row.get('generated_by', '—'),
+                    'Expéditeur': row.get('expediteur_qualite', '—'),
                     'Département': row.get('departement', '—'),
                     'Destinataire': row.get('destinataire', '—'),
                     'N° Référence': row.get('num_reference', '—'),
@@ -5595,6 +5597,7 @@ def afficher_historique_bordereaux():
                     'Fichier': row.get('fichier_nom', '—')
                 })
                 
+                # Données détaillées pour Excel
                 pieces = row.get('pieces_details', [])
                 ref_full = f"{row.get('num_reference', '—')}/F.G.E/V.D.E.Q.L.E/2027"
                 
@@ -5603,6 +5606,7 @@ def afficher_historique_bordereaux():
                         rows_detail.append({
                             'Date génération': date_str,
                             'Généré par': row.get('generated_by', '—'),
+                            'Expéditeur': row.get('expediteur_qualite', '—'),
                             'Département': row.get('departement', '—'),
                             'Destinataire': row.get('destinataire', '—'),
                             'N° Référence': ref_full,
@@ -5615,6 +5619,7 @@ def afficher_historique_bordereaux():
                     rows_detail.append({
                         'Date génération': date_str,
                         'Généré par': row.get('generated_by', '—'),
+                        'Expéditeur': row.get('expediteur_qualite', '—'),
                         'Département': row.get('departement', '—'),
                         'Destinataire': row.get('destinataire', '—'),
                         'N° Référence': ref_full,
@@ -5662,9 +5667,6 @@ def afficher_historique_bordereaux():
                     key="dl_histo_bordereaux"
                 )
             
-            # ═══════════════════════════════════════════════
-            # 3. BOUTON EFFACER AVEC CONFIRMATION
-            # ═══════════════════════════════════════════════
             with col_del:
                 if st.button("🗑️ Effacer", use_container_width=True, key="btn_del_histo"):
                     st.session_state['confirmer_suppression_historique'] = True
@@ -5676,13 +5678,64 @@ def afficher_historique_bordereaux():
                 with c1:
                     if st.button("✅ Oui, supprimer définitivement", type="primary", key="confirm_del_yes"):
                         try:
-                            # Suppression de toutes les lignes de la table
                             supabase.table("bordereaux_historique").delete().neq('id', -1).execute()
                             st.success("✅ Historique effacé avec succès.")
                             del st.session_state['confirmer_suppression_historique']
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Erreur lors de la suppression : {e}")
+                with c2:
+                    if st.button("❌ Non, annuler", key="confirm_del_no"):
+                        del st.session_state['confirmer_suppression_historique']
+                        st.rerun()
+            
+            st.dataframe(df_recap, use_container_width=True, hide_index=True)
+            
+            st.divider()
+            st.markdown("**📋 Détail par bordereau**")
+            
+            # ═══════════════════════════════════════════════
+            # 3. DÉTAIL DE CHAQUE BORDEREAU
+            # ═══════════════════════════════════════════════
+            for i, row in enumerate(res.data):
+                date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
+                ref = row.get('num_reference', '—')
+                dest = row.get('destinataire', '—')
+                exp = row.get('expediteur_qualite', '—')
+                
+                with st.expander(
+                    f"📝 Bordereau N° {ref}/F.G.E/V.D.E.Q.L.E/2027 — {dest} — {date_str}", 
+                    expanded=(i == 0)
+                ):
+                    c1, c2, c3, c4, c5 = st.columns(5)
+                    c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '—')}")
+                    c2.markdown(f"**🏛️ Département**\n{row.get('departement', '—')}")
+                    c3.markdown(f"**📤 Expéditeur**\n{exp}")
+                    c4.markdown(f"**📅 Date**\n{date_str}")
+                    c5.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '—')}")
+                    
+                    st.markdown("---")
+                    st.markdown("**Tableau de transmission :**")
+                    
+                    pieces = row.get('pieces_details', [])
+                    if isinstance(pieces, list) and len(pieces) > 0:
+                        df_pieces = pd.DataFrame(pieces)
+                        cols_ordre = []
+                        for col in ['Désignation des pièces', 'Nbre', 'Observations']:
+                            if col in df_pieces.columns:
+                                cols_ordre.append(col)
+                        if cols_ordre:
+                            df_pieces = df_pieces[cols_ordre]
+                            st.dataframe(df_pieces, use_container_width=True, hide_index=True)
+                        else:
+                            st.json(pieces)
+                    else:
+                        st.info("Aucune pièce enregistrée pour ce bordereau.")
+                    
+        else:
+            st.info("📭 Aucun bordereau enregistré dans l'historique.")
+    except Exception as e:
+        st.error(f"Erreur chargement historique : {e}")
                 with c2:
                     if st.button("❌ Non, annuler", key="confirm_del_no"):
                         del st.session_state['confirmer_suppression_historique']
