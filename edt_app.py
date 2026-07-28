@@ -5736,12 +5736,7 @@ def afficher_historique_bordereaux():
             st.info("📭 Aucun bordereau enregistré dans l'historique.")
     except Exception as e:
         st.error(f"Erreur chargement historique : {e}")
-                            
-            st.dataframe(df_recap, use_container_width=True, hide_index=True)
-            
-            st.divider()
-            st.markdown("**📋 Détail par bordereau**")
-            
+                                     
             # ═══════════════════════════════════════════════
             # 4. DÉTAIL DE CHAQUE BORDEREAU
             # ═══════════════════════════════════════════════
