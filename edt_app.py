@@ -5542,8 +5542,9 @@ def enregistrer_historique_bordereau(donnees, departement, user_email):
     except Exception as e:
         st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
 
+
 def afficher_historique_bordereaux():
-    """Affiche l'historique des bordereaux avec tableau détaillé des pièces et export Excel."""
+    """Affiche l'historique des bordereaux avec export Excel et effacement sécurisé."""
     try:
         res = supabase.table("bordereaux_historique")\
                       .select("*")\
@@ -5552,15 +5553,14 @@ def afficher_historique_bordereaux():
                       .execute()
         if res.data:
             # ═══════════════════════════════════════════════
-            # 1. TABLEAU RÉCAPITULATIF GLOBAL
+            # 1. PRÉPARATION DES DONNÉES
             # ═══════════════════════════════════════════════
             rows_recap = []
-            rows_detail = []  # Pour l'export Excel (une ligne = une pièce)
+            rows_detail = []
             
             for row in res.data:
                 date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
                 
-                # Données récap
                 rows_recap.append({
                     'Date': date_str,
                     'Généré par': row.get('generated_by', '—'),
@@ -5571,7 +5571,6 @@ def afficher_historique_bordereaux():
                     'Fichier': row.get('fichier_nom', '—')
                 })
                 
-                # Données détaillées pour Excel (aplaties)
                 pieces = row.get('pieces_details', [])
                 ref_full = f"{row.get('num_reference', '—')}/F.G.E/V.D.E.Q.L.E/2027"
                 
@@ -5605,15 +5604,16 @@ def afficher_historique_bordereaux():
             df_detail = pd.DataFrame(rows_detail)
             
             # ═══════════════════════════════════════════════
-            # BOUTON TÉLÉCHARGEMENT EXCEL
+            # 2. BARRE D'ACTIONS (Télécharger + Effacer)
             # ═══════════════════════════════════════════════
-            col_titre, col_btn = st.columns([3, 1])
+            col_titre, col_dl, col_del = st.columns([3, 1, 1])
+            
             with col_titre:
                 st.markdown("**📊 Vue d'ensemble des bordereaux**")
-            with col_btn:
+            
+            with col_dl:
                 buffer_excel = io.BytesIO()
                 with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
-                    # Onglet 1 : Récapitulatif
                     df_recap.to_excel(writer, index=False, sheet_name='Récapitulatif')
                     ws1 = writer.sheets['Récapitulatif']
                     header_fmt = writer.book.add_format({
@@ -5623,7 +5623,6 @@ def afficher_historique_bordereaux():
                         ws1.write(0, col_num, value, header_fmt)
                         ws1.set_column(col_num, col_num, 18)
                     
-                    # Onglet 2 : Détail des pièces
                     df_detail.to_excel(writer, index=False, sheet_name='Détail des pièces')
                     ws2 = writer.sheets['Détail des pièces']
                     for col_num, value in enumerate(df_detail.columns.values):
@@ -5631,7 +5630,7 @@ def afficher_historique_bordereaux():
                         ws2.set_column(col_num, col_num, 22)
                 
                 st.download_button(
-                    label="📥 Télécharger l'historique (Excel)",
+                    label="📥 Excel",
                     data=buffer_excel.getvalue(),
                     file_name=f"Historique_Bordereaux_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -5639,13 +5638,39 @@ def afficher_historique_bordereaux():
                     key="dl_histo_bordereaux"
                 )
             
+            # ═══════════════════════════════════════════════
+            # 3. BOUTON EFFACER AVEC CONFIRMATION
+            # ═══════════════════════════════════════════════
+            with col_del:
+                if st.button("🗑️ Effacer", use_container_width=True, key="btn_del_histo"):
+                    st.session_state['confirmer_suppression_historique'] = True
+            
+            if st.session_state.get('confirmer_suppression_historique'):
+                st.warning("⚠️ **Action irréversible** — Tous les bordereaux enregistrés seront supprimés définitivement.")
+                
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    if st.button("✅ Oui, supprimer définitivement", type="primary", key="confirm_del_yes"):
+                        try:
+                            # Suppression de toutes les lignes de la table
+                            supabase.table("bordereaux_historique").delete().neq('id', -1).execute()
+                            st.success("✅ Historique effacé avec succès.")
+                            del st.session_state['confirmer_suppression_historique']
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erreur lors de la suppression : {e}")
+                with c2:
+                    if st.button("❌ Non, annuler", key="confirm_del_no"):
+                        del st.session_state['confirmer_suppression_historique']
+                        st.rerun()
+            
             st.dataframe(df_recap, use_container_width=True, hide_index=True)
             
             st.divider()
             st.markdown("**📋 Détail par bordereau**")
             
             # ═══════════════════════════════════════════════
-            # 2. DÉTAIL DE CHAQUE BORDEREAU
+            # 4. DÉTAIL DE CHAQUE BORDEREAU
             # ═══════════════════════════════════════════════
             for i, row in enumerate(res.data):
                 date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
