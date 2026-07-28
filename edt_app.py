@@ -5275,6 +5275,7 @@ OPTIONS_DESTINATAIRES = [
     "Le Doyen de la faculté",
     "Le vice Doyen de la Post graduation",
     "Le vice Doyen de la graduation",
+    "Le chef de département",
     "Autres"
 ]
 
@@ -5316,47 +5317,36 @@ def ajouter_champ_page(run, type_champ):
 def générer_bordereau_iso(département, donnees):
     doc = Document()
     
-    # Configuration des marges globales de la page (0.8 pouce partout)
+    # Marges globales
     for section in doc.sections:
         section.top_margin = Inches(0.8)
         section.bottom_margin = Inches(0.8)
         section.left_margin = Inches(0.8)
         section.right_margin = Inches(0.8)
-        
-        # Propagation du pied de page sur toutes les pages
         section.different_first_page_header_footer = False
         
-        # Structure du pied de page rectifié
+        # Pied de page (inchangé)
         footer = section.footer
         footer_p = footer.paragraphs[0]
-        
         footer_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         footer_pPr = footer_p._p.get_or_add_pPr()
         tabs = OxmlElement('w:tabs')
-        
-        # 1. Taquet au centre pour la référence (Centre à ~ 3.45 pouces = 4968 dxa)
         tab_centre = OxmlElement('w:tab')
         tab_centre.set(qn('w:val'), 'center')
         tab_centre.set(qn('w:pos'), '4968')
         tabs.append(tab_centre)
-        
-        # 2. Taquet à l'extrême droite pour les numéros de page (Extrémité à 6.9 pouces = 9936 dxa)
         tab_droite = OxmlElement('w:tab')
         tab_droite.set(qn('w:val'), 'right')
         tab_droite.set(qn('w:pos'), '9936')
         tabs.append(tab_droite)
-        
         footer_pPr.append(tabs)
         
-        # Premier saut vers le centre pour y écrire le code de référence
         footer_p.add_run("\t")
         r_ref_fixe = footer_p.add_run("Réf : UDL-GEL-ER-004-2027")
         r_ref_fixe.font.name = 'Calibri'
         r_ref_fixe.font.size = Pt(11)
         
-        # Deuxième saut vers l'extrême droite pour y loger la pagination automatique
         footer_p.add_run("\t")
-        
         r_page_actuelle = footer_p.add_run()
         r_page_actuelle.font.name = 'Calibri'
         r_page_actuelle.font.size = Pt(11)
@@ -5371,11 +5361,10 @@ def générer_bordereau_iso(département, donnees):
         r_total_pages.font.size = Pt(11)
         ajouter_champ_page(r_total_pages, "NUMPAGES")
 
-    # 1. STRUCTURE DE L'EN-TÊTE VIA UN TABLEAU INVISIBLE
+    # 1. EN-TÊTE : Tableau invisible Logo | Texte officiel
     header_table = doc.add_table(rows=1, cols=2)
     header_table.alignment = WD_ALIGN_PARAGRAPH.CENTER
     header_table.autofit = False
-    
     header_table.columns[0].width = Inches(1.2)
     header_table.columns[1].width = Inches(5.7)
     
@@ -5390,10 +5379,9 @@ def générer_bordereau_iso(département, donnees):
         tblBorders.append(border)
     tblPr.append(tblBorders)
 
-    # Insertion du Logo (Largeur 80 pixels = 0.833 pouces)
+    # Logo à gauche (inchangé)
     p_logo = cell_logo.paragraphs[0]
     p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    
     nom_fichier_logo = "logo.PNG"
     if os.path.exists(nom_fichier_logo):
         p_logo.add_run().add_picture(nom_fichier_logo, width=Inches(0.833))
@@ -5403,23 +5391,25 @@ def générer_bordereau_iso(département, donnees):
         r_alt.font.size = Pt(8)
         r_alt.font.italic = True
 
-    # Insertion des textes officiels de l'en-tête (Calibri)
+    # TEXTE OFFICIEL : centré, gras, police 12
     p_en_tete = cell_texte.paragraphs[0]
     p_en_tete.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    r1 = p_en_tete.add_run("RÉPUBLIQUE ALGÉRIENNE DÉMOCRATIQUE ET POPULAIRE\n")
+    r1 = p_en_tete.add_run("République Algérienne Démocratique et populaire\n")
     r1.bold = True
-    r1.font.size = Pt(11)
+    r1.font.size = Pt(12)
     r1.font.name = 'Calibri'
     
     r2 = p_en_tete.add_run(
-        "Ministère de l'Enseignement Supérieur et de la Recherche Scientifique\n"
-        "Université Djillali Liabes - Sidi Bel Abbès\n"
-        "Faculté de Génie Électrique\n"
+        "Ministère de l'enseignement supérieur et de la recherche scientifiques\n"
+        "Université Djillali Liabes de Sidi Bel Abbés\n"
+        "Faculté de Génie Electrique\n"
     )
-    r2.font.size = Pt(10)
+    r2.bold = True
+    r2.font.size = Pt(12)
     r2.font.name = 'Calibri'
     
+    # Ligne département conservée (inchangée par rapport à votre demande)
     r_dept = p_en_tete.add_run(f"{département.upper()}\n")
     r_dept.bold = True
     r_dept.font.size = Pt(11)
@@ -5427,7 +5417,7 @@ def générer_bordereau_iso(département, donnees):
 
     doc.add_paragraph("\n")
 
-    # 2. RÉFÉRENCE CHRONOLOGIQUE
+    # 2. RÉFÉRENCE
     p_ref = doc.add_paragraph()
     p_ref.alignment = WD_ALIGN_PARAGRAPH.LEFT
     r_ref = p_ref.add_run(f"N° : {donnees['num_reference']}/ F.G.E/ V.D.E.Q.L.E/2027")
@@ -5437,10 +5427,10 @@ def générer_bordereau_iso(département, donnees):
 
     doc.add_paragraph("\n")
 
-    # 3. TITRE DU BORDEREAU (Taille 36, Calibri, Italique, Souligné)
+    # 3. TITRE
     p_titre = doc.add_paragraph()
     p_titre.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r_titre = p_titre.add_run("BORDEREAU D’ENVOI")
+    r_titre = p_titre.add_run("BORDEREAU D'ENVOI")
     r_titre.font.name = 'Calibri'
     r_titre.font.size = Pt(36)
     r_titre.italic = True
@@ -5449,7 +5439,7 @@ def générer_bordereau_iso(département, donnees):
     
     doc.add_paragraph("\n")
 
-    # 4. DESTINATAIRE CONSTRUIT DYNAMIQUEMENT (Calibri)
+    # 4. DESTINATAIRE
     p_dest = doc.add_paragraph()
     p_dest.alignment = WD_ALIGN_PARAGRAPH.LEFT
     r_dest = p_dest.add_run(f"A monsieur : {donnees['destinataire']}")
@@ -5459,18 +5449,16 @@ def générer_bordereau_iso(département, donnees):
 
     doc.add_paragraph("\n")
 
-    # 5. TABLEAU DE TRANSMISSION MULTI-LIGNES
+    # 5. TABLEAU DE TRANSMISSION
     liste_pieces = donnees['liste_pieces']
-    nb_lignes_totatles = 2 + len(liste_pieces)
+    nb_lignes_totales = 2 + len(liste_pieces)
     
-    table = doc.add_table(rows=nb_lignes_totatles, cols=3)
+    table = doc.add_table(rows=nb_lignes_totales, cols=3)
     table.style = 'Table Grid'
-    
     table.columns[0].width = Inches(4.5)
     table.columns[1].width = Inches(0.8)
     table.columns[2].width = Inches(1.7)
 
-    # Ligne 1 : En-têtes fixes
     hdr_cells = table.rows[0].cells
     hdr_cells[0].text = "Désignation des pièces"
     hdr_cells[1].text = "Nbre"
@@ -5483,7 +5471,6 @@ def générer_bordereau_iso(département, donnees):
         cell.paragraphs[0].runs[0].font.size = Pt(10)
         set_cell_margins(cell, top=120, bottom=120)
 
-    # Ligne 2 : Formule d'accompagnement
     row_joint = table.rows[1].cells
     row_joint[0].text = "Veuillez trouver ci-joint :"
     row_joint[0].paragraphs[0].runs[0].font.italic = True
@@ -5491,11 +5478,9 @@ def générer_bordereau_iso(département, donnees):
     row_joint[0].paragraphs[0].runs[0].font.size = Pt(10)
     set_cell_margins(row_joint[0], top=80, bottom=80)
 
-    # Lignes Dynamiques
     for index, piece in enumerate(liste_pieces):
         row_idx = 2 + index
         current_row = table.rows[row_idx].cells
-        
         current_row[0].text = str(piece["Désignation des pièces"])
         current_row[1].text = str(piece["Nbre"])
         current_row[2].text = str(piece["Observations"])
@@ -5510,7 +5495,7 @@ def générer_bordereau_iso(département, donnees):
 
     doc.add_paragraph("\n\n")
 
-    # 6. SIGNATURES ET ACCUSÉ DE RÉCEPTION
+    # 6. SIGNATURES
     p_signatures = doc.add_paragraph()
     p_signatures.alignment = WD_ALIGN_PARAGRAPH.LEFT
     date_texte = donnees['date_creation'].strftime('%d/%m/%Y')
@@ -5530,7 +5515,6 @@ def générer_bordereau_iso(département, donnees):
     run_accuse.bold = True
 
     return doc
-
 def générer_pv_generique(département, type_pv, donnees):
     """Générateur secondaire de secours (Calibri)."""
     doc = Document()
@@ -5538,7 +5522,51 @@ def générer_pv_generique(département, type_pv, donnees):
     run = p.add_run(f"{type_pv} - {département}\nDocument en cours.")
     run.font.name = 'Calibri'
     return doc
+# ==========================================
+# HISTORIQUE DES BORDEREAUX (SUPABASE)
+# ==========================================
+def enregistrer_historique_bordereau(donnees, departement, user_email):
+    """Enregistre un bordereau généré dans l'historique Supabase."""
+    try:
+        data_histo = {
+            "generated_by": user_email,
+            "departement": departement,
+            "destinataire": donnees.get('destinataire', ''),
+            "num_reference": donnees.get('num_reference', ''),
+            "date_creation": donnees.get('date_creation', datetime.now()).isoformat(),
+            "nombre_pieces": len(donnees.get('liste_pieces', [])),
+            "pieces_details": donnees.get('liste_pieces', []),
+            "fichier_nom": f"Bordereau_{departement.replace(' ', '_')}.docx"
+        }
+        supabase.table("bordereaux_historique").insert(data_histo).execute()
+    except Exception as e:
+        st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
 
+def afficher_historique_bordereaux():
+    """Affiche l'historique des bordereaux générés."""
+    try:
+        res = supabase.table("bordereaux_historique")\
+                      .select("*")\
+                      .order("created_at", desc=True)\
+                      .limit(50)\
+                      .execute()
+        if res.data:
+            df_histo = pd.DataFrame(res.data)
+            # Formatage lisible
+            df_histo['Date génération'] = pd.to_datetime(df_histo['created_at']).dt.strftime('%d/%m/%Y %H:%M')
+            df_histo = df_histo[[
+                'Date génération', 'generated_by', 'departement', 
+                'destinataire', 'num_reference', 'nombre_pieces', 'fichier_nom'
+            ]]
+            df_histo.columns = [
+                'Date', 'Généré par', 'Département', 'Destinataire', 
+                'N° Référence', 'Nb pièces', 'Fichier'
+            ]
+            st.dataframe(df_histo, use_container_width=True, hide_index=True)
+        else:
+            st.info("📭 Aucun bordereau enregistré dans l'historique.")
+    except Exception as e:
+        st.error(f"Erreur chargement historique : {e}")
 # ==========================================
 # INTERFACE UTILISATEUR STREAMLIT
 # ==========================================
@@ -5609,7 +5637,6 @@ else:
 # Action finale de compilation
 if doc_choisi == "Bordereau d'envoi":
     if st.button("Compiler et Générer le Bordereau Officiel"):
-        # Blocage de sécurité si le choix "Autres" est laissé vide
         if not donnees_doc['destinataire'].strip():
             st.error("Erreur : Le champ de destination personnalisée ne peut pas être vide.")
         else:
@@ -5620,7 +5647,11 @@ if doc_choisi == "Bordereau d'envoi":
                 document_final.save(output_stream)
                 output_stream.seek(0)
                 
-                st.success("✓ Bordereau généré avec succès avec le destinataire sélectionné.")
+                # ENREGISTREMENT DANS L'HISTORIQUE
+                user_email = user.get('email', 'inconnu') if user else 'inconnu'
+                enregistrer_historique_bordereau(donnees_doc, dept_choisi, user_email)
+                
+                st.success("✓ Bordereau généré et enregistré dans l'historique.")
                 
                 nom_fichier_export = f"Bordereau_{dept_choisi.replace(' ', '_')}.docx"
                 st.download_button(
@@ -5632,47 +5663,7 @@ if doc_choisi == "Bordereau d'envoi":
             except Exception as error:
                 st.error(f"Échec de l'opération de génération : {str(error)}")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# --- HISTORIQUE DES BORDEREAUX ---
+st.divider()
+with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
+    afficher_historique_bordereaux()
