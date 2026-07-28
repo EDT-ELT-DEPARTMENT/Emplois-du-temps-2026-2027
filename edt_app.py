@@ -5595,6 +5595,53 @@ def afficher_historique_bordereaux():
                       .execute()
         if res.data:
             # ═══════════════════════════════════════════════
+            # 0. TABLEAU DE BORD NUMÉRIQUE PAR DESTINATION
+            # ═══════════════════════════════════════════════
+            from collections import Counter
+            
+            compteur_dest = Counter([row.get('destinataire', 'Non spécifié') for row in res.data])
+            total_bordereaux = len(res.data)
+            
+            st.markdown("### 📊 Tableau de bord — Bordereaux par destination")
+            
+            # Ligne du total général
+            c_total, c_unique = st.columns(2)
+            c_total.metric("📨 Total bordereaux générés", total_bordereaux)
+            c_unique.metric("🏛️ Destinations distinctes", len(compteur_dest))
+            
+            st.divider()
+            
+            # Cartes par destinataire (3 colonnes dynamiques)
+            st.markdown("**Répartition par destinataire :**")
+            destinations = sorted(compteur_dest.items(), key=lambda x: x[1], reverse=True)
+            
+            cols = st.columns(min(3, len(destinations)))
+            for idx, (dest, count) in enumerate(destinations):
+                with cols[idx % 3]:
+                    st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+                            border-radius: 12px;
+                            padding: 16px;
+                            color: white;
+                            text-align: center;
+                            margin-bottom: 12px;
+                            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                        ">
+                            <div style="font-size: 11px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
+                                {dest}
+                            </div>
+                            <div style="font-size: 32px; font-weight: bold; margin: 8px 0;">
+                                {count}
+                            </div>
+                            <div style="font-size: 12px; opacity: 0.8;">
+                                bordereau{'x' if count > 1 else ''}
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+            
+            st.divider()
+            # ═══════════════════════════════════════════════
             # 1. PRÉPARATION DES DONNÉES
             # ═══════════════════════════════════════════════
             rows_recap = []
