@@ -5316,6 +5316,13 @@ def ajouter_champ_page(run, type_champ):
 # ==========================================
 # GÉNÉRATEUR DE BORDEREAU ISO STRICT
 # ==========================================
+def construire_reference(numero, annee=None):
+    """Construit la référence complète du bordereau."""
+    if annee is None:
+        annee = datetime.now().year
+    # Sécurise si un vieux format complet est passé par erreur
+    num_str = str(numero).split('/')[0] if '/' in str(numero) else str(numero)
+    return f"{num_str}/F.G.E/Département-ELT/{annee}"
 def générer_bordereau_iso(département, donnees):
     doc = Document()
     
@@ -5344,7 +5351,8 @@ def générer_bordereau_iso(département, donnees):
         footer_pPr.append(tabs)
         
         footer_p.add_run("\t")
-        r_ref_fixe = footer_p.add_run("Réf : UDL-GEL-ER-004-2027")
+        annee_doc = donnees.get('annee_reference', datetime.now().year)
+        r_ref_fixe = footer_p.add_run(f"Réf : UDL-GEL-ER-004-{annee_doc}")
         r_ref_fixe.font.name = 'Calibri'
         r_ref_fixe.font.size = Pt(11)
         
@@ -5422,7 +5430,7 @@ def générer_bordereau_iso(département, donnees):
     # 2. RÉFÉRENCE
     p_ref = doc.add_paragraph()
     p_ref.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    r_ref = p_ref.add_run(f"N° : {donnees['num_reference']}/ F.G.E/ V.D.E.Q.L.E/2027")
+    r_ref = p_ref.add_run(f"N° : {donnees['num_reference']}")
     r_ref.font.size = Pt(10)
     r_ref.font.name = 'Calibri'
     r_ref.bold = True
@@ -5535,11 +5543,16 @@ def générer_pv_generique(département, type_pv, donnees):
 def enregistrer_historique_bordereau(donnees, departement, user_email):
     """Enregistre un bordereau généré dans l'historique Supabase."""
     try:
+        # Extraction du numéro pur (si l'utilisateur a édité le champ)
+        ref_pur = donnees.get('num_reference_pur', 1)
+        annee_ref = donnees.get('annee_reference', datetime.now().year)
+        
         data_histo = {
             "generated_by": user_email,
             "departement": departement,
             "destinataire": donnees.get('destinataire', ''),
-            "num_reference": donnees.get('num_reference', ''),
+            "num_reference": str(ref_pur),
+            "annee_reference": annee_ref,
             "expediteur_qualite": donnees.get('expediteur_qualite', 'Chef de département'),
             "date_creation": donnees.get('date_creation', datetime.now()).isoformat(),
             "nombre_pieces": len(donnees.get('liste_pieces', [])),
@@ -5549,6 +5562,7 @@ def enregistrer_historique_bordereau(donnees, departement, user_email):
         supabase.table("bordereaux_historique").insert(data_histo).execute()
     except Exception as e:
         st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
+
 
 def get_prochaine_reference():
     """Récupère le prochain numéro de référence depuis l'historique."""
@@ -5561,6 +5575,9 @@ def get_prochaine_reference():
         if res.data and len(res.data) > 0:
             dernier = res.data[0].get('num_reference', '0')
             try:
+                # Gère les anciennes références "4/F.G.E..." ou les nouvelles
+                if isinstance(dernier, str) and '/' in dernier:
+                    dernier = dernier.split('/')[0]
                 return int(dernier) + 1
             except ValueError:
                 return 1
@@ -5600,7 +5617,9 @@ def afficher_historique_bordereaux():
                 
                 # Données détaillées pour Excel
                 pieces = row.get('pieces_details', [])
-                ref_full = f"{row.get('num_reference', '—')}/F.G.E/V.D.E.Q.L.E/2027"
+                ref_full = f"{ref_num = row.get('num_reference', '—')
+                ref_annee = row.get('annee_reference', datetime.now().year)
+                ref_full = construire_reference(ref_num, ref_annee)"
                 
                 if isinstance(pieces, list) and len(pieces) > 0:
                     for p in pieces:
@@ -5705,7 +5724,9 @@ def afficher_historique_bordereaux():
                 exp = row.get('expediteur_qualite', '—')
                 
                 with st.expander(
-                    f"📝 Bordereau N° {ref}/F.G.E/V.D.E.Q.L.E/2027 — {dest} — {date_str}", 
+                    f"📝 Bordereau N° {ref_num = row.get('num_reference', '—')
+                ref_annee = row.get('annee_reference', datetime.now().year)
+                ref_full = construire_reference(ref_num, ref_annee)}", 
                     expanded=(i == 0)
                 ):
                     c1, c2, c3, c4, c5 = st.columns(5)
@@ -5761,12 +5782,23 @@ if doc_choisi == "Bordereau d'envoi":
     prochaine_ref = get_prochaine_reference()
     
     col_ref, col_date, col_exp = st.columns(3)
+    
     with col_ref:
+        annee_courante = datetime.now().year
+        prochaine_ref_num = get_prochaine_reference()
+        ref_auto = construire_reference(prochaine_ref_num, annee_courante)
+        
         donnees_doc['num_reference'] = st.text_input(
             "Référence séquentielle", 
-            value=str(prochaine_ref),
+            value=ref_auto,
             help="Auto-incrémentée selon l'historique d'envoi"
-        )
+        )    
+        # Extraction du numéro pur pour la base
+        try:
+            donnees_doc['num_reference_pur'] = int(str(donnees_doc['num_reference']).split('/')[0])
+        except ValueError:
+            donnees_doc['num_reference_pur'] = prochaine_ref_num
+        donnees_doc['annee_reference'] = annee_courante
     with col_date:
         donnees_doc['date_creation'] = st.date_input("Date d'édition", datetime.now())
     with col_exp:
@@ -5836,7 +5868,7 @@ if doc_choisi == "Bordereau d'envoi":
                 user_email = user.get('email', 'inconnu') if user else 'inconnu'
                 enregistrer_historique_bordereau(donnees_doc, dept_choisi, user_email)
                 
-                st.success("✓ Bordereau généré et enregistré dans l'historique.")
+                st.success(f"✓ Bordereau {donnees_doc['num_reference']} généré et enregistré.")
                 
                 nom_fichier_export = f"Bordereau_{dept_choisi.replace(' ', '_')}.docx"
                 st.download_button(
