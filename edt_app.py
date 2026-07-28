@@ -5274,7 +5274,13 @@ OPTIONS_DESTINATAIRES = [
     "Le chef de département",
     "Autres"
 ]
-
+OPTIONS_EXPEDITEURS = [
+    "Chef de département",
+    "Chef de département adjoint",
+    "Chef service de scolarité",
+    "Chef de service d'enseignements",
+    "Signataire"
+]
 # ==========================================
 # FONCTIONS TECHNIQUES DE STRUCTURE
 # ==========================================
@@ -5492,10 +5498,15 @@ def générer_bordereau_iso(département, donnees):
     doc.add_paragraph("\n\n")
 
     # 6. SIGNATURES
+    # 6. SIGNATURES ET ACCUSÉ DE RÉCEPTION
     p_signatures = doc.add_paragraph()
     p_signatures.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    
     date_texte = donnees['date_creation'].strftime('%d/%m/%Y')
-    run_sig = p_signatures.add_run(f"Sidi bel Abbès le : {date_texte}\t\t\t\tChef de département")
+    qualite_expediteur = donnees.get('expediteur_qualite', 'Chef de département')
+    
+    # Tabulation pour pousser le signataire à droite
+    run_sig = p_signatures.add_run(f"Sidi bel Abbès le : {date_texte}\t\t\t\t{qualite_expediteur}")
     run_sig.font.name = 'Calibri'
     run_sig.font.size = Pt(11)
     run_sig.bold = True
@@ -5504,7 +5515,7 @@ def générer_bordereau_iso(département, donnees):
 
     p_accuse = doc.add_paragraph()
     p_accuse.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run_accuse = p_accuse.add_run("    ")
+    run_accuse = p_accuse.add_run("Accusé de réception    ")
     run_accuse.font.name = 'Calibri'
     run_accuse.font.size = Pt(10)
     run_accuse.font.underline = True
@@ -5529,6 +5540,7 @@ def enregistrer_historique_bordereau(donnees, departement, user_email):
             "departement": departement,
             "destinataire": donnees.get('destinataire', ''),
             "num_reference": donnees.get('num_reference', ''),
+            "expediteur_qualite": donnees.get('expediteur_qualite', 'Chef de département'),
             "date_creation": donnees.get('date_creation', datetime.now()).isoformat(),
             "nombre_pieces": len(donnees.get('liste_pieces', [])),
             "pieces_details": donnees.get('liste_pieces', []),
@@ -5538,7 +5550,23 @@ def enregistrer_historique_bordereau(donnees, departement, user_email):
     except Exception as e:
         st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
 
-
+def get_prochaine_reference():
+    """Récupère le prochain numéro de référence depuis l'historique."""
+    try:
+        res = supabase.table("bordereaux_historique")\
+                      .select("num_reference")\
+                      .order("num_reference", desc=True)\
+                      .limit(1)\
+                      .execute()
+        if res.data and len(res.data) > 0:
+            dernier = res.data[0].get('num_reference', '0')
+            try:
+                return int(dernier) + 1
+            except ValueError:
+                return 1
+        return 1
+    except Exception:
+        return 1
 def afficher_historique_bordereaux():
     """Affiche l'historique des bordereaux avec export Excel et effacement sécurisé."""
     try:
@@ -5725,11 +5753,58 @@ st.subheader(f"Formulaire d'édition - {doc_choisi}")
 donnees_doc = {}
 
 if doc_choisi == "Bordereau d'envoi":
-    col_ref, col_date = st.columns(2)
+    prochaine_ref = get_prochaine_reference()
+    
+    col_ref, col_date, col_exp = st.columns(3)
     with col_ref:
-        donnees_doc['num_reference'] = st.text_input("Référence séquentielle (Ex: 27)", value="27")
+        donnees_doc['num_reference'] = st.text_input(
+            "Référence séquentielle", 
+            value=str(prochaine_ref),
+            help="Auto-incrémentée selon l'historique d'envoi"
+        )
     with col_date:
         donnees_doc['date_creation'] = st.date_input("Date d'édition", datetime.now())
+    with col_exp:
+        donnees_doc['expediteur_qualite'] = st.selectbox(
+            "Qualité de l'expéditeur :", 
+            OPTIONS_EXPEDITEURS,
+            index=0
+        )
+        
+    # ----------------------------------------------------
+    # ZONE DESTINATAIRE
+    # ----------------------------------------------------
+    st.markdown("##### Destinataire officiel")
+    choix_dest = st.selectbox(
+        "Sélectionnez le destinataire dans la liste :", 
+        OPTIONS_DESTINATAIRES,
+        index=0
+    )
+    
+    if choix_dest == "Autres":
+        donnees_doc['destinataire'] = st.text_input("Veuillez saisir la destination personnalisée :", value="")
+    else:
+        donnees_doc['destinataire'] = choix_dest
+        
+    st.markdown("---")
+    st.write("**Configuration du Tableau de Transmission**")
+    
+    df_initial = pd.DataFrame([
+        {"Désignation des pièces": "Fiches de vœux du second semestre", "Nbre": 12, "Observations": "Pour examen"},
+        {"Désignation des pièces": "Procès-verbal de délibération", "Nbre": 2, "Observations": "Pour affichage"}
+    ])
+    
+    df_edite = st.data_editor(
+        df_initial, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        column_config={
+            "Désignation des pièces": st.column_config.TextColumn(width="medium", required=True),
+            "Nbre": st.column_config.NumberColumn(width="small", min_value=1, required=True),
+            "Observations": st.column_config.TextColumn(width="medium")
+        }
+    )
+    donnees_doc['liste_pieces'] = df_edite.to_dict(orient="records")
         
     # ----------------------------------------------------
     # ZONE DESTINATAIRE : SÉLECTEUR ET CHAMP LIBRE DYNAMIQUE
@@ -5802,6 +5877,16 @@ if doc_choisi == "Bordereau d'envoi":
                 st.error(f"Échec de l'opération de génération : {str(error)}")
 
 # --- HISTORIQUE DES BORDEREAUX ---
+rows_recap.append({
+    'Date': date_str,
+    'Généré par': row.get('generated_by', '—'),
+    'Expéditeur': row.get('expediteur_qualite', '—'),  # ← AJOUT
+    'Département': row.get('departement', '—'),
+    'Destinataire': row.get('destinataire', '—'),
+    'N° Référence': row.get('num_reference', '—'),
+    'Nb pièces': row.get('nombre_pieces', 0),
+    'Fichier': row.get('fichier_nom', '—')
+})
 st.divider()
 with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
     afficher_historique_bordereaux()
