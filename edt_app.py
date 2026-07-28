@@ -1197,7 +1197,7 @@ def render_download_hub(df_global, user_data, is_admin):
         # ═══════════════════════════════════════════════════════
         if sel_salle != "Toutes":
             # Un seul lieu → generation immediate
-            pdf_data_s, _ = generate_pro_pdf(df_filtre_s, f"Planning - {sel_salle}", "Export salle")
+            pdf_data_s, _ = generate_pro_pdf(df_filtre_s, f"Planning - {sel_salle}", "Occupation des lieux")
             if pdf_data_s is not None:
                 c1.download_button("📄 PDF", pdf_data_s, f"Planning_{sel_salle}_2027.pdf", "application/pdf", use_container_width=True, key="sp")
             else:
