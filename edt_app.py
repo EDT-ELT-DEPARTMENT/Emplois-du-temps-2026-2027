@@ -5264,11 +5264,7 @@ DEPARTEMENTS = [
 ]
 
 TYPES_DOCUMENTS = [
-    "Bordereau d'envoi",
-    "Procès-verbal (PV) de réunion",
-    "PV de surveillance",
-    "PV du Comité Pédagogique",
-    "Réunion du Conseil de Discipline"
+    "Bordereau d'envoi"
 ]
 
 OPTIONS_DESTINATAIRES = [
