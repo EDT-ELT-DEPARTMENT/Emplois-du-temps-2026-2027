@@ -5735,47 +5735,7 @@ def afficher_historique_bordereaux():
                     
         else:
             st.info("📭 Aucun bordereau enregistré dans l'historique.")
-    except Exception as e:
-        st.error(f"Erreur chargement historique : {e}")
-                                     
-            # ═══════════════════════════════════════════════
-            # 4. DÉTAIL DE CHAQUE BORDEREAU
-            # ═══════════════════════════════════════════════
-            for i, row in enumerate(res.data):
-                date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
-                ref = row.get('num_reference', '—')
-                dest = row.get('destinataire', '—')
-                
-                with st.expander(
-                    f"📝 Bordereau N° {ref}/F.G.E/V.D.E.Q.L.E/2027 — {dest} — {date_str}", 
-                    expanded=(i == 0)
-                ):
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '—')}")
-                    c2.markdown(f"**🏛️ Département**\n{row.get('departement', '—')}")
-                    c3.markdown(f"**📅 Date**\n{date_str}")
-                    c4.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '—')}")
-                    
-                    st.markdown("---")
-                    st.markdown("**Tableau de transmission :**")
-                    
-                    pieces = row.get('pieces_details', [])
-                    if isinstance(pieces, list) and len(pieces) > 0:
-                        df_pieces = pd.DataFrame(pieces)
-                        cols_ordre = []
-                        for col in ['Désignation des pièces', 'Nbre', 'Observations']:
-                            if col in df_pieces.columns:
-                                cols_ordre.append(col)
-                        if cols_ordre:
-                            df_pieces = df_pieces[cols_ordre]
-                            st.dataframe(df_pieces, use_container_width=True, hide_index=True)
-                        else:
-                            st.json(pieces)
-                    else:
-                        st.info("Aucune pièce enregistrée pour ce bordereau.")
-                    
-        else:
-            st.info("📭 Aucun bordereau enregistré dans l'historique.")
+    
     except Exception as e:
         st.error(f"Erreur chargement historique : {e}")
 # ==========================================
