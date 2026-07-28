@@ -319,7 +319,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
             self.set_y(-12)
             self.set_font('Arial', 'I', 7)
             self.set_text_color(128, 128, 128)
-            self.cell(0, 10, sanitize_for_pdf(f"1/1, 0, 0, "C")
+            self.cell(0, 10, sanitize_for_pdf(f"Document genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"), 0, 0, "C")
     
     # Ordres de reference
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
