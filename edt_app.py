@@ -1169,12 +1169,12 @@ def render_download_hub(df_global, user_data, is_admin):
         st.divider()
         st.markdown("**🌍 Export Global (Admin)**")
         cg1, cg2, cg3, cg4 = st.columns(4)
-        pdf_g, _ = generate_pro_pdf(df_propre, "EDT GLOBAL S2-2027", "Département d'Electrotechnique - Toutes promotions")
+        pdf_g, _ = generate_pro_pdf(df_propre, "EDT GLOBAL S1-2027", "Département d'Electrotechnique - Toutes promotions")
         if pdf_g is not None:
             cg1.download_button("📄 PDF Global", pdf_g, "EDT_GLOBAL_S1_2027.pdf", "application/pdf", use_container_width=True)
-        html_g = generate_pro_html(df_propre, "EDT Global S2-2027", "Département d'Electrotechnique - FGE/UDL-SBA")
+        html_g = generate_pro_html(df_propre, "EDT Global S1-2027", "Département d'Electrotechnique - FGE/UDL-SBA")
         cg2.download_button("🌐 HTML Global", html_g, "EDT_GLOBAL_S1_2027.html", "text/html", use_container_width=True)
-        xlsx_g = generate_pro_excel(df_propre, "EDT Global S2-2027", "EDT_Global")
+        xlsx_g = generate_pro_excel(df_propre, "EDT Global S1-2027", "EDT_Global")
         cg3.download_button("📊 Excel Global", xlsx_g, "EDT_GLOBAL_S1_2027.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         zip_buffer = io.BytesIO()
@@ -1314,7 +1314,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- CHARGEMENT DES DONNÉES ---
-NOM_FICHIER_FIXE = "dataEDT-ELT-S2-2027.xlsx"
+NOM_FICHIER_FIXE = "dataEDT-ELT-S1-2027.xlsx"
 NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
 
 df = None
@@ -3180,7 +3180,7 @@ if df is not None:
                     st.download_button(
                         label="⬇️ Télécharger le Pack ZIP",
                         data=zip_buffer.getvalue(),
-                        file_name="Pack_EDT_HTML_S2.zip",
+                        file_name="Pack_EDT_HTML_S1.zip",
                         mime="application/zip",
                         use_container_width=True
                     )
@@ -3834,7 +3834,7 @@ if df is not None:
                                         if not any(t for t in tracker if t['D']==row[C_DATE] and t['H']==row[C_HEURE] and t['N']==p):
                                             equipe.append(p); stats[p] += 1
                                             tracker.append({'D': row[C_DATE], 'H': row[C_HEURE], 'N': p})
-                                res_list.append({"Enseignements": row[C_MAT], "Code": "S2-2027", "Enseignants": " & ".join(equipe) if len(equipe) >= 2 else "⚠️ BESOIN RENFORT", "Horaire": row[C_HEURE], "Jours": row[C_DATE], "Lieu": f"Salle {s_idx}" if nb_salles > 1 else row[C_SALLE], "Promotion": f"{p_name} (S{s_idx})" if nb_salles > 1 else p_name})
+                                res_list.append({"Enseignements": row[C_MAT], "Code": "S1-2027", "Enseignants": " & ".join(equipe) if len(equipe) >= 2 else "⚠️ BESOIN RENFORT", "Horaire": row[C_HEURE], "Jours": row[C_DATE], "Lieu": f"Salle {s_idx}" if nb_salles > 1 else row[C_SALLE], "Promotion": f"{p_name} (S{s_idx})" if nb_salles > 1 else p_name})
                     st.session_state.df_genere = pd.DataFrame(res_list)
                     st.session_state.stats_charge = stats
                     st.rerun()
@@ -3947,7 +3947,7 @@ if df is not None:
                             nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
 
                             msg = MIMEMultipart()
-                            msg['Subject'] = f"Votre Emploi du Temps S2-2027 - {row['Enseignant']}"
+                            msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {row['Enseignant']}"
                             
                             # --- CORRECTION DES EN-TÊTES ---
                             msg['From'] = f"{nom_affichage} <{expediteur_email}>"
@@ -3964,7 +3964,7 @@ if df is not None:
                                 <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
                                 
                                 <div style="background-color: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 15px;">
-                                    <b>📊 Récapitulatif de votre charge (S2-2027) :</b><br>
+                                    <b>📊 Récapitulatif de votre charge (S1-2027) :</b><br>
                                     <ul>
                                         <li>Nombre de Cours : <b>{nb_cours}</b></li>
                                         <li>Nombre de TD : <b>{nb_td}</b></li>
@@ -4288,7 +4288,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
                                 <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
                                 
                                 <div style="background-color: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 15px;">
-                                    <b>📊 Récapitulatif de votre charge (S2-2027) :</b><br>
+                                    <b>📊 Récapitulatif de votre charge (S1-2027) :</b><br>
                                     <ul>
                                         <li>Nombre de Cours : <b>{nb_cours}</b></li>
                                         <li>Nombre de TD : <b>{nb_td}</b></li>
