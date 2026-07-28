@@ -5617,9 +5617,9 @@ def afficher_historique_bordereaux():
                 
                 # Données détaillées pour Excel
                 pieces = row.get('pieces_details', [])
-                ref_full = f"{ref_num = row.get('num_reference', '—')
+                ref_num = row.get('num_reference', '—')
                 ref_annee = row.get('annee_reference', datetime.now().year)
-                ref_full = construire_reference(ref_num, ref_annee)"
+                ref_full = construire_reference(ref_num, ref_annee)
                 
                 if isinstance(pieces, list) and len(pieces) > 0:
                     for p in pieces:
