@@ -828,7 +828,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                     "Code : PPER.03",
                     "Revision : 00",
                     "Date : 16/05/2026",
-                    f"Pages : {self.page_no()}/{total_pages}"
+                    f"Pages : {total_pages}/{total_pages}"
                 ]
                 for i, info in enumerate(infos):
                     self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
