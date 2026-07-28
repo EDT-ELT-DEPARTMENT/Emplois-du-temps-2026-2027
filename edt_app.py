@@ -5543,7 +5543,7 @@ def enregistrer_historique_bordereau(donnees, departement, user_email):
         st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
 
 def afficher_historique_bordereaux():
-    """Affiche l'historique des bordereaux avec tableau détaillé des pièces."""
+    """Affiche l'historique des bordereaux avec tableau détaillé des pièces et export Excel."""
     try:
         res = supabase.table("bordereaux_historique")\
                       .select("*")\
@@ -5552,12 +5552,17 @@ def afficher_historique_bordereaux():
                       .execute()
         if res.data:
             # ═══════════════════════════════════════════════
-            # 1. TABLEAU RÉCAPITULATIF GLOBAL (vue d'ensemble)
+            # 1. TABLEAU RÉCAPITULATIF GLOBAL
             # ═══════════════════════════════════════════════
             rows_recap = []
+            rows_detail = []  # Pour l'export Excel (une ligne = une pièce)
+            
             for row in res.data:
+                date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
+                
+                # Données récap
                 rows_recap.append({
-                    'Date': pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M'),
+                    'Date': date_str,
                     'Généré par': row.get('generated_by', '—'),
                     'Département': row.get('departement', '—'),
                     'Destinataire': row.get('destinataire', '—'),
@@ -5565,16 +5570,82 @@ def afficher_historique_bordereaux():
                     'Nb pièces': row.get('nombre_pieces', 0),
                     'Fichier': row.get('fichier_nom', '—')
                 })
+                
+                # Données détaillées pour Excel (aplaties)
+                pieces = row.get('pieces_details', [])
+                ref_full = f"{row.get('num_reference', '—')}/F.G.E/V.D.E.Q.L.E/2027"
+                
+                if isinstance(pieces, list) and len(pieces) > 0:
+                    for p in pieces:
+                        rows_detail.append({
+                            'Date génération': date_str,
+                            'Généré par': row.get('generated_by', '—'),
+                            'Département': row.get('departement', '—'),
+                            'Destinataire': row.get('destinataire', '—'),
+                            'N° Référence': ref_full,
+                            'Désignation des pièces': p.get('Désignation des pièces', ''),
+                            'Nbre': p.get('Nbre', ''),
+                            'Observations': p.get('Observations', ''),
+                            'Fichier': row.get('fichier_nom', '—')
+                        })
+                else:
+                    rows_detail.append({
+                        'Date génération': date_str,
+                        'Généré par': row.get('generated_by', '—'),
+                        'Département': row.get('departement', '—'),
+                        'Destinataire': row.get('destinataire', '—'),
+                        'N° Référence': ref_full,
+                        'Désignation des pièces': '—',
+                        'Nbre': '—',
+                        'Observations': '—',
+                        'Fichier': row.get('fichier_nom', '—')
+                    })
             
             df_recap = pd.DataFrame(rows_recap)
-            st.markdown("**📊 Vue d'ensemble des bordereaux**")
+            df_detail = pd.DataFrame(rows_detail)
+            
+            # ═══════════════════════════════════════════════
+            # BOUTON TÉLÉCHARGEMENT EXCEL
+            # ═══════════════════════════════════════════════
+            col_titre, col_btn = st.columns([3, 1])
+            with col_titre:
+                st.markdown("**📊 Vue d'ensemble des bordereaux**")
+            with col_btn:
+                buffer_excel = io.BytesIO()
+                with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
+                    # Onglet 1 : Récapitulatif
+                    df_recap.to_excel(writer, index=False, sheet_name='Récapitulatif')
+                    ws1 = writer.sheets['Récapitulatif']
+                    header_fmt = writer.book.add_format({
+                        'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1
+                    })
+                    for col_num, value in enumerate(df_recap.columns.values):
+                        ws1.write(0, col_num, value, header_fmt)
+                        ws1.set_column(col_num, col_num, 18)
+                    
+                    # Onglet 2 : Détail des pièces
+                    df_detail.to_excel(writer, index=False, sheet_name='Détail des pièces')
+                    ws2 = writer.sheets['Détail des pièces']
+                    for col_num, value in enumerate(df_detail.columns.values):
+                        ws2.write(0, col_num, value, header_fmt)
+                        ws2.set_column(col_num, col_num, 22)
+                
+                st.download_button(
+                    label="📥 Télécharger l'historique (Excel)",
+                    data=buffer_excel.getvalue(),
+                    file_name=f"Historique_Bordereaux_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_histo_bordereaux"
+                )
+            
             st.dataframe(df_recap, use_container_width=True, hide_index=True)
             
             st.divider()
             st.markdown("**📋 Détail par bordereau**")
             
             # ═══════════════════════════════════════════════
-            # 2. DÉTAIL DE CHAQUE BORDEREAU (tableau fidèle)
+            # 2. DÉTAIL DE CHAQUE BORDEREAU
             # ═══════════════════════════════════════════════
             for i, row in enumerate(res.data):
                 date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
@@ -5585,7 +5656,6 @@ def afficher_historique_bordereaux():
                     f"📝 Bordereau N° {ref}/F.G.E/V.D.E.Q.L.E/2027 — {dest} — {date_str}", 
                     expanded=(i == 0)
                 ):
-                    # Métadonnées en colonnes
                     c1, c2, c3, c4 = st.columns(4)
                     c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '—')}")
                     c2.markdown(f"**🏛️ Département**\n{row.get('departement', '—')}")
@@ -5595,22 +5665,18 @@ def afficher_historique_bordereaux():
                     st.markdown("---")
                     st.markdown("**Tableau de transmission :**")
                     
-                    # Récupération et affichage fidèle des pièces
                     pieces = row.get('pieces_details', [])
                     if isinstance(pieces, list) and len(pieces) > 0:
                         df_pieces = pd.DataFrame(pieces)
-                        
-                        # Réordonner les colonnes exactement comme le bordereau
                         cols_ordre = []
                         for col in ['Désignation des pièces', 'Nbre', 'Observations']:
                             if col in df_pieces.columns:
                                 cols_ordre.append(col)
-                        
                         if cols_ordre:
                             df_pieces = df_pieces[cols_ordre]
                             st.dataframe(df_pieces, use_container_width=True, hide_index=True)
                         else:
-                            st.json(pieces)  # Fallback si les noms de colonnes diffèrent
+                            st.json(pieces)
                     else:
                         st.info("Aucune pièce enregistrée pour ce bordereau.")
                     
