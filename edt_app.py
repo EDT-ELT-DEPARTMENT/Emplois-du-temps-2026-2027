@@ -5877,16 +5877,6 @@ if doc_choisi == "Bordereau d'envoi":
                 st.error(f"Échec de l'opération de génération : {str(error)}")
 
 # --- HISTORIQUE DES BORDEREAUX ---
-rows_recap.append({
-    'Date': date_str,
-    'Généré par': row.get('generated_by', '—'),
-    'Expéditeur': row.get('expediteur_qualite', '—'),  # ← AJOUT
-    'Département': row.get('departement', '—'),
-    'Destinataire': row.get('destinataire', '—'),
-    'N° Référence': row.get('num_reference', '—'),
-    'Nb pièces': row.get('nombre_pieces', 0),
-    'Fichier': row.get('fichier_nom', '—')
-})
 st.divider()
 with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
     afficher_historique_bordereaux()
