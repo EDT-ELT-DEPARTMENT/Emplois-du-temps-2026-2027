@@ -64,6 +64,7 @@ def generate_pro_pdf(df_source, title, subtitle="", orientation="L"):
             self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
     pdf = ProPDF(orientation=orientation, unit="mm", format="A4")
+    pdf.alias_nb_pages()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
@@ -319,7 +320,8 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
             self.set_y(-12)
             self.set_font('Arial', 'I', 7)
             self.set_text_color(128, 128, 128)
-            self.cell(0, 10, sanitize_for_pdf(f"Document genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"), 0, 0, "C")
+            self.set_text_color(128, 128, 128)
+            self.cell(0, 10, sanitize_for_pdf(f"Page {self.page_no()}/{{nb}}"), 0, 0, "C")
     
     # Ordres de reference
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
