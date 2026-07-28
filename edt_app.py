@@ -5508,7 +5508,7 @@ def générer_bordereau_iso(département, donnees):
 
     p_accuse = doc.add_paragraph()
     p_accuse.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run_accuse = p_accuse.add_run("Accusé de réception    ")
+    run_accuse = p_accuse.add_run("    ")
     run_accuse.font.name = 'Calibri'
     run_accuse.font.size = Pt(10)
     run_accuse.font.underline = True
