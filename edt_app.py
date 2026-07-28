@@ -5736,11 +5736,7 @@ def afficher_historique_bordereaux():
             st.info("📭 Aucun bordereau enregistré dans l'historique.")
     except Exception as e:
         st.error(f"Erreur chargement historique : {e}")
-                with c2:
-                    if st.button("❌ Non, annuler", key="confirm_del_no"):
-                        del st.session_state['confirmer_suppression_historique']
-                        st.rerun()
-            
+                            
             st.dataframe(df_recap, use_container_width=True, hide_index=True)
             
             st.divider()
