@@ -41,7 +41,7 @@ def sanitize_for_pdf(text):
 
 
 def generate_pro_pdf(df_source, title, subtitle="", orientation="L"):
-    """Genere un PDF professionnel avec fpdf. Retourne des bytes utilisables par st.download_button."""
+    """Généré un PDF professionnel avec fpdf. Retourne des bytes utilisables par st.download_button."""
     try:
         from fpdf import FPDF
     except ImportError:
@@ -119,7 +119,7 @@ def generate_pro_pdf(df_source, title, subtitle="", orientation="L"):
 
 
 def generate_pro_html(df_source, title, subtitle=""):
-    """Genere un HTML professionnel et responsive. Retourne une str."""
+    """Généré un HTML professionnel et responsive. Retourne une str."""
     if df_source is not None and not df_source.empty:
         df_clean = df_source.fillna("").astype(str)
         rows_html = ""
@@ -165,7 +165,7 @@ def generate_pro_html(df_source, title, subtitle=""):
         </div>
         <div class="content">
             <div class="meta">
-                <span>Genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}</span>
+                <span>Généré le {datetime.now().strftime('%d/%m/%Y a %H:%M')}</span>
                 <span>{len(df_source) if df_source is not None else 0} lignes</span>
             </div>
             {table_html}
@@ -180,7 +180,7 @@ def generate_pro_html(df_source, title, subtitle=""):
 
 
 def generate_pro_excel(df_source, title, sheet_name="Donnees"):
-    """Genere un Excel professionnel avec xlsxwriter. Retourne des bytes."""
+    """Généré un Excel professionnel avec xlsxwriter. Retourne des bytes."""
     buffer = io.BytesIO()
 
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
@@ -233,7 +233,7 @@ def generate_pro_excel(df_source, title, sheet_name="Donnees"):
     return buffer.getvalue()
 
 def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
-    """Genere un PDF individuel avec en-tete PPER.03 centree et texte infos aligne a gauche."""
+    """Généré un PDF individuel avec en-tete PPER.03 centree et texte infos aligne a gauche."""
     try:
         from fpdf import FPDF
         import math
@@ -496,7 +496,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     pdf_count = _build_pdf(total_pages=0, show_progress=False)
     total_pages = pdf_count.page_no()
 def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
-    """Genere un PDF unique avec l'EDT de TOUTES les promotions (format grille jour/horaire)."""
+    """Généré un PDF unique avec l'EDT de TOUTES les promotions (format grille jour/horaire)."""
     try:
         from fpdf import FPDF
         import math
@@ -833,14 +833,14 @@ def render_download_hub(df_global, user_data, is_admin):
                 c1.button("📄 PDF", disabled=True, use_container_width=True, key="dp_promo_single")
         else:
             # Toutes les promotions → generation au clic avec progression
-            if c1.button("📄 Generer PDF Global", use_container_width=True, key="btn_gen_all_pdf_promo"):
+            if c1.button("📄 Générer PDF Global", use_container_width=True, key="btn_gen_all_pdf_promo"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
                     pdf_data_all, err_all = generate_edt_toutes_promotions_pdf(df_propre, progress_bar=prog)
                     if pdf_data_all:
                         st.session_state['pdf_all_promo_data'] = pdf_data_all
                         st.session_state['pdf_all_promo_ready'] = True
-                        st.success(f"✅ PDF genere : {len(promos)} promotions")
+                        st.success(f"✅ PDF Généré : {len(promos)} promotions")
                         st.rerun()
                     else:
                         st.error(f"❌ Erreur : {err_all}")
@@ -878,14 +878,14 @@ def render_download_hub(df_global, user_data, is_admin):
                 c1.button("📄 PDF", disabled=True, use_container_width=True, key="dp")
         else:
             # Tous les enseignants → generation au clic avec progression
-            if c1.button("📄 Generer PDF Global", use_container_width=True, key="btn_gen_all_pdf"):
+            if c1.button("📄 Générer PDF Global", use_container_width=True, key="btn_gen_all_pdf"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
                     pdf_data_all, err_all = generate_edt_tous_enseignants_pdf(df_propre, progress_bar=prog)
                     if pdf_data_all:
                         st.session_state['pdf_all_data'] = pdf_data_all
                         st.session_state['pdf_all_ready'] = True
-                        st.success(f"✅ PDF genere : {len(profs)} enseignants")
+                        st.success(f"✅ PDF Généré : {len(profs)} enseignants")
                         st.rerun()
                     else:
                         st.error(f"❌ Erreur : {err_all}")
@@ -3599,14 +3599,14 @@ if df is not None:
                                             equipe.append(p); stats[p] += 1
                                             tracker.append({'D': row[C_DATE], 'H': row[C_HEURE], 'N': p})
                                 res_list.append({"Enseignements": row[C_MAT], "Code": "S1-2027", "Enseignants": " & ".join(equipe) if len(equipe) >= 2 else "⚠️ BESOIN RENFORT", "Horaire": row[C_HEURE], "Jours": row[C_DATE], "Lieu": f"Salle {s_idx}" if nb_salles > 1 else row[C_SALLE], "Promotion": f"{p_name} (S{s_idx})" if nb_salles > 1 else p_name})
-                    st.session_state.df_genere = pd.DataFrame(res_list)
+                    st.session_state.df_généré = pd.DataFrame(res_list)
                     st.session_state.stats_charge = stats
                     st.rerun()
 
-                if st.session_state.get("df_genere") is not None:
-                    st.dataframe(st.session_state.df_genere, use_container_width=True, hide_index=True)
+                if st.session_state.get("df_généré") is not None:
+                    st.dataframe(st.session_state.df_généré, use_container_width=True, hide_index=True)
                     xlsx_buf = io.BytesIO()
-                    with pd.ExcelWriter(xlsx_buf, engine='xlsxwriter') as writer: st.session_state.df_genere.to_excel(writer, index=False)
+                    with pd.ExcelWriter(xlsx_buf, engine='xlsxwriter') as writer: st.session_state.df_généré.to_excel(writer, index=False)
                     st.download_button("📥 TÉLÉCHARGER LE PLANNING", xlsx_buf.getvalue(), "EDT_Surveillances_2027.xlsx")
 
     elif portail == "👥 Portail Enseignants":
@@ -4846,7 +4846,7 @@ def ajouter_champ_page(run, type_champ):
 # ==========================================
 # GÉNÉRATEUR DE BORDEREAU ISO STRICT
 # ==========================================
-def generer_bordereau_iso(département, donnees):
+def générer_bordereau_iso(département, donnees):
     doc = Document()
     
     # Configuration des marges globales de la page (0.8 pouce partout)
@@ -5064,7 +5064,7 @@ def generer_bordereau_iso(département, donnees):
 
     return doc
 
-def generer_pv_generique(département, type_pv, donnees):
+def générer_pv_generique(département, type_pv, donnees):
     """Générateur secondaire de secours (Calibri)."""
     doc = Document()
     p = doc.add_paragraph()
@@ -5147,7 +5147,7 @@ if doc_choisi == "Bordereau d'envoi":
             st.error("Erreur : Le champ de destination personnalisée ne peut pas être vide.")
         else:
             try:
-                document_final = generer_bordereau_iso(dept_choisi, donnees_doc)
+                document_final = générer_bordereau_iso(dept_choisi, donnees_doc)
                 
                 output_stream = io.BytesIO()
                 document_final.save(output_stream)
