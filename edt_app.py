@@ -2960,14 +2960,26 @@ if df is not None:
             grade_entete = repertoire_grades.get(cible.strip().upper(), "Grade non spécifié")
             statut_entete = repertoire_qualites.get(cible.strip().upper(), "Statut non spécifié")
             
+            
             def format_case(rows):
                 items = []
                 for _, r in rows.iterrows():
-                    # Disposition : Enseignements, Code, Lieu, Promotion
-                    nat = '📘' if 'COURS' in str(r['Code']).upper() else '📗' if 'TD' in str(r['Code']).upper() else '🔴'
-                    txt = f"<div style='margin-bottom:8px;'>{nat} <b>{r['Enseignements']}</b><br><small>({r['Code']})</small><br><i>{r['Lieu']}</i><br><b>{r['Promotion']}</b></div>"
+                    code_up = str(r['Code']).upper()
+                    if 'COURS' in code_up:
+                        nat, color, bg = '📘', '#1e40af', '#dbeafe'
+                    elif 'TD' in code_up:
+                        nat, color, bg = '📗', '#166534', '#dcfce7'
+                    else:
+                        nat, color, bg = '🔴', '#b91c1c', '#fee2e2'
+                    
+                    txt = (f"<div style='margin-bottom:6px;padding:6px;border-left:3px solid {color};"
+                           f"background-color:{bg};border-radius:4px;'>"
+                           f"<b style='color:{color};'>{nat} {r['Enseignements']}</b><br>"
+                           f"<span style='font-size:11px;'>({r['Code']})</span><br>"
+                           f"<span style='font-size:11px;'>📍 {r['Lieu']}</span><br>"
+                           f"<b style='font-size:11px;'>🎓 {r['Promotion']}</b></div>")
                     items.append(txt)
-                return "<div class='separator'></div>".join(items)
+                return "".join(items)
 
             if not df_f.empty:
                 # --- AFFICHAGE À L'ÉCRAN ---
