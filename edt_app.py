@@ -1721,6 +1721,9 @@ else:
 # =============================================================================
 # ACTIVATION DE COMPTE PAR TOKEN (depuis lien email)
 # =============================================================================
+# =============================================================================
+# ACTIVATION DE COMPTE PAR TOKEN (depuis lien email)
+# =============================================================================
 query_params = st.query_params
 if "activation_token" in query_params and query_params["activation_token"]:
     st.markdown("<h1 class='main-title'>🏛️ ACTIVATION DU COMPTE</h1>", unsafe_allow_html=True)
@@ -1747,6 +1750,9 @@ if "activation_token" in query_params and query_params["activation_token"]:
     
     st.success(f"👋 Bienvenue **{user_row['nom_officiel']}**, définissez votre mot de passe pour activer le compte.")
     
+    # ═══════════════════════════════════════════════════════════════
+    # FORMULAIRE D'ACTIVATION (sans bouton de navigation à l'intérieur)
+    # ═══════════════════════════════════════════════════════════════
     with st.form("form_activation_token"):
         new_pass = st.text_input("Choisissez un mot de passe", type="password")
         confirm_pass = st.text_input("Confirmez le mot de passe", type="password")
@@ -1767,12 +1773,22 @@ if "activation_token" in query_params and query_params["activation_token"]:
                         "activation_expires": None
                     }).eq("id", user_row['id']).execute()
                     
-                    st.success("✅ Compte activé avec succès ! Vous pouvez maintenant vous connecter.")
-                    if st.button("🔑 Aller à la connexion"):
-                        st.query_params.clear()
-                        st.rerun()
+                    # On stocke le succès dans le session_state pour l'afficher hors du form
+                    st.session_state['activation_success'] = True
+                    st.rerun()
+                    
                 except Exception as e:
                     st.error(f"Erreur technique : {e}")
+    
+    # ═══════════════════════════════════════════════════════════════
+    # BOUTON DE NAVIGATION (HORS DU FORMULAIRE)
+    # ═══════════════════════════════════════════════════════════════
+    if st.session_state.get('activation_success'):
+        st.success("✅ Compte activé avec succès ! Vous pouvez maintenant vous connecter.")
+        if st.button("🔑 Aller à la connexion", use_container_width=True, type="primary"):
+            st.session_state['activation_success'] = False  # Reset
+            st.query_params.clear()
+            st.rerun()
     
     st.stop()
 # --- SYSTÈME D'AUTH ---
