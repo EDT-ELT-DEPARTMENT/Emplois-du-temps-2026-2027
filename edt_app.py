@@ -4616,7 +4616,7 @@ if df is not None:
             else:
                 st.warning(f"⚠️ Aucune surveillance trouvée pour : {prof_sel}")
         else:
-            st.error("Le fichier 'surveillances_2027.xlsx' est absent.")
+            st.error("Le fichier 'surveillances_Semestre 01-2026-2027.xlsx' non établi pour le moment.")
 
     elif portail == "🤖 Générateur Automatique":
         if not is_admin:
