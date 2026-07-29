@@ -1705,7 +1705,7 @@ if not st.session_state["user_data"]:
     st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE - UDL SBA</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
     
-    with t_conn:
+with t_conn:
     email_input = st.text_input("Adresse Email", key="login_email")
     pass_input = st.text_input("Mot de passe", type="password", key="login_pass")
     if st.button("Se connecter au portail", use_container_width=True):
