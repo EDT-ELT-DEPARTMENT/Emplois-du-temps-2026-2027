@@ -4911,10 +4911,10 @@ if df is not None:
             "État d'envoi": "✅ Prêt" if email != "Non communiquée" else "❌ Adresse non communiquée"
         })
 
-    if is_admin:
-mode_envoi = st.radio("Choisir le mode d'envoi :", 
-                      ["Un par un (Individuel)", "Sélection groupée (Multi-choix)", "Par Promotion (Automatique)"], 
-                      horizontal=True)
+if is_admin:
+    mode_envoi = st.radio("Choisir le mode d'envoi :", 
+                          ["Un par un (Individuel)", "Sélection groupée (Multi-choix)", "Par Promotion (Automatique)"], 
+                          horizontal=True)
 
 # --- LOGIQUE DE FILTRAGE COMMUNE ---
 col_f1, col_f2 = st.columns(2)
