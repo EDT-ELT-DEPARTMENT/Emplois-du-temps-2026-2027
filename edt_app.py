@@ -5789,8 +5789,19 @@ if is_admin:
             else:
                 st.success("✅ Aucune surcharge détectée.")
 # --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
+# --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
 else:
     st.subheader("📅 Emploi du Temps - Vue Publique")
+    
+    # ═══════════════════════════════════════════════════════════════
+    # DÉFINITION LOCALE (sécurité contre NameError)
+    # ═══════════════════════════════════════════════════════════════
+    colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+    
+    # Vérification que df existe et n'est pas vide
+    if df is None or df.empty:
+        st.warning("⚠️ Aucune donnée EDT disponible pour l'affichage public.")
+        st.stop()
     
     # Filtres publics
     col_f1, col_f2 = st.columns(2)
@@ -5838,10 +5849,6 @@ else:
         st.download_button("📊 Télécharger la vue (Excel)", out_pub.getvalue(), "EDT_Vue_Publique.xlsx")
     with c2:
         st.download_button("📄 Télécharger la vue (HTML)", df_pub.to_html(index=False), "EDT_Vue_Publique.html", "text/html")
-
-# --- 6. PIED DE PAGE ---
-st.write("---")
-st.caption("🛠️ Application de gestion d'emploi du temps | Mode Admin : {}".format("✅ Actif" if is_admin else "❌ Inactif"))
 
 import streamlit as st
 from docx import Document
