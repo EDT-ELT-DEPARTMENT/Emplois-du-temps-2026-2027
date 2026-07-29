@@ -5462,7 +5462,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
         # =================================================================
         # =================================================================
 # --- LOGIQUE D'AFFICHAGE DU PORTAIL MISE À JOUR ---
-if portail == "🎓 Portail mise à jour EDT":
+elif portail == "🎓 Portail mise à jour EDT":
     st.write(f"**MODE ACTIF :** {portail}")
     st.subheader("📚 Espace mise à jour EDT")
     
