@@ -1661,40 +1661,29 @@ def charger_donnees_supabase():
 df = charger_donnees_supabase()
 
 # --- ÉTAPE 3 : CHARGEMENT DU RÉPERTOIRE (CONTACTS, PRÉNOMS, STATUTS & GRADES) ---
+# --- ÉTAPE 3 : CHARGEMENT DU RÉPERTOIRE (CONTACTS, PRÉNOMS, STATUTS & GRADES) ---
 repertoire_qualites = {} 
-repertoire_grades = {} # Nouveau dictionnaire pour stocker le Grade (MCA, Prof, etc.)
+repertoire_grades = {} 
+df_contacts = None  # ← AJOUT : initialisation globale
 
 if os.path.exists(NOM_FICHIER_CONTACTS):
     try:
         df_contacts = pd.read_excel(NOM_FICHIER_CONTACTS)
-        # Nettoyage strict des noms de colonnes
         df_contacts.columns = [str(c).strip() for c in df_contacts.columns]
         
         for _, row in df_contacts.iterrows():
             nom_brut = str(row.get('NOM', '')).strip().upper()
             prenom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
             email_brut = str(row.get('Email', '')).strip()
-            
-            # Récupération de la colonne 'Qualité' (Statut)
             qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
-            
-            # Récupération de la colonne 'Grade'
             grade_brut = str(row.get('Grade', 'N/A')).strip()
             
             if nom_brut:
-                # 1. Dictionnaire pour les Emails (Inscription)
                 if email_brut and email_brut.lower() != 'nan':
                     repertoire_source[nom_brut] = email_brut
-                
-                # 2. Dictionnaire pour l'affichage complet (Ex: ABID Mohamed)
                 repertoire_noms_complets[nom_brut] = f"{nom_brut} {prenom_brut}"
-                
-                # 3. Dictionnaire pour le statut (Ex: Permanent)
                 repertoire_qualites[nom_brut] = qualite_brute
-                
-                # 4. Dictionnaire pour le Grade (Ex: MCA)
                 repertoire_grades[nom_brut] = grade_brut
-                
     except Exception as e:
         st.error(f"Erreur lors de la lecture du fichier contacts: {e}")
 # --- SYSTÈME D'AUTH ---
@@ -1778,24 +1767,75 @@ if not st.session_state["user_data"]:
                         else:
                             st.error("Token invalide ou email incorrect.")
                     
+    
     with t_ins:
         st.subheader("📝 Créer un nouveau compte Enseignant")
-        # Récupération des noms depuis l'Excel
-        noms_possibles = sorted(df["Enseignants"].unique()) if df is not None else []
+        
+        # ─── SOURCE : fichier Permanents-Vacataires-ELT2-2026-2027.xlsx ───
+        if df_contacts is not None and not df_contacts.empty and 'NOM' in df_contacts.columns:
+            noms_possibles = sorted([
+                str(n).strip() 
+                for n in df_contacts["NOM"].dropna().unique() 
+                if str(n).strip() and str(n).strip().lower() not in ["nan", "none", ""]
+            ])
+        else:
+            noms_possibles = []
+            st.warning("⚠️ Fichier 'Permanents-Vacataires-ELT2-2026-2027.xlsx' introuvable ou colonne NOM manquante.")
+        
+        # ─── Helpers de pré-remplissage ───
+        def get_info_contact(nom_selectionne):
+            """Récupère (email, qualité, téléphone) depuis df_contacts pour un NOM donné."""
+            if df_contacts is None or nom_selectionne is None:
+                return "", "Permanent", ""
+            match = df_contacts[df_contacts["NOM"].astype(str).str.strip() == str(nom_selectionne).strip()]
+            if match.empty:
+                return "", "Permanent", ""
+            row = match.iloc[0]
+            email = str(row.get("Email", "")).strip()
+            qualite = str(row.get("Qualité", "")).strip()
+            tel = str(row.get("N°/TEL", "")).strip()
+            # Nettoyage
+            if email.lower() in ["nan", "none", ""]:
+                email = ""
+            if tel.lower() in ["nan", "none", "ras", ""]:
+                tel = ""
+            # Déduction du statut radio
+            if "vacataire" in qualite.lower():
+                statut = "Vacataire"
+            else:
+                statut = "Permanent"
+            return email, statut, tel
         
         col1, col2 = st.columns(2)
         with col1:
-            new_nom = st.selectbox("Sélectionnez votre nom (dans l'EDT)", noms_possibles)
-            new_email = st.text_input("Votre adresse Email")
+            new_nom = st.selectbox(
+                "Sélectionnez votre nom (dans le répertoire officiel)", 
+                noms_possibles,
+                index=0 if noms_possibles else None
+            )
+            
+            # Pré-remplissage auto de l'email
+            email_auto, statut_auto, tel_auto = get_info_contact(new_nom)
+            new_email = st.text_input("Votre adresse Email", value=email_auto)
             
         with col2:
-            # Nouveau : Choix du Statut
-            statut_user = st.radio("Statut de l'enseignant", ["Permanent", "Vacataire"], horizontal=True)
+            # Statut pré-coché selon la colonne Qualité du fichier
+            idx_statut = 1 if statut_auto == "Vacataire" else 0
+            statut_user = st.radio(
+                "Statut de l'enseignant", 
+                ["Permanent", "Vacataire"], 
+                horizontal=True,
+                index=idx_statut
+            )
             
-            # Nouveau : Champ téléphone conditionnel
+            # Téléphone pré-rempli si disponible
             new_phone = ""
             if statut_user == "Vacataire":
-                new_phone = st.text_input("📱 Numéro de téléphone (Obligatoire)", placeholder="06XXXXXXXX")
+                new_phone = st.text_input(
+                    "📱 Numéro de téléphone (Obligatoire)", 
+                    placeholder="06XXXXXXXX", 
+                    value=tel_auto
+                )
     
         st.divider()
         c_p1, c_p2 = st.columns(2)
@@ -1805,8 +1845,10 @@ if not st.session_state["user_data"]:
             confirm_pass = st.text_input("Confirmez le mot de passe", type="password")
         
         if st.button("Créer mon compte", use_container_width=True, type="primary"):
-            if not new_email or not new_pass:
-                st.warning("Veuillez remplir les champs obligatoires.")
+            if not new_nom:
+                st.error("Veuillez sélectionner votre nom dans la liste officielle.")
+            elif not new_email or not new_pass:
+                st.warning("Veuillez remplir les champs obligatoires (Email + Mot de passe).")
             elif statut_user == "Vacataire" and not new_phone:
                 st.error("Le numéro de téléphone est requis pour les vacataires.")
             elif new_pass != confirm_pass:
@@ -1830,8 +1872,7 @@ if not st.session_state["user_data"]:
                         st.success("✅ Compte créé avec succès ! Connectez-vous maintenant.")
                         st.balloons()
                     except Exception as e:
-                        st.error(f"Erreur Supabase : {e}")
-
+                        st.error(f"Erreur Supabase : {e}")    
     with t_adm:
         code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code")
         if st.button("Accès Administration", use_container_width=True):
