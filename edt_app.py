@@ -1669,6 +1669,7 @@ repertoire_qualites = {}
 repertoire_grades = {} 
 repertoire_source = {}        # Email par nom de famille
 repertoire_noms_complets = {} # Affichage "NOM Prénom"
+repertoire_telephones = {}
 df_contacts = None
 
 NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
@@ -1690,7 +1691,12 @@ if os.path.exists(NOM_FICHIER_CONTACTS):
             email_brut = str(row.get('Email', '')).strip()
             qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
             grade_brut = str(row.get('Grade', 'N/A')).strip()
-            
+            tel_brut = str(row.get('N°/TEL', '')).strip()
+            tel_nettoye = ''.join([c for c in tel_brut if c.isdigit()])
+            if tel_nettoye and tel_nettoye.lower() != 'nan':
+                repertoire_telephones[nom_brut] = tel_nettoye
+                repertoire_telephones[nom_complet.upper()] = tel_nettoye
+
             if nom_brut:
                 nom_complet = f"{nom_brut} {prenom_brut}".strip()
                 
@@ -1889,6 +1895,7 @@ if not st.session_state["user_data"]:
         # ═══════════════════════════════════════════════════════════════
         # ÉTAPE 2 : AFFICHAGE DU FORMULAIRE PRÉ-REMPLI (SI IDENTITÉ VÉRIFIÉE)
         # ═══════════════════════════════════════════════════════════════
+        
         if st.session_state.contact_match is not None:
             row = st.session_state.contact_match
             
@@ -1899,12 +1906,25 @@ if not st.session_state["user_data"]:
             qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
             tel_brut = str(row.get('N°/TEL', '')).strip()
             
+            # Nettoyage strict : uniquement les chiffres
+            tel_nettoye = ''.join([c for c in tel_brut if c.isdigit()])
+            
             nom_complet = f"{nom_brut} {prenom_brut}"
+            
+            # ═══════════════════════════════════════════════════════════════
+            # CORRECTION CRITIQUE : Forcer la réinitialisation du widget 
+            # téléphone quand on change d'enseignant
+            # ═══════════════════════════════════════════════════════════════
+            contact_id = f"{nom_brut}_{email_brut}"
+            if st.session_state.get("last_verified_contact") != contact_id:
+                if "tel_insc_modifiable" in st.session_state:
+                    del st.session_state["tel_insc_modifiable"]
+                st.session_state["last_verified_contact"] = contact_id
             
             st.divider()
             st.markdown("### 👤 Votre fiche enseignant")
             
-            # Affichage du nom (LECTURE SEULE — l'enseignant ne voit que SON nom)
+            # Affichage du nom (LECTURE SEULE)
             st.markdown(f"""
             <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
                         padding: 15px; border-radius: 10px; color: white; margin-bottom: 15px;
@@ -1921,7 +1941,6 @@ if not st.session_state["user_data"]:
             c1, c2 = st.columns(2)
             
             with c1:
-                # Email en lecture seule
                 st.markdown(f"""
                 <div style="background-color:#f0f2f6;padding:12px;border-radius:8px;border-left:4px solid #22c55e;margin-bottom:10px;">
                     <span style="font-size:11px;color:#64748b;">📧 Adresse Email</span><br>
@@ -1930,7 +1949,6 @@ if not st.session_state["user_data"]:
                 """, unsafe_allow_html=True)
             
             with c2:
-                # Qualité en lecture seule (auto-détectée)
                 st.markdown(f"""
                 <div style="background-color:#f0f2f6;padding:12px;border-radius:8px;border-left:4px solid #D4AF37;margin-bottom:10px;">
                     <span style="font-size:11px;color:#64748b;">🏷️ Qualité (auto-détectée)</span><br>
@@ -1938,8 +1956,8 @@ if not st.session_state["user_data"]:
                 </div>
                 """, unsafe_allow_html=True)
             
-            # Téléphone : pré-rempli mais MODIFIABLE et OBLIGATOIRE (exactement 10 chiffres)
-            default_phone = "" if tel_brut.lower() in ["nan", "none", "ras", ""] else tel_brut
+            # Téléphone : pré-rempli avec le numéro nettoyé depuis le fichier source
+            default_phone = tel_nettoye if len(tel_nettoye) == 10 else ""
             new_phone = st.text_input(
                 "📱 Numéro de téléphone (Obligatoire — 10 chiffres)",
                 value=default_phone,
@@ -1956,17 +1974,15 @@ if not st.session_state["user_data"]:
             BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
             
             if st.button("📧 Envoyer le lien d'activation à votre adresse Email", use_container_width=True, type="primary"):
-                # ═══════════════════════════════════════════════════════════════
-                # VALIDATION STRICTE DU TÉLÉPHONE : EXACTEMENT 10 CHIFFRES
-                # ═══════════════════════════════════════════════════════════════
+                # Validation...
                 phone_clean = new_phone.strip()
                 
                 if not new_phone:
-                    st.error("📱 Le numéro de téléphone est obligatoire. Veuillez le renseigner.")
+                    st.error("📱 Le numéro de téléphone est obligatoire.")
                 elif not phone_clean.isdigit():
-                    st.error("📱 Le numéro de téléphone ne doit contenir que des chiffres. Aucune lettre, espace ou caractère spécial n'est autorisé.")
+                    st.error("📱 Le numéro ne doit contenir que des chiffres.")
                 elif len(phone_clean) != 10:
-                    st.error(f"📱 Le numéro de téléphone doit contenir exactement 10 chiffres (actuellement {len(phone_clean)}).")
+                    st.error(f"📱 Le numéro doit contenir exactement 10 chiffres (actuellement {len(phone_clean)}).")
                 elif not email_brut or "@" not in email_brut:
                     st.error("❌ L'adresse email récupérée est invalide. Contactez l'administrateur.")
                 elif not qualite_brute or qualite_brute.lower() == "non défini":
@@ -4268,7 +4284,7 @@ if df is not None:
             grade_enseignant = repertoire_grades.get(cible.strip().upper(), "Grade non spécifié")
             statut_enseignant = repertoire_qualites.get(cible.strip().upper(), "Statut non spécifié")
             email_ens = user.get('email', 'Non renseigné')
-            tel_ens = user.get('telephone', 'Non renseigné')
+            tel_ens = repertoire_telephones.get(cible.strip().upper(), user.get('telephone', 'Non renseigné'))
         
             # Carte d'identité stylisée
             st.markdown(f"""
