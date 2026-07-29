@@ -1929,7 +1929,7 @@ if not st.session_state["user_data"]:
             # ═══════════════════════════════════════════════════════════════
             BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
             
-            if st.button("📧 Envoyer le lien d'activation", use_container_width=True, type="primary"):
+            if st.button("📧 Envoyer le lien d'activation à votre adresse Email", use_container_width=True, type="primary"):
                 # ═══════════════════════════════════════════════════════════════
                 # VALIDATION STRICTE DU TÉLÉPHONE : EXACTEMENT 10 CHIFFRES
                 # ═══════════════════════════════════════════════════════════════
