@@ -5012,8 +5012,8 @@ def envoyer_emails(liste_destinataires, promotion_label="Individuel"):
         st.error(f"Erreur lors de l'envoi : {e}")
 
 # --- AFFICHAGE SELON LE MODE ---
-if is_admin:
 if mode_envoi == "Un par un (Individuel)":
+if is_admin:
     st.dataframe(pd.DataFrame(enseignants_filtres), use_container_width=True, hide_index=True)
     if st.button("🚀 ENVOYER AUX ENSEIGNANTS FILTRÉS", type="primary", use_container_width=True):
         destinataires = [e for e in enseignants_filtres if "@" in str(e["Email"])]
