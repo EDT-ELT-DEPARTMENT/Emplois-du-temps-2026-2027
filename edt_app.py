@@ -4892,8 +4892,9 @@ if df is not None:
         st.dataframe(pd.DataFrame(donnees_finales), use_container_width=True, hide_index=True)
 
         # --- 3. GESTION DES ENVOIS PERSONNALISÉS ---
-st.divider()
-st.subheader("📬 Gestion des envois personnalisés")
+if is_admin:
+    st.divider()
+    st.subheader("📬 Gestion des envois personnalisés")
 
 # --- CONFIGURATION SMTP ---
 EMAIL_EXPEDITEUR = "chef.department.elt.fge@gmail.com"
