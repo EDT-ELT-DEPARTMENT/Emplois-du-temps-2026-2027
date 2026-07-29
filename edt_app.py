@@ -4427,17 +4427,16 @@ if df is not None:
             # ─────────────────────────────────────────────────────────────
             st.divider()
             st.markdown("### 📅 Mon Emploi du Temps Individuel")
-        
             def format_case(rows):
                 items = []
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
                     if 'COURS' in code_up:
-                        nat, color = '📘', '#1e40af'
+                        nat, color, bg = '📘', '#1e40af', '#dbeafe'
                     elif 'TD' in code_up:
-                        nat, color = '📗', '#166534'
+                        nat, color, bg = '📗', '#166534', '#dcfce7'
                     else:
-                        nat, color = '🔴', '#b91c1c'
+                        nat, color, bg = '🔴', '#b91c1c', '#fee2e2'
                     
                     txt = (f"<div style='margin-bottom:6px;padding:6px;border-left:3px solid {color};"
                            f"background-color:{bg};border-radius:4px;'>"
@@ -4446,8 +4445,7 @@ if df is not None:
                            f"<span style='font-size:11px;'>📍 {r['Lieu']}</span><br>"
                            f"<b style='font-size:11px;'>🎓 {r['Promotion']}</b></div>")
                     items.append(txt)
-                return "".join(items)
-        
+                return "".join(items)   
             grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
             grid = grid.reindex(
                 index=[normalize(h) for h in horaires_list], 
