@@ -4911,7 +4911,7 @@ if df is not None:
             "État d'envoi": "✅ Prêt" if email != "Non communiquée" else "❌ Adresse non communiquée"
         })
 
-if is_admin:
+    if is_admin:
 mode_envoi = st.radio("Choisir le mode d'envoi :", 
                       ["Un par un (Individuel)", "Sélection groupée (Multi-choix)", "Par Promotion (Automatique)"], 
                       horizontal=True)
