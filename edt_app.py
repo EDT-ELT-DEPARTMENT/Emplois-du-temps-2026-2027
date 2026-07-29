@@ -2330,8 +2330,9 @@ is_admin = user.get("role") == "admin"
 # =============================================================================
 # >>>>> HUB DE TELECHARGEMENT RAPIDE (CENTRE DE TELECHARGEMENT) <<<<<
 # =============================================================================
-st.markdown("---")
-render_download_hub(df, user, is_admin)
+if is_admin:
+    st.markdown("---")
+    render_download_hub(df, user, is_admin)
 
 
 # 1. Définition précise de votre nouvelle liste d'horaires (14 créneaux)
