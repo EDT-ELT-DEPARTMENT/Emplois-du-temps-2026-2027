@@ -2034,8 +2034,8 @@ if not st.session_state["user_data"]:
                                         <h2 style="margin:0;">Département d'Électrotechnique - UDL SBA</h2>
                                     </div>
                                     <div style="padding:25px;background:#fff;">
-                                        <p>Bonjour <b>{nom_complet}</b>,</p>
-                                        <p>Votre demande d'inscription a été enregistrée dans la <b>Plateforme de gestion des EDTs</b>.</p>
+                                        <p>Sallem Aleykoum <b>{nom_complet}</b>,</p>
+                                        <p>Votre demande d'inscription a été enregistrée dans la <b>Plateforme de gestion des EDTs du département d'électrotechnique</b>.</p>
                                         <p><b>Qualité détectée :</b> {qualite_brute}<br>
                                         <b>Téléphone :</b> {phone_clean}</p>
                                         <p>Cliquez sur le bouton ci-dessous pour définir votre mot de passe :</p>
