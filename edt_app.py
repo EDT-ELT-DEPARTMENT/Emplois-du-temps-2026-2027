@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import hashlib
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from supabase import create_client
 import streamlit as st
 
@@ -1686,6 +1686,63 @@ if os.path.exists(NOM_FICHIER_CONTACTS):
                 repertoire_grades[nom_brut] = grade_brut
     except Exception as e:
         st.error(f"Erreur lors de la lecture du fichier contacts: {e}")
+# =============================================================================
+# ACTIVATION DE COMPTE PAR TOKEN (depuis lien email)
+# =============================================================================
+query_params = st.query_params
+if "activation_token" in query_params and query_params["activation_token"]:
+    st.markdown("<h1 class='main-title'>🏛️ ACTIVATION DU COMPTE</h1>", unsafe_allow_html=True)
+    
+    token = str(query_params["activation_token"]).strip()
+    
+    # Vérification du token
+    res = supabase.table("enseignants_auth").select("*").eq("activation_token", token).execute()
+    
+    if not res.data:
+        st.error("❌ Lien d'activation invalide ou déjà utilisé.")
+        st.stop()
+    
+    user_row = res.data[0]
+    expires_str = user_row.get('activation_expires')
+    
+    # Vérification expiration
+    if expires_str:
+        from datetime import timezone
+        expires = datetime.fromisoformat(str(expires_str).replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) > expires:
+            st.error("⏰ Ce lien d'activation a expiré. Veuillez refaire une demande d'inscription.")
+            st.stop()
+    
+    st.success(f"👋 Bienvenue **{user_row['nom_officiel']}**, définissez votre mot de passe pour activer le compte.")
+    
+    with st.form("form_activation_token"):
+        new_pass = st.text_input("Choisissez un mot de passe", type="password")
+        confirm_pass = st.text_input("Confirmez le mot de passe", type="password")
+        submitted = st.form_submit_button("🚀 Activer mon compte", use_container_width=True, type="primary")
+        
+        if submitted:
+            if not new_pass or not confirm_pass:
+                st.error("Veuillez remplir les deux champs.")
+            elif len(new_pass) < 6:
+                st.error("Le mot de passe doit contenir au moins 6 caractères.")
+            elif new_pass != confirm_pass:
+                st.error("Les mots de passe ne correspondent pas.")
+            else:
+                try:
+                    supabase.table("enseignants_auth").update({
+                        "password_hash": hash_pw(new_pass),
+                        "activation_token": None,
+                        "activation_expires": None
+                    }).eq("id", user_row['id']).execute()
+                    
+                    st.success("✅ Compte activé avec succès ! Vous pouvez maintenant vous connecter.")
+                    if st.button("🔑 Aller à la connexion"):
+                        st.query_params.clear()
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur technique : {e}")
+    
+    st.stop()
 # --- SYSTÈME D'AUTH ---
 if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
@@ -1768,8 +1825,10 @@ if not st.session_state["user_data"]:
                             st.error("Token invalide ou email incorrect.")
                     
     
+    
     with t_ins:
-        st.subheader("📝 Créer un nouveau compte Enseignant")
+        st.subheader("📝 Demande d'activation de compte")
+        st.info("Sélectionnez vos informations officielles. Vous recevrez un email pour définir votre mot de passe.")
         
         # ─── SOURCE : fichier Permanents-Vacataires-ELT2-2026-2027.xlsx ───
         if df_contacts is not None and not df_contacts.empty and 'NOM' in df_contacts.columns:
@@ -1782,9 +1841,8 @@ if not st.session_state["user_data"]:
             noms_possibles = []
             st.warning("⚠️ Fichier 'Permanents-Vacataires-ELT2-2026-2027.xlsx' introuvable ou colonne NOM manquante.")
         
-        # ─── Helpers de pré-remplissage ───
         def get_info_contact(nom_selectionne):
-            """Récupère (email, qualité, téléphone) depuis df_contacts pour un NOM donné."""
+            """Récupère (email, qualité, téléphone) depuis df_contacts."""
             if df_contacts is None or nom_selectionne is None:
                 return "", "Permanent", ""
             match = df_contacts[df_contacts["NOM"].astype(str).str.strip() == str(nom_selectionne).strip()]
@@ -1794,16 +1852,11 @@ if not st.session_state["user_data"]:
             email = str(row.get("Email", "")).strip()
             qualite = str(row.get("Qualité", "")).strip()
             tel = str(row.get("N°/TEL", "")).strip()
-            # Nettoyage
             if email.lower() in ["nan", "none", ""]:
                 email = ""
             if tel.lower() in ["nan", "none", "ras", ""]:
                 tel = ""
-            # Déduction du statut radio
-            if "vacataire" in qualite.lower():
-                statut = "Vacataire"
-            else:
-                statut = "Permanent"
+            statut = "Vacataire" if "vacataire" in qualite.lower() else "Permanent"
             return email, statut, tel
         
         col1, col2 = st.columns(2)
@@ -1813,22 +1866,18 @@ if not st.session_state["user_data"]:
                 noms_possibles,
                 index=0 if noms_possibles else None
             )
-            
-            # Pré-remplissage auto de l'email
             email_auto, statut_auto, tel_auto = get_info_contact(new_nom)
             new_email = st.text_input("Votre adresse Email", value=email_auto)
             
         with col2:
-            # Statut pré-coché selon la colonne Qualité du fichier
             idx_statut = 1 if statut_auto == "Vacataire" else 0
             statut_user = st.radio(
                 "Statut de l'enseignant", 
                 ["Permanent", "Vacataire"], 
                 horizontal=True,
-                index=idx_statut
+                index=idx_statut,
+                key="statut_inscription_v2"
             )
-            
-            # Téléphone pré-rempli si disponible
             new_phone = ""
             if statut_user == "Vacataire":
                 new_phone = st.text_input(
@@ -1836,43 +1885,102 @@ if not st.session_state["user_data"]:
                     placeholder="06XXXXXXXX", 
                     value=tel_auto
                 )
-    
-        st.divider()
-        c_p1, c_p2 = st.columns(2)
-        with c_p1:
-            new_pass = st.text_input("Choisissez un mot de passe", type="password")
-        with c_p2:
-            confirm_pass = st.text_input("Confirmez le mot de passe", type="password")
         
-        if st.button("Créer mon compte", use_container_width=True, type="primary"):
+        st.divider()
+        
+        # ─── CONFIGURATION DU LIEN D'ACTIVATION ───
+        # ⚠️ REMPLACEZ par l'URL réelle de votre application Streamlit
+        BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app"  # Ex: https://edt-udl.streamlit.app
+        
+        if st.button("📧 Envoyer le lien d'activation", use_container_width=True, type="primary"):
             if not new_nom:
                 st.error("Veuillez sélectionner votre nom dans la liste officielle.")
-            elif not new_email or not new_pass:
-                st.warning("Veuillez remplir les champs obligatoires (Email + Mot de passe).")
+            elif not new_email:
+                st.error("L'adresse email est obligatoire.")
+            elif "@" not in new_email or "." not in new_email.split("@")[-1]:
+                st.error("Veuillez saisir une adresse email valide.")
             elif statut_user == "Vacataire" and not new_phone:
                 st.error("Le numéro de téléphone est requis pour les vacataires.")
-            elif new_pass != confirm_pass:
-                st.error("Les mots de passe ne correspondent pas.")
             else:
-                # Vérifier si l'email existe déjà
-                check = supabase.table("enseignants_auth").select("email").eq("email", new_email).execute()
-                if check.data:
-                    st.error("Cet email est déjà utilisé.")
+                # Vérifier si un compte actif existe déjà
+                check = supabase.table("enseignants_auth").select("email,activation_token").eq("email", new_email).execute()
+                if check.data and not check.data[0].get('activation_token'):
+                    st.error("❌ Cet email est déjà associé à un compte actif. Utilisez la connexion.")
                 else:
-                    data_ins = {
+                    import secrets
+                    token = secrets.token_urlsafe(32)
+                    expiration = (datetime.now().replace(microsecond=0) + timedelta(hours=24)).isoformat() + "+01:00"
+                    
+                    data_upsert = {
                         "nom_officiel": new_nom,
                         "email": new_email,
-                        "password_hash": hash_pw(new_pass),
+                        "password_hash": hash_pw(secrets.token_urlsafe(16)),  # temporaire aléatoire
                         "role": "enseignant",
                         "statut": statut_user,
-                        "telephone": new_phone if statut_user == "Vacataire" else None
+                        "telephone": new_phone if statut_user == "Vacataire" else None,
+                        "activation_token": token,
+                        "activation_expires": expiration
                     }
+                    
                     try:
-                        supabase.table("enseignants_auth").insert(data_ins).execute()
-                        st.success("✅ Compte créé avec succès ! Connectez-vous maintenant.")
+                        if check.data:
+                            # Mise à jour si une demande est déjà en attente
+                            supabase.table("enseignants_auth").update(data_upsert).eq("email", new_email).execute()
+                        else:
+                            supabase.table("enseignants_auth").insert(data_upsert).execute()
+                        
+                        # ─── ENVOI EMAIL SMTP ───
+                        import smtplib
+                        from email.mime.text import MIMEText
+                        from email.mime.multipart import MIMEMultipart
+                        
+                        lien_activation = f"{BASE_URL}/?activation_token={token}"
+                        
+                        msg = MIMEMultipart()
+                        msg['Subject'] = "Activation de votre compte EDT - Département ELT"
+                        msg['From'] = "chef.department.elt.fge@gmail.com"
+                        msg['To'] = new_email
+                        
+                        body_html = f"""
+                        <html>
+                        <body style="font-family:Arial,sans-serif;color:#333;">
+                            <div style="max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+                                <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);padding:20px;color:white;text-align:center;">
+                                    <h2 style="margin:0;">Département d'Électrotechnique - UDL SBA</h2>
+                                </div>
+                                <div style="padding:25px;background:#fff;">
+                                    <p>Bonjour <b>{new_nom}</b>,</p>
+                                    <p>Votre demande d'inscription a été enregistrée dans la <b>Plateforme de gestion des EDTs</b>.</p>
+                                    <p>Cliquez sur le bouton ci-dessous pour définir votre mot de passe :</p>
+                                    <div style="text-align:center;margin:25px 0;">
+                                        <a href="{lien_activation}" style="background:#1E3A8A;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
+                                            Activer mon compte
+                                        </a>
+                                    </div>
+                                    <p>Ou copiez ce lien dans votre navigateur :<br>
+                                    <code style="background:#f1f5f9;padding:8px;border-radius:4px;display:block;word-break:break-all;">{lien_activation}</code></p>
+                                    <p style="color:#64748b;font-size:13px;"><i>Ce lien est valable 24 heures.</i></p>
+                                    <hr style="border:none;border-top:1px solid #e2e8f0;">
+                                    <p style="font-size:12px;color:#94a3b8;">Faculté de Génie Électrique - UDL SBA</p>
+                                </div>
+                            </div>
+                        </body>
+                        </html>
+                        """
+                        msg.attach(MIMEText(body_html, 'html'))
+                        
+                        server = smtplib.SMTP('smtp.gmail.com', 587)
+                        server.starttls()
+                        server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+                        server.send_message(msg)
+                        server.quit()
+                        
+                        st.success("✅ Lien d'activation envoyé ! Consultez votre boîte mail (et vos spams).")
+                        st.info(f"📧 Email envoyé à : `{new_email}`")
                         st.balloons()
+                        
                     except Exception as e:
-                        st.error(f"Erreur Supabase : {e}")    
+                        st.error(f"❌ Erreur lors de l'envoi : {e}")       
     with t_adm:
         code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code")
         if st.button("Accès Administration", use_container_width=True):
