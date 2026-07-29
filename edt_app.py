@@ -1902,7 +1902,7 @@ if not st.session_state["user_data"]:
         st.divider()
         
         # ─── CONFIGURATION DU LIEN D'ACTIVATION ───
-        BASE_URL = "https://votre-app.streamlit.app"  # ← REMPLACEZ par votre URL Streamlit
+        BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"  # ← REMPLACEZ par votre URL Streamlit
         
         if st.button("📧 Envoyer le lien d'activation", use_container_width=True, type="primary"):
             if not new_nom:
