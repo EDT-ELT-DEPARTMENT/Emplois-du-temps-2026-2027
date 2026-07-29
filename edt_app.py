@@ -4892,8 +4892,8 @@ if df is not None:
 
         # --- 3. GESTION DES ENVOIS PERSONNALISÉS ---
 if not is admin
-        st.divider()
-        st.subheader("📬 Gestion des envois personnalisés")
+    st.divider()
+    st.subheader("📬 Gestion des envois personnalisés")
 
 # --- CONFIGURATION SMTP ---
 EMAIL_EXPEDITEUR = "chef.department.elt.fge@gmail.com"
