@@ -4426,14 +4426,13 @@ if df is not None:
                         nat, color = '📗', '#166534'
                     else:
                         nat, color = '🔴', '#b91c1c'
-                    txt = f"""<div style='margin-bottom:6px; padding:6px; border-left:3px solid {color}; 
-                                 background-color: {'#eff6ff' if 'COURS' in code_up else '#f0fdf4' if 'TD' in code_up else '#fef2f2'}; 
-                                 border-radius:4px;'>
-                                 <b style='color:{color};'>{nat} {r['Enseignements']}</b><br>
-                                 <span style='font-size:11px;'>({r['Code']})</span><br>
-                                 <span style='font-size:11px;'>📍 {r['Lieu']}</span><br>
-                                 <b style='font-size:11px;'>🎓 {r['Promotion']}</b>
-                              </div>"""
+                    
+                    txt = (f"<div style='margin-bottom:6px;padding:6px;border-left:3px solid {color};"
+                           f"background-color:{bg};border-radius:4px;'>"
+                           f"<b style='color:{color};'>{nat} {r['Enseignements']}</b><br>"
+                           f"<span style='font-size:11px;'>({r['Code']})</span><br>"
+                           f"<span style='font-size:11px;'>📍 {r['Lieu']}</span><br>"
+                           f"<b style='font-size:11px;'>🎓 {r['Promotion']}</b></div>")
                     items.append(txt)
                 return "".join(items)
         
