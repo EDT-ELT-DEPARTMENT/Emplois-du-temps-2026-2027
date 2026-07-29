@@ -2293,24 +2293,40 @@ map_j = {normalize(j): j for j in jours_list}
 
 # --- BARRE LATÉRALE ---
 with st.sidebar:
-    # On utilise .get() pour éviter le ch si la donnée est corrompue
     st.header(f"👤 {user.get('nom_officiel', 'Utilisateur')}")
-    portail = st.selectbox("🚀 Sélectionner Espace", [
-        "📖 Emploi du Temps", "📅 Surveillances Examens", 
-        "🤖 Générateur Automatique", "👥 Portail Enseignants", "🎓 Portail mise à jour EDT", "📢 Gestion Administrative - Bordereaux & PVs"
-    ])
+
+    # ─── RESTRICTION DES PORTAILS SELON LE RÔLE ───
+    if is_admin:
+        options_portail = [
+            "📖 Emploi du Temps", 
+            "📅 Surveillances Examens", 
+            "🤖 Générateur Automatique", 
+            "👥 Portail Enseignants", 
+            "🎓 Portail mise à jour EDT", 
+            "📢 Gestion Administrative - Bordereaux & PVs"
+        ]
+    else:
+        # ENSEIGNANT : accès strictement limité
+        options_portail = [
+            "👤 Mon Espace Enseignant",
+            "📅 Surveillances Examens"
+        ]
+
+    portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
     st.divider()
-    
+
     mode_view = "Personnel"
     poste_sup = False
-    
-    if portail == "📖 Emploi du Temps":
-        if is_admin:
-            mode_view = st.radio("Vue Administration :", ["Promotion", "Enseignant", "🏢 Planning Salles", "🚩 Vérificateur de conflits","✍️ Éditeur de données"])
-        else:
-            mode_view = "Personnel"
+
+    if portail == "📖 Emploi du Temps" and is_admin:
+        mode_view = st.radio("Vue Administration :", [
+            "Promotion", "Enseignant", "🏢 Planning Salles", 
+            "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
+        ])
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
-        
+    elif portail == "👤 Mon Espace Enseignant":
+        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
+
     if st.button("🚪 Déconnexion du compte"):
         st.session_state["user_data"] = None
         st.rerun()
@@ -4217,6 +4233,256 @@ if df is not None:
             else:
                 st.success("✅ Félicitations ! Aucun conflit détecté dans l'emploi du temps actuel.")
                 st.balloons()
+    elif portail == "👤 Mon Espace Enseignant":
+    # ─────────────────────────────────────────────────────────────
+    # 1. IDENTITÉ & INFOS PERSONNELLES
+    # ─────────────────────────────────────────────────────────────
+    cible = user['nom_officiel']
+    nom_affichage_complet = repertoire_noms_complets.get(cible.strip().upper(), cible)
+    grade_enseignant = repertoire_grades.get(cible.strip().upper(), "Grade non spécifié")
+    statut_enseignant = repertoire_qualites.get(cible.strip().upper(), "Statut non spécifié")
+    email_ens = user.get('email', 'Non renseigné')
+    tel_ens = user.get('telephone', 'Non renseigné')
+
+    # Carte d'identité stylisée
+    st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
+                    padding: 20px; border-radius: 14px; color: white; margin-bottom: 20px;
+                    box-shadow: 0 6px 12px rgba(0,0,0,0.12);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
+                        Espace Personnel Sécurisé
+                    </div>
+                    <div style="font-size: 24px; font-weight: bold; margin-top: 6px;">
+                        {nom_affichage_complet}
+                    </div>
+                    <div style="margin-top: 10px; display: flex; gap: 8px;">
+                        <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
+                            {grade_enseignant}
+                        </span>
+                        <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
+                            {statut_enseignant}
+                        </span>
+                    </div>
+                </div>
+                <div style="text-align: right; font-size: 13px; line-height: 1.8;">
+                    <div>📧 {email_ens}</div>
+                    <div>📱 {tel_ens}</div>
+                    <div style="opacity: 0.8; font-size: 11px; margin-top: 4px;">S1 — 2026-2027</div>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────────────────────
+    # 2. CHARGEMENT DES DONNÉES PERSONNELLES
+    # ─────────────────────────────────────────────────────────────
+    if df is None or df.empty:
+        st.error("❌ Les données EDT ne sont pas disponibles. Contactez l'administrateur.")
+        st.stop()
+
+    df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
+
+    if df_f.empty:
+        st.warning("⚠️ Aucun cours n'est programmé pour vous actuellement.")
+        st.stop()
+
+    # Détermination des types
+    df_f['Type'] = df_f['Code'].apply(
+        lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
+    )
+    df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
+
+    # Calculs de charge
+    nb_cours = len(df_u[df_u['Type'] == 'COURS'])
+    nb_td = len(df_u[df_u['Type'] == 'TD'])
+    nb_tp = len(df_u[df_u['Type'] == 'TP'])
+
+    seuil_obligatoire = 3.0 if poste_sup else 6.0
+    charge_totale_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
+    delta_eq = charge_totale_eq - seuil_obligatoire
+    h_sup = delta_eq * 1.5
+
+    abs_h_sup = abs(h_sup)
+    heures_entieres = int(abs_h_sup)
+    minutes_restantes = int((abs_h_sup - heures_entieres) * 60)
+    signe_str = "+" if h_sup >= 0 else "-"
+    h_sup_formattee = f"{signe_str}{heures_entieres}h{minutes_restantes:02d}"
+    charge_effective = (nb_cours + nb_td + nb_tp) * 1.5
+
+    # ─────────────────────────────────────────────────────────────
+    # 3. MÉTRIQUES DE CHARGE (Style badges)
+    # ─────────────────────────────────────────────────────────────
+    st.markdown(f"""
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;">
+            <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #3b82f6;">
+                <div style="font-size: 26px; font-weight: 800; color: #1e40af;">{nb_cours}</div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">📘 Cours</div>
+            </div>
+            <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #22c55e;">
+                <div style="font-size: 26px; font-weight: 800; color: #166534;">{nb_td}</div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">📗 TD</div>
+            </div>
+            <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #f59e0b;">
+                <div style="font-size: 26px; font-weight: 800; color: #b45309;">{nb_tp}</div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">🔴 TP</div>
+            </div>
+            <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #1E3A8A;">
+                <div style="font-size: 26px; font-weight: 800; color: #1E3A8A;">{round(charge_effective, 1)}h</div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Charge Effective</div>
+            </div>
+            <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid {'#22c55e' if h_sup >= 0 else '#ef4444'};">
+                <div style="font-size: 26px; font-weight: 800; color: {'#166534' if h_sup >= 0 else '#dc2626'};">{h_sup_formattee}</div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">{'Heures Sup.' if h_sup >= 0 else 'Déficit'}</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Note de synthèse
+    if h_sup > 0:
+        st.caption(f"✅ Vous avez complété votre charge et totalisez **{h_sup_formattee}** en supplément.")
+    elif h_sup < 0:
+        st.caption(f"⚠️ Sous-charge détectée de **{h_sup_formattee}** par rapport au seuil de {seuil_obligatoire} eq/h.")
+    else:
+        st.caption("⚖️ Service réglementaire exactement rempli.")
+
+    # ─────────────────────────────────────────────────────────────
+    # 4. EMPLOI DU TEMPS INDIVIDUEL (Grille Jours × Horaires)
+    # ─────────────────────────────────────────────────────────────
+    st.divider()
+    st.markdown("### 📅 Mon Emploi du Temps Individuel")
+
+    def format_case(rows):
+        items = []
+        for _, r in rows.iterrows():
+            code_up = str(r['Code']).upper()
+            if 'COURS' in code_up:
+                nat, color = '📘', '#1e40af'
+            elif 'TD' in code_up:
+                nat, color = '📗', '#166534'
+            else:
+                nat, color = '🔴', '#b91c1c'
+            txt = f"""<div style='margin-bottom:6px; padding:6px; border-left:3px solid {color}; 
+                         background-color: {'#eff6ff' if 'COURS' in code_up else '#f0fdf4' if 'TD' in code_up else '#fef2f2'}; 
+                         border-radius:4px;'>
+                         <b style='color:{color};'>{nat} {r['Enseignements']}</b><br>
+                         <span style='font-size:11px;'>({r['Code']})</span><br>
+                         <span style='font-size:11px;'>📍 {r['Lieu']}</span><br>
+                         <b style='font-size:11px;'>🎓 {r['Promotion']}</b>
+                      </div>"""
+            items.append(txt)
+        return "".join(items)
+
+    grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
+    grid = grid.reindex(
+        index=[normalize(h) for h in horaires_list], 
+        columns=[normalize(j) for j in jours_list]
+    ).fillna("")
+    grid.index = [map_h.get(i, i) for i in grid.index]
+    grid.columns = [map_j.get(c, c) for c in grid.columns]
+
+    # Suppression des lignes totalement vides
+    grid = grid[grid.any(axis=1)]
+
+    st.write(grid.to_html(escape=False), unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────────────────────
+    # 5. MES COLLÈGUES PAR PROMOTION (Accès restreint)
+    # ─────────────────────────────────────────────────────────────
+    st.divider()
+    st.markdown("### 👥 Mes collègues par promotion")
+    st.caption("🔒 Vous ne voyez que les enseignants des promotions où vous intervenez.")
+
+    mes_promotions = [p for p in df_f['Promotion'].unique() 
+                      if p and str(p).strip() not in ["", "nan", "None", "Non defini", "Non défini"]]
+
+    if len(mes_promotions) > 0:
+        for promo in sorted(mes_promotions):
+            df_promo = df[df['Promotion'] == promo].copy()
+            # Enseignants uniques de cette promo (excluant l'utilisateur)
+            autres_ens = [e for e in df_promo['Enseignants'].unique() 
+                          if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]
+                          and cible.lower() not in str(e).lower()]
+
+            if len(autres_ens) == 0:
+                continue
+
+            with st.expander(f"🎓 {promo} — {len(autres_ens)} enseignant(s)", expanded=True):
+                for nom_col in sorted(autres_ens):
+                    nom_key = str(nom_col).strip().upper()
+                    nom_complet_col = repertoire_noms_complets.get(nom_key, nom_col)
+                    grade_col = repertoire_grades.get(nom_key, "N/A")
+                    qualite_col = repertoire_qualites.get(nom_key, "N/A")
+                    email_col = repertoire_source.get(nom_key, None)
+
+                    # Badge couleur selon qualité
+                    badge_color = "#22c55e" if "PERMANENT" in str(qualite_col).upper() else "#f59e0b"
+
+                    col1, col2, col3 = st.columns([3, 2, 2])
+                    with col1:
+                        st.markdown(f"**{nom_complet_col}**")
+                        st.caption(f"🏷️ {grade_col}")
+                    with col2:
+                        st.markdown(f"<span style='color:{badge_color}; font-weight:600; font-size:12px;'>{qualite_col}</span>", 
+                                   unsafe_allow_html=True)
+                    with col3:
+                        if email_col and "@" in str(email_col):
+                            st.markdown(f"📧 `{email_col}`")
+                        else:
+                            st.markdown("<span style='color:#94a3b8; font-size:12px;'>📧 Non communiqué</span>", 
+                                       unsafe_allow_html=True)
+                    st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #f1f5f9;'>", 
+                               unsafe_allow_html=True)
+    else:
+        st.info("Vous n'êtes assigné à aucune promotion actuellement.")
+
+    # ─────────────────────────────────────────────────────────────
+    # 6. TÉLÉCHARGEMENTS (UNIQUEMENT SES PROPRES DONNÉES)
+    # ─────────────────────────────────────────────────────────────
+    st.divider()
+    st.markdown("### 📥 Exporter mes données")
+
+    col_dl1, col_dl2, col_dl3 = st.columns(3)
+
+    # Excel
+    with col_dl1:
+        buf_ex = io.BytesIO()
+        df_export = df_f.drop(columns=['h_norm', 'j_norm', 'Type'], errors='ignore')
+        with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
+            df_export.to_excel(writer, index=False, sheet_name='Mon_EDT')
+            wb = writer.book
+            ws = writer.sheets['Mon_EDT']
+            header_fmt = wb.add_format({'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1})
+            for col_num, value in enumerate(df_export.columns.values):
+                ws.write(0, col_num, value, header_fmt)
+            ws.set_column('A:G', 20)
+        st.download_button("📊 Excel", buf_ex.getvalue(), f"EDT_{cible}_2027.xlsx", 
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                          use_container_width=True)
+
+    # HTML
+    with col_dl2:
+        html_content = generate_pro_html(df_export, f"EDT - {nom_affichage_complet}", 
+                                         "Département d'Électrotechnique - FGE/UDL-SBA")
+        st.download_button("🌐 HTML", html_content, f"EDT_{cible}_2027.html", "text/html",
+                          use_container_width=True)
+
+    # PDF (grille PPER.03)
+    with col_dl3:
+        pdf_data, err_pdf = generate_edt_individuel_pdf_classique(df_f, nom_affichage_complet)
+        if pdf_data:
+            st.download_button("📄 PDF", pdf_data, f"EDT_{cible}_2027.pdf", "application/pdf",
+                              use_container_width=True)
+        else:
+            st.button("📄 PDF", disabled=True, use_container_width=True, help=err_pdf)
+
+    st.stop()  # Empêche l'enseignant d'accéder au reste du code
     elif portail == "📅 Surveillances Examens":
         FILE_S = "surveillances_2027.xlsx"
         if os.path.exists(FILE_S):
