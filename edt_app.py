@@ -1309,7 +1309,7 @@ def render_download_hub(df_global, user_data, is_admin):
         .dl-hub p { margin: 0 0 15px 0; opacity: 0.9; font-size: 13px; }
         </style>
     """, unsafe_allow_html=True)
-    
+
     st.markdown("""
         <div class="dl-hub">
             <h3>📥 Centre de Telechargement Rapide</h3>
@@ -4891,9 +4891,8 @@ if df is not None:
         st.dataframe(pd.DataFrame(donnees_finales), use_container_width=True, hide_index=True)
 
         # --- 3. GESTION DES ENVOIS PERSONNALISÉS ---
-if not is admin
-    st.divider()
-    st.subheader("📬 Gestion des envois personnalisés")
+st.divider()
+st.subheader("📬 Gestion des envois personnalisés")
 
 # --- CONFIGURATION SMTP ---
 EMAIL_EXPEDITEUR = "chef.department.elt.fge@gmail.com"
