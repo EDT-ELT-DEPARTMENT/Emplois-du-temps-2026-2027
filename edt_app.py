@@ -1873,7 +1873,7 @@ if not st.session_state["user_data"]:
             idx_statut = 1 if statut_auto == "Vacataire" else 0
             statut_user = st.radio(
                 "Statut de l'enseignant", 
-                ["Permanent", "Vacataire"], 
+                ["Permanent (e)", "Vacataire"], 
                 horizontal=True,
                 index=idx_statut,
                 key="statut_inscription_v2"
