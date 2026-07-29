@@ -1706,69 +1706,131 @@ if not st.session_state["user_data"]:
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
     
     with t_conn:
-        email_input = st.text_input("Adresse Email", key="login_email")
-        pass_input = st.text_input("Mot de passe", type="password", key="login_pass")
-        if st.button("Se connecter au portail", use_container_width=True):
-            result = supabase.table("enseignants_auth").select("*").eq("email", email_input).eq("password_hash", hash_pw(pass_input)).execute()
-            if result.data:
-                st.session_state["user_data"] = result.data[0]
-                st.rerun()
-            else:
-                st.error("Email ou mot de passe incorrect.")
-                
-    with t_ins:
-        st.subheader("📝 Créer un nouveau compte Enseignant")
-        # Récupération des noms depuis l'Excel
-        noms_possibles = sorted(df["Enseignants"].unique()) if df is not None else []
+    email_input = st.text_input("Adresse Email", key="login_email")
+    pass_input = st.text_input("Mot de passe", type="password", key="login_pass")
+    if st.button("Se connecter au portail", use_container_width=True):
+        result = supabase.table("enseignants_auth").select("*").eq("email", email_input).eq("password_hash", hash_pw(pass_input)).execute()
+        if result.data:
+            st.session_state["user_data"] = result.data[0]
+            st.rerun()
+        else:
+            st.error("Email ou mot de passe incorrect.")
+    
+    # ═══════════════════════════════════════════════════════════════
+    # 🔒 RÉCUPÉRATION DE MOT DE PASSE
+    # ═══════════════════════════════════════════════════════════════
+    st.divider()
+    with st.expander("🔒 Mot de passe oublié ?"):
+        email_reset = st.text_input("Votre email enregistré", key="reset_email")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            new_nom = st.selectbox("Sélectionnez votre nom (dans l'EDT)", noms_possibles)
-            new_email = st.text_input("Votre adresse Email")
-            
-        with col2:
-            # Nouveau : Choix du Statut
-            statut_user = st.radio("Statut de l'enseignant", ["Permanent", "Vacataire"], horizontal=True)
-            
-            # Nouveau : Champ téléphone conditionnel
-            new_phone = ""
-            if statut_user == "Vacataire":
-                new_phone = st.text_input("📱 Numéro de téléphone (Obligatoire)", placeholder="06XXXXXXXX")
-
-        st.divider()
-        c_p1, c_p2 = st.columns(2)
-        with c_p1:
-            new_pass = st.text_input("Choisissez un mot de passe", type="password")
-        with c_p2:
-            confirm_pass = st.text_input("Confirmez le mot de passe", type="password")
-        
-        if st.button("Créer mon compte", use_container_width=True, type="primary"):
-            if not new_email or not new_pass:
-                st.warning("Veuillez remplir les champs obligatoires.")
-            elif statut_user == "Vacataire" and not new_phone:
-                st.error("Le numéro de téléphone est requis pour les vacataires.")
-            elif new_pass != confirm_pass:
-                st.error("Les mots de passe ne correspondent pas.")
-            else:
-                # Vérifier si l'email existe déjà
-                check = supabase.table("enseignants_auth").select("email").eq("email", new_email).execute()
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("📧 Générer un token de réinitialisation", use_container_width=True, key="btn_gen_token"):
+                import secrets
+                check = supabase.table("enseignants_auth").select("email").eq("email", email_reset).execute()
                 if check.data:
-                    st.error("Cet email est déjà utilisé.")
+                    token = secrets.token_urlsafe(32)
+                    # Expiration dans 1 heure (format ISO pour Supabase)
+                    expiration = (datetime.now().replace(microsecond=0)).isoformat() + "+01:00"
+                    supabase.table("enseignants_auth").update({
+                        "reset_token": token,
+                        "reset_expires": expiration
+                    }).eq("email", email_reset).execute()
+                    st.success("✅ Token généré (valable 1h) :")
+                    st.code(token, language="text")
+                    st.caption("💡 Dans un système en production, ce token serait envoyé par email automatiquement.")
                 else:
-                    data_ins = {
-                        "nom_officiel": new_nom,
-                        "email": new_email,
-                        "password_hash": hash_pw(new_pass),
-                        "role": "enseignant",
-                        "statut": statut_user,
-                        "telephone": new_phone if statut_user == "Vacataire" else None
-                    }
-                    try:
-                        supabase.table("enseignants_auth").insert(data_ins).execute()
-                        st.success("✅ Compte créé avec succès ! Connectez-vous maintenant.")
-                        st.balloons()
-                    except Exception as e:
-                        st.error(f"Erreur Supabase : {e}")
+                    st.error("❌ Cet email n'est pas enregistré dans la base.")
+        
+        with c2:
+            token_input = st.text_input("Token reçu", type="password", key="token_input")
+            new_pass_reset = st.text_input("Nouveau mot de passe", type="password", key="new_pass_reset")
+            confirm_pass_reset = st.text_input("Confirmer le mot de passe", type="password", key="confirm_pass_reset")
+            
+            if st.button("🔄 Valider la réinitialisation", use_container_width=True, key="btn_reset_pass"):
+                if not token_input or not new_pass_reset:
+                    st.error("Veuillez remplir tous les champs.")
+                elif new_pass_reset != confirm_pass_reset:
+                    st.error("Les mots de passe ne correspondent pas.")
+                elif len(new_pass_reset) < 6:
+                    st.error("Le mot de passe doit contenir au moins 6 caractères.")
+                else:
+                    res = supabase.table("enseignants_auth").select("*")\
+                        .eq("email", email_reset)\
+                        .eq("reset_token", token_input).execute()
+                    if res.data:
+                        # Vérification de l'expiration
+                        try:
+                            from datetime import timezone
+                            expires_str = res.data[0]['reset_expires'].replace("Z", "+00:00")
+                            expires = datetime.fromisoformat(expires_str)
+                            if datetime.now(timezone.utc) < expires:
+                                supabase.table("enseignants_auth").update({
+                                    "password_hash": hash_pw(new_pass_reset),
+                                    "reset_token": None,
+                                    "reset_expires": None
+                                }).eq("email", email_reset).execute()
+                                st.success("✅ Mot de passe mis à jour avec succès ! Vous pouvez maintenant vous connecter.")
+                            else:
+                                st.error("⏰ Token expiré. Veuillez en générer un nouveau.")
+                        except Exception as e:
+                            st.error(f"Erreur de validation du token : {e}")
+                    else:
+                        st.error("Token invalide ou email incorrect.")
+                
+with t_ins:
+    st.subheader("📝 Créer un nouveau compte Enseignant")
+    # Récupération des noms depuis l'Excel
+    noms_possibles = sorted(df["Enseignants"].unique()) if df is not None else []
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        new_nom = st.selectbox("Sélectionnez votre nom (dans l'EDT)", noms_possibles)
+        new_email = st.text_input("Votre adresse Email")
+        
+    with col2:
+        # Nouveau : Choix du Statut
+        statut_user = st.radio("Statut de l'enseignant", ["Permanent", "Vacataire"], horizontal=True)
+        
+        # Nouveau : Champ téléphone conditionnel
+        new_phone = ""
+        if statut_user == "Vacataire":
+            new_phone = st.text_input("📱 Numéro de téléphone (Obligatoire)", placeholder="06XXXXXXXX")
+
+    st.divider()
+    c_p1, c_p2 = st.columns(2)
+    with c_p1:
+        new_pass = st.text_input("Choisissez un mot de passe", type="password")
+    with c_p2:
+        confirm_pass = st.text_input("Confirmez le mot de passe", type="password")
+    
+    if st.button("Créer mon compte", use_container_width=True, type="primary"):
+        if not new_email or not new_pass:
+            st.warning("Veuillez remplir les champs obligatoires.")
+        elif statut_user == "Vacataire" and not new_phone:
+            st.error("Le numéro de téléphone est requis pour les vacataires.")
+        elif new_pass != confirm_pass:
+            st.error("Les mots de passe ne correspondent pas.")
+        else:
+            # Vérifier si l'email existe déjà
+            check = supabase.table("enseignants_auth").select("email").eq("email", new_email).execute()
+            if check.data:
+                st.error("Cet email est déjà utilisé.")
+            else:
+                data_ins = {
+                    "nom_officiel": new_nom,
+                    "email": new_email,
+                    "password_hash": hash_pw(new_pass),
+                    "role": "enseignant",
+                    "statut": statut_user,
+                    "telephone": new_phone if statut_user == "Vacataire" else None
+                }
+                try:
+                    supabase.table("enseignants_auth").insert(data_ins).execute()
+                    st.success("✅ Compte créé avec succès ! Connectez-vous maintenant.")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"Erreur Supabase : {e}")
 
     with t_adm:
         code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code")
