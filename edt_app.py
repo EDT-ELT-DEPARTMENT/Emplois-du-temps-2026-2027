@@ -1825,6 +1825,7 @@ if not st.session_state["user_data"]:
                             st.error("Token invalide ou email incorrect.")
                     
     
+    
     with t_ins:
         st.subheader("📝 Demande d'activation de compte")
         st.info("Saisissez votre email professionnel tel qu'enregistré dans le répertoire officiel. Vos informations personnelles se rempliront automatiquement.")
@@ -1911,13 +1912,14 @@ if not st.session_state["user_data"]:
                 </div>
                 """, unsafe_allow_html=True)
             
-            # Téléphone : pré-rempli mais MODIFIABLE et OBLIGATOIRE
+            # Téléphone : pré-rempli mais MODIFIABLE et OBLIGATOIRE (exactement 10 chiffres)
             default_phone = "" if tel_brut.lower() in ["nan", "none", "ras", ""] else tel_brut
             new_phone = st.text_input(
-                "📱 Numéro de téléphone (Obligatoire — modifiable si besoin)",
+                "📱 Numéro de téléphone (Obligatoire — 10 chiffres)",
                 value=default_phone,
                 key="tel_insc_modifiable",
-                help="Ce numéro servira pour vous contacter. Il est obligatoire."
+                help="Format strict : exactement 10 chiffres, sans espaces ni tirets (ex: 0555123456)",
+                max_chars=10
             )
             
             st.divider()
@@ -1928,12 +1930,17 @@ if not st.session_state["user_data"]:
             BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
             
             if st.button("📧 Envoyer le lien d'activation", use_container_width=True, type="primary"):
-                # Validation du téléphone
-                phone_clean = new_phone.replace(" ", "").replace("-", "").replace(".", "")
+                # ═══════════════════════════════════════════════════════════════
+                # VALIDATION STRICTE DU TÉLÉPHONE : EXACTEMENT 10 CHIFFRES
+                # ═══════════════════════════════════════════════════════════════
+                phone_clean = new_phone.strip()
+                
                 if not new_phone:
                     st.error("📱 Le numéro de téléphone est obligatoire. Veuillez le renseigner.")
-                elif len(phone_clean) < 9:
-                    st.error("📱 Le numéro de téléphone semble incomplet (minimum 9 chiffres).")
+                elif not phone_clean.isdigit():
+                    st.error("📱 Le numéro de téléphone ne doit contenir que des chiffres. Aucune lettre, espace ou caractère spécial n'est autorisé.")
+                elif len(phone_clean) != 10:
+                    st.error(f"📱 Le numéro de téléphone doit contenir exactement 10 chiffres (actuellement {len(phone_clean)}).")
                 elif not email_brut or "@" not in email_brut:
                     st.error("❌ L'adresse email récupérée est invalide. Contactez l'administrateur.")
                 elif not qualite_brute or qualite_brute.lower() == "non défini":
@@ -1954,7 +1961,7 @@ if not st.session_state["user_data"]:
                             "password_hash": hash_pw(secrets.token_urlsafe(16)),
                             "role": "enseignant",
                             "statut": qualite_brute,
-                            "telephone": new_phone,
+                            "telephone": phone_clean,
                             "activation_token": token,
                             "activation_expires": expiration
                         }
@@ -1988,7 +1995,7 @@ if not st.session_state["user_data"]:
                                         <p>Bonjour <b>{nom_complet}</b>,</p>
                                         <p>Votre demande d'inscription a été enregistrée dans la <b>Plateforme de gestion des EDTs</b>.</p>
                                         <p><b>Qualité détectée :</b> {qualite_brute}<br>
-                                        <b>Téléphone :</b> {new_phone}</p>
+                                        <b>Téléphone :</b> {phone_clean}</p>
                                         <p>Cliquez sur le bouton ci-dessous pour définir votre mot de passe :</p>
                                         <div style="text-align:center;margin:25px 0;">
                                             <a href="{lien_activation}" style="background:#1E3A8A;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
@@ -2022,7 +2029,7 @@ if not st.session_state["user_data"]:
         else:
             if not email_verif:
                 st.info("👆 Saisissez votre email professionnel et cliquez sur **Vérifier mon identité** pour commencer.")
-            # Si email saisi mais pas de match, le message d'erreur est déjà affiché ci-dessus                 
+            # Si email saisi mais pas de match, le message d'erreur est déjà affiché ci-dessus                    
     with t_adm:
         code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code")
         if st.button("Accès Administration", use_container_width=True):
