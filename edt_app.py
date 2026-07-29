@@ -1660,11 +1660,24 @@ def charger_donnees_supabase():
 # Initialisation du DataFrame principal
 df = charger_donnees_supabase()
 
+
 # --- ÉTAPE 3 : CHARGEMENT DU RÉPERTOIRE (CONTACTS, PRÉNOMS, STATUTS & GRADES) ---
-# --- ÉTAPE 3 : CHARGEMENT DU RÉPERTOIRE (CONTACTS, PRÉNOMS, STATUTS & GRADES) ---
+# =============================================================================
+# CHARGEMENT DU RÉPERTOIRE (CONTACTS, PRÉNOMS, STATUTS & GRADES)
+# =============================================================================
 repertoire_qualites = {} 
 repertoire_grades = {} 
-df_contacts = None  # ← AJOUT : initialisation globale
+repertoire_source = {}        # Email par nom de famille
+repertoire_noms_complets = {} # Affichage "NOM Prénom"
+df_contacts = None
+
+NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
+
+def extraire_nom_famille(nom_complet):
+    """Extrait le nom de famille (premier mot) pour la correspondance."""
+    if not nom_complet or pd.isna(nom_complet):
+        return ""
+    return str(nom_complet).strip().upper().split()[0]
 
 if os.path.exists(NOM_FICHIER_CONTACTS):
     try:
@@ -1679,13 +1692,26 @@ if os.path.exists(NOM_FICHIER_CONTACTS):
             grade_brut = str(row.get('Grade', 'N/A')).strip()
             
             if nom_brut:
+                nom_complet = f"{nom_brut} {prenom_brut}".strip()
+                
+                # Stockage par NOM SEUL (clé principale)
                 if email_brut and email_brut.lower() != 'nan':
                     repertoire_source[nom_brut] = email_brut
-                repertoire_noms_complets[nom_brut] = f"{nom_brut} {prenom_brut}"
+                repertoire_noms_complets[nom_brut] = nom_complet
                 repertoire_qualites[nom_brut] = qualite_brute
                 repertoire_grades[nom_brut] = grade_brut
+                
+                # Stockage aussi par NOM COMPLET (fallback)
+                repertoire_noms_complets[nom_complet.upper()] = nom_complet
+                repertoire_qualites[nom_complet.upper()] = qualite_brute
+                repertoire_grades[nom_complet.upper()] = grade_brut
+                if email_brut and email_brut.lower() != 'nan':
+                    repertoire_source[nom_complet.upper()] = email_brut
+                    
     except Exception as e:
         st.error(f"Erreur lors de la lecture du fichier contacts: {e}")
+else:
+    st.warning(f"⚠️ Fichier {NOM_FICHIER_CONTACTS} introuvable. Les noms complets et emails ne seront pas disponibles.")
 # =============================================================================
 # ACTIVATION DE COMPTE PAR TOKEN (depuis lien email)
 # =============================================================================
@@ -4405,21 +4431,40 @@ if df is not None:
             if len(mes_promotions) > 0:
                 for promo in sorted(mes_promotions):
                     df_promo = df[df['Promotion'] == promo].copy()
-                    # Enseignants uniques de cette promo (excluant l'utilisateur)
+                    
+                    # Extraction du nom de famille de l'utilisateur connecté
+                    cible_nom_famille = extraire_nom_famille(cible)
+                    
+                    # Enseignants uniques de cette promo (exclusion exacte par nom de famille)
                     autres_ens = [e for e in df_promo['Enseignants'].unique() 
                                   if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]
-                                  and cible.lower() not in str(e).lower()]
+                                  and extraire_nom_famille(e) != cible_nom_famille]
         
                     if len(autres_ens) == 0:
                         continue
         
                     with st.expander(f"🎓 {promo} — {len(autres_ens)} enseignant(s)", expanded=True):
                         for nom_col in sorted(autres_ens):
-                            nom_key = str(nom_col).strip().upper()
-                            nom_complet_col = repertoire_noms_complets.get(nom_key, nom_col)
-                            grade_col = repertoire_grades.get(nom_key, "N/A")
-                            qualite_col = repertoire_qualites.get(nom_key, "N/A")
-                            email_col = repertoire_source.get(nom_key, None)
+                            # Recherche d'abord par nom de famille, puis par nom complet
+                            nom_key_famille = extraire_nom_famille(nom_col)
+                            nom_key_complet = str(nom_col).strip().upper()
+                            
+                            nom_complet_col = repertoire_noms_complets.get(
+                                nom_key_famille, 
+                                repertoire_noms_complets.get(nom_key_complet, nom_col)
+                            )
+                            grade_col = repertoire_grades.get(
+                                nom_key_famille,
+                                repertoire_grades.get(nom_key_complet, "N/A")
+                            )
+                            qualite_col = repertoire_qualites.get(
+                                nom_key_famille,
+                                repertoire_qualites.get(nom_key_complet, "N/A")
+                            )
+                            email_col = repertoire_source.get(
+                                nom_key_famille,
+                                repertoire_source.get(nom_key_complet, None)
+                            )
         
                             # Badge couleur selon qualité
                             badge_color = "#22c55e" if "PERMANENT" in str(qualite_col).upper() else "#f59e0b"
