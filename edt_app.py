@@ -1834,7 +1834,7 @@ if not st.session_state["user_data"]:
         # ÉTAPE 1 : AUTHENTIFICATION PAR EMAIL (Filtrage de l'identité)
         # ═══════════════════════════════════════════════════════════════
         email_verif = st.text_input(
-            "📧 Votre email professionnel (enregistré dans le répertoire ELT)",
+            "📧 Saisissez votre email (celui envoyé au service d'enseignement du département)",
             key="verif_email_insc",
             placeholder="ex: nom.prenom@univ-sba.dz"
         )
