@@ -1827,6 +1827,7 @@ if not st.session_state["user_data"]:
     
     
     
+    
     with t_ins:
         st.subheader("📝 Demande d'activation de compte")
         st.info("Sélectionnez votre nom dans le répertoire officiel. L'email, la qualité et le téléphone se remplissent automatiquement.")
@@ -1844,7 +1845,7 @@ if not st.session_state["user_data"]:
         
         def get_info_contact(nom_selectionne):
             """Récupère (email, qualité_exacte, téléphone) depuis df_contacts."""
-            if df_contacts is None or nom_selectionne is None:
+            if df_contacts is None or not nom_selectionne:
                 return "", "", ""
             match = df_contacts[df_contacts["NOM"].astype(str).str.strip() == str(nom_selectionne).strip()]
             if match.empty:
@@ -1853,50 +1854,55 @@ if not st.session_state["user_data"]:
             email = str(row.get("Email", "")).strip()
             qualite = str(row.get("Qualité", "")).strip()
             tel = str(row.get("N°/TEL", "")).strip()
-            # Nettoyage
             if email.lower() in ["nan", "none", ""]: email = ""
             if qualite.lower() in ["nan", "none", ""]: qualite = ""
             if tel.lower() in ["nan", "none", "ras", ""]: tel = ""
             return email, qualite, tel
         
-        # ─── Sélection du nom ───
+        # ─── Initialisation session_state (une seule fois) ───
+        if "sel_nom_inscription" not in st.session_state:
+            default_nom = noms_possibles[0] if noms_possibles else ""
+            st.session_state["sel_nom_inscription"] = default_nom
+            e_def, q_def, t_def = get_info_contact(default_nom)
+            st.session_state["email_insc"] = e_def
+            st.session_state["tel_insc"] = t_def
+            st.session_state["qualite_val"] = q_def
+        
+        def on_nom_change():
+            """Callback : met à jour email, qualité et téléphone quand le nom change."""
+            nom = st.session_state["sel_nom_inscription"]
+            email, qualite, tel = get_info_contact(nom)
+            st.session_state["email_insc"] = email
+            st.session_state["tel_insc"] = tel
+            st.session_state["qualite_val"] = qualite
+        
+        # ─── Widgets ───
         new_nom = st.selectbox(
             "👤 Sélectionnez votre nom (dans le répertoire officiel)", 
             noms_possibles,
-            index=0 if noms_possibles else None,
-            key="sel_nom_inscription"
+            key="sel_nom_inscription",
+            on_change=on_nom_change
         )
         
-        # Extraction auto depuis le fichier Excel
-        email_auto, qualite_auto, tel_auto = get_info_contact(new_nom)
-        
-        # ─── Affichage auto-détecté (3 colonnes) ───
         c1, c2, c3 = st.columns(3)
         with c1:
-            new_email = st.text_input("📧 Adresse Email", value=email_auto, key="email_insc")
+            new_email = st.text_input("📧 Adresse Email", key="email_insc")
         with c2:
-            # La qualité exacte du fichier (Permanent, Vacataire, Retraité, Mise en disponibilité...)
-            st.text_input(
-                "🏷️ Qualité (auto-détectée depuis le fichier)", 
-                value=qualite_auto, 
-                disabled=True, 
-                key="qualite_display"
-            )
-            # Pour la logique interne : on garde la valeur exacte du fichier
-            statut_user = qualite_auto if qualite_auto else "Non défini"
+            qualite_actuelle = st.session_state.get("qualite_val", "")
+            st.markdown(f"""
+            <div style="background-color:#f0f2f6;padding:8px 12px;border-radius:6px;border-left:4px solid #1E3A8A;">
+                <span style="font-size:12px;color:#555;">🏷️ Qualité (auto-détectée)</span><br>
+                <span style="font-weight:bold;color:#1E3A8A;font-size:14px;">{qualite_actuelle if qualite_actuelle else '—'}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            statut_user = qualite_actuelle
         with c3:
-            new_phone = st.text_input(
-                "📱 Numéro de téléphone (Obligatoire)", 
-                placeholder="06XXXXXXXX", 
-                value=tel_auto,
-                key="tel_insc"
-            )
+            new_phone = st.text_input("📱 Numéro de téléphone (Obligatoire)", key="tel_insc")
         
         st.divider()
         
         # ─── CONFIGURATION DU LIEN D'ACTIVATION ───
-        # ⚠️ REMPLACEZ par l'URL publique de votre application Streamlit
-        BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
+        BASE_URL = "https://votre-app.streamlit.app"  # ← REMPLACEZ par votre URL Streamlit
         
         if st.button("📧 Envoyer le lien d'activation", use_container_width=True, type="primary"):
             if not new_nom:
@@ -1924,9 +1930,9 @@ if not st.session_state["user_data"]:
                     data_upsert = {
                         "nom_officiel": new_nom,
                         "email": new_email,
-                        "password_hash": hash_pw(secrets.token_urlsafe(16)),  # temporaire aléatoire
+                        "password_hash": hash_pw(secrets.token_urlsafe(16)),
                         "role": "enseignant",
-                        "statut": statut_user,  # ← Qualité exacte du fichier Excel
+                        "statut": statut_user,
                         "telephone": new_phone,
                         "activation_token": token,
                         "activation_expires": expiration
@@ -1991,7 +1997,7 @@ if not st.session_state["user_data"]:
                         st.balloons()
                         
                     except Exception as e:
-                        st.error(f"❌ Erreur lors de l'envoi : {e}")          
+                        st.error(f"❌ Erreur lors de l'envoi : {e}")             
     with t_adm:
         code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code")
         if st.button("Accès Administration", use_container_width=True):
