@@ -1826,9 +1826,10 @@ if not st.session_state["user_data"]:
                     
     
     
+    
     with t_ins:
         st.subheader("📝 Demande d'activation de compte")
-        st.info("Sélectionnez vos informations officielles. Vous recevrez un email pour définir votre mot de passe.")
+        st.info("Sélectionnez votre nom dans le répertoire officiel. L'email, la qualité et le téléphone se remplissent automatiquement.")
         
         # ─── SOURCE : fichier Permanents-Vacataires-ELT2-2026-2027.xlsx ───
         if df_contacts is not None and not df_contacts.empty and 'NOM' in df_contacts.columns:
@@ -1842,55 +1843,60 @@ if not st.session_state["user_data"]:
             st.warning("⚠️ Fichier 'Permanents-Vacataires-ELT2-2026-2027.xlsx' introuvable ou colonne NOM manquante.")
         
         def get_info_contact(nom_selectionne):
-            """Récupère (email, qualité, téléphone) depuis df_contacts."""
+            """Récupère (email, qualité_exacte, téléphone) depuis df_contacts."""
             if df_contacts is None or nom_selectionne is None:
-                return "", "Permanent", ""
+                return "", "", ""
             match = df_contacts[df_contacts["NOM"].astype(str).str.strip() == str(nom_selectionne).strip()]
             if match.empty:
-                return "", "Permanent", ""
+                return "", "", ""
             row = match.iloc[0]
             email = str(row.get("Email", "")).strip()
             qualite = str(row.get("Qualité", "")).strip()
             tel = str(row.get("N°/TEL", "")).strip()
-            if email.lower() in ["nan", "none", ""]:
-                email = ""
-            if tel.lower() in ["nan", "none", "ras", ""]:
-                tel = ""
-            statut = "Vacataire" if "vacataire" in qualite.lower() else "Permanent"
-            return email, statut, tel
+            # Nettoyage
+            if email.lower() in ["nan", "none", ""]: email = ""
+            if qualite.lower() in ["nan", "none", ""]: qualite = ""
+            if tel.lower() in ["nan", "none", "ras", ""]: tel = ""
+            return email, qualite, tel
         
-        col1, col2 = st.columns(2)
-        with col1:
-            new_nom = st.selectbox(
-                "Sélectionnez votre nom (dans le répertoire officiel)", 
-                noms_possibles,
-                index=0 if noms_possibles else None
+        # ─── Sélection du nom ───
+        new_nom = st.selectbox(
+            "👤 Sélectionnez votre nom (dans le répertoire officiel)", 
+            noms_possibles,
+            index=0 if noms_possibles else None,
+            key="sel_nom_inscription"
+        )
+        
+        # Extraction auto depuis le fichier Excel
+        email_auto, qualite_auto, tel_auto = get_info_contact(new_nom)
+        
+        # ─── Affichage auto-détecté (3 colonnes) ───
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            new_email = st.text_input("📧 Adresse Email", value=email_auto, key="email_insc")
+        with c2:
+            # La qualité exacte du fichier (Permanent, Vacataire, Retraité, Mise en disponibilité...)
+            st.text_input(
+                "🏷️ Qualité (auto-détectée depuis le fichier)", 
+                value=qualite_auto, 
+                disabled=True, 
+                key="qualite_display"
             )
-            email_auto, statut_auto, tel_auto = get_info_contact(new_nom)
-            new_email = st.text_input("Votre adresse Email", value=email_auto)
-            
-        with col2:
-            idx_statut = 1 if statut_auto == "Vacataire" else 0
-            statut_user = st.radio(
-                "Statut de l'enseignant", 
-                ["Permanent (e)", "Vacataire"], 
-                horizontal=True,
-                index=idx_statut,
-                key="statut_inscription_v2"
+            # Pour la logique interne : on garde la valeur exacte du fichier
+            statut_user = qualite_auto if qualite_auto else "Non défini"
+        with c3:
+            new_phone = st.text_input(
+                "📱 Numéro de téléphone (Obligatoire)", 
+                placeholder="06XXXXXXXX", 
+                value=tel_auto,
+                key="tel_insc"
             )
-            new_phone = ""
-            if statut_user == "Vacataire":
-                new_phone = st.text_input(
-                    "📱 Numéro de téléphone (Obligatoire)", 
-                    placeholder="06XXXXXXXX", 
-                    value=tel_auto
-                )
         
         st.divider()
         
         # ─── CONFIGURATION DU LIEN D'ACTIVATION ───
-        # ⚠️ REMPLACEZ par l'URL réelle de votre application Streamlit
-        BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app"  # Ex: https://edt-udl.streamlit.app
+        # ⚠️ REMPLACEZ par l'URL publique de votre application Streamlit
+        BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
         
         if st.button("📧 Envoyer le lien d'activation", use_container_width=True, type="primary"):
             if not new_nom:
@@ -1899,8 +1905,12 @@ if not st.session_state["user_data"]:
                 st.error("L'adresse email est obligatoire.")
             elif "@" not in new_email or "." not in new_email.split("@")[-1]:
                 st.error("Veuillez saisir une adresse email valide.")
-            elif statut_user == "Vacataire" and not new_phone:
-                st.error("Le numéro de téléphone est requis pour les vacataires.")
+            elif not statut_user or statut_user.lower() == "non défini":
+                st.error("La qualité n'est pas reconnue dans le fichier source. Contactez l'administrateur.")
+            elif not new_phone:
+                st.error("📱 Le numéro de téléphone est obligatoire pour tous les enseignants.")
+            elif len(new_phone.replace(" ", "").replace("-", "")) < 9:
+                st.error("Le numéro de téléphone semble incomplet (minimum 9 chiffres).")
             else:
                 # Vérifier si un compte actif existe déjà
                 check = supabase.table("enseignants_auth").select("email,activation_token").eq("email", new_email).execute()
@@ -1916,15 +1926,14 @@ if not st.session_state["user_data"]:
                         "email": new_email,
                         "password_hash": hash_pw(secrets.token_urlsafe(16)),  # temporaire aléatoire
                         "role": "enseignant",
-                        "statut": statut_user,
-                        "telephone": new_phone if statut_user == "Vacataire" else None,
+                        "statut": statut_user,  # ← Qualité exacte du fichier Excel
+                        "telephone": new_phone,
                         "activation_token": token,
                         "activation_expires": expiration
                     }
                     
                     try:
                         if check.data:
-                            # Mise à jour si une demande est déjà en attente
                             supabase.table("enseignants_auth").update(data_upsert).eq("email", new_email).execute()
                         else:
                             supabase.table("enseignants_auth").insert(data_upsert).execute()
@@ -1951,6 +1960,8 @@ if not st.session_state["user_data"]:
                                 <div style="padding:25px;background:#fff;">
                                     <p>Bonjour <b>{new_nom}</b>,</p>
                                     <p>Votre demande d'inscription a été enregistrée dans la <b>Plateforme de gestion des EDTs</b>.</p>
+                                    <p><b>Qualité détectée :</b> {statut_user}<br>
+                                    <b>Téléphone :</b> {new_phone}</p>
                                     <p>Cliquez sur le bouton ci-dessous pour définir votre mot de passe :</p>
                                     <div style="text-align:center;margin:25px 0;">
                                         <a href="{lien_activation}" style="background:#1E3A8A;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
@@ -1980,7 +1991,7 @@ if not st.session_state["user_data"]:
                         st.balloons()
                         
                     except Exception as e:
-                        st.error(f"❌ Erreur lors de l'envoi : {e}")       
+                        st.error(f"❌ Erreur lors de l'envoi : {e}")          
     with t_adm:
         code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code")
         if st.button("Accès Administration", use_container_width=True):
