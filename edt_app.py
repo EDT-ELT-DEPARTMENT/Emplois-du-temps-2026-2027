@@ -1748,7 +1748,7 @@ if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
 
 if not st.session_state["user_data"]:
-    st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE - UDL SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
     
     with t_conn:
@@ -2202,7 +2202,7 @@ if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
 
 if not st.session_state["user_data"]:
-    st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE - UDL SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
     
     with t_conn:
