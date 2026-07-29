@@ -1828,7 +1828,7 @@ if not st.session_state["user_data"]:
     
     with t_ins:
         st.subheader("📝 Demande d'activation de compte")
-        st.info("Saisissez votre email professionnel tel qu'enregistré dans le répertoire officiel. Vos informations personnelles se rempliront automatiquement.")
+        st.info("Saisissez votre email professionnel tel qu'envoyé au service d'enseignement. Vos informations personnelles se rempliront automatiquement.")
 
         # ═══════════════════════════════════════════════════════════════
         # ÉTAPE 1 : AUTHENTIFICATION PAR EMAIL (Filtrage de l'identité)
