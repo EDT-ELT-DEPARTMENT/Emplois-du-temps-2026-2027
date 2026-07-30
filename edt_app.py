@@ -595,13 +595,13 @@ def run_assiduite():
     if "NOM" in df_ens.columns and "PRENOM" in df_ens.columns:
         df_ens["Nom_Complet"] = df_ens["NOM"].astype(str).str.strip().str.upper() + " " + df_ens["PRENOM"].astype(str).str.strip().str.title()
         LISTE_PROFS = sorted(df_ens["Nom_Complet"].dropna().unique().tolist())
-    elif "Nom" in df_ens.columns and "Prenom" in df_ens.columns:
-        df_ens["Nom_Complet"] = df_ens["Nom"].astype(str).str.strip().str.upper() + " " + df_ens["Prenom"].astype(str).str.strip().str.title()
+    elif "Nom" in df_ens.columns and "Prénom" in df_ens.columns:
+        df_ens["Nom_Complet"] = df_ens["Nom"].astype(str).str.strip().str.upper() + " " + df_ens["Prénom"].astype(str).str.strip().str.title()
         LISTE_PROFS = sorted(df_ens["Nom_Complet"].dropna().unique().tolist())
     else:
         LISTE_PROFS = []
 
-    df_etu["Nom_Complet"] = df_etu["Nom"].astype(str).str.strip().str.upper() + " " + df_etu["Prenom"].astype(str).str.strip().str.title()
+    df_etu["Nom_Complet"] = df_etu["Nom"].astype(str).str.strip().str.upper() + " " + df_etu["Prénom"].astype(str).str.strip().str.title()
 
     # =============================================================================
     # ONGLETS
@@ -767,7 +767,7 @@ def run_assiduite():
 
                         df_eligible = df_p[~df_p["Nom_Complet"].isin(noms_exclus)].copy()
                         export_eli = pd.DataFrame({
-                            "Nom et Prenom": df_eligible["Nom_Complet"],
+                            "Nom et Prénom": df_eligible["Nom_Complet"],
                             "Matiere": sel_mat,
                             "Charge": sel_prof,
                             "Promotion": promo_c
@@ -779,7 +779,7 @@ def run_assiduite():
                             cols_exp = ["etud_non_eligible", "cause_non_eligibilite", "date_absence",
                                         "jour_absence", "horaire_absence", "matiere", "enseignant", "promotion"]
                             export_non = df_non_eli[cols_exp].rename(columns={
-                                "etud_non_eligible": "Nom et Prenom",
+                                "etud_non_eligible": "Nom et Prénom",
                                 "cause_non_eligibilite": "Motif du Retrait",
                                 "date_absence": "Date Absence",
                                 "jour_absence": "Jour",
@@ -2838,7 +2838,7 @@ def run_edt():
 
             for _, row in df_contacts.iterrows():
                 nom_brut = str(row.get('NOM', '')).strip().upper()
-                prenom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
+                prénom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
                 email_brut = str(row.get('Email', '')).strip()
                 qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
                 grade_brut = str(row.get('Grade', 'N/A')).strip()
@@ -2849,7 +2849,7 @@ def run_edt():
                     repertoire_telephones[nom_complet.upper()] = tel_nettoye
 
                 if nom_brut:
-                    nom_complet = f"{nom_brut} {prenom_brut}".strip()
+                    nom_complet = f"{nom_brut} {prénom_brut}".strip()
 
                     # Stockage par NOM SEUL (clé principale)
                     if email_brut and email_brut.lower() != 'nan':
@@ -3035,7 +3035,7 @@ def run_edt():
             email_verif = st.text_input(
                 "📧 Saisissez votre email (celui envoyé au service d'enseignement du département)",
                 key="verif_email_insc",
-                placeholder="ex: nom.prenom@univ-sba.dz"
+                placeholder="ex: nom.prénom@univ-sba.dz"
             )
 
             # Initialisation des variables de session pour l'inscription
@@ -3068,7 +3068,7 @@ def run_edt():
 
                 # Extraction sécurisée des données
                 nom_brut = str(row.get('NOM', '')).strip().upper()
-                prenom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
+                prénom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
                 email_brut = str(row.get('Email', '')).strip()
                 qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
                 tel_brut = str(row.get('N°/TEL', '')).strip()
@@ -3076,7 +3076,7 @@ def run_edt():
                 # Nettoyage strict : uniquement les chiffres
                 tel_nettoye = ''.join([c for c in tel_brut if c.isdigit()])
 
-                nom_complet = f"{nom_brut} {prenom_brut}"
+                nom_complet = f"{nom_brut} {prénom_brut}"
 
                 # ═══════════════════════════════════════════════════════════════
                 # CORRECTION CRITIQUE : Forcer la réinitialisation du widget 
