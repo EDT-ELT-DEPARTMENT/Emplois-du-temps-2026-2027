@@ -198,6 +198,93 @@ def run_assiduite():
     FILE_ETUDIANTS = "Liste des étudiants_2026-2027.xlsx"
     FILE_EDT       = "dataEDT-ELT-S1-2027.xlsx"
     FILE_ENS       = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
+        # =============================================================================
+    # CONFIGURATION FICHIERS (CORRIGÉE — utilise _BASE_DIR comme le module EDT)
+    # =============================================================================
+    FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
+    FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
+    FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
+    
+    # =============================================================================
+    # FONCTIONS UTILITAIRES (CORRIGÉE — avec upload fallback)
+    # =============================================================================
+    
+    @st.cache_data(show_spinner=False)
+    def charger_donnees():
+        """Charge les 3 fichiers Excel sources. Permet l'upload manuel si fichiers locaux manquants."""
+        
+        fichiers = {
+            "étudiants": FILE_ETUDIANTS,
+            "EDT": FILE_EDT,
+            "enseignants": FILE_ENS
+        }
+        
+        df_etu, df_edt, df_ens = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        manquants = []
+        
+        # Vérification des fichiers locaux
+        for nom, chemin in fichiers.items():
+            if not os.path.exists(chemin):
+                manquants.append(nom)
+        
+        # Si des fichiers sont manquants, proposer l'upload
+        if manquants:
+            st.warning(f"⚠️ Fichiers locaux manquants : {', '.join(manquants)}")
+            st.info("📤 Veuillez uploader les fichiers Excel manquants ci-dessous pour continuer :")
+            
+            uploaded = {}
+            if "étudiants" in manquants:
+                uploaded["étudiants"] = st.file_uploader("Liste des étudiants (.xlsx)", type=["xlsx"], key="up_etu")
+            if "EDT" in manquants:
+                uploaded["EDT"] = st.file_uploader("Données EDT (.xlsx)", type=["xlsx"], key="up_edt")
+            if "enseignants" in manquants:
+                uploaded["enseignants"] = st.file_uploader("Liste enseignants (.xlsx)", type=["xlsx"], key="up_ens")
+            
+            # Vérifier que tous les uploads sont présents
+            if not all(v is not None for v in uploaded.values()):
+                st.error("❌ Tous les fichiers sont requis pour continuer.")
+                st.stop()
+            
+            # Lecture depuis les uploads
+            try:
+                df_etu = pd.read_excel(uploaded["étudiants"])
+                df_etu.columns = df_etu.columns.str.strip()
+            except Exception as e:
+                st.error(f"❌ Erreur lecture étudiants (upload) : {e}")
+                
+            try:
+                df_edt = pd.read_excel(uploaded["EDT"])
+                df_edt.columns = df_edt.columns.str.strip()
+            except Exception as e:
+                st.error(f"❌ Erreur lecture EDT (upload) : {e}")
+                
+            try:
+                df_ens = pd.read_excel(uploaded["enseignants"], sheet_name=0)
+                df_ens.columns = df_ens.columns.str.strip()
+            except Exception as e:
+                st.error(f"❌ Erreur lecture enseignants (upload) : {e}")
+                
+        else:
+            # Chargement normal depuis les fichiers locaux
+            try:
+                df_etu = pd.read_excel(FILE_ETUDIANTS)
+                df_etu.columns = df_etu.columns.str.strip()
+            except Exception as e:
+                st.error(f"❌ Erreur chargement étudiants : {e}")
+    
+            try:
+                df_edt = pd.read_excel(FILE_EDT)
+                df_edt.columns = df_edt.columns.str.strip()
+            except Exception as e:
+                st.error(f"❌ Erreur chargement EDT : {e}")
+    
+            try:
+                df_ens = pd.read_excel(FILE_ENS, sheet_name=0)
+                df_ens.columns = df_ens.columns.str.strip()
+            except Exception as e:
+                st.error(f"❌ Erreur chargement enseignants : {e}")
+    
+        return df_etu, df_edt, df_ens
 
     HORAIRES_LIST = [
         "08h00 - 09h30", "09h30 - 11h00", "11h00 - 12h30",
