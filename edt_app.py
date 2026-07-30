@@ -379,7 +379,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return []
         try:
-            query = supabase.table("requetes_absences_2027").select("*")
+            query = supabase.table("requetes_absences").select("*")
             if statut:
                 query = query.eq("statut", statut)
             if promotion:
@@ -396,7 +396,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("requetes_absences_2027").insert(payload).execute()
+            supabase.table("requetes_absences").insert(payload).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (requete) : {e}")
@@ -408,7 +408,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("requetes_absences_2027").update({"statut": statut}).eq("id", req_id).execute()
+            supabase.table("requetes_absences").update({"statut": statut}).eq("id", req_id).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (maj statut) : {e}")
@@ -420,7 +420,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("requetes_absences_2027").delete().neq("id", -1).execute()
+            supabase.table("requetes_absences").delete().neq("id", -1).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (reset) : {e}")
