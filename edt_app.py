@@ -18,7 +18,7 @@ Module 2 : Plateforme de Gestion des EDTs
   - Éditeur de données avec détection de conflits
 
 Fichiers sources requis (même dossier que le script) :
-  1. Liste des etudiants_2026-2027.xlsx
+  1. Liste des étudiants_2026-2027.xlsx
   2. dataEDT-ELT-S1-2027.xlsx
   3. Permanents-Vacataires-ELT2-2026-2027.xlsx
   4. surveillances_2027.xlsx (optionnel)
@@ -117,7 +117,7 @@ if create_client:
 # Chemin absolu vers le dossier du script (compatible Streamlit Cloud)
 _BASE_DIR = Path(__file__).parent.resolve()
 
-FILE_ETUDIANTS = str(_BASE_DIR / "Liste des etudiants_2026-2027.xlsx")
+FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
 FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
 FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
 NOM_FICHIER_FIXE = FILE_EDT
@@ -155,7 +155,7 @@ def run_assiduite():
     Annee universitaire 2026-2027
     ================================================================================
     Fichiers sources requis (meme dossier que le script) :
-      1. Liste des etudiants_2026-2027.xlsx
+      1. Liste des étudiants_2026-2027.xlsx
       2. dataEDT-ELT-S1-2027.xlsx
       3. Permanents-Vacataires-ELT2-2026-2027.xlsx
 
@@ -195,7 +195,7 @@ def run_assiduite():
     # =============================================================================
     # CONFIGURATION FICHIERS
     # =============================================================================
-    FILE_ETUDIANTS = "Liste des etudiants_2026-2027.xlsx"
+    FILE_ETUDIANTS = "Liste des étudiants_2026-2027.xlsx"
     FILE_EDT       = "dataEDT-ELT-S1-2027.xlsx"
     FILE_ENS       = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
 
