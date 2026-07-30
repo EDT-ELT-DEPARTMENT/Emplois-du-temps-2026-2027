@@ -592,8 +592,8 @@ def run_assiduite():
         st.stop()
 
     # --- Preparation des listes ---
-    if "NOM" in df_ens.columns and "PRENOM" in df_ens.columns:
-        df_ens["Nom_Complet"] = df_ens["NOM"].astype(str).str.strip().str.upper() + " " + df_ens["PRENOM"].astype(str).str.strip().str.title()
+    if "NOM" in df_ens.columns and "PRÉNOM" in df_ens.columns:
+        df_ens["Nom_Complet"] = df_ens["NOM"].astype(str).str.strip().str.upper() + " " + df_ens["PRÉNOM"].astype(str).str.strip().str.title()
         LISTE_PROFS = sorted(df_ens["Nom_Complet"].dropna().unique().tolist())
     elif "Nom" in df_ens.columns and "Prénom" in df_ens.columns:
         df_ens["Nom_Complet"] = df_ens["Nom"].astype(str).str.strip().str.upper() + " " + df_ens["Prénom"].astype(str).str.strip().str.title()
