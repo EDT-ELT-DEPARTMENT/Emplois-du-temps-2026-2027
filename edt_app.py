@@ -5864,20 +5864,19 @@ elif portail == "📢 Gestion Administrative - Bordereaux & PVs":
     if not is_admin:
         st.error("🚫 ACCÈS RESTREINT.")
         st.stop()
-            # ==========================================
+# ==========================================
             # IMPORTS SPÉCIFIQUES (idéalement à déplacer en haut du fichier)
-            # ==========================================
-            from docx import Document
-            from docx.shared import Inches, Pt
-            from docx.enum.text import WD_ALIGN_PARAGRAPH
-            from docx.oxml import OxmlElement
-            from docx.oxml.ns import qn
-            import io
-            import os
-            import pandas as pd
-            from datetime import datetime 
-            
-            # ==========================================
+# ==========================================
+    from docx import Document
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    import io
+    import os
+    import pandas as pd
+    from datetime import datetime 
+# ==========================================
             # CONFIGURATION ET CONSTANTES
             # ==========================================
             TITRE_PLATEFORME = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
@@ -6556,3 +6555,6 @@ elif portail == "📢 Gestion Administrative - Bordereaux & PVs":
             st.divider()
             with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
                 afficher_historique_bordereaux()
+                    
+                        
+            
