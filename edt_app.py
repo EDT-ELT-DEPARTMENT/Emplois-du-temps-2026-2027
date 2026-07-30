@@ -158,21 +158,7 @@ def run_assiduite():
     import os
     from datetime import datetime
     from collections import defaultdict
-    
-    ================================================================================
-    Application : Suivi d'Assiduite des Etudiants
-    Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA
-    Annee universitaire 2026-2027
-    ================================================================================
-    Fichiers sources requis (meme dossier que le script) :
-      1. Liste des étudiants_2026-2027.xlsx
-      2. dataEDT-ELT-S1-2027.xlsx
-      3. Permanents-Vacataires-ELT2-2026-2027.xlsx
-
-    Configuration Supabase (optionnel) :
-      Creer .streamlit/secrets.toml avec SUPABASE_URL et SUPABASE_KEY
-    ================================================================================
-  
+     
     # =============================================================================
     # CONFIGURATION SUPABASE
     # =============================================================================
