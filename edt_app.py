@@ -147,7 +147,17 @@ CODE_ADMIN_EDT = "doctorat2026"
 # MODULE 1 : SUIVI ASSIDUITE DES ETUDIANTS
 # =============================================================================
 def run_assiduite():
+  
 
+    import streamlit as st
+    import pandas as pd
+    import base64
+    import io
+    import time
+    import re
+    import os
+    from datetime import datetime
+    from collections import defaultdict
     """
     ================================================================================
     Application : Suivi d'Assiduite des Etudiants
@@ -163,16 +173,6 @@ def run_assiduite():
       Creer .streamlit/secrets.toml avec SUPABASE_URL et SUPABASE_KEY
     ================================================================================
     """
-
-    import streamlit as st
-    import pandas as pd
-    import base64
-    import io
-    import time
-    import re
-    from datetime import datetime
-    from collections import defaultdict
-
     # =============================================================================
     # CONFIGURATION SUPABASE
     # =============================================================================
@@ -429,34 +429,7 @@ def run_assiduite():
 
     # =============================================================================
     # FONCTIONS UTILITAIRES
-    # =============================================================================
-
-    @st.cache_data(show_spinner=False)
-    def charger_donnees():
-        """Charge les 3 fichiers Excel sources."""
-        try:
-            df_etu = pd.read_excel(FILE_ETUDIANTS)
-            df_etu.columns = df_etu.columns.str.strip()
-        except Exception as e:
-            st.error(f"❌ Erreur chargement etudiants : {e}")
-            df_etu = pd.DataFrame()
-
-        try:
-            df_edt = pd.read_excel(FILE_EDT)
-            df_edt.columns = df_edt.columns.str.strip()
-        except Exception as e:
-            st.error(f"❌ Erreur chargement EDT : {e}")
-            df_edt = pd.DataFrame()
-
-        try:
-            df_ens = pd.read_excel(FILE_ENS, sheet_name=0)
-            df_ens.columns = df_ens.columns.str.strip()
-        except Exception as e:
-            st.error(f"❌ Erreur chargement enseignants : {e}")
-            df_ens = pd.DataFrame()
-
-        return df_etu, df_edt, df_ens
-
+    # ============================================================================
 
     def nettoyer_nom_enseignant(nom):
         """Retire les titres academiques."""
