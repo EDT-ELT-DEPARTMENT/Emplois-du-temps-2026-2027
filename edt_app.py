@@ -5860,7 +5860,7 @@ if is_admin:
             st.download_button("📊 Télécharger la vue (Excel)", out_pub.getvalue(), "EDT_Vue_Publique.xlsx")
         with c2:
             st.download_button("📄 Télécharger la vue (HTML)", df_pub.to_html(index=False), "EDT_Vue_Publique.html", "text/html")
-    
+        elif portail == "📢 Gestion Administrative - Bordereaux & PVs":
             if not is_admin:
                 st.error("🚫 ACCÈS RESTREINT.")
                 st.stop()
