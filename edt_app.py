@@ -326,7 +326,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return []
         try:
-            query = supabase.table("suivi_assiduite_2027").select("*")
+            query = supabase.table("suivi_assiduite_2026").select("*")
             if matiere:
                 query = query.eq("matiere", matiere)
             if promotion:
