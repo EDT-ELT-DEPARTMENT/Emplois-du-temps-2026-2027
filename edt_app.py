@@ -18,7 +18,7 @@ Module 2 : Plateforme de Gestion des EDTs
   - Éditeur de données avec détection de conflits
 
 Fichiers sources requis (même dossier que le script) :
-  1. Liste des étudiants_2026-2027.xlsx
+  1. Liste des etudiants_2026-2027.xlsx
   2. dataEDT-ELT-S1-2027.xlsx
   3. Permanents-Vacataires-ELT2-2026-2027.xlsx
   4. surveillances_2027.xlsx (optionnel)
@@ -113,9 +113,12 @@ if create_client:
 # =============================================================================
 # CONSTANTES COMMUNES
 # =============================================================================
-FILE_ETUDIANTS = "Liste des étudiants_2026-2027.xlsx"
-FILE_EDT       = "dataEDT-ELT-S1-2027.xlsx"
-FILE_ENS       = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
+# Chemin absolu vers le dossier du script (compatible Streamlit Cloud)
+_BASE_DIR = Path(__file__).parent.resolve()
+
+FILE_ETUDIANTS = str(_BASE_DIR / "Liste des etudiants_2026-2027.xlsx")
+FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
+FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
@@ -151,7 +154,7 @@ def run_assiduite():
     Annee universitaire 2026-2027
     ================================================================================
     Fichiers sources requis (meme dossier que le script) :
-      1. Liste des étudiants_2026-2027.xlsx
+      1. Liste des etudiants_2026-2027.xlsx
       2. dataEDT-ELT-S1-2027.xlsx
       3. Permanents-Vacataires-ELT2-2026-2027.xlsx
 
@@ -191,7 +194,7 @@ def run_assiduite():
     # =============================================================================
     # CONFIGURATION FICHIERS
     # =============================================================================
-    FILE_ETUDIANTS = "Liste des étudiants_2026-2027.xlsx"
+    FILE_ETUDIANTS = "Liste des etudiants_2026-2027.xlsx"
     FILE_EDT       = "dataEDT-ELT-S1-2027.xlsx"
     FILE_ENS       = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
 
@@ -1412,10 +1415,10 @@ def run_edt():
                 self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
                 self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
 
-                if os.path.exists("logo.PNG"):
+                if os.path.exists(str(_BASE_DIR / "logo.PNG")):
                     logo_w = W_LOGO - 4
                     logo_h = H_ENTETE - 4
-                    self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=logo_w, h=logo_h)
+                    self.image(str(_BASE_DIR / "logo.PNG"), x=X0 + 2, y=Y0 + 2, w=logo_w, h=logo_h)
 
                 self.set_xy(X_MILIEU, Y0 + 1.5)
                 self.set_font('Arial', 'B', 11)
@@ -1665,8 +1668,8 @@ def run_edt():
                     self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
                     self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
 
-                    if os.path.exists("logo.PNG"):
-                        self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
+                    if os.path.exists(str(_BASE_DIR / "logo.PNG")):
+                        self.image(str(_BASE_DIR / "logo.PNG"), x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
 
                     self.set_xy(X_MILIEU, Y0 + 1.5)
                     self.set_font('Arial', 'B', 11)
@@ -1937,8 +1940,8 @@ def run_edt():
                     self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
                     self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
 
-                    if os.path.exists("logo.PNG"):
-                        self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
+                    if os.path.exists(str(_BASE_DIR / "logo.PNG")):
+                        self.image(str(_BASE_DIR / "logo.PNG"), x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
 
                     self.set_xy(X_MILIEU, Y0 + 1.5)
                     self.set_font('Arial', 'B', 11)
@@ -2216,8 +2219,8 @@ def run_edt():
                 self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
                 self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
 
-                if os.path.exists("logo.PNG"):
-                    self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
+                if os.path.exists(str(_BASE_DIR / "logo.PNG")):
+                    self.image(str(_BASE_DIR / "logo.PNG"), x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
 
                 self.set_xy(X_MILIEU, Y0 + 1.5)
                 self.set_font('Arial', 'B', 11)
@@ -2713,8 +2716,8 @@ def run_edt():
     """, unsafe_allow_html=True)
 
     # --- CHARGEMENT DES DONNÉES ---
-    NOM_FICHIER_FIXE = "dataEDT-ELT-S1-2027.xlsx"
-    NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
+    # NOM_FICHIER_FIXE déjà défini plus haut
+    # NOM_FICHIER_CONTACTS déjà défini plus haut
 
     df = None
     repertoire_source = {}        # Pour stocker les Emails : { "NOM": "email" }
@@ -2759,7 +2762,7 @@ def run_edt():
     repertoire_telephones = {}
     df_contacts = None
 
-    NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
+    # NOM_FICHIER_CONTACTS déjà défini plus haut
 
     def extraire_nom_famille(nom_complet):
         """Extrait le nom de famille (premier mot) pour la correspondance."""
@@ -3303,7 +3306,7 @@ def run_edt():
     """, unsafe_allow_html=True)
 
     # --- CHARGEMENT DES DONNÉES ---
-    NOM_FICHIER_FIXE = "dataEDT-ELT-S1-2027.xlsx"
+    # NOM_FICHIER_FIXE déjà défini plus haut
     df = None
 
     def normalize(s):
@@ -3792,7 +3795,7 @@ def run_edt():
 
     with col_logo:
         try:
-            st.image("logo.PNG", width=90)
+            st.image(str(_BASE_DIR / "logo.PNG"), width=90)
         except:
             st.markdown("🏛️") # Secours si le fichier est manquant
 
@@ -5653,7 +5656,7 @@ def run_edt():
 
                 st.stop()  # Empêche l'enseignant d'accéder au reste du code
         elif portail == "📅 Surveillances Examens":
-            FILE_S = "surveillances_2027.xlsx"
+            FILE_S = str(_BASE_DIR / "surveillances_2027.xlsx")
             if os.path.exists(FILE_S):
                 df_surv = pd.read_excel(FILE_S)
                 df_surv.columns = [str(c).strip() for c in df_surv.columns]
@@ -5725,7 +5728,7 @@ def run_edt():
                         st.session_state.effectifs_db = {row["Promotion"]: [int(row["Effectif Total"]), int(row["Nb de Salles"])] for _, row in edited_eff.iterrows()}
                         st.success("Mis à jour !")
 
-                SRC = "surveillances_2027.xlsx"
+                SRC = str(_BASE_DIR / "surveillances_2027.xlsx")
                 if os.path.exists(SRC):
                     df_src = pd.read_excel(SRC)
                     df_src.columns = [str(c).strip() for c in df_src.columns]
@@ -5795,7 +5798,7 @@ def run_edt():
             # --- EN-TÊTE ---
             col_l, col_t = st.columns([1, 5])
             with col_l:
-                st.image("logo.PNG", width=80)
+                st.image(str(_BASE_DIR / "logo.PNG"), width=80)
             with col_t:
                 st.header("🏢 Répertoire et Envoi Automatisé")
                 st.write("Plateforme de gestion des emplois du temps 2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
@@ -7098,7 +7101,7 @@ def run_edt():
 
             p_logo = cell_logo.paragraphs[0]
             p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            nom_fichier_logo = "logo.PNG"
+            nom_fichier_logo = str(_BASE_DIR / "logo.PNG")
             if os.path.exists(nom_fichier_logo):
                 p_logo.add_run().add_picture(nom_fichier_logo, width=Inches(0.833))
             else:
