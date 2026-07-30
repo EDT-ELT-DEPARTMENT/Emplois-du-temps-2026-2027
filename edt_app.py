@@ -158,7 +158,7 @@ def run_assiduite():
     import os
     from datetime import datetime
     from collections import defaultdict
-    """
+    
     ================================================================================
     Application : Suivi d'Assiduite des Etudiants
     Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA
@@ -172,7 +172,7 @@ def run_assiduite():
     Configuration Supabase (optionnel) :
       Creer .streamlit/secrets.toml avec SUPABASE_URL et SUPABASE_KEY
     ================================================================================
-    """
+  
     # =============================================================================
     # CONFIGURATION SUPABASE
     # =============================================================================
