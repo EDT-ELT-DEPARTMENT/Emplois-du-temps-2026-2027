@@ -697,7 +697,7 @@ def run_assiduite():
                         if not info_rows.empty:
                             promo_c = str(info_rows.iloc[0]["Promotion_Mappee"]).strip()
     
-                if sel_mat and promo_c:
+            if sel_mat and promo_c:
                       
                 df_p = df_etu[df_etu["Promotion"].astype(str).str.strip().str.upper() == promo_c.upper()].copy()
 
