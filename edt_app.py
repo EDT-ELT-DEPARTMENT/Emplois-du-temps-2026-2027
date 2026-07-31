@@ -117,7 +117,52 @@ CAUSES_ABSENCES = [
 
 CODE_ADMIN = "1234"
 CODE_ADMIN_EDT = "doctorat2026"
+# =============================================================================
+# FONCTION DE DÉCONNEXION GLOBALE
+# =============================================================================
+def afficher_bouton_deconnexion():
+    """Affiche un bouton de déconnexion dans la sidebar si un utilisateur est connecté."""
+    user = st.session_state.get("user_data")
+    if user is not None:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown(
+            f"<div style='text-align:center;'>"
+            f"<span style='font-size:20px;'>👤</span><br>"
+            f"<b>{user.get('nom_officiel', 'Utilisateur')}</b><br>"
+            f"<span style='font-size:11px;color:#64748b;'>Rôle : {user.get('role', 'N/A').upper()}</span>"
+            f"</div>", 
+            unsafe_allow_html=True
+        )
+        if st.sidebar.button("🚪 Déconnexion", use_container_width=True, key="btn_deconnexion_global"):
+            # Nettoyage sécurisé de la session
+            keys_to_keep = {"module_selector"}  # On garde le choix du module
+            current_keys = set(st.session_state.keys())
+            for key in current_keys:
+                if key not in keys_to_keep:
+                    del st.session_state[key]
+            st.rerun()
 
+
+# =============================================================================
+# SIDEBAR PRINCIPALE (TOUJOURS VISIBLE)
+# =============================================================================
+with st.sidebar:
+    st.markdown("<h2 style='text-align:center;color:#1E3A8A;'>🏛️ UDL-SBA</h2>", unsafe_allow_html=True)
+    st.caption("Département d'Électrotechnique - FGE")
+    st.markdown("---")
+    
+    module_sel = st.radio(
+        "📂 Choix du module :",
+        ["📊 Suivi d'Assiduité", "📅 Gestion des EDTs & Admin"],
+        index=0,
+        key="module_selector"
+    )
+    
+    st.markdown("---")
+    st.caption("Année universitaire 2026-2027")
+    
+    # Bouton de déconnexion global
+    afficher_bouton_deconnexion()
 # =============================================================================
 # SIDEBAR PRINCIPALE (TOUJOURS VISIBLE)
 # =============================================================================
