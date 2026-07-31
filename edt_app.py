@@ -566,29 +566,37 @@ def run_assiduite():
     # INTERFACE STREAMLIT
     # =============================================================================
     def get_absences_etudiant(nom_etudiant):
-   if MODE_SUPABASE:
-        try:
-            res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
-            return res.data if res.data else []
-        except Exception as e:
-            st.error(f"Erreur chargement absences : {e}")
-            return []
+        
+        if MODE_SUPABASE:
+            try:
+                res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
+                return res.data if res.data else []
+            except Exception as e:
+                st.error(f"Erreur chargement absences : {e}")
+                return []
+        else:
+            return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]
+    
+    
+    def trouver_requete_existante(nom_etudiant, matiere):
+        """Trouve une requête en attente pour cet étudiant et cette matière."""
+        if MODE_SUPABASE:
+            try:
+                res = supabase.table("requetes_absences").select("*")\
+                    .eq("nom_etudiant", nom_etudiant)\
+                    .eq("matiere", matiere)\
+                    .eq("statut", "En attente").execute()
+                return res.data[0] if res.data else None
+            except Exception as e:
+                st.error(f"Erreur recherche requête : {e}")
+                return None
     else:
-        return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]
-
-
-def trouver_requete_existante(nom_etudiant, matiere):
-    """Trouve une requête en attente pour cet étudiant et cette matière."""
-    if MODE_SUPABASE:
-        try:
-            res = supabase.table("requetes_absences").select("*")\
-                .eq("nom_etudiant", nom_etudiant)\
-                .eq("matiere", matiere)\
-                .eq("statut", "En attente").execute()
-            return res.data[0] if res.data else None
-        except Exception as e:
-            st.error(f"Erreur recherche requête : {e}")
-            return None
+        for r in st.session_state.requetes:
+            if (r.get("nom_etudiant") == nom_etudiant and 
+                r.get("matiere") == matiere and 
+                r.get("statut") == "En attente"):
+                return r
+        return None 
     else:
         for r in st.session_state.requetes:
             if (r.get("nom_etudiant") == nom_etudiant and 
