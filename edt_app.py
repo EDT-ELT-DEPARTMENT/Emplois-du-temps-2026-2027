@@ -8116,27 +8116,3 @@ if module_sel == "📊 Suivi d'Assiduité":
     run_assiduite()
 else:
     run_edt()
-# =============================================================================
-# POINT D'ENTREE PRINCIPAL
-# =============================================================================
-
-with st.sidebar:
-    st.markdown("<h2 style='text-align:center;color:#1E3A8A;'>🏛️ UDL-SBA</h2>", unsafe_allow_html=True)
-    st.caption("Département d'Électrotechnique - FGE")
-    st.markdown("---")
-
-    module_sel = st.radio(
-        "📂 Choix du module :",
-        ["📊 Suivi d'Assiduité", "📅 Gestion des EDTs & Admin"],
-        index=0,
-        key="module_selector"
-    )
-
-    st.markdown("---")
-    st.caption("Année universitaire 2026-2027")
-
-# Lancement du module sélectionné
-if module_sel == "📊 Suivi d'Assiduité":
-    run_assiduite()
-else:
-    run_edt()
