@@ -625,7 +625,11 @@ def run_assiduite():
         LISTE_PROFS = []
 
     df_etu["Nom_Complet"] = df_etu["Nom"].astype(str).str.strip().str.upper() + " " + df_etu["Prénom"].astype(str).str.strip().str.title()
-
+    # =============================================================================
+    # GESTION DE LA CONNEXION (depuis le portail EDT)  ← DÉPLACER ICI
+    # =============================================================================
+    user = st.session_state.get("user_data")
+    is_enseignant_connecte = user is not None and user.get("role") != "admin"
     # =============================================================================
     # ONGLETS
     # =============================================================================
