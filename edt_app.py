@@ -267,275 +267,275 @@ def run_assiduite():
     
         CODE_ADMIN = "1234"
 
-    # =============================================================================
-    # INITIALISATION SESSION STATE
-    # =============================================================================
-    if "absences" not in st.session_state:
-        st.session_state.absences = []
-    if "requetes" not in st.session_state:
-        st.session_state.requetes = []
-    if "confirm_reset" not in st.session_state:
-        st.session_state.confirm_reset = False
-    if "confirm_reset_abs" not in st.session_state:
-        st.session_state.confirm_reset_abs = False
-
-
-    # =============================================================================
-    # FONCTIONS SUPABASE
-    # =============================================================================
-
-    def charger_absences_supabase(matiere=None, promotion=None):
-        """Charge les absences depuis Supabase."""
-        if not MODE_SUPABASE:
-            return []
-        try:
-            query = supabase.table("suivi_assiduite_2026").select("*")
-            if matiere:
-                query = query.eq("matiere", matiere)
-            if promotion:
-                query = query.eq("promotion", promotion)
-            res = query.execute()
-            return res.data if res.data else []
-        except Exception as e:
-            st.error(f"Erreur Supabase (charger absences) : {e}")
-            return []
-
-
-    def enregistrer_absence_supabase(payload):
-        """Enregistre une absence dans Supabase."""
-        if not MODE_SUPABASE:
-            return False
-        try:
-            supabase.table("suivi_assiduite_2026").insert(payload).execute()
-            return True
-        except Exception as e:
-            st.error(f"Erreur Supabase (enregistrer) : {e}")
-            return False
-
-
-    def supprimer_absences_supabase(matiere, promotion):
-        """Supprime les absences d'une matiere/promotion."""
-        if not MODE_SUPABASE:
-            return False
-        try:
-            supabase.table("suivi_assiduite_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
-            return True
-        except Exception as e:
-            st.error(f"Erreur Supabase (supprimer) : {e}")
-            return False
-   
-    def rehabiliter_absences_etudiant_supabase(etudiant, matiere):
-        """Marque les absences d'un etudiant comme justifiees (rehabilitation conserve l'historique)."""
-        if not MODE_SUPABASE:
-            return False
-        try:
-            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", etudiant).eq("matiere", matiere).execute()
-            return True
-        except Exception as e:
-            st.error(f"Erreur Supabase (rehabilitation) : {e}")
-            return False    
-
-
-    def charger_requetes_supabase(statut=None, promotion=None):
-        """Charge les requetes de justificatifs."""
-        if not MODE_SUPABASE:
-            return []
-        try:
-            query = supabase.table("requetes_absences").select("*")
-            if statut:
-                query = query.eq("statut", statut)
-            if promotion:
-                query = query.eq("promotion", promotion)
-            res = query.execute()
-            return res.data if res.data else []
-        except Exception as e:
-            st.error(f"Erreur Supabase (charger requetes) : {e}")
-            return []
-
-
-    def enregistrer_requete_supabase(payload):
-        """Enregistre une requete de justificatif."""
-        if not MODE_SUPABASE:
-            return False
-        try:
-            supabase.table("requetes_absences").insert(payload).execute()
-            return True
-        except Exception as e:
-            st.error(f"Erreur Supabase (requete) : {e}")
-            return False
-
-
-    def mettre_a_jour_statut_requete_supabase(req_id, statut):
-        """Met a jour le statut d'une requete."""
-        if not MODE_SUPABASE:
-            return False
-        try:
-            supabase.table("requetes_absences").update({"statut": statut}).eq("id", req_id).execute()
-            return True
-        except Exception as e:
-            st.error(f"Erreur Supabase (maj statut) : {e}")
-            return False
-
-
-    def reinitialiser_requetes_supabase():
-        """Reinitialise toutes les requetes."""
-        if not MODE_SUPABASE:
-            return False
-        try:
-            supabase.table("requetes_absences").delete().neq("id", -1).execute()
-            return True
-        except Exception as e:
-            st.error(f"Erreur Supabase (reset) : {e}")
-            return False
-
-
-    # =============================================================================
-    # FONCTIONS UTILITAIRES
-    # ============================================================================
-
-    def nettoyer_nom_enseignant(nom):
-        """Retire les titres academiques."""
-        n = str(nom).strip()
-        for prefix in ["Pr ", "Dr ", "Mme ", "Mr ", "Dr. ", "Pr. ", "M. "]:
-            if n.startswith(prefix):
-                n = n[len(prefix):]
-        return n.strip()
-
-
-    def extraire_nom_famille(nom_complet):
-        """Extrait le premier mot (nom de famille)."""
-        n = nettoyer_nom_enseignant(nom_complet)
-        parts = n.split()
-        if not parts:
-            return ""
-        return parts[0].upper()
-
-
-    def mapper_promotion(promo_edt):
-        """Mappe une promotion EDT vers celle du fichier etudiants."""
-        p = str(promo_edt).strip().upper()
-
-        mapping_direct = {
-            "ING1": "ING1", "ING2ST": "ING2", "ING2TM": "ING2",
-            "ING3EI": "ING3EI", "ING3RSE": "ING3RSE", "ING3TM": "ING3EI",
-            "ING4EI": "ING4", "ING4": "ING4", "ING5RSE": "ING3RSE",
-            "L1MCIL": "L1MCIL", "L2ELT": "L2ELT", "L2MCIL": "L2MCIL",
-            "L3ELT": "L3ELT", "MCIL2": "L2MCIL", "MCIL3": "MCIL3",
-            "M1CE": "M1CE", "M1ER": "M1ER", "M1MCIL": "M1MCIL",
-            "M1ME": "M1ME", "M1RE": "M1RE", "M2CE": "M2CE",
-            "M2ER": "M2ER", "M2MCIL": "M2MCIL", "M2ME": "M2ME", "M2RE": "M1RE",
-        }
-
-        if p in mapping_direct:
-            return mapping_direct[p]
-
-        for key, val in mapping_direct.items():
-            if key in p or p in key:
-                return val
-
-        if "ING1" in p: return "ING1"
-        elif "ING2" in p: return "ING2"
-        elif "ING3" in p: return "ING3RSE" if "RSE" in p else "ING3EI"
-        elif "ING4" in p: return "ING4"
-        elif "L1" in p and "MCIL" in p: return "L1MCIL"
-        elif "L2" in p and "ELT" in p: return "L2ELT"
-        elif "L2" in p and "MCIL" in p: return "L2MCIL"
-        elif "L3" in p and "ELT" in p: return "L3ELT"
-        elif "MCIL3" in p: return "MCIL3"
-        elif "M1" in p:
-            for code in ["CE", "ER", "MCIL", "ME", "RE"]:
-                if code in p: return f"M1{code}"
-        elif "M2" in p:
-            for code in ["CE", "ER", "MCIL", "ME", "RE"]:
-                if code in p: return f"M2{code}"
-
-        return p
-
-
-    def trouver_matiere_promo(nom_ens_complet, df_edt):
-        """Retourne un DataFrame filtre sur l'enseignant."""
-        nom_fam = extraire_nom_famille(nom_ens_complet)
-        if not nom_fam or df_edt.empty:
-            return pd.DataFrame()
-
-        mask = df_edt["Enseignants"].astype(str).str.upper().str.contains(
-            re.escape(nom_fam), na=False, regex=True
-        )
-        df_filtre = df_edt[mask].copy()
-
-        if df_filtre.empty:
-            return pd.DataFrame()
-
-        df_filtre["Promotion_Mappee"] = df_filtre["Promotion"].apply(mapper_promotion)
-        df_filtre = df_filtre[df_filtre["Enseignants"].astype(str).str.strip().str.lower() != "non defini"]
-
-        return df_filtre
-
-
-    def generer_page_html(df_data, titre_bilan, colonnes, entetes):
-        """Genere une page HTML stylisee."""
-        html_doc = f"""<!DOCTYPE html>
-    <html lang="fr">
-    <head>
-        <meta charset="UTF-8">
-        <title>{titre_bilan}</title>
-        <style>
-            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                   background-color: #f1f5f9; color: #1e293b; padding: 30px; margin: 0; }}
-            .header {{ background-color: #1e3a8a; color: white; padding: 20px;
-                       border-radius: 8px 8px 0 0; }}
-            .header h1 {{ margin: 0; font-size: 1.5rem; }}
-            .content {{ background: white; padding: 20px; border-radius: 0 0 8px 8px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.05); }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
-            th {{ background-color: #0f172a; color: white; padding: 12px 15px; text-align: left; }}
-            td {{ padding: 12px 15px; border-bottom: 1px solid #cbd5e1; font-size: 0.9rem; }}
-            tr:nth-child(even) {{ background-color: #f8fafc; }}
-            .abs-count {{ color: #b91c1c; font-weight: bold; }}
-            .badge-fav {{ background-color: #dcfce7; color: #166534; padding: 4px 8px;
-                          border-radius: 4px; font-weight: 600; font-size: 0.85em; }}
-            .badge-def {{ background-color: #fee2e2; color: #991b1b; padding: 4px 8px;
-                          border-radius: 4px; font-weight: 600; font-size: 0.85em; }}
-            .badge-att {{ background-color: #fef3c7; color: #92400e; padding: 4px 8px;
-                          border-radius: 4px; font-weight: 600; font-size: 0.85em; }}
-            .footer {{ text-align: center; margin-top: 25px; font-size: 0.8rem; color: #64748b; }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>📊 {titre_bilan}</h1>
-            <p>Suivi d'Assiduite - Departement d'Electrotechnique - UDL-SBA</p>
-        </div>
-        <div class="content">
-            <p>Genere le : {datetime.now().strftime('%d/%m/%Y a %H:%M')}</p>
-            <table>
-                <thead><tr>"""
-        for h in entetes:
-            html_doc += f"<th>{h}</th>"
-        html_doc += "</tr></thead><tbody>"
-
-        for _, row in df_data.iterrows():
-            html_doc += "<tr>"
-            for col in colonnes:
-                val = row.get(col, "")
-                if "Absences" in str(col) or "Total" in str(col):
-                    html_doc += f"<td class='abs-count'>{val}</td>"
-                elif str(col).lower() == "statut":
-                    if "favor" in str(val).lower() and "de" not in str(val).lower():
-                        html_doc += f"<td><span class='badge-fav'>{val}</span></td>"
-                    elif "defavor" in str(val).lower():
-                        html_doc += f"<td><span class='badge-def'>{val}</span></td>"
+        # =============================================================================
+        # INITIALISATION SESSION STATE
+        # =============================================================================
+        if "absences" not in st.session_state:
+            st.session_state.absences = []
+        if "requetes" not in st.session_state:
+            st.session_state.requetes = []
+        if "confirm_reset" not in st.session_state:
+            st.session_state.confirm_reset = False
+        if "confirm_reset_abs" not in st.session_state:
+            st.session_state.confirm_reset_abs = False
+    
+    
+        # =============================================================================
+        # FONCTIONS SUPABASE
+        # =============================================================================
+    
+        def charger_absences_supabase(matiere=None, promotion=None):
+            """Charge les absences depuis Supabase."""
+            if not MODE_SUPABASE:
+                return []
+            try:
+                query = supabase.table("suivi_assiduite_2026").select("*")
+                if matiere:
+                    query = query.eq("matiere", matiere)
+                if promotion:
+                    query = query.eq("promotion", promotion)
+                res = query.execute()
+                return res.data if res.data else []
+            except Exception as e:
+                st.error(f"Erreur Supabase (charger absences) : {e}")
+                return []
+    
+    
+        def enregistrer_absence_supabase(payload):
+            """Enregistre une absence dans Supabase."""
+            if not MODE_SUPABASE:
+                return False
+            try:
+                supabase.table("suivi_assiduite_2026").insert(payload).execute()
+                return True
+            except Exception as e:
+                st.error(f"Erreur Supabase (enregistrer) : {e}")
+                return False
+    
+    
+        def supprimer_absences_supabase(matiere, promotion):
+            """Supprime les absences d'une matiere/promotion."""
+            if not MODE_SUPABASE:
+                return False
+            try:
+                supabase.table("suivi_assiduite_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
+                return True
+            except Exception as e:
+                st.error(f"Erreur Supabase (supprimer) : {e}")
+                return False
+       
+        def rehabiliter_absences_etudiant_supabase(etudiant, matiere):
+            """Marque les absences d'un etudiant comme justifiees (rehabilitation conserve l'historique)."""
+            if not MODE_SUPABASE:
+                return False
+            try:
+                supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", etudiant).eq("matiere", matiere).execute()
+                return True
+            except Exception as e:
+                st.error(f"Erreur Supabase (rehabilitation) : {e}")
+                return False    
+    
+    
+        def charger_requetes_supabase(statut=None, promotion=None):
+            """Charge les requetes de justificatifs."""
+            if not MODE_SUPABASE:
+                return []
+            try:
+                query = supabase.table("requetes_absences").select("*")
+                if statut:
+                    query = query.eq("statut", statut)
+                if promotion:
+                    query = query.eq("promotion", promotion)
+                res = query.execute()
+                return res.data if res.data else []
+            except Exception as e:
+                st.error(f"Erreur Supabase (charger requetes) : {e}")
+                return []
+    
+    
+        def enregistrer_requete_supabase(payload):
+            """Enregistre une requete de justificatif."""
+            if not MODE_SUPABASE:
+                return False
+            try:
+                supabase.table("requetes_absences").insert(payload).execute()
+                return True
+            except Exception as e:
+                st.error(f"Erreur Supabase (requete) : {e}")
+                return False
+    
+    
+        def mettre_a_jour_statut_requete_supabase(req_id, statut):
+            """Met a jour le statut d'une requete."""
+            if not MODE_SUPABASE:
+                return False
+            try:
+                supabase.table("requetes_absences").update({"statut": statut}).eq("id", req_id).execute()
+                return True
+            except Exception as e:
+                st.error(f"Erreur Supabase (maj statut) : {e}")
+                return False
+    
+    
+        def reinitialiser_requetes_supabase():
+            """Reinitialise toutes les requetes."""
+            if not MODE_SUPABASE:
+                return False
+            try:
+                supabase.table("requetes_absences").delete().neq("id", -1).execute()
+                return True
+            except Exception as e:
+                st.error(f"Erreur Supabase (reset) : {e}")
+                return False
+    
+    
+        # =============================================================================
+        # FONCTIONS UTILITAIRES
+        # ============================================================================
+    
+        def nettoyer_nom_enseignant(nom):
+            """Retire les titres academiques."""
+            n = str(nom).strip()
+            for prefix in ["Pr ", "Dr ", "Mme ", "Mr ", "Dr. ", "Pr. ", "M. "]:
+                if n.startswith(prefix):
+                    n = n[len(prefix):]
+            return n.strip()
+    
+    
+        def extraire_nom_famille(nom_complet):
+            """Extrait le premier mot (nom de famille)."""
+            n = nettoyer_nom_enseignant(nom_complet)
+            parts = n.split()
+            if not parts:
+                return ""
+            return parts[0].upper()
+    
+    
+        def mapper_promotion(promo_edt):
+            """Mappe une promotion EDT vers celle du fichier etudiants."""
+            p = str(promo_edt).strip().upper()
+    
+            mapping_direct = {
+                "ING1": "ING1", "ING2ST": "ING2", "ING2TM": "ING2",
+                "ING3EI": "ING3EI", "ING3RSE": "ING3RSE", "ING3TM": "ING3EI",
+                "ING4EI": "ING4", "ING4": "ING4", "ING5RSE": "ING3RSE",
+                "L1MCIL": "L1MCIL", "L2ELT": "L2ELT", "L2MCIL": "L2MCIL",
+                "L3ELT": "L3ELT", "MCIL2": "L2MCIL", "MCIL3": "MCIL3",
+                "M1CE": "M1CE", "M1ER": "M1ER", "M1MCIL": "M1MCIL",
+                "M1ME": "M1ME", "M1RE": "M1RE", "M2CE": "M2CE",
+                "M2ER": "M2ER", "M2MCIL": "M2MCIL", "M2ME": "M2ME", "M2RE": "M1RE",
+            }
+    
+            if p in mapping_direct:
+                return mapping_direct[p]
+    
+            for key, val in mapping_direct.items():
+                if key in p or p in key:
+                    return val
+    
+            if "ING1" in p: return "ING1"
+            elif "ING2" in p: return "ING2"
+            elif "ING3" in p: return "ING3RSE" if "RSE" in p else "ING3EI"
+            elif "ING4" in p: return "ING4"
+            elif "L1" in p and "MCIL" in p: return "L1MCIL"
+            elif "L2" in p and "ELT" in p: return "L2ELT"
+            elif "L2" in p and "MCIL" in p: return "L2MCIL"
+            elif "L3" in p and "ELT" in p: return "L3ELT"
+            elif "MCIL3" in p: return "MCIL3"
+            elif "M1" in p:
+                for code in ["CE", "ER", "MCIL", "ME", "RE"]:
+                    if code in p: return f"M1{code}"
+            elif "M2" in p:
+                for code in ["CE", "ER", "MCIL", "ME", "RE"]:
+                    if code in p: return f"M2{code}"
+    
+            return p
+    
+    
+        def trouver_matiere_promo(nom_ens_complet, df_edt):
+            """Retourne un DataFrame filtre sur l'enseignant."""
+            nom_fam = extraire_nom_famille(nom_ens_complet)
+            if not nom_fam or df_edt.empty:
+                return pd.DataFrame()
+    
+            mask = df_edt["Enseignants"].astype(str).str.upper().str.contains(
+                re.escape(nom_fam), na=False, regex=True
+            )
+            df_filtre = df_edt[mask].copy()
+    
+            if df_filtre.empty:
+                return pd.DataFrame()
+    
+            df_filtre["Promotion_Mappee"] = df_filtre["Promotion"].apply(mapper_promotion)
+            df_filtre = df_filtre[df_filtre["Enseignants"].astype(str).str.strip().str.lower() != "non defini"]
+    
+            return df_filtre
+    
+    
+        def generer_page_html(df_data, titre_bilan, colonnes, entetes):
+            """Genere une page HTML stylisee."""
+            html_doc = f"""<!DOCTYPE html>
+        <html lang="fr">
+        <head>
+            <meta charset="UTF-8">
+            <title>{titre_bilan}</title>
+            <style>
+                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                       background-color: #f1f5f9; color: #1e293b; padding: 30px; margin: 0; }}
+                .header {{ background-color: #1e3a8a; color: white; padding: 20px;
+                           border-radius: 8px 8px 0 0; }}
+                .header h1 {{ margin: 0; font-size: 1.5rem; }}
+                .content {{ background: white; padding: 20px; border-radius: 0 0 8px 8px;
+                            box-shadow: 0 4px 6px rgba(0,0,0,0.05); }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
+                th {{ background-color: #0f172a; color: white; padding: 12px 15px; text-align: left; }}
+                td {{ padding: 12px 15px; border-bottom: 1px solid #cbd5e1; font-size: 0.9rem; }}
+                tr:nth-child(even) {{ background-color: #f8fafc; }}
+                .abs-count {{ color: #b91c1c; font-weight: bold; }}
+                .badge-fav {{ background-color: #dcfce7; color: #166534; padding: 4px 8px;
+                              border-radius: 4px; font-weight: 600; font-size: 0.85em; }}
+                .badge-def {{ background-color: #fee2e2; color: #991b1b; padding: 4px 8px;
+                              border-radius: 4px; font-weight: 600; font-size: 0.85em; }}
+                .badge-att {{ background-color: #fef3c7; color: #92400e; padding: 4px 8px;
+                              border-radius: 4px; font-weight: 600; font-size: 0.85em; }}
+                .footer {{ text-align: center; margin-top: 25px; font-size: 0.8rem; color: #64748b; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>📊 {titre_bilan}</h1>
+                <p>Suivi d'Assiduite - Departement d'Electrotechnique - UDL-SBA</p>
+            </div>
+            <div class="content">
+                <p>Genere le : {datetime.now().strftime('%d/%m/%Y a %H:%M')}</p>
+                <table>
+                    <thead><tr>"""
+            for h in entetes:
+                html_doc += f"<th>{h}</th>"
+            html_doc += "</tr></thead><tbody>"
+    
+            for _, row in df_data.iterrows():
+                html_doc += "<tr>"
+                for col in colonnes:
+                    val = row.get(col, "")
+                    if "Absences" in str(col) or "Total" in str(col):
+                        html_doc += f"<td class='abs-count'>{val}</td>"
+                    elif str(col).lower() == "statut":
+                        if "favor" in str(val).lower() and "de" not in str(val).lower():
+                            html_doc += f"<td><span class='badge-fav'>{val}</span></td>"
+                        elif "defavor" in str(val).lower():
+                            html_doc += f"<td><span class='badge-def'>{val}</span></td>"
+                        else:
+                            html_doc += f"<td><span class='badge-att'>{val}</span></td>"
                     else:
-                        html_doc += f"<td><span class='badge-att'>{val}</span></td>"
-                else:
-                    html_doc += f"<td>{val}</td>"
-            html_doc += "</tr>"
-
-        html_doc += """</tbody></table></div>
-        <div class="footer">&copy; 2026 Departement d'Electrotechnique - UDL-SBA</div>
-    </body>
-    </html>"""
-        return html_doc
+                        html_doc += f"<td>{val}</td>"
+                html_doc += "</tr>"
+    
+            html_doc += """</tbody></table></div>
+            <div class="footer">&copy; 2026 Departement d'Electrotechnique - UDL-SBA</div>
+        </body>
+        </html>"""
+            return html_doc
 
 
     # =============================================================================
