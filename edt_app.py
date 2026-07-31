@@ -1144,18 +1144,18 @@ def run_assiduite():
             if absences_etu:
             # Construction d'un tableau récapitulatif avec statut du justificatif
                 data_display = []
-                            for abs_item in absences_etu:
-                                mat = abs_item.get("matiere", "")
-                                req = trouver_requete_existante(etudiant_sel, mat)
-                                is_justif = abs_item.get("justifie", False)
-                                
-                                if is_justif:
-                                    statut_j = "🟢 Justifiée (acceptée)"
-                                elif req:
-                                    statut_j = "🟡 " + req.get("statut", "En attente")
-                                else:
-                                    statut_j = "🔴 Non déposé"
-                                date_dep = req.get("date_demande", "-") if req else "-"                            
+                for abs_item in absences_etu:
+                    mat = abs_item.get("matiere", "")
+                    req = trouver_requete_existante(etudiant_sel, mat)
+                    is_justif = abs_item.get("justifie", False)
+                    if is_justif:
+                        statut_j = "🟢 Justifiée (acceptée)"
+                    elif req:
+                        statut_j = "🟡 " + req.get("statut", "En attente")
+                    else:
+                        statut_j = "🔴 Non déposé"
+                    date_dep = req.get("date_demande", "-") if req else "-"                       
+                                                                        
               
               
               # Construction d'un tableau récapitulatif avec statut du justificatif
