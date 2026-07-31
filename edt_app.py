@@ -1,6 +1,6 @@
 
                 # 4. Affichage de la liste déroulante avec les noms complets
-                choix_utilisateur = st.selectbox(
+                  choix_utilisateur = st.selectbox(
                     "Sélectionner l'Enseignant :", 
                     options=options_affichage,
                     index=0
