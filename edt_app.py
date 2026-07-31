@@ -566,8 +566,7 @@ def run_assiduite():
     # INTERFACE STREAMLIT
     # =============================================================================
     def get_absences_etudiant(nom_etudiant):
-    """Récupère toutes les absences signalées pour un étudiant donné."""
-    if MODE_SUPABASE:
+   if MODE_SUPABASE:
         try:
             res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
             return res.data if res.data else []
