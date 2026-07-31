@@ -135,7 +135,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.caption("Année universitaire 2026-2027")
-
+    afficher_bouton_deconnexion()
 # =============================================================================
 # FONCTIONS UTILITAIRES COMMUNES
 # =============================================================================
@@ -262,7 +262,37 @@ def generer_page_html(df_data, titre_bilan, colonnes, entetes):
 </body>
 </html>"""
     return html_doc
-
+# =============================================================================
+# BOUTON DE DÉCONNEXION GLOBAL
+# =============================================================================
+def afficher_bouton_deconnexion():
+    """Affiche un bouton de déconnexion dans la sidebar si un utilisateur est connecté."""
+    user = st.session_state.get("user_data")
+    if user is not None:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown(
+            f"<div style='text-align:center;'>"
+            f"<span style='font-size:20px;'>👤</span><br>"
+            f"<b>{user.get('nom_officiel', 'Utilisateur')}</b><br>"
+            f"<span style='font-size:11px;color:#64748b;'>Rôle : {user.get('role', 'N/A').upper()}</span>"
+            f"</div>", 
+            unsafe_allow_html=True
+        )
+        
+        if st.sidebar.button("🚪 Déconnexion", use_container_width=True, key="btn_deconnexion_global"):
+            # Nettoyage sécurisé de toutes les clés de session liées à l'utilisateur
+            keys_a_supprimer = [
+                "user_data", "absences", "requetes", "confirm_reset", 
+                "confirm_reset_abs", "contact_match", "last_verified_contact",
+                "df_admin", "df_généré", "stats_charge", "effectifs_db",
+                "activation_success", "pdf_all_data", "pdf_all_ready",
+                "pdf_all_promo_data", "pdf_all_promo_ready",
+                "pdf_all_lieu_data", "pdf_all_lieu_ready", "mode_view"
+            ]
+            for key in keys_a_supprimer:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
 # =============================================================================
 # MODULE 1 : SUIVI ASSIDUITE DES ETUDIANTS
 # =============================================================================
