@@ -22,13 +22,7 @@ def afficher_bouton_deconnexion():
             st.rerun()
 
 
-# =============================================================================
-# SIDEBAR PRINCIPALE - UNIQUE (supprimez tout autre bloc identique)
-# =============================================================================
-with st.sidebar:
-    st.markdown("<h2 style='text-align:center;color:#1E3A8A;'>🏛️ UDL-SBA</h2>", unsafe_allow_html=True)
-    st.caption("Département d'Électrotechnique - FGE")
-    st.markdown("---")
+
     
     module_sel = st.radio(
         "📂 Choix du module :",
