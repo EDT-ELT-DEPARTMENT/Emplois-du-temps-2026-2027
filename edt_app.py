@@ -346,17 +346,18 @@ def run_assiduite():
         except Exception as e:
             st.error(f"Erreur Supabase (supprimer) : {e}")
             return False
-   
-    def rehabiliter_absences_etudiant_supabase(etudiant, matiere):
-        """Marque les absences d'un etudiant comme justifiees (rehabilitation conserve l'historique)."""
+
+
+    def supprimer_absences_etudiant_supabase(etudiant, matiere):
+        """Supprime les absences d'un etudiant pour une matiere (rehabilitation)."""
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", etudiant).eq("matiere", matiere).execute()
+            supabase.table("suivi_assiduite_2026").delete().eq("etud_non_eligible", etudiant).eq("matiere", matiere).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (rehabilitation) : {e}")
-            return False    
+            return False
 
 
     def charger_requetes_supabase(statut=None, promotion=None):
@@ -698,45 +699,24 @@ def run_assiduite():
                         horaire_abs = st.selectbox("🕒 Horaire :", HORAIRES_LIST, key="horaire_t1")
 
                     # Compteur
-                    # Compteur par matière (seuil d'exclusion = 5) + global
                     if etud_non and status_assid == "Absent":
                         if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
-                            absences_etu_matiere = df_db_full[df_db_full["etud_non_eligible"] == etud_non]
-                            nb_abs_matiere = len(absences_etu_matiere)
-                            nb_abs_justif = len(absences_etu_matiere[absences_etu_matiere.get("justifie") == True]) if "justifie" in absences_etu_matiere.columns else 0
+                            nb_abs = len(df_db_full[df_db_full["etud_non_eligible"] == etud_non])
                         else:
-                            nb_abs_matiere = 0
-                            nb_abs_justif = 0
+                            nb_abs = 0
+                        st.metric(
+                            label=f"🔢 Absences cumulees pour {etud_non}",
+                            value=f"{nb_abs} absence(s)",
+                            delta="Nouvelle absence a enregistrer",
+                            delta_color="inverse"
+                        )
 
-                        # Comptage global (toutes matières)
-                        if MODE_SUPABASE:
-                            abs_global = [a for a in charger_absences_supabase() if a.get("etud_non_eligible") == etud_non]
-                        else:
-                            abs_global = [a for a in st.session_state.absences if a.get("etud_non_eligible") == etud_non]
-                        nb_abs_global = len(abs_global)
-
-                        c1, c2, c3 = st.columns(3)
-                        with c1:
-                            st.metric("🔢 Absences dans cette matière", f"{nb_abs_matiere}/5")
-                        with c2:
-                            st.metric("✅ Dont justifiées", f"{nb_abs_justif}")
-                        with c3:
-                            st.metric("🌍 Total global (toutes matières)", f"{nb_abs_global}")
-
-                        # Alerte seuil d'exclusion
-                        if nb_abs_matiere >= 5:
-                            st.error(f"🚫 **EXCLU de la matière {sel_mat}** — Seuil de 5 absences atteint (justifiées ou non).")
-                        elif nb_abs_matiere == 4:
-                            st.warning(f"⚠️ Attention : 4 absences dans {sel_mat}. Une prochaine absence = exclusion.")
-                        else:
-                            st.info(f"ℹ️ {nb_abs_matiere} absence(s) dans {sel_mat}. Seuil d'exclusion : 5.")
                     if st.button("💾 ENREGISTRER L'ABSENCE", use_container_width=True):
                         if not etud_non:
                             st.error("❌ Veuillez selectionner un etudiant.")
                         elif status_assid != "Absent":
                             st.warning("⚠️ L'enregistrement necessite le statut 'Absent'.")
                         else:
-                            
                             payload = {
                                 "enseignant": sel_prof,
                                 "matiere": sel_mat,
@@ -746,9 +726,9 @@ def run_assiduite():
                                 "date_absence": str(date_abs),
                                 "jour_absence": jour_abs,
                                 "horaire_absence": horaire_abs,
-                                "date_saisie": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                                "justifie": False
+                                "date_saisie": datetime.now().strftime("%d/%m/%Y %H:%M")
                             }
+
                             if MODE_SUPABASE:
                                 if enregistrer_absence_supabase(payload):
                                     st.success(f"✅ Absence enregistree pour {etud_non} !")
@@ -764,28 +744,54 @@ def run_assiduite():
                     # Liste globale des absences
                     # LISTE GLOBALE DES ABSENCES (HISTORIQUE COMPLET)
                     # ─────────────────────────────────────────────────────────────
-                    # Liste globale des absences
                     st.divider()
-                    st.subheader("📋 Liste Globale des Absences")
+                    st.subheader("📋 Liste Globale des Absences — Historique Complet")
 
-                    if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
-                        # Ajout colonne Justifiée si elle n'existe pas encore (compatibilité anciennes données)
-                        if "justifie" not in df_db_full.columns:
-                            df_db_full["justifie"] = False
+                    # Chargement de TOUTES les absences (toutes matières, toutes promotions)
+                    if MODE_SUPABASE:
+                        absences_globales = charger_absences_supabase()  # sans filtre
+                    else:
+                        absences_globales = st.session_state.absences
 
-                        # Compteur par étudiant × matière (pour détecter l'exclusion)
-                        df_db_full["justifie"] = df_db_full["justifie"].fillna(False)
-                        df_liste = df_db_full.copy()
+                    df_all_abs = pd.DataFrame(absences_globales)
 
-                        # Statut justification
-                        df_liste["Statut Justif"] = df_liste["justifie"].apply(lambda x: "✅ Justifiée" if x else "❌ Non justifiée")
+                    if not df_all_abs.empty and "etud_non_eligible" in df_all_abs.columns:
+                        # Filtres globaux interactifs
+                        col_f1, col_f2, col_f3 = st.columns(3)
+                        with col_f1:
+                            promo_filter = st.multiselect(
+                                "🎓 Filtrer par Promotion",
+                                options=sorted(df_all_abs["promotion"].dropna().unique()),
+                                default=[],
+                                key="filtre_promo_global"
+                            )
+                        with col_f2:
+                            mat_filter = st.multiselect(
+                                "📚 Filtrer par Matière",
+                                options=sorted(df_all_abs["matiere"].dropna().unique()),
+                                default=[],
+                                key="filtre_mat_global"
+                            )
+                        with col_f3:
+                            ens_filter = st.multiselect(
+                                "👤 Filtrer par Enseignant",
+                                options=sorted(df_all_abs["enseignant"].dropna().unique()),
+                                default=[],
+                                key="filtre_ens_global"
+                            )
 
-                        # Comptage par matière (pour l'exclusion)
-                        df_count_mat = df_liste.groupby(["etud_non_eligible", "matiere"]).size().reset_index(name="Abs Matiere")
-                        df_liste = df_liste.merge(df_count_mat, on=["etud_non_eligible", "matiere"], how="left")
+                        df_display = df_all_abs.copy()
 
-                        # Statut exclusion
-                        df_liste["Statut Exclusion"] = df_liste["Abs Matiere"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Eligible")
+                        if promo_filter:
+                            df_display = df_display[df_display["promotion"].isin(promo_filter)]
+                        if mat_filter:
+                            df_display = df_display[df_display["matiere"].isin(mat_filter)]
+                        if ens_filter:
+                            df_display = df_display[df_display["enseignant"].isin(ens_filter)]
+
+                        # Compteur cumulé par étudiant
+                        dict_compteurs = df_all_abs["etud_non_eligible"].value_counts().to_dict()
+                        df_display["Total Absences"] = df_display["etud_non_eligible"].map(dict_compteurs)
 
                         affichage_cols = {
                             "enseignant": "Charge de Cours",
@@ -796,158 +802,25 @@ def run_assiduite():
                             "date_absence": "Date",
                             "horaire_absence": "Horaire",
                             "cause_non_eligibilite": "Motif",
-                            "Statut Justif": "Justification",
-                            "Abs Matiere": "🔢 Nb (cette matière)",
-                            "Statut Exclusion": "Statut"
+                            "Total Absences": "🔢 Total"
                         }
-                        df_aff = df_liste[list(affichage_cols.keys())].rename(columns=affichage_cols)
-                        df_aff = df_aff.sort_values(by=["Etudiant", "Date"], ascending=[True, False])
+                        df_aff = df_display[list(affichage_cols.keys())].rename(columns=affichage_cols)
+                        df_aff = df_aff.sort_values(by=["🔢 Total", "Etudiant"], ascending=[False, True])
+
+                        st.info(f"📊 **{len(df_aff)}** absence(s) affichée(s) sur **{len(df_all_abs)}** au total")
                         st.dataframe(df_aff, use_container_width=True, hide_index=True)
+
                         # Bouton pour effacer l'historique global (Admin)
                         if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary"):
                             if MODE_SUPABASE:
                                 # Suppression totale (attention : irréversible)
                                 try:
-                                    # Récupération des absences pour cette MATIERE et cette PROMOTION
-                                    if MODE_SUPABASE:
-                                        absences_cours = charger_absences_supabase(sel_mat, promo_c)
-                                    else:
-                                        absences_cours = [
-                                            a for a in st.session_state.absences
-                                            if a.get("matiere") == sel_mat and a.get("promotion") == promo_c
-                                        ]
-                                    df_abs_cours = pd.DataFrame(absences_cours)
-                                    if "justifie" not in df_abs_cours.columns:
-                                        df_abs_cours["justifie"] = False
-            
-                                    # Indexation des absences par étudiant
-                                    absents_details = {}
-                                    abs_count_par_etu = {}
-                                    if not df_abs_cours.empty:
-                                        for _, row in df_abs_cours.iterrows():
-                                            nom = row["etud_non_eligible"]
-                                            abs_count_par_etu[nom] = abs_count_par_etu.get(nom, 0) + 1
-                                            if nom not in absents_details:
-                                                absents_details[nom] = {
-                                                    "motif": row.get("cause_non_eligibilite", "Non justifie"),
-                                                    "date": row.get("date_absence", ""),
-                                                    "jour": row.get("jour_absence", ""),
-                                                    "horaire": row.get("horaire_absence", ""),
-                                                    "justifie": row.get("justifie", False)
-                                                }
-            
-                                    # Construction de la liste complète (Tous les étudiants + Statut)
-                                    df_liste_finale = df_p.copy()
-                                    df_liste_finale["Statut"] = df_liste_finale["Nom_Complet"].apply(
-                                        lambda x: "🚫 EXCLU (5 absences)" if abs_count_par_etu.get(x, 0) >= 5 else ("❌ Absent" if x in abs_count_par_etu else "✅ Eligible")
-                                    )
-                                    df_liste_finale["Justifiee"] = df_liste_finale["Nom_Complet"].map(
-                                        lambda x: "Oui" if absents_details.get(x, {}).get("justifie") == True else ("Non" if x in abs_count_par_etu else "")
-                                    )
-                                    df_liste_finale["Motif Absence"] = df_liste_finale["Nom_Complet"].map(
-                                        lambda x: absents_details.get(x, {}).get("motif", "")
-                                    )
-                                    df_liste_finale["Date Absence"] = df_liste_finale["Nom_Complet"].map(
-                                        lambda x: absents_details.get(x, {}).get("date", "")
-                                    )
-                                    df_liste_finale["Jour"] = df_liste_finale["Nom_Complet"].map(
-                                        lambda x: absents_details.get(x, {}).get("jour", "")
-                                    )
-                                    df_liste_finale["Horaire"] = df_liste_finale["Nom_Complet"].map(
-                                        lambda x: absents_details.get(x, {}).get("horaire", "")
-                                    )
-                                    df_liste_finale["Nb Absences (matiere)"] = df_liste_finale["Nom_Complet"].map(
-                                        lambda x: abs_count_par_etu.get(x, 0)
-                                    )
-            
-                                    # Réorganisation
-                                    df_export = df_liste_finale[[
-                                        "Nom_Complet", "Statut", "Justifiee", "Nb Absences (matiere)",
-                                        "Motif Absence", "Date Absence", "Jour", "Horaire"
-                                    ]].rename(columns={
-                                        "Nom_Complet": "Nom et Prenom",
-                                        "Nb Absences (matiere)": "Nb Absences"
-                                    })
-                                    df_export["Matiere"] = sel_mat
-                                    df_export["Charge"] = sel_prof
-                                    df_export["Promotion"] = promo_c
-            
-                                    # Génération Excel
-                                    output = io.BytesIO()
-                                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                                        workbook = writer.book
-                                        fmt_title = workbook.add_format({
-                                            'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter',
-                                            'bg_color': '#1E3A8A', 'font_color': 'white'
-                                        })
-                                        fmt_sub = workbook.add_format({
-                                            'italic': True, 'font_size': 11, 'align': 'center'
-                                        })
-                                        fmt_bold = workbook.add_format({'bold': True})
-                                        fmt_header = workbook.add_format({
-                                            'bold': True, 'bg_color': '#0f172a', 'font_color': 'white',
-                                            'border': 1, 'align': 'center', 'valign': 'vcenter'
-                                        })
-                                        fmt_exclu = workbook.add_format({
-                                            'bg_color': '#fee2e2', 'font_color': '#991b1b', 'border': 1, 'bold': True
-                                        })
-                                        fmt_absent = workbook.add_format({
-                                            'bg_color': '#fef3c7', 'font_color': '#92400e', 'border': 1
-                                        })
-                                        fmt_eligible = workbook.add_format({
-                                            'bg_color': '#dcfce7', 'font_color': '#166534', 'border': 1
-                                        })
-                                        fmt_cell = workbook.add_format({'border': 1, 'valign': 'vcenter'})
-            
-                                        df_export.to_excel(writer, sheet_name='Liste_Eligibilite', startrow=8, index=False)
-                                        ws = writer.sheets['Liste_Eligibilite']
-            
-                                        # En-tête institutionnel
-                                        ws.merge_range('A1:J1', "UNIVERSITE DJILLALI LIABES - SIDI BEL ABBES", fmt_title)
-                                        ws.merge_range('A2:J2', "Faculte de Genie Electrique - Departement d'Electrotechnique", fmt_sub)
-                                        ws.merge_range('A3:J3', "LISTE D'ELIGIBILITE A L'EXAMEN", fmt_title)
-                                        ws.write('A5', "Matiere :", fmt_bold); ws.write('B5', sel_mat)
-                                        ws.write('A6', "Enseignant :", fmt_bold); ws.write('B6', sel_prof)
-                                        ws.write('D5', "Promotion :", fmt_bold); ws.write('E5', promo_c)
-                                        ws.write('D6', "Date export :", fmt_bold); ws.write('E6', datetime.now().strftime('%d/%m/%Y'))
-            
-                                        # Largeurs
-                                        ws.set_column('A:A', 28)
-                                        ws.set_column('B:B', 22)
-                                        ws.set_column('C:C', 12)
-                                        ws.set_column('D:D', 12)
-                                        ws.set_column('E:H', 18)
-                                        ws.set_column('I:J', 20)
-            
-                                        # Mise en forme conditionnelle par statut
-                                        for row_num in range(9, 9 + len(df_export)):
-                                            statut_val = df_export.iloc[row_num - 9]["Statut"]
-                                            if "EXCLU" in str(statut_val):
-                                                ws.set_row(row_num, None, fmt_exclu)
-                                            elif "Absent" in str(statut_val):
-                                                ws.set_row(row_num, None, fmt_absent)
-                                            else:
-                                                ws.set_row(row_num, None, fmt_eligible)
-            
-                                        ws.freeze_panes(9, 0)
-            
-                                    nb_eligibles = len(df_export[df_export["Statut"].str.contains("Eligible")])
-                                    nb_absents = len(df_export[df_export["Statut"].str.contains("Absent")])
-                                    nb_exclus = len(df_export[df_export["Statut"].str.contains("EXCLU")])
-            
-                                    st.success(
-                                        f"✅ Rapport généré : **{nb_eligibles}** éligible(s) | **{nb_absents}** absent(s) | **{nb_exclus}** exclu(s) (≥5 absences)."
-                                    )
-                                    st.download_button(
-                                        label="📥 TELECHARGER LE RAPPORT (XLSX)",
-                                        data=output.getvalue(),
-                                        file_name=f"Rapport_{sel_mat.replace(' ', '_')}_{promo_c}.xlsx",
-                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        use_container_width=True
-                                    )
+                                    supabase.table("suivi_assiduite_2026").delete().neq("id", -1).execute()
+                                    st.success("✅ Historique global effacé !")
+                                    time.sleep(0.5)
+                                    st.rerun()
                                 except Exception as e:
-                                    st.error(f"❌ Erreur Excel : {e}")
-                                                
+                                    st.error(f"Erreur : {e}")
                             else:
                                 st.session_state.absences = []
                                 st.success("✅ Historique local effacé !")
@@ -1140,25 +1013,8 @@ def run_assiduite():
     
             absences_etu = get_absences_etudiant(etudiant_sel)
     
-            
             if absences_etu:
-            # Construction d'un tableau récapitulatif avec statut du justificatif
-                data_display = []
-                for abs_item in absences_etu:
-                    mat = abs_item.get("matiere", "")
-                    req = trouver_requete_existante(etudiant_sel, mat)
-                    is_justif = abs_item.get("justifie", False)
-                    if is_justif:
-                        statut_j = "🟢 Justifiée (acceptée)"
-                    elif req:
-                        statut_j = "🟡 " + req.get("statut", "En attente")
-                    else:
-                        statut_j = "🔴 Non déposé"
-                    date_dep = req.get("date_demande", "-") if req else "-"                       
-                                                                        
-              
-              
-              # Construction d'un tableau récapitulatif avec statut du justificatif
+                # Construction d'un tableau récapitulatif avec statut du justificatif
                 data_display = []
                 for abs_item in absences_etu:
                     mat = abs_item.get("matiere", "")
@@ -1304,18 +1160,17 @@ def run_assiduite():
                             if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
                                 if MODE_SUPABASE:
                                     mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
-                                    rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'])
+                                    supprimer_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'])
                                 else:
                                     for r in st.session_state.requetes:
                                         if r["id"] == req["id"]:
                                             r["statut"] = "Favorable"
-                                    # Marquer les absences comme justifiees (sans suppression)
-                                    for a in st.session_state.absences:
-                                        if (a.get("etud_non_eligible") == req['nom_etudiant']
-                                                and a.get("matiere") == req['matiere']):
-                                            a["justifie"] = True
-                                            a["cause_non_eligibilite"] = "Justifiee - " + str(a.get("cause_non_eligibilite", ""))
-                                st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté. Absence conservée mais marquée comme justifiée.")
+                                    st.session_state.absences = [
+                                        a for a in st.session_state.absences
+                                        if not (a.get("etud_non_eligible") == req['nom_etudiant']
+                                                and a.get("matiere") == req['matiere'])
+                                    ]
+                                st.success(f"✔️ {req['nom_etudiant']} rehabilite ! Les absences pour {req['matiere']} ont ete supprimees.")
                                 time.sleep(0.5)
                                 st.rerun()
 
@@ -1491,24 +1346,12 @@ def run_assiduite():
         else:
             abs_promo = [a for a in st.session_state.absences if a.get("promotion") == promo_abs]
 
-                  
         if abs_promo:
             df_abs = pd.DataFrame(abs_promo)
-            if "justifie" not in df_abs.columns:
-                df_abs["justifie"] = False
-
-            # Comptage total (justifiées ou non) + dont justifiées
-            df_abs_count = df_abs.groupby(["etud_non_eligible", "matiere"]).agg(
-                Nombre_Absences=("etud_non_eligible", "size"),
-                Dont_Justifiees=("justifie", lambda x: (x == True).sum())
-            ).reset_index()
-            df_abs_count["Dont_Non_Justifiees"] = df_abs_count["Nombre_Absences"] - df_abs_count["Dont_Justifiees"]
-            df_abs_count["Statut"] = df_abs_count["Nombre_Absences"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Sous seuil")
-            df_abs_count = df_abs_count.sort_values(by="Nombre_Absences", ascending=False)
-
+            df_abs_count = df_abs.groupby(["etud_non_eligible", "matiere"]).size().reset_index(name="Nombre d'Absences")
+            df_abs_count = df_abs_count.sort_values(by="Nombre d'Absences", ascending=False)
             st.dataframe(df_abs_count, use_container_width=True, hide_index=True)
 
-          
             buf_abs = io.BytesIO()
             with pd.ExcelWriter(buf_abs, engine='xlsxwriter') as w:
                 df_abs_count.to_excel(w, index=False, sheet_name='Absences_Directes')
