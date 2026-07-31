@@ -3953,7 +3953,7 @@ def run_edt():
         elif portail == "👤 Mon Espace Enseignant":
             poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
       
-            st.caption("🚪 Déconnexion via le menu principal")
+        st.caption("🚪 Déconnexion via le menu principal")
             
     # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
     # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
