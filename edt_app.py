@@ -98,18 +98,6 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 # =============================================================================
 # CONNEXION SUPABASE GLOBALE (partagée)
 # =============================================================================
-MODE_SUPABASE = False
-supabase = None
-
-if create_client:
-    try:
-        SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
-        SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
-        if SUPABASE_URL and SUPABASE_KEY:
-            supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-            MODE_SUPABASE = True
-    except Exception:
-        pass
 
 # =============================================================================
 # CONSTANTES COMMUNES
