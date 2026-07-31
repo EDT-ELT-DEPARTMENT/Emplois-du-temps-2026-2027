@@ -8091,9 +8091,7 @@ def run_edt():
         with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
             afficher_historique_bordereaux()
 
-# =============================================================================
-# POINT D'ENTREE PRINCIPAL
-# =============================================================================
+
 # =============================================================================
 # POINT D'ENTREE PRINCIPAL
 # =============================================================================
@@ -8102,23 +8100,6 @@ with st.sidebar:
     st.markdown("<h2 style='text-align:center;color:#1E3A8A;'>🏛️ UDL-SBA</h2>", unsafe_allow_html=True)
     st.caption("Département d'Électrotechnique - FGE")
     st.markdown("---")
-
-    # >>> AJOUT : Gestion utilisateur connecté (globale)
-    user = st.session_state.get("user_data")
-    if user:
-        st.markdown("---")
-        c1, c2 = st.columns([1, 4])
-        with c1:
-            st.markdown("👤")
-        with c2:
-            st.markdown(f"**{user.get('nom_officiel', 'Utilisateur')}**")
-            badge = "🛡️ Administrateur" if user.get('role') == 'admin' else "👨‍🏫 Enseignant"
-            st.caption(f"`{badge}`")
-        if st.button("🚪 Déconnexion", use_container_width=True, type="secondary", key="global_logout"):
-            st.session_state["user_data"] = None
-            st.rerun()
-        st.markdown("---")
-    # <<< FIN AJOUT
 
     module_sel = st.radio(
         "📂 Choix du module :",
@@ -8129,3 +8110,9 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption("Année universitaire 2026-2027")
+
+# Lancement du module sélectionné
+if module_sel == "📊 Suivi d'Assiduité":
+    run_assiduite()
+else:
+    run_edt()
