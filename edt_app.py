@@ -6525,7 +6525,7 @@ if is_admin:
     with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
         afficher_historique_bordereaux()
 
-"""
+
 ================================================================================
 Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
 Département d'Electrotechnique - Faculté de Genie Electrique - UDL-SBA
@@ -6554,7 +6554,7 @@ Fichiers sources requis (même dossier que le script) :
 Configuration Supabase (optionnel) :
   Créer .streamlit/secrets.toml avec SUPABASE_URL et SUPABASE_KEY
 ================================================================================
-"""
+
 
 # =============================================================================
 # IMPORTS UNIFIES
