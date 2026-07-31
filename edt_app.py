@@ -27,7 +27,6 @@ Fichiers sources requis (même dossier que le script) :
 Configuration Supabase (optionnel) :
   Créer .streamlit/secrets.toml avec SUPABASE_URL et SUPABASE_KEY
 ================================================================================
-"""
 
 # =============================================================================
 # IMPORTS UNIFIES
