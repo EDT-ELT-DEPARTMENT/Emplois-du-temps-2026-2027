@@ -947,7 +947,7 @@ def run_assiduite():
                                     )
                                 except Exception as e:
                                     st.error(f"❌ Erreur Excel : {e}")
-                                                st.error(f"Erreur : {e}")
+                                                
                             else:
                                 st.session_state.absences = []
                                 st.success("✅ Historique local effacé !")
