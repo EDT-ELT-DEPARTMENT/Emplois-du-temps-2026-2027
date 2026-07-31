@@ -5472,825 +5472,827 @@ if is_admin:
                             st.info("💡 Rappel : Vérifiez votre connexion et votre code de 16 lettres.")
         # =================================================================
         # =================================================================
-# --- LOGIQUE D'AFFICHAGE DU PORTAIL MISE À JOUR ---
-elif portail == "🎓 Portail mise à jour EDT":
-    st.write(f"**MODE ACTIF :** {portail}")
-    st.subheader("📚 Espace mise à jour EDT")
-    
-    # Rappel du titre obligatoire
-    st.info("Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
-
-    # --- 1. AFFICHAGE DE L'EMPLOI DU TEMPS (VUE ÉTUDIANT) ---
-    st.markdown("### 📋 Consultation par Promotion")
-    
-    # Récupération sécurisée des promotions
-    if df is not None and not df.empty:
-        liste_promotions = sorted(df["Promotion"].unique().tolist())
-    else:
-        liste_promotions = ["ING1", "L3-ELT", "M1-RE", "M2-RE"] # Valeurs par défaut si fichier vide
-
-    choix_promo = st.selectbox("Choisir votre Promotion :", liste_promotions)
-    
-    # Disposition stricte : Enseignements, Code, Enseignants, Horaire, Jours, Lieu, Promotion
-    colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-    
-    # Filtrage du tableau de vue
-    df_vue = df[df["Promotion"] == choix_promo][colonnes_ordonnees].sort_values(by=["Jours", "Horaire"])
-    
-    st.write(f"**Emploi du temps actuel : {choix_promo}**")
-    st.table(df_vue)
-
-    # Boutons de téléchargement pour la vue actuelle
-    c1, c2 = st.columns(2)
-    with c1:
-        # Export Excel
-        output_vue = io.BytesIO()
-        with pd.ExcelWriter(output_vue, engine='xlsxwriter') as writer:
-            df_vue.to_excel(writer, index=False)
-        st.download_button("📊 Télécharger Excel (Vue actuelle)", output_vue.getvalue(), f"EDT_{choix_promo}.xlsx")
-    with c2:
-        # Export HTML
-        st.download_button("📄 Télécharger HTML (Vue actuelle)", df_vue.to_html(index=False), f"EDT_{choix_promo}.html", "text/html")
-
-    
-# --- 2. ESPACE ADMINISTRATEUR (ÉDITION & AJOUT DE LIGNE) ---
-if is_admin:
-    st.write("---")
-    st.subheader("✍️ Espace Éditeur de Données (Admin)")
-    st.info("💡 Pour ajouter une charge : Filtrez pour isoler l'EDT concerné, puis cliquez sur le (+) en bas du tableau.")
-
-    # ═══════════════════════════════════════════════════════════════
-    # SECTION IMPORT EXCEL
-    # ═══════════════════════════════════════════════════════════════
-    # ═══════════════════════════════════════════════════════════════
-    # SECTION IMPORT EXCEL - CORRIGÉE (avec "Remplacer tout" par enseignant)
-    # ═══════════════════════════════════════════════════════════════
-    with st.expander("📥 Importer des données depuis un fichier Excel", expanded=False):
-        st.markdown("**Format attendu :** `Enseignements | Code | Enseignants | Horaire | Jours | Lieu | Promotion`")
+    # --- LOGIQUE D'AFFICHAGE DU PORTAIL MISE À JOUR ---
+    elif portail == "🎓 Portail mise à jour EDT":
+        st.write(f"**MODE ACTIF :** {portail}")
+        st.subheader("📚 Espace mise à jour EDT")
         
-        # Liste déroulante des enseignants pour filtrage pré-import
-        liste_enseignants = sorted(df['Enseignants'].dropna().unique().tolist())
-        enseignant_filtre = st.selectbox(
-            "👤 Filtrer par enseignant avant l'import (optionnel) :",
-            options=["Tous les enseignants"] + liste_enseignants,
-            key="import_enseignant_filter"
-        )
+        # Rappel du titre obligatoire
+        st.info("Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+    
+        # --- 1. AFFICHAGE DE L'EMPLOI DU TEMPS (VUE ÉTUDIANT) ---
+        st.markdown("### 📋 Consultation par Promotion")
         
-        uploaded_file = st.file_uploader(
-            "Choisir un fichier Excel (.xlsx) :",
-            type=["xlsx"],
-            key="excel_uploader"
-        )
+        # Récupération sécurisée des promotions
+        if df is not None and not df.empty:
+            liste_promotions = sorted(df["Promotion"].unique().tolist())
+        else:
+            liste_promotions = ["ING1", "L3-ELT", "M1-RE", "M2-RE"] # Valeurs par défaut si fichier vide
+    
+        choix_promo = st.selectbox("Choisir votre Promotion :", liste_promotions)
         
-        if uploaded_file is not None:
-            try:
-                df_import = pd.read_excel(uploaded_file)
-                
-                # Vérification des colonnes requises
-                colonnes_requises = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-                colonnes_manquantes = [c for c in colonnes_requises if c not in df_import.columns]
-                
-                if colonnes_manquantes:
-                    st.error(f"❌ Colonnes manquantes dans le fichier : {', '.join(colonnes_manquantes)}")
-                else:
-                    # Filtrage par enseignant si sélectionné
-                    if enseignant_filtre != "Tous les enseignants":
-                        df_import = df_import[df_import['Enseignants'] == enseignant_filtre]
+        # Disposition stricte : Enseignements, Code, Enseignants, Horaire, Jours, Lieu, Promotion
+        colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+        
+        # Filtrage du tableau de vue
+        df_vue = df[df["Promotion"] == choix_promo][colonnes_ordonnees].sort_values(by=["Jours", "Horaire"])
+        
+        st.write(f"**Emploi du temps actuel : {choix_promo}**")
+        st.table(df_vue)
+    
+        # Boutons de téléchargement pour la vue actuelle
+        c1, c2 = st.columns(2)
+        with c1:
+            # Export Excel
+            output_vue = io.BytesIO()
+            with pd.ExcelWriter(output_vue, engine='xlsxwriter') as writer:
+                df_vue.to_excel(writer, index=False)
+            st.download_button("📊 Télécharger Excel (Vue actuelle)", output_vue.getvalue(), f"EDT_{choix_promo}.xlsx")
+        with c2:
+            # Export HTML
+            st.download_button("📄 Télécharger HTML (Vue actuelle)", df_vue.to_html(index=False), f"EDT_{choix_promo}.html", "text/html")
+    
+        
+    # --- 2. ESPACE ADMINISTRATEUR (ÉDITION & AJOUT DE LIGNE) ---
+    if is_admin:
+        st.write("---")
+        st.subheader("✍️ Espace Éditeur de Données (Admin)")
+        st.info("💡 Pour ajouter une charge : Filtrez pour isoler l'EDT concerné, puis cliquez sur le (+) en bas du tableau.")
+    
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION IMPORT EXCEL
+        # ═══════════════════════════════════════════════════════════════
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION IMPORT EXCEL - CORRIGÉE (avec "Remplacer tout" par enseignant)
+        # ═══════════════════════════════════════════════════════════════
+        with st.expander("📥 Importer des données depuis un fichier Excel", expanded=False):
+            st.markdown("**Format attendu :** `Enseignements | Code | Enseignants | Horaire | Jours | Lieu | Promotion`")
+            
+            # Liste déroulante des enseignants pour filtrage pré-import
+            liste_enseignants = sorted(df['Enseignants'].dropna().unique().tolist())
+            enseignant_filtre = st.selectbox(
+                "👤 Filtrer par enseignant avant l'import (optionnel) :",
+                options=["Tous les enseignants"] + liste_enseignants,
+                key="import_enseignant_filter"
+            )
+            
+            uploaded_file = st.file_uploader(
+                "Choisir un fichier Excel (.xlsx) :",
+                type=["xlsx"],
+                key="excel_uploader"
+            )
+            
+            if uploaded_file is not None:
+                try:
+                    df_import = pd.read_excel(uploaded_file)
                     
-                    st.success(f"✅ {len(df_import)} lignes prêtes à être importées")
-                    st.dataframe(df_import, use_container_width=True)
+                    # Vérification des colonnes requises
+                    colonnes_requises = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+                    colonnes_manquantes = [c for c in colonnes_requises if c not in df_import.columns]
                     
-                    # Choix du mode d'intégration
-                    mode_import = st.radio(
-                        "Mode d'intégration :",
-                        options=["➕ Ajouter (fusionner avec l'existant)", "🔄 Remplacer (supprimer l'ancien pour cette promotion)"],
-                        key="mode_import"
-                    )
-                    
-                    # Sélection de la promotion cible pour le remplacement
-                    promo_cible = None
-                    
-                    if "Remplacer" in mode_import:
-                        promos_import = sorted([str(p) for p in df_import['Promotion'].unique()])
-                        
-                        # ═══════════════════════════════════════════════════════
-                        # NOUVEAUTÉ : Option "Remplacer tout" par enseignant
-                        # ═══════════════════════════════════════════════════════
-                        options_promo = promos_import.copy()
+                    if colonnes_manquantes:
+                        st.error(f"❌ Colonnes manquantes dans le fichier : {', '.join(colonnes_manquantes)}")
+                    else:
+                        # Filtrage par enseignant si sélectionné
                         if enseignant_filtre != "Tous les enseignants":
-                            options_promo.insert(0, f"🗑️ TOUTES LES LIGNES DE {enseignant_filtre}")
+                            df_import = df_import[df_import['Enseignants'] == enseignant_filtre]
                         
-                        promo_cible = st.selectbox(
-                            "Promotion à remplacer :",
-                            options=options_promo,
-                            key="promo_remplacement"
+                        st.success(f"✅ {len(df_import)} lignes prêtes à être importées")
+                        st.dataframe(df_import, use_container_width=True)
+                        
+                        # Choix du mode d'intégration
+                        mode_import = st.radio(
+                            "Mode d'intégration :",
+                            options=["➕ Ajouter (fusionner avec l'existant)", "🔄 Remplacer (supprimer l'ancien pour cette promotion)"],
+                            key="mode_import"
                         )
                         
-                        # Détection du mode "Tout remplacer"
-                        if enseignant_filtre != "Tous les enseignants" and isinstance(promo_cible, str) and promo_cible.startswith("🗑️ TOUTES"):
-                            st.session_state['promo_cible_import'] = "TOUT_ENSEIGNANT"
-                            st.warning(f"🗑️ **Mode Remplacer TOUT actif** : toutes les lignes de **{enseignant_filtre}** seront supprimées avant l'ajout.")
-                        else:
-                            st.session_state['promo_cible_import'] = str(promo_cible).strip()
-                            st.warning(f"🗑️ **Mode Remplacer actif** : les anciennes lignes de la promotion **{promo_cible}** seront supprimées avant l'ajout.")
-                    else:
-                        st.session_state['promo_cible_import'] = None
-                        st.info("➕ **Mode Ajouter actif** : les nouvelles lignes seront fusionnées avec les existantes.")
-                    
-                    # Bouton d'intégration
-                    if st.button("💾 Intégrer les données importées", key="btn_integrer"):
-                        try:
-                            # Récupération fiable depuis le session state
-                            current_mode = st.session_state.get('mode_import', mode_import)
-                            current_promo = st.session_state.get('promo_cible_import')
-                            
-                            # Chargement du fichier maître (création si inexistant)
-                            if os.path.exists(NOM_FICHIER_FIXE):
-                                if NOM_FICHIER_FIXE.endswith('.xlsx'):
-                                    df_master = pd.read_excel(NOM_FICHIER_FIXE)
-                                else:
-                                    df_master = pd.read_csv(NOM_FICHIER_FIXE)
-                            else:
-                                df_master = pd.DataFrame(columns=colonnes_requises)
+                        # Sélection de la promotion cible pour le remplacement
+                        promo_cible = None
+                        
+                        if "Remplacer" in mode_import:
+                            promos_import = sorted([str(p) for p in df_import['Promotion'].unique()])
                             
                             # ═══════════════════════════════════════════════════════
-                            # CORRECTION CRITIQUE : uniformiser les types en string
+                            # NOUVEAUTÉ : Option "Remplacer tout" par enseignant
                             # ═══════════════════════════════════════════════════════
-                            if 'Promotion' in df_master.columns:
-                                df_master['Promotion'] = df_master['Promotion'].astype(str).str.strip()
-                            if 'Enseignants' in df_master.columns:
-                                df_master['Enseignants'] = df_master['Enseignants'].astype(str).str.strip()
-                            df_import['Promotion'] = df_import['Promotion'].astype(str).str.strip()
-                            df_import['Enseignants'] = df_import['Enseignants'].astype(str).str.strip()
+                            options_promo = promos_import.copy()
+                            if enseignant_filtre != "Tous les enseignants":
+                                options_promo.insert(0, f"🗑️ TOUTES LES LIGNES DE {enseignant_filtre}")
                             
-                            lignes_avant = len(df_master)
-                            lignes_supprimees = 0
-                            
-                            if "Remplacer" in current_mode and current_promo is not None:
-                                if current_promo == "TOUT_ENSEIGNANT":
-                                    # MODE REMPLACER TOUT : suppression par enseignant
-                                    masque_suppr = df_master['Enseignants'] == str(enseignant_filtre).strip()
-                                    lignes_supprimees = int(masque_suppr.sum())
-                                    
-                                    if lignes_supprimees > 0:
-                                        df_master = df_master[~masque_suppr].copy()
-                                        st.info(f"🗑️ {lignes_supprimees} ligne(s) de l'enseignant '{enseignant_filtre}' supprimée(s).")
-                                    else:
-                                        st.warning(f"⚠️ Aucune ligne trouvée pour l'enseignant '{enseignant_filtre}' dans le fichier actuel.")
-                                else:
-                                    # MODE REMPLACER PROMOTION : suppression par promotion
-                                    masque_suppr = df_master['Promotion'] == str(current_promo).strip()
-                                    lignes_supprimees = int(masque_suppr.sum())
-                                    
-                                    if lignes_supprimees > 0:
-                                        df_master = df_master[~masque_suppr].copy()
-                                        st.info(f"🗑️ {lignes_supprimees} ligne(s) de la promotion '{current_promo}' supprimée(s).")
-                                    else:
-                                        st.warning(f"⚠️ Aucune ligne trouvée pour la promotion '{current_promo}' dans le fichier actuel.")
-                            
-                            # Ajout des nouvelles lignes (dans les deux modes)
-                            df_final = pd.concat([df_master, df_import], ignore_index=True)
-                            
-                            # Nettoyage et tri
-                            df_final = df_final.dropna(subset=['Enseignements'])
-                            df_final = df_final.sort_values(by=["Promotion", "Jours", "Horaire"])
-                            
-                            # Sauvegarde
-                            if NOM_FICHIER_FIXE.endswith('.xlsx'):
-                                df_final.to_excel(NOM_FICHIER_FIXE, index=False)
-                            else:
-                                df_final.to_csv(NOM_FICHIER_FIXE, index=False)
-                            
-                            st.success(
-                                f"✅ Importation terminée !\n\n"
-                                f"• Lignes avant import : **{lignes_avant}**\n"
-                                f"• Lignes supprimées : **{lignes_supprimees}**\n"
-                                f"• Lignes importées : **{len(df_import)}**\n"
-                                f"• **Total après import : {len(df_final)}**"
+                            promo_cible = st.selectbox(
+                                "Promotion à remplacer :",
+                                options=options_promo,
+                                key="promo_remplacement"
                             )
-                            st.rerun()
                             
-                        except Exception as e:
-                            st.error(f"❌ Erreur lors de l'intégration : {e}")
-                            import traceback
-                            st.code(traceback.format_exc())
-                            
-            except Exception as e:
-                st.error(f"❌ Erreur de lecture du fichier : {e}")
-
-    # ═══════════════════════════════════════════════════════════════
-    # BARRE DE RECHERCHE
-    # ═══════════════════════════════════════════════════════════════
-    # ═══════════════════════════════════════════════════════════════
-    # BARRE DE RECHERCHE & ÉDITEUR
-    # ═══════════════════════════════════════════════════════════════
+                            # Détection du mode "Tout remplacer"
+                            if enseignant_filtre != "Tous les enseignants" and isinstance(promo_cible, str) and promo_cible.startswith("🗑️ TOUTES"):
+                                st.session_state['promo_cible_import'] = "TOUT_ENSEIGNANT"
+                                st.warning(f"🗑️ **Mode Remplacer TOUT actif** : toutes les lignes de **{enseignant_filtre}** seront supprimées avant l'ajout.")
+                            else:
+                                st.session_state['promo_cible_import'] = str(promo_cible).strip()
+                                st.warning(f"🗑️ **Mode Remplacer actif** : les anciennes lignes de la promotion **{promo_cible}** seront supprimées avant l'ajout.")
+                        else:
+                            st.session_state['promo_cible_import'] = None
+                            st.info("➕ **Mode Ajouter actif** : les nouvelles lignes seront fusionnées avec les existantes.")
+                        
+                        # Bouton d'intégration
+                        if st.button("💾 Intégrer les données importées", key="btn_integrer"):
+                            try:
+                                # Récupération fiable depuis le session state
+                                current_mode = st.session_state.get('mode_import', mode_import)
+                                current_promo = st.session_state.get('promo_cible_import')
+                                
+                                # Chargement du fichier maître (création si inexistant)
+                                if os.path.exists(NOM_FICHIER_FIXE):
+                                    if NOM_FICHIER_FIXE.endswith('.xlsx'):
+                                        df_master = pd.read_excel(NOM_FICHIER_FIXE)
+                                    else:
+                                        df_master = pd.read_csv(NOM_FICHIER_FIXE)
+                                else:
+                                    df_master = pd.DataFrame(columns=colonnes_requises)
+                                
+                                # ═══════════════════════════════════════════════════════
+                                # CORRECTION CRITIQUE : uniformiser les types en string
+                                # ═══════════════════════════════════════════════════════
+                                if 'Promotion' in df_master.columns:
+                                    df_master['Promotion'] = df_master['Promotion'].astype(str).str.strip()
+                                if 'Enseignants' in df_master.columns:
+                                    df_master['Enseignants'] = df_master['Enseignants'].astype(str).str.strip()
+                                df_import['Promotion'] = df_import['Promotion'].astype(str).str.strip()
+                                df_import['Enseignants'] = df_import['Enseignants'].astype(str).str.strip()
+                                
+                                lignes_avant = len(df_master)
+                                lignes_supprimees = 0
+                                
+                                if "Remplacer" in current_mode and current_promo is not None:
+                                    if current_promo == "TOUT_ENSEIGNANT":
+                                        # MODE REMPLACER TOUT : suppression par enseignant
+                                        masque_suppr = df_master['Enseignants'] == str(enseignant_filtre).strip()
+                                        lignes_supprimees = int(masque_suppr.sum())
+                                        
+                                        if lignes_supprimees > 0:
+                                            df_master = df_master[~masque_suppr].copy()
+                                            st.info(f"🗑️ {lignes_supprimees} ligne(s) de l'enseignant '{enseignant_filtre}' supprimée(s).")
+                                        else:
+                                            st.warning(f"⚠️ Aucune ligne trouvée pour l'enseignant '{enseignant_filtre}' dans le fichier actuel.")
+                                    else:
+                                        # MODE REMPLACER PROMOTION : suppression par promotion
+                                        masque_suppr = df_master['Promotion'] == str(current_promo).strip()
+                                        lignes_supprimees = int(masque_suppr.sum())
+                                        
+                                        if lignes_supprimees > 0:
+                                            df_master = df_master[~masque_suppr].copy()
+                                            st.info(f"🗑️ {lignes_supprimees} ligne(s) de la promotion '{current_promo}' supprimée(s).")
+                                        else:
+                                            st.warning(f"⚠️ Aucune ligne trouvée pour la promotion '{current_promo}' dans le fichier actuel.")
+                                
+                                # Ajout des nouvelles lignes (dans les deux modes)
+                                df_final = pd.concat([df_master, df_import], ignore_index=True)
+                                
+                                # Nettoyage et tri
+                                df_final = df_final.dropna(subset=['Enseignements'])
+                                df_final = df_final.sort_values(by=["Promotion", "Jours", "Horaire"])
+                                
+                                # Sauvegarde
+                                if NOM_FICHIER_FIXE.endswith('.xlsx'):
+                                    df_final.to_excel(NOM_FICHIER_FIXE, index=False)
+                                else:
+                                    df_final.to_csv(NOM_FICHIER_FIXE, index=False)
+                                
+                                st.success(
+                                    f"✅ Importation terminée !\n\n"
+                                    f"• Lignes avant import : **{lignes_avant}**\n"
+                                    f"• Lignes supprimées : **{lignes_supprimees}**\n"
+                                    f"• Lignes importées : **{len(df_import)}**\n"
+                                    f"• **Total après import : {len(df_final)}**"
+                                )
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"❌ Erreur lors de l'intégration : {e}")
+                                import traceback
+                                st.code(traceback.format_exc())
+                                
+                except Exception as e:
+                    st.error(f"❌ Erreur de lecture du fichier : {e}")
     
-    # Définition locale (sécurité contre NameError)
-    colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+        # ═══════════════════════════════════════════════════════════════
+        # BARRE DE RECHERCHE
+        # ═══════════════════════════════════════════════════════════════
+        # ═══════════════════════════════════════════════════════════════
+        # BARRE DE RECHERCHE & ÉDITEUR
+        # ═══════════════════════════════════════════════════════════════
+        
+        # Définition locale (sécurité contre NameError)
+        colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+        
+        # Vérification que df est bien chargé
+        if df is None or df.empty:
+            st.error("❌ Les données (df) ne sont pas chargées. Impossible d'afficher l'éditeur.")
+            st.stop()
+        
+        # S'assurer que toutes les colonnes existent dans df
+        for col in colonnes_ordonnees:
+            if col not in df.columns:
+                df[col] = ""
+        
+        recherche = st.text_input("🔍 Rechercher une ligne (Enseignant, Salle ou Code) :", key="admin_search_bar")
     
-    # Vérification que df est bien chargé
-    if df is None or df.empty:
-        st.error("❌ Les données (df) ne sont pas chargées. Impossible d'afficher l'éditeur.")
-        st.stop()
+        # Préparation du DataFrame maître
+        df_master = df[colonnes_ordonnees].copy()
+        
+        # Application du filtre si recherche active
+        if recherche:
+            masque = df_master.apply(lambda r: r.astype(str).str.contains(recherche, case=False).any(), axis=1)
+            df_edition = df_master[masque].copy()
+        else:
+            df_edition = df_master.copy()
     
-    # S'assurer que toutes les colonnes existent dans df
-    for col in colonnes_ordonnees:
-        if col not in df.columns:
-            df[col] = ""
+        # Affichage du compteur de lignes pour le suivi de l'index
+        total_lignes = len(df)
+        st.caption(f"Lignes totales dans le fichier source : {total_lignes} | Prochain index : {total_lignes}")
     
-    recherche = st.text_input("🔍 Rechercher une ligne (Enseignant, Salle ou Code) :", key="admin_search_bar")
-
-    # Préparation du DataFrame maître
-    df_master = df[colonnes_ordonnees].copy()
-    
-    # Application du filtre si recherche active
-    if recherche:
-        masque = df_master.apply(lambda r: r.astype(str).str.contains(recherche, case=False).any(), axis=1)
-        df_edition = df_master[masque].copy()
-    else:
-        df_edition = df_master.copy()
-
-    # Affichage du compteur de lignes pour le suivi de l'index
-    total_lignes = len(df)
-    st.caption(f"Lignes totales dans le fichier source : {total_lignes} | Prochain index : {total_lignes}")
-
-    # L'ÉDITEUR DYNAMIQUE
-    df_edite = st.data_editor(
-        df_edition,
-        use_container_width=True,
-        num_rows="dynamic",
-        key="admin_data_editor_main"
-    )
-
-    # Boutons de téléchargement pour l'éditeur (données filtrées)
-    ca1, ca2 = st.columns(2)
-    with ca1:
-        out_ed = io.BytesIO()
-        df_edite.to_excel(out_ed, index=False)
-        st.download_button("📊 Télécharger l'EDT filtré (Excel)", out_ed.getvalue(), "EDT_Edition.xlsx")
-    with ca2:
-        st.download_button("📄 Télécharger l'EDT filtré (HTML)", df_edite.to_html(index=False), "EDT_Edition.html", "text/html")
-
-    # --- 3. LOGIQUE DE SAUVEGARDE ET AUTO-INDEXATION ---
-    if st.button("💾 Sauvegarder les modifications et la nouvelle charge"):
-        try:
-            if recherche:
-                # On fusionne : (Tout ce qui n'était pas affiché) + (Ce qui est dans l'éditeur + ajouts)
-                df_final = pd.concat([df_master[~masque], df_edite], ignore_index=True)
-            else:
-                df_final = df_edite
-
-            # Nettoyage : suppression des lignes vides (si on a cliqué sur + sans écrire)
-            df_final = df_final.dropna(subset=['Enseignements'])
-            # Suppression des lignes où Enseignements est vide ou "nan"
-            df_final = df_final[df_final['Enseignements'].astype(str).str.strip() != '']
-            df_final = df_final[df_final['Enseignements'].astype(str).str.lower() != 'nan']
-            
-            # Tri pour l'organisation
-            df_final = df_final.sort_values(by=["Promotion", "Jours", "Horaire"])
-
-            # Sauvegarde dans le fichier maître
-            if NOM_FICHIER_FIXE.endswith('.xlsx'):
-                df_final.to_excel(NOM_FICHIER_FIXE, index=False)
-            else:
-                df_final.to_csv(NOM_FICHIER_FIXE, index=False)
-
-            st.success(f"✅ Modifications sauvegardées avec succès ! {len(df_final)} lignes enregistrées.")
-            st.balloons()
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"❌ Erreur lors de la sauvegarde : {e}")
-
-    # --- 4. GESTION DES DOUBLONS & CONFLITS ---
-    st.write("---")
-    st.subheader("🔍 Vérificateur de Conflits")
-
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("🔎 Détecter les doublons de séances"):
-            doublons = df_master[df_master.duplicated(subset=['Enseignements', 'Code', 'Promotion'], keep=False)]
-            if not doublons.empty:
-                st.warning(f"⚠️ {len(doublons)} doublons trouvés :")
-                st.dataframe(doublons.sort_values(by=["Promotion", "Enseignements"]), use_container_width=True)
-            else:
-                st.success("✅ Aucun doublon détecté.")
-
-    with col2:
-        if st.button("🏫 Détecter les conflits de salles"):
-            conflits_salle = df_master.groupby(['Jours', 'Horaire', 'Lieu']).size().reset_index(name='count')
-            conflits_salle = conflits_salle[conflits_salle['count'] > 1]
-            if not conflits_salle.empty:
-                st.warning(f"⚠️ {len(conflits_salle)} conflits de salle trouvés :")
-                st.dataframe(conflits_salle, use_container_width=True)
-            else:
-                st.success("✅ Aucun conflit de salle détecté.")
-
-    with col3:
-        if st.button("👨‍🏫 Détecter les surcharges enseignants"):
-            # Comptage des heures par enseignant
-            df_h = df_master.copy()
-            df_h['Duree'] = df_h['Horaire'].str.extract(r'(\d+)').astype(float)
-            surcharge = df_h.groupby('Enseignants')['Duree'].sum().reset_index()
-            surcharge = surcharge[surcharge['Duree'] > 20]  # Seuil arbitraire
-            if not surcharge.empty:
-                st.warning(f"⚠️ {len(surcharge)} enseignants potentiellement surchargés :")
-                st.dataframe(surcharge.sort_values('Duree', ascending=False), use_container_width=True)
-            else:
-                st.success("✅ Aucune surcharge détectée.")
-# --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
-# --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
-else:
-    st.subheader("📅 Emploi du Temps - Vue Publique")
-    
-    # ═══════════════════════════════════════════════════════════════
-    # DÉFINITION LOCALE (sécurité contre NameError)
-    # ═══════════════════════════════════════════════════════════════
-    colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-    
-    # Vérification que df existe et n'est pas vide
-    if df is None or df.empty:
-        st.warning("⚠️ Aucune donnée EDT disponible pour l'affichage public.")
-        st.stop()
-    
-    # Filtres publics
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        promo_pub = st.selectbox(
-            "🎓 Filtrer par promotion :",
-            options=["Toutes"] + sorted(df['Promotion'].dropna().unique().tolist()),
-            key="pub_promo"
+        # L'ÉDITEUR DYNAMIQUE
+        df_edite = st.data_editor(
+            df_edition,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="admin_data_editor_main"
         )
-    with col_f2:
-        jour_pub = st.selectbox(
-            "📆 Filtrer par jour :",
-            options=["Tous"] + sorted(df['Jours'].dropna().unique().tolist()),
-            key="pub_jour"
-        )
-
-    df_pub = df.copy()
-    if promo_pub != "Toutes":
-        df_pub = df_pub[df_pub['Promotion'] == promo_pub]
-    if jour_pub != "Tous":
-        df_pub = df_pub[df_pub['Jours'] == jour_pub]
-
-    # Affichage stylisé
-    st.dataframe(
-        df_pub[colonnes_ordonnees],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Enseignements": st.column_config.TextColumn("Matière", width="large"),
-            "Code": st.column_config.TextColumn("Code", width="small"),
-            "Enseignants": st.column_config.TextColumn("Intervenant", width="medium"),
-            "Horaire": st.column_config.TextColumn("Horaire", width="small"),
-            "Jours": st.column_config.TextColumn("Jour", width="small"),
-            "Lieu": st.column_config.TextColumn("Salle", width="small"),
-            "Promotion": st.column_config.TextColumn("Promo", width="small"),
-        }
-    )
-
-    # Export public
-    st.write("---")
-    c1, c2 = st.columns(2)
-    with c1:
-        out_pub = io.BytesIO()
-        df_pub.to_excel(out_pub, index=False)
-        st.download_button("📊 Télécharger la vue (Excel)", out_pub.getvalue(), "EDT_Vue_Publique.xlsx")
-    with c2:
-        st.download_button("📄 Télécharger la vue (HTML)", df_pub.to_html(index=False), "EDT_Vue_Publique.html", "text/html")
-
-import streamlit as st
-from docx import Document
-from docx.shared import Inches, Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
-import io
-import os
-import pandas as pd
-from datetime import datetime
-
-# ==========================================
-# CONFIGURATION ET CONSTANTES
-# ==========================================
-TITRE_PLATEFORME = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
-
-DEPARTEMENTS = [
-    "Département d'Électrotechnique",
-    "Département d'Électronique",
-    "Département d'Automatique",
-    "Département de Télécommunications"
-]
-
-TYPES_DOCUMENTS = [
-    "Bordereau d'envoi"
-]
-
-OPTIONS_DESTINATAIRES = [
-    "Le Doyen de la faculté",
-    "Le vice Doyen de la Post graduation",
-    "Le vice Doyen de la graduation",
-    "Le chef de département",
-    "Autres"
-]
-OPTIONS_EXPEDITEURS = [
-    "Chef de département",
-    "Chef de département adjoint",
-    "Chef service de scolarité",
-    "Chef service d'enseignements",
-    "Signataire"
-]
-# ==========================================
-# FONCTIONS TECHNIQUES DE STRUCTURE
-# ==========================================
-def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
-    """Définit l'espacement interne (padding) des cellules d'un tableau."""
-    tc = cell._tc
-    tcPr = tc.get_or_add_tcPr()
-    tcMar = OxmlElement('w:tcMar')
-    for m, val in [('w:top', top), ('w:bottom', bottom), ('w:left', left), ('w:right', right)]:
-        node = OxmlElement(m)
-        node.set(qn('w:w'), str(val))
-        node.set(qn('w:type'), 'dxa')
-        tcMar.append(node)
-    tcPr.append(tcMar)
-
-def ajouter_champ_page(run, type_champ):
-    """Injecte un champ de numérotation dynamique (PAGE ou NUMPAGES) dans un paragraphe Word."""
-    fldChar1 = OxmlElement('w:fldChar')
-    fldChar1.set(qn('w:fldCharType'), 'begin')
-    instrText = OxmlElement('w:instrText')
-    instrText.set(qn('xml:space'), 'preserve')
-    instrText.text = type_champ
-    fldChar2 = OxmlElement('w:fldChar')
-    fldChar2.set(qn('w:fldCharType'), 'separate')
-    fldChar3 = OxmlElement('w:fldChar')
-    fldChar3.set(qn('w:fldCharType'), 'end')
     
-    run._r.append(fldChar1)
-    run._r.append(instrText)
-    run._r.append(fldChar2)
-    run._r.append(fldChar3)
-
-# ==========================================
-# GÉNÉRATEUR DE BORDEREAU ISO STRICT
-# ==========================================
-def construire_reference(numero, annee=None):
-    """Construit la référence complète du bordereau."""
-    if annee is None:
-        annee = datetime.now().year
-    # Sécurise si un vieux format complet est passé par erreur
-    num_str = str(numero).split('/')[0] if '/' in str(numero) else str(numero)
-    return f"{num_str}/F.G.E/Département-ELT/{annee}"
-def générer_bordereau_iso(département, donnees):
-    doc = Document()
+        # Boutons de téléchargement pour l'éditeur (données filtrées)
+        ca1, ca2 = st.columns(2)
+        with ca1:
+            out_ed = io.BytesIO()
+            df_edite.to_excel(out_ed, index=False)
+            st.download_button("📊 Télécharger l'EDT filtré (Excel)", out_ed.getvalue(), "EDT_Edition.xlsx")
+        with ca2:
+            st.download_button("📄 Télécharger l'EDT filtré (HTML)", df_edite.to_html(index=False), "EDT_Edition.html", "text/html")
     
-    # Marges globales
-    for section in doc.sections:
-        section.top_margin = Inches(0.8)
-        section.bottom_margin = Inches(0.8)
-        section.left_margin = Inches(0.8)
-        section.right_margin = Inches(0.8)
-        section.different_first_page_header_footer = False
-        
-        # Pied de page (inchangé)
-        footer = section.footer
-        footer_p = footer.paragraphs[0]
-        footer_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        footer_pPr = footer_p._p.get_or_add_pPr()
-        tabs = OxmlElement('w:tabs')
-        tab_centre = OxmlElement('w:tab')
-        tab_centre.set(qn('w:val'), 'center')
-        tab_centre.set(qn('w:pos'), '4968')
-        tabs.append(tab_centre)
-        tab_droite = OxmlElement('w:tab')
-        tab_droite.set(qn('w:val'), 'right')
-        tab_droite.set(qn('w:pos'), '9936')
-        tabs.append(tab_droite)
-        footer_pPr.append(tabs)
-        
-        footer_p.add_run("\t")
-        annee_doc = donnees.get('annee_reference', datetime.now().year)
-        r_ref_fixe = footer_p.add_run(f"Réf : UDL-GEL-ER-004-{annee_doc}")
-        r_ref_fixe.font.name = 'Calibri'
-        r_ref_fixe.font.size = Pt(11)
-        
-        footer_p.add_run("\t")
-        r_page_actuelle = footer_p.add_run()
-        r_page_actuelle.font.name = 'Calibri'
-        r_page_actuelle.font.size = Pt(11)
-        ajouter_champ_page(r_page_actuelle, "PAGE")
-        
-        r_separateur = footer_p.add_run("/")
-        r_separateur.font.name = 'Calibri'
-        r_separateur.font.size = Pt(11)
-        
-        r_total_pages = footer_p.add_run()
-        r_total_pages.font.name = 'Calibri'
-        r_total_pages.font.size = Pt(11)
-        ajouter_champ_page(r_total_pages, "NUMPAGES")
-
-    # 1. EN-TÊTE : Tableau invisible Logo | Texte officiel
-    header_table = doc.add_table(rows=1, cols=2)
-    header_table.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    header_table.autofit = False
-    header_table.columns[0].width = Inches(1.2)
-    header_table.columns[1].width = Inches(5.7)
-    
-    cell_logo = header_table.rows[0].cells[0]
-    cell_texte = header_table.rows[0].cells[1]
-    
-    tblPr = header_table._tbl.tblPr
-    tblBorders = OxmlElement('w:tblBorders')
-    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-        border = OxmlElement(f'w:{border_name}')
-        border.set(qn('w:val'), 'none')
-        tblBorders.append(border)
-    tblPr.append(tblBorders)
-
-    # Logo à gauche (inchangé)
-    p_logo = cell_logo.paragraphs[0]
-    p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    nom_fichier_logo = "logo.PNG"
-    if os.path.exists(nom_fichier_logo):
-        p_logo.add_run().add_picture(nom_fichier_logo, width=Inches(0.833))
-    else:
-        r_alt = p_logo.add_run("[LOGO UNIVERSITÉ]")
-        r_alt.font.name = 'Calibri'
-        r_alt.font.size = Pt(8)
-        r_alt.font.italic = True
-
-    # TEXTE OFFICIEL : centré, gras, police 12
-    p_en_tete = cell_texte.paragraphs[0]
-    p_en_tete.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    r1 = p_en_tete.add_run("République Algérienne Démocratique et populaire\n")
-    r1.bold = True
-    r1.font.size = Pt(12)
-    r1.font.name = 'Calibri'
-    
-    r2 = p_en_tete.add_run(
-        "Ministère de l'enseignement supérieur et de la recherche scientifiques\n"
-        "Université Djillali Liabes de Sidi Bel Abbés\n"
-        "Faculté de Génie Electrique\n"
-    )
-    r2.bold = True
-    r2.font.size = Pt(12)
-    r2.font.name = 'Calibri'
-    
-    # Ligne département conservée (inchangée par rapport à votre demande)
-    r_dept = p_en_tete.add_run(f"{département.upper()}\n")
-    r_dept.bold = True
-    r_dept.font.size = Pt(11)
-    r_dept.font.name = 'Calibri'
-
-    doc.add_paragraph("\n")
-
-    # 2. RÉFÉRENCE
-    p_ref = doc.add_paragraph()
-    p_ref.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    r_ref = p_ref.add_run(f"N° : {donnees['num_reference']}")
-    r_ref.font.size = Pt(10)
-    r_ref.font.name = 'Calibri'
-    r_ref.bold = True
-
-    doc.add_paragraph("\n")
-
-    # 3. TITRE
-    p_titre = doc.add_paragraph()
-    p_titre.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r_titre = p_titre.add_run("BORDEREAU D'ENVOI")
-    r_titre.font.name = 'Calibri'
-    r_titre.font.size = Pt(36)
-    r_titre.italic = True
-    r_titre.underline = True
-    r_titre.bold = True
-    
-    doc.add_paragraph("\n")
-
-    # 4. DESTINATAIRE
-    p_dest = doc.add_paragraph()
-    p_dest.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    r_dest = p_dest.add_run(f"A monsieur : {donnees['destinataire']}")
-    r_dest.bold = True
-    r_dest.font.size = Pt(12)
-    r_dest.font.name = 'Calibri'
-
-    doc.add_paragraph("\n")
-
-    # 5. TABLEAU DE TRANSMISSION
-    liste_pieces = donnees['liste_pieces']
-    nb_lignes_totales = 2 + len(liste_pieces)
-    
-    table = doc.add_table(rows=nb_lignes_totales, cols=3)
-    table.style = 'Table Grid'
-    table.columns[0].width = Inches(4.5)
-    table.columns[1].width = Inches(0.8)
-    table.columns[2].width = Inches(1.7)
-
-    hdr_cells = table.rows[0].cells
-    hdr_cells[0].text = "Désignation des pièces"
-    hdr_cells[1].text = "Nbre"
-    hdr_cells[2].text = "Observations"
-    
-    for cell in hdr_cells:
-        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        cell.paragraphs[0].runs[0].font.bold = True
-        cell.paragraphs[0].runs[0].font.name = 'Calibri'
-        cell.paragraphs[0].runs[0].font.size = Pt(10)
-        set_cell_margins(cell, top=120, bottom=120)
-
-    row_joint = table.rows[1].cells
-    row_joint[0].text = "Veuillez trouver ci-joint :"
-    row_joint[0].paragraphs[0].runs[0].font.italic = True
-    row_joint[0].paragraphs[0].runs[0].font.name = 'Calibri'
-    row_joint[0].paragraphs[0].runs[0].font.size = Pt(10)
-    set_cell_margins(row_joint[0], top=80, bottom=80)
-
-    for index, piece in enumerate(liste_pieces):
-        row_idx = 2 + index
-        current_row = table.rows[row_idx].cells
-        current_row[0].text = str(piece["Désignation des pièces"])
-        current_row[1].text = str(piece["Nbre"])
-        current_row[2].text = str(piece["Observations"])
-        
-        for i, cell in enumerate(current_row):
-            set_cell_margins(cell, top=150, bottom=300)
-            if len(cell.paragraphs[0].runs) > 0:
-                cell.paragraphs[0].runs[0].font.name = 'Calibri'
-                cell.paragraphs[0].runs[0].font.size = Pt(10)
-            if i == 1:
-                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    doc.add_paragraph("\n\n")
-
-    # 6. SIGNATURES
-    # 6. SIGNATURES ET ACCUSÉ DE RÉCEPTION
-    p_signatures = doc.add_paragraph()
-    p_signatures.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    
-    date_texte = donnees['date_creation'].strftime('%d/%m/%Y')
-    qualite_expediteur = donnees.get('expediteur_qualite', 'Chef de département')
-    
-    # Tabulation pour pousser le signataire à droite
-    run_sig = p_signatures.add_run(f"Sidi bel Abbès le : {date_texte}\t\t\t\t{qualite_expediteur}")
-    run_sig.font.name = 'Calibri'
-    run_sig.font.size = Pt(11)
-    run_sig.bold = True
-
-    doc.add_paragraph("\n\n\n\n")
-
-    p_accuse = doc.add_paragraph()
-    p_accuse.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run_accuse = p_accuse.add_run("Accusé de réception    ")
-    run_accuse.font.name = 'Calibri'
-    run_accuse.font.size = Pt(10)
-    run_accuse.font.underline = True
-    run_accuse.bold = True
-
-    return doc
-def générer_pv_generique(département, type_pv, donnees):
-    """Générateur secondaire de secours (Calibri)."""
-    doc = Document()
-    p = doc.add_paragraph()
-    run = p.add_run(f"{type_pv} - {département}\nDocument en cours.")
-    run.font.name = 'Calibri'
-    return doc
-# ==========================================
-# HISTORIQUE DES BORDEREAUX (SUPABASE)
-# ==========================================
-def enregistrer_historique_bordereau(donnees, departement, user_email):
-    """Enregistre un bordereau généré dans l'historique Supabase."""
-    try:
-        # Extraction du numéro pur (si l'utilisateur a édité le champ)
-        ref_pur = donnees.get('num_reference_pur', 1)
-        annee_ref = donnees.get('annee_reference', datetime.now().year)
-        
-        data_histo = {
-            "generated_by": user_email,
-            "departement": departement,
-            "destinataire": donnees.get('destinataire', ''),
-            "num_reference": str(ref_pur),
-            "annee_reference": annee_ref,
-            "expediteur_qualite": donnees.get('expediteur_qualite', 'Chef de département'),
-            "date_creation": donnees.get('date_creation', datetime.now()).isoformat(),
-            "nombre_pieces": len(donnees.get('liste_pieces', [])),
-            "pieces_details": donnees.get('liste_pieces', []),
-            "fichier_nom": f"Bordereau_{departement.replace(' ', '_')}.docx"
-        }
-        supabase.table("bordereaux_historique").insert(data_histo).execute()
-    except Exception as e:
-        st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
-
-
-def get_prochaine_reference():
-    """Récupère le prochain numéro de référence depuis l'historique."""
-    try:
-        res = supabase.table("bordereaux_historique")\
-                      .select("num_reference")\
-                      .order("num_reference", desc=True)\
-                      .limit(1)\
-                      .execute()
-        if res.data and len(res.data) > 0:
-            dernier = res.data[0].get('num_reference', '0')
+        # --- 3. LOGIQUE DE SAUVEGARDE ET AUTO-INDEXATION ---
+        if st.button("💾 Sauvegarder les modifications et la nouvelle charge"):
             try:
-                # Gère les anciennes références "4/F.G.E..." ou les nouvelles
-                if isinstance(dernier, str) and '/' in dernier:
-                    dernier = dernier.split('/')[0]
-                return int(dernier) + 1
-            except ValueError:
-                return 1
-        return 1
-    except Exception:
-        return 1
+                if recherche:
+                    # On fusionne : (Tout ce qui n'était pas affiché) + (Ce qui est dans l'éditeur + ajouts)
+                    df_final = pd.concat([df_master[~masque], df_edite], ignore_index=True)
+                else:
+                    df_final = df_edite
+    
+                # Nettoyage : suppression des lignes vides (si on a cliqué sur + sans écrire)
+                df_final = df_final.dropna(subset=['Enseignements'])
+                # Suppression des lignes où Enseignements est vide ou "nan"
+                df_final = df_final[df_final['Enseignements'].astype(str).str.strip() != '']
+                df_final = df_final[df_final['Enseignements'].astype(str).str.lower() != 'nan']
+                
+                # Tri pour l'organisation
+                df_final = df_final.sort_values(by=["Promotion", "Jours", "Horaire"])
+    
+                # Sauvegarde dans le fichier maître
+                if NOM_FICHIER_FIXE.endswith('.xlsx'):
+                    df_final.to_excel(NOM_FICHIER_FIXE, index=False)
+                else:
+                    df_final.to_csv(NOM_FICHIER_FIXE, index=False)
+    
+                st.success(f"✅ Modifications sauvegardées avec succès ! {len(df_final)} lignes enregistrées.")
+                st.balloons()
+                st.rerun()
+    
+            except Exception as e:
+                st.error(f"❌ Erreur lors de la sauvegarde : {e}")
+    
+        # --- 4. GESTION DES DOUBLONS & CONFLITS ---
+        st.write("---")
+        st.subheader("🔍 Vérificateur de Conflits")
+    
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔎 Détecter les doublons de séances"):
+                doublons = df_master[df_master.duplicated(subset=['Enseignements', 'Code', 'Promotion'], keep=False)]
+                if not doublons.empty:
+                    st.warning(f"⚠️ {len(doublons)} doublons trouvés :")
+                    st.dataframe(doublons.sort_values(by=["Promotion", "Enseignements"]), use_container_width=True)
+                else:
+                    st.success("✅ Aucun doublon détecté.")
+    
+        with col2:
+            if st.button("🏫 Détecter les conflits de salles"):
+                conflits_salle = df_master.groupby(['Jours', 'Horaire', 'Lieu']).size().reset_index(name='count')
+                conflits_salle = conflits_salle[conflits_salle['count'] > 1]
+                if not conflits_salle.empty:
+                    st.warning(f"⚠️ {len(conflits_salle)} conflits de salle trouvés :")
+                    st.dataframe(conflits_salle, use_container_width=True)
+                else:
+                    st.success("✅ Aucun conflit de salle détecté.")
+    
+        with col3:
+            if st.button("👨‍🏫 Détecter les surcharges enseignants"):
+                # Comptage des heures par enseignant
+                df_h = df_master.copy()
+                df_h['Duree'] = df_h['Horaire'].str.extract(r'(\d+)').astype(float)
+                surcharge = df_h.groupby('Enseignants')['Duree'].sum().reset_index()
+                surcharge = surcharge[surcharge['Duree'] > 20]  # Seuil arbitraire
+                if not surcharge.empty:
+                    st.warning(f"⚠️ {len(surcharge)} enseignants potentiellement surchargés :")
+                    st.dataframe(surcharge.sort_values('Duree', ascending=False), use_container_width=True)
+                else:
+                    st.success("✅ Aucune surcharge détectée.")
+    # --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
+    # --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
+    else:
+        st.subheader("📅 Emploi du Temps - Vue Publique")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # DÉFINITION LOCALE (sécurité contre NameError)
+        # ═══════════════════════════════════════════════════════════════
+        colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+        
+        # Vérification que df existe et n'est pas vide
+        if df is None or df.empty:
+            st.warning("⚠️ Aucune donnée EDT disponible pour l'affichage public.")
+            st.stop()
+        
+        # Filtres publics
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            promo_pub = st.selectbox(
+                "🎓 Filtrer par promotion :",
+                options=["Toutes"] + sorted(df['Promotion'].dropna().unique().tolist()),
+                key="pub_promo"
+            )
+        with col_f2:
+            jour_pub = st.selectbox(
+                "📆 Filtrer par jour :",
+                options=["Tous"] + sorted(df['Jours'].dropna().unique().tolist()),
+                key="pub_jour"
+            )
+    
+        df_pub = df.copy()
+        if promo_pub != "Toutes":
+            df_pub = df_pub[df_pub['Promotion'] == promo_pub]
+        if jour_pub != "Tous":
+            df_pub = df_pub[df_pub['Jours'] == jour_pub]
+    
+        # Affichage stylisé
+        st.dataframe(
+            df_pub[colonnes_ordonnees],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Enseignements": st.column_config.TextColumn("Matière", width="large"),
+                "Code": st.column_config.TextColumn("Code", width="small"),
+                "Enseignants": st.column_config.TextColumn("Intervenant", width="medium"),
+                "Horaire": st.column_config.TextColumn("Horaire", width="small"),
+                "Jours": st.column_config.TextColumn("Jour", width="small"),
+                "Lieu": st.column_config.TextColumn("Salle", width="small"),
+                "Promotion": st.column_config.TextColumn("Promo", width="small"),
+            }
+        )
+    
+        # Export public
+        st.write("---")
+        c1, c2 = st.columns(2)
+        with c1:
+            out_pub = io.BytesIO()
+            df_pub.to_excel(out_pub, index=False)
+            st.download_button("📊 Télécharger la vue (Excel)", out_pub.getvalue(), "EDT_Vue_Publique.xlsx")
+        with c2:
+            st.download_button("📄 Télécharger la vue (HTML)", df_pub.to_html(index=False), "EDT_Vue_Publique.html", "text/html")
 
-def afficher_historique_bordereaux():
-    """Affiche l'historique des bordereaux avec export Excel et effacement sécurisé."""
-    try:
-        res = supabase.table("bordereaux_historique")\
-                      .select("*")\
-                      .order("created_at", desc=True)\
-                      .limit(50)\
-                      .execute()
-        if res.data:
-            # ═══════════════════════════════════════════════
-            # 0. TABLEAU DE BORD NUMÉRIQUE PAR DESTINATION
-            # ═══════════════════════════════════════════════
-            from collections import Counter
+    if not is_admin:
+        st.error("🚫 ACCÈS RESTREINT.")
+        st.stop()
+    # ==========================================
+    # IMPORTS SPÉCIFIQUES (idéalement à déplacer en haut du fichier)
+    # ==========================================
+    from docx import Document
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    import io
+    import os
+    import pandas as pd
+    from datetime import datetime
+
+    # ==========================================
+    # CONFIGURATION ET CONSTANTES
+    # ==========================================
+    TITRE_PLATEFORME = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+
+    DEPARTEMENTS = [
+        "Département d'Électrotechnique",
+        "Département d'Électronique",
+        "Département d'Automatique",
+        "Département de Télécommunications"
+    ]
+
+    TYPES_DOCUMENTS = [
+        "Bordereau d'envoi"
+    ]
+
+    OPTIONS_DESTINATAIRES = [
+        "Le Doyen de la faculté",
+        "Le vice Doyen de la Post graduation",
+        "Le vice Doyen de la graduation",
+        "Le chef de département",
+        "Autres"
+    ]
+    OPTIONS_EXPEDITEURS = [
+        "Chef de département",
+        "Chef de département adjoint",
+        "Chef service de scolarité",
+        "Chef service d'enseignements",
+        "Signataire"
+    ]
+
+    # ==========================================
+    # FONCTIONS TECHNIQUES DE STRUCTURE
+    # ==========================================
+    def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
+        """Définit l'espacement interne (padding) des cellules d'un tableau."""
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        tcMar = OxmlElement('w:tcMar')
+        for m, val in [('w:top', top), ('w:bottom', bottom), ('w:left', left), ('w:right', right)]:
+            node = OxmlElement(m)
+            node.set(qn('w:w'), str(val))
+            node.set(qn('w:type'), 'dxa')
+            tcMar.append(node)
+        tcPr.append(tcMar)
+
+    def ajouter_champ_page(run, type_champ):
+        """Injecte un champ de numérotation dynamique (PAGE ou NUMPAGES) dans un paragraphe Word."""
+        fldChar1 = OxmlElement('w:fldChar')
+        fldChar1.set(qn('w:fldCharType'), 'begin')
+        instrText = OxmlElement('w:instrText')
+        instrText.set(qn('xml:space'), 'preserve')
+        instrText.text = type_champ
+        fldChar2 = OxmlElement('w:fldChar')
+        fldChar2.set(qn('w:fldCharType'), 'separate')
+        fldChar3 = OxmlElement('w:fldChar')
+        fldChar3.set(qn('w:fldCharType'), 'end')
+        
+        run._r.append(fldChar1)
+        run._r.append(instrText)
+        run._r.append(fldChar2)
+        run._r.append(fldChar3)
+
+    # ==========================================
+    # GÉNÉRATEUR DE BORDEREAU ISO STRICT
+    # ==========================================
+    def construire_reference(numero, annee=None):
+        """Construit la référence complète du bordereau."""
+        if annee is None:
+            annee = datetime.now().year
+        num_str = str(numero).split('/')[0] if '/' in str(numero) else str(numero)
+        return f"{num_str}/F.G.E/Département-ELT/{annee}"
+
+    def générer_bordereau_iso(département, donnees):
+        doc = Document()
+        
+        for section in doc.sections:
+            section.top_margin = Inches(0.8)
+            section.bottom_margin = Inches(0.8)
+            section.left_margin = Inches(0.8)
+            section.right_margin = Inches(0.8)
+            section.different_first_page_header_footer = False
             
-            compteur_dest = Counter([row.get('destinataire', 'Non spécifié') for row in res.data])
-            total_bordereaux = len(res.data)
+            footer = section.footer
+            footer_p = footer.paragraphs[0]
+            footer_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            footer_pPr = footer_p._p.get_or_add_pPr()
+            tabs = OxmlElement('w:tabs')
+            tab_centre = OxmlElement('w:tab')
+            tab_centre.set(qn('w:val'), 'center')
+            tab_centre.set(qn('w:pos'), '4968')
+            tabs.append(tab_centre)
+            tab_droite = OxmlElement('w:tab')
+            tab_droite.set(qn('w:val'), 'right')
+            tab_droite.set(qn('w:pos'), '9936')
+            tabs.append(tab_droite)
+            footer_pPr.append(tabs)
             
-            st.markdown("### 📊 Tableau de bord — Bordereaux par destination")
+            footer_p.add_run("\t")
+            annee_doc = donnees.get('annee_reference', datetime.now().year)
+            r_ref_fixe = footer_p.add_run(f"Réf : UDL-GEL-ER-004-{annee_doc}")
+            r_ref_fixe.font.name = 'Calibri'
+            r_ref_fixe.font.size = Pt(11)
             
-            # Ligne du total général
-            c_total, c_unique = st.columns(2)
-            c_total.metric("📨 Total bordereaux générés", total_bordereaux)
-            c_unique.metric("🏛️ Destinations distinctes", len(compteur_dest))
+            footer_p.add_run("\t")
+            r_page_actuelle = footer_p.add_run()
+            r_page_actuelle.font.name = 'Calibri'
+            r_page_actuelle.font.size = Pt(11)
+            ajouter_champ_page(r_page_actuelle, "PAGE")
             
-            st.divider()
+            r_separateur = footer_p.add_run("/")
+            r_separateur.font.name = 'Calibri'
+            r_separateur.font.size = Pt(11)
             
-            # Cartes par destinataire (3 colonnes dynamiques)
-            st.markdown("**Répartition par destinataire :**")
-            destinations = sorted(compteur_dest.items(), key=lambda x: x[1], reverse=True)
+            r_total_pages = footer_p.add_run()
+            r_total_pages.font.name = 'Calibri'
+            r_total_pages.font.size = Pt(11)
+            ajouter_champ_page(r_total_pages, "NUMPAGES")
+
+        # 1. EN-TÊTE : Tableau invisible Logo | Texte officiel
+        header_table = doc.add_table(rows=1, cols=2)
+        header_table.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        header_table.autofit = False
+        header_table.columns[0].width = Inches(1.2)
+        header_table.columns[1].width = Inches(5.7)
+        
+        cell_logo = header_table.rows[0].cells[0]
+        cell_texte = header_table.rows[0].cells[1]
+        
+        tblPr = header_table._tbl.tblPr
+        tblBorders = OxmlElement('w:tblBorders')
+        for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+            border = OxmlElement(f'w:{border_name}')
+            border.set(qn('w:val'), 'none')
+            tblBorders.append(border)
+        tblPr.append(tblBorders)
+
+        p_logo = cell_logo.paragraphs[0]
+        p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        nom_fichier_logo = "logo.PNG"
+        if os.path.exists(nom_fichier_logo):
+            p_logo.add_run().add_picture(nom_fichier_logo, width=Inches(0.833))
+        else:
+            r_alt = p_logo.add_run("[LOGO UNIVERSITÉ]")
+            r_alt.font.name = 'Calibri'
+            r_alt.font.size = Pt(8)
+            r_alt.font.italic = True
+
+        p_en_tete = cell_texte.paragraphs[0]
+        p_en_tete.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        r1 = p_en_tete.add_run("République Algérienne Démocratique et populaire\n")
+        r1.bold = True
+        r1.font.size = Pt(12)
+        r1.font.name = 'Calibri'
+        
+        r2 = p_en_tete.add_run(
+            "Ministère de l'enseignement supérieur et de la recherche scientifiques\n"
+            "Université Djillali Liabes de Sidi Bel Abbés\n"
+            "Faculté de Génie Electrique\n"
+        )
+        r2.bold = True
+        r2.font.size = Pt(12)
+        r2.font.name = 'Calibri'
+        
+        r_dept = p_en_tete.add_run(f"{département.upper()}\n")
+        r_dept.bold = True
+        r_dept.font.size = Pt(11)
+        r_dept.font.name = 'Calibri'
+
+        doc.add_paragraph("\n")
+
+        # 2. RÉFÉRENCE
+        p_ref = doc.add_paragraph()
+        p_ref.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r_ref = p_ref.add_run(f"N° : {donnees['num_reference']}")
+        r_ref.font.size = Pt(10)
+        r_ref.font.name = 'Calibri'
+        r_ref.bold = True
+
+        doc.add_paragraph("\n")
+
+        # 3. TITRE
+        p_titre = doc.add_paragraph()
+        p_titre.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r_titre = p_titre.add_run("BORDEREAU D'ENVOI")
+        r_titre.font.name = 'Calibri'
+        r_titre.font.size = Pt(36)
+        r_titre.italic = True
+        r_titre.underline = True
+        r_titre.bold = True
+        
+        doc.add_paragraph("\n")
+
+        # 4. DESTINATAIRE
+        p_dest = doc.add_paragraph()
+        p_dest.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r_dest = p_dest.add_run(f"A monsieur : {donnees['destinataire']}")
+        r_dest.bold = True
+        r_dest.font.size = Pt(12)
+        r_dest.font.name = 'Calibri'
+
+        doc.add_paragraph("\n")
+
+        # 5. TABLEAU DE TRANSMISSION
+        liste_pieces = donnees['liste_pieces']
+        nb_lignes_totales = 2 + len(liste_pieces)
+        
+        table = doc.add_table(rows=nb_lignes_totales, cols=3)
+        table.style = 'Table Grid'
+        table.columns[0].width = Inches(4.5)
+        table.columns[1].width = Inches(0.8)
+        table.columns[2].width = Inches(1.7)
+
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = "Désignation des pièces"
+        hdr_cells[1].text = "Nbre"
+        hdr_cells[2].text = "Observations"
+        
+        for cell in hdr_cells:
+            cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            cell.paragraphs[0].runs[0].font.bold = True
+            cell.paragraphs[0].runs[0].font.name = 'Calibri'
+            cell.paragraphs[0].runs[0].font.size = Pt(10)
+            set_cell_margins(cell, top=120, bottom=120)
+
+        row_joint = table.rows[1].cells
+        row_joint[0].text = "Veuillez trouver ci-joint :"
+        row_joint[0].paragraphs[0].runs[0].font.italic = True
+        row_joint[0].paragraphs[0].runs[0].font.name = 'Calibri'
+        row_joint[0].paragraphs[0].runs[0].font.size = Pt(10)
+        set_cell_margins(row_joint[0], top=80, bottom=80)
+
+        for index, piece in enumerate(liste_pieces):
+            row_idx = 2 + index
+            current_row = table.rows[row_idx].cells
+            current_row[0].text = str(piece["Désignation des pièces"])
+            current_row[1].text = str(piece["Nbre"])
+            current_row[2].text = str(piece["Observations"])
             
-            cols = st.columns(min(3, len(destinations)))
-            for idx, (dest, count) in enumerate(destinations):
-                with cols[idx % 3]:
-                    st.markdown(f"""
-                        <div style="
-                            background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
-                            border-radius: 12px;
-                            padding: 16px;
-                            color: white;
-                            text-align: center;
-                            margin-bottom: 12px;
-                            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                        ">
-                            <div style="font-size: 11px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
-                                {dest}
-                            </div>
-                            <div style="font-size: 32px; font-weight: bold; margin: 8px 0;">
-                                {count}
-                            </div>
-                            <div style="font-size: 12px; opacity: 0.8;">
-                                bordereau{'x' if count > 1 else ''}
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
+            for i, cell in enumerate(current_row):
+                set_cell_margins(cell, top=150, bottom=300)
+                if len(cell.paragraphs[0].runs) > 0:
+                    cell.paragraphs[0].runs[0].font.name = 'Calibri'
+                    cell.paragraphs[0].runs[0].font.size = Pt(10)
+                if i == 1:
+                    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        doc.add_paragraph("\n\n")
+
+        # 6. SIGNATURES ET ACCUSÉ DE RÉCEPTION
+        p_signatures = doc.add_paragraph()
+        p_signatures.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        
+        date_texte = donnees['date_creation'].strftime('%d/%m/%Y')
+        qualite_expediteur = donnees.get('expediteur_qualite', 'Chef de département')
+        
+        run_sig = p_signatures.add_run(f"Sidi bel Abbès le : {date_texte}\t\t\t\t{qualite_expediteur}")
+        run_sig.font.name = 'Calibri'
+        run_sig.font.size = Pt(11)
+        run_sig.bold = True
+
+        doc.add_paragraph("\n\n\n\n")
+
+        p_accuse = doc.add_paragraph()
+        p_accuse.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        run_accuse = p_accuse.add_run("Accusé de réception    ")
+        run_accuse.font.name = 'Calibri'
+        run_accuse.font.size = Pt(10)
+        run_accuse.font.underline = True
+        run_accuse.bold = True
+
+        return doc
+
+    def générer_pv_generique(département, type_pv, donnees):
+        """Générateur secondaire de secours (Calibri)."""
+        doc = Document()
+        p = doc.add_paragraph()
+        run = p.add_run(f"{type_pv} - {département}\nDocument en cours.")
+        run.font.name = 'Calibri'
+        return doc
+
+    # ==========================================
+    # HISTORIQUE DES BORDEREAUX (SUPABASE)
+    # ==========================================
+    def enregistrer_historique_bordereau(donnees, departement, user_email):
+        """Enregistre un bordereau généré dans l'historique Supabase."""
+        try:
+            ref_pur = donnees.get('num_reference_pur', 1)
+            annee_ref = donnees.get('annee_reference', datetime.now().year)
             
-            st.divider()
-            # ═══════════════════════════════════════════════
-            # 1. PRÉPARATION DES DONNÉES
-            # ═══════════════════════════════════════════════
-            rows_recap = []
-            rows_detail = []
-            
-            for row in res.data:
-                date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
+            data_histo = {
+                "generated_by": user_email,
+                "departement": departement,
+                "destinataire": donnees.get('destinataire', ''),
+                "num_reference": str(ref_pur),
+                "annee_reference": annee_ref,
+                "expediteur_qualite": donnees.get('expediteur_qualite', 'Chef de département'),
+                "date_creation": donnees.get('date_creation', datetime.now()).isoformat(),
+                "nombre_pieces": len(donnees.get('liste_pieces', [])),
+                "pieces_details": donnees.get('liste_pieces', []),
+                "fichier_nom": f"Bordereau_{departement.replace(' ', '_')}.docx"
+            }
+            supabase.table("bordereaux_historique").insert(data_histo).execute()
+        except Exception as e:
+            st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
+
+    def get_prochaine_reference():
+        """Récupère le prochain numéro de référence depuis l'historique."""
+        try:
+            res = supabase.table("bordereaux_historique")\
+                          .select("num_reference")\
+                          .order("num_reference", desc=True)\
+                          .limit(1)\
+                          .execute()
+            if res.data and len(res.data) > 0:
+                dernier = res.data[0].get('num_reference', '0')
+                try:
+                    if isinstance(dernier, str) and '/' in dernier:
+                        dernier = dernier.split('/')[0]
+                    return int(dernier) + 1
+                except ValueError:
+                    return 1
+            return 1
+        except Exception:
+            return 1
+
+    def afficher_historique_bordereaux():
+        """Affiche l'historique des bordereaux avec export Excel et effacement sécurisé."""
+        try:
+            res = supabase.table("bordereaux_historique")\
+                          .select("*")\
+                          .order("created_at", desc=True)\
+                          .limit(50)\
+                          .execute()
+            if res.data:
+                from collections import Counter
                 
-                # Données récapitulatif (AVEC la colonne Expéditeur)
-                rows_recap.append({
-                    'Date': date_str,
-                    'Généré par': row.get('generated_by', '—'),
-                    'Expéditeur': row.get('expediteur_qualite', '—'),
-                    'Département': row.get('departement', '—'),
-                    'Destinataire': row.get('destinataire', '—'),
-                    'N° Référence': row.get('num_reference', '—'),
-                    'Nb pièces': row.get('nombre_pieces', 0),
-                    'Fichier': row.get('fichier_nom', '—')
-                })
+                compteur_dest = Counter([row.get('destinataire', 'Non spécifié') for row in res.data])
+                total_bordereaux = len(res.data)
                 
-                # Données détaillées pour Excel
-                pieces = row.get('pieces_details', [])
-                ref_num = row.get('num_reference', '—')
-                ref_annee = row.get('annee_reference', datetime.now().year)
-                ref_full = construire_reference(ref_num, ref_annee)
+                st.markdown("### 📊 Tableau de bord — Bordereaux par destination")
                 
-                if isinstance(pieces, list) and len(pieces) > 0:
-                    for p in pieces:
+                c_total, c_unique = st.columns(2)
+                c_total.metric("📨 Total bordereaux générés", total_bordereaux)
+                c_unique.metric("🏛️ Destinations distinctes", len(compteur_dest))
+                
+                st.divider()
+                
+                st.markdown("**Répartition par destinataire :**")
+                destinations = sorted(compteur_dest.items(), key=lambda x: x[1], reverse=True)
+                
+                cols = st.columns(min(3, len(destinations)))
+                for idx, (dest, count) in enumerate(destinations):
+                    with cols[idx % 3]:
+                        st.markdown(f"""
+                            <div style="
+                                background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+                                border-radius: 12px;
+                                padding: 16px;
+                                color: white;
+                                text-align: center;
+                                margin-bottom: 12px;
+                                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                            ">
+                                <div style="font-size: 11px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
+                                    {dest}
+                                </div>
+                                <div style="font-size: 32px; font-weight: bold; margin: 8px 0;">
+                                    {count}
+                                </div>
+                                <div style="font-size: 12px; opacity: 0.8;">
+                                    bordereau{'x' if count > 1 else ''}
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                
+                st.divider()
+                
+                rows_recap = []
+                rows_detail = []
+                
+                for row in res.data:
+                    date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
+                    
+                    rows_recap.append({
+                        'Date': date_str,
+                        'Généré par': row.get('generated_by', '—'),
+                        'Expéditeur': row.get('expediteur_qualite', '—'),
+                        'Département': row.get('departement', '—'),
+                        'Destinataire': row.get('destinataire', '—'),
+                        'N° Référence': row.get('num_reference', '—'),
+                        'Nb pièces': row.get('nombre_pieces', 0),
+                        'Fichier': row.get('fichier_nom', '—')
+                    })
+                    
+                    pieces = row.get('pieces_details', [])
+                    ref_num = row.get('num_reference', '—')
+                    ref_annee = row.get('annee_reference', datetime.now().year)
+                    ref_full = construire_reference(ref_num, ref_annee)
+                    
+                    if isinstance(pieces, list) and len(pieces) > 0:
+                        for p in pieces:
+                            rows_detail.append({
+                                'Date génération': date_str,
+                                'Généré par': row.get('generated_by', '—'),
+                                'Expéditeur': row.get('expediteur_qualite', '—'),
+                                'Département': row.get('departement', '—'),
+                                'Destinataire': row.get('destinataire', '—'),
+                                'N° Référence': ref_full,
+                                'Désignation des pièces': p.get('Désignation des pièces', ''),
+                                'Nbre': p.get('Nbre', ''),
+                                'Observations': p.get('Observations', ''),
+                                'Fichier': row.get('fichier_nom', '—')
+                            })
+                    else:
                         rows_detail.append({
                             'Date génération': date_str,
                             'Généré par': row.get('generated_by', '—'),
@@ -6298,256 +6300,227 @@ def afficher_historique_bordereaux():
                             'Département': row.get('departement', '—'),
                             'Destinataire': row.get('destinataire', '—'),
                             'N° Référence': ref_full,
-                            'Désignation des pièces': p.get('Désignation des pièces', ''),
-                            'Nbre': p.get('Nbre', ''),
-                            'Observations': p.get('Observations', ''),
+                            'Désignation des pièces': '—',
+                            'Nbre': '—',
+                            'Observations': '—',
                             'Fichier': row.get('fichier_nom', '—')
                         })
-                else:
-                    rows_detail.append({
-                        'Date génération': date_str,
-                        'Généré par': row.get('generated_by', '—'),
-                        'Expéditeur': row.get('expediteur_qualite', '—'),
-                        'Département': row.get('departement', '—'),
-                        'Destinataire': row.get('destinataire', '—'),
-                        'N° Référence': ref_full,
-                        'Désignation des pièces': '—',
-                        'Nbre': '—',
-                        'Observations': '—',
-                        'Fichier': row.get('fichier_nom', '—')
-                    })
-            
-            df_recap = pd.DataFrame(rows_recap)
-            df_detail = pd.DataFrame(rows_detail)
-            
-            # ═══════════════════════════════════════════════
-            # 2. BARRE D'ACTIONS (Télécharger + Effacer)
-            # ═══════════════════════════════════════════════
-            col_titre, col_dl, col_del = st.columns([3, 1, 1])
-            
-            with col_titre:
-                st.markdown("**📊 Vue d'ensemble des bordereaux**")
-            
-            with col_dl:
-                buffer_excel = io.BytesIO()
-                with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
-                    df_recap.to_excel(writer, index=False, sheet_name='Récapitulatif')
-                    ws1 = writer.sheets['Récapitulatif']
-                    header_fmt = writer.book.add_format({
-                        'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1
-                    })
-                    for col_num, value in enumerate(df_recap.columns.values):
-                        ws1.write(0, col_num, value, header_fmt)
-                        ws1.set_column(col_num, col_num, 18)
+                
+                df_recap = pd.DataFrame(rows_recap)
+                df_detail = pd.DataFrame(rows_detail)
+                
+                col_titre, col_dl, col_del = st.columns([3, 1, 1])
+                
+                with col_titre:
+                    st.markdown("**📊 Vue d'ensemble des bordereaux**")
+                
+                with col_dl:
+                    buffer_excel = io.BytesIO()
+                    with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
+                        df_recap.to_excel(writer, index=False, sheet_name='Récapitulatif')
+                        ws1 = writer.sheets['Récapitulatif']
+                        header_fmt = writer.book.add_format({
+                            'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1
+                        })
+                        for col_num, value in enumerate(df_recap.columns.values):
+                            ws1.write(0, col_num, value, header_fmt)
+                            ws1.set_column(col_num, col_num, 18)
+                        
+                        df_detail.to_excel(writer, index=False, sheet_name='Détail des pièces')
+                        ws2 = writer.sheets['Détail des pièces']
+                        for col_num, value in enumerate(df_detail.columns.values):
+                            ws2.write(0, col_num, value, header_fmt)
+                            ws2.set_column(col_num, col_num, 22)
                     
-                    df_detail.to_excel(writer, index=False, sheet_name='Détail des pièces')
-                    ws2 = writer.sheets['Détail des pièces']
-                    for col_num, value in enumerate(df_detail.columns.values):
-                        ws2.write(0, col_num, value, header_fmt)
-                        ws2.set_column(col_num, col_num, 22)
+                    st.download_button(
+                        label="📥 Excel",
+                        data=buffer_excel.getvalue(),
+                        file_name=f"Historique_Bordereaux_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="dl_histo_bordereaux"
+                    )
                 
-                st.download_button(
-                    label="📥 Excel",
-                    data=buffer_excel.getvalue(),
-                    file_name=f"Historique_Bordereaux_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="dl_histo_bordereaux"
-                )
-            
-            with col_del:
-                if st.button("🗑️ Effacer", use_container_width=True, key="btn_del_histo"):
-                    st.session_state['confirmer_suppression_historique'] = True
-            
-            if st.session_state.get('confirmer_suppression_historique'):
-                st.warning("⚠️ **Action irréversible** — Tous les bordereaux enregistrés seront supprimés définitivement.")
+                with col_del:
+                    if st.button("🗑️ Effacer", use_container_width=True, key="btn_del_histo"):
+                        st.session_state['confirmer_suppression_historique'] = True
                 
-                c1, c2 = st.columns([1, 1])
-                with c1:
-                    if st.button("✅ Oui, supprimer définitivement", type="primary", key="confirm_del_yes"):
-                        try:
-                            supabase.table("bordereaux_historique").delete().neq('id', -1).execute()
-                            st.success("✅ Historique effacé avec succès.")
+                if st.session_state.get('confirmer_suppression_historique'):
+                    st.warning("⚠️ **Action irréversible** — Tous les bordereaux enregistrés seront supprimés définitivement.")
+                    
+                    c1, c2 = st.columns([1, 1])
+                    with c1:
+                        if st.button("✅ Oui, supprimer définitivement", type="primary", key="confirm_del_yes"):
+                            try:
+                                supabase.table("bordereaux_historique").delete().neq('id', -1).execute()
+                                st.success("✅ Historique effacé avec succès.")
+                                del st.session_state['confirmer_suppression_historique']
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur lors de la suppression : {e}")
+                    with c2:
+                        if st.button("❌ Non, annuler", key="confirm_del_no"):
                             del st.session_state['confirmer_suppression_historique']
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Erreur lors de la suppression : {e}")
-                with c2:
-                    if st.button("❌ Non, annuler", key="confirm_del_no"):
-                        del st.session_state['confirmer_suppression_historique']
-                        st.rerun()
-            
-            st.dataframe(df_recap, use_container_width=True, hide_index=True)
-            
-            st.divider()
-            st.markdown("**📋 Détail par bordereau**")
-            
-            # ═══════════════════════════════════════════════
-            # 3. DÉTAIL DE CHAQUE BORDEREAU
-            # ═══════════════════════════════════════════════
-            for i, row in enumerate(res.data):
-                date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
-                ref_num = row.get('num_reference', '—')
-                ref_annee = row.get('annee_reference', datetime.now().year)
-                ref_full = construire_reference(ref_num, ref_annee)
-                dest = row.get('destinataire', '—')
                 
-                with st.expander(
-                    f"📝 Bordereau N° {ref_full} — {dest} — {date_str}", 
-                    expanded=(i == 0)
-                ):
-                    c1, c2, c3, c4, c5 = st.columns(5)
-                    c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '—')}")
-                    c2.markdown(f"**🏛️ Département**\n{row.get('departement', '—')}")
-                    c3.markdown(f"**📤 Expéditeur**\n{row.get('expediteur_qualite', '—')}")
-                    c4.markdown(f"**📅 Date**\n{date_str}")
-                    c5.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '—')}")
+                st.dataframe(df_recap, use_container_width=True, hide_index=True)
+                
+                st.divider()
+                st.markdown("**📋 Détail par bordereau**")
+                
+                for i, row in enumerate(res.data):
+                    date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
+                    ref_num = row.get('num_reference', '—')
+                    ref_annee = row.get('annee_reference', datetime.now().year)
+                    ref_full = construire_reference(ref_num, ref_annee)
+                    dest = row.get('destinataire', '—')
                     
-                    st.markdown("---")
-                    st.markdown("**Tableau de transmission :**")
-                    
-                    pieces = row.get('pieces_details', [])
-                    if isinstance(pieces, list) and len(pieces) > 0:
-                        df_pieces = pd.DataFrame(pieces)
-                        cols_ordre = []
-                        for col in ['Désignation des pièces', 'Nbre', 'Observations']:
-                            if col in df_pieces.columns:
-                                cols_ordre.append(col)
-                        if cols_ordre:
-                            df_pieces = df_pieces[cols_ordre]
-                            st.dataframe(df_pieces, use_container_width=True, hide_index=True)
+                    with st.expander(
+                        f"📝 Bordereau N° {ref_full} — {dest} — {date_str}", 
+                        expanded=(i == 0)
+                    ):
+                        c1, c2, c3, c4, c5 = st.columns(5)
+                        c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '—')}")
+                        c2.markdown(f"**🏛️ Département**\n{row.get('departement', '—')}")
+                        c3.markdown(f"**📤 Expéditeur**\n{row.get('expediteur_qualite', '—')}")
+                        c4.markdown(f"**📅 Date**\n{date_str}")
+                        c5.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '—')}")
+                        
+                        st.markdown("---")
+                        st.markdown("**Tableau de transmission :**")
+                        
+                        pieces = row.get('pieces_details', [])
+                        if isinstance(pieces, list) and len(pieces) > 0:
+                            df_pieces = pd.DataFrame(pieces)
+                            cols_ordre = []
+                            for col in ['Désignation des pièces', 'Nbre', 'Observations']:
+                                if col in df_pieces.columns:
+                                    cols_ordre.append(col)
+                            if cols_ordre:
+                                df_pieces = df_pieces[cols_ordre]
+                                st.dataframe(df_pieces, use_container_width=True, hide_index=True)
+                            else:
+                                st.json(pieces)
                         else:
-                            st.json(pieces)
-                    else:
-                        st.info("Aucune pièce enregistrée pour ce bordereau.")
-                    
-        else:
-            st.info("📭 Aucun bordereau enregistré dans l'historique.")
-    
-    except Exception as e:
-        st.error(f"Erreur chargement historique : {e}")
-# ==========================================
-# INTERFACE UTILISATEUR STREAMLIT
-# ==========================================
-st.set_page_config(page_title="Générateur ISO Destinataire Dynamique", layout="wide")
-
-st.caption(TITRE_PLATEFORME)
-st.title("Gestion Administrative - Bordereaux & PVs")
-
-col_dept, col_doc = st.columns(2)
-with col_dept:
-    dept_choisi = st.selectbox("Département émetteur :", DEPARTEMENTS)
-with col_doc:
-    doc_choisi = st.selectbox("Nature du document à générer :", TYPES_DOCUMENTS)
-
-st.divider()
-st.subheader(f"Formulaire d'édition - {doc_choisi}")
-
-donnees_doc = {}
-
-if doc_choisi == "Bordereau d'envoi":
-    prochaine_ref = get_prochaine_reference()
-    
-    col_ref, col_date, col_exp = st.columns(3)
-    
-    with col_ref:
-        annee_courante = datetime.now().year
-        prochaine_ref_num = get_prochaine_reference()
-        ref_auto = construire_reference(prochaine_ref_num, annee_courante)
+                            st.info("Aucune pièce enregistrée pour ce bordereau.")
+                            
+            else:
+                st.info("📭 Aucun bordereau enregistré dans l'historique.")
         
-        donnees_doc['num_reference'] = st.text_input(
-            "Référence séquentielle", 
-            value=ref_auto,
-            help="Auto-incrémentée selon l'historique d'envoi"
-        )    
-        # Extraction du numéro pur pour la base
-        try:
-            donnees_doc['num_reference_pur'] = int(str(donnees_doc['num_reference']).split('/')[0])
-        except ValueError:
-            donnees_doc['num_reference_pur'] = prochaine_ref_num
-        donnees_doc['annee_reference'] = annee_courante
-    with col_date:
-        donnees_doc['date_creation'] = st.date_input("Date d'édition", datetime.now())
-    with col_exp:
-        donnees_doc['expediteur_qualite'] = st.selectbox(
-            "Qualité de l'expéditeur :", 
-            OPTIONS_EXPEDITEURS,
+        except Exception as e:
+            st.error(f"Erreur chargement historique : {e}")
+
+    # ==========================================
+    # INTERFACE UTILISATEUR STREAMLIT
+    # ==========================================
+    st.caption(TITRE_PLATEFORME)
+    st.title("Gestion Administrative - Bordereaux & PVs")
+
+    col_dept, col_doc = st.columns(2)
+    with col_dept:
+        dept_choisi = st.selectbox("Département émetteur :", DEPARTEMENTS)
+    with col_doc:
+        doc_choisi = st.selectbox("Nature du document à générer :", TYPES_DOCUMENTS)
+
+    st.divider()
+    st.subheader(f"Formulaire d'édition - {doc_choisi}")
+
+    donnees_doc = {}
+
+    if doc_choisi == "Bordereau d'envoi":
+        prochaine_ref = get_prochaine_reference()
+        
+        col_ref, col_date, col_exp = st.columns(3)
+        
+        with col_ref:
+            annee_courante = datetime.now().year
+            prochaine_ref_num = get_prochaine_reference()
+            ref_auto = construire_reference(prochaine_ref_num, annee_courante)
+            
+            donnees_doc['num_reference'] = st.text_input(
+                "Référence séquentielle", 
+                value=ref_auto,
+                help="Auto-incrémentée selon l'historique d'envoi"
+            )    
+            try:
+                donnees_doc['num_reference_pur'] = int(str(donnees_doc['num_reference']).split('/')[0])
+            except ValueError:
+                donnees_doc['num_reference_pur'] = prochaine_ref_num
+            donnees_doc['annee_reference'] = annee_courante
+        with col_date:
+            donnees_doc['date_creation'] = st.date_input("Date d'édition", datetime.now())
+        with col_exp:
+            donnees_doc['expediteur_qualite'] = st.selectbox(
+                "Qualité de l'expéditeur :", 
+                OPTIONS_EXPEDITEURS,
+                index=0
+            )
+            
+        st.markdown("##### Destinataire officiel")
+        choix_dest = st.selectbox(
+            "Sélectionnez le destinataire dans la liste :", 
+            OPTIONS_DESTINATAIRES,
             index=0
         )
         
-    # ----------------------------------------------------
-    # ZONE DESTINATAIRE
-    # ----------------------------------------------------
-    st.markdown("##### Destinataire officiel")
-    choix_dest = st.selectbox(
-        "Sélectionnez le destinataire dans la liste :", 
-        OPTIONS_DESTINATAIRES,
-        index=0
-    )
-    
-    if choix_dest == "Autres":
-        donnees_doc['destinataire'] = st.text_input("Veuillez saisir la destination personnalisée :", value="")
-    else:
-        donnees_doc['destinataire'] = choix_dest
-        
-    st.markdown("---")
-    st.write("**Configuration du Tableau de Transmission**")
-    
-    df_initial = pd.DataFrame([
-        {"Désignation des pièces": "Fiches de vœux du second semestre", "Nbre": 12, "Observations": "Pour examen"},
-        {"Désignation des pièces": "Procès-verbal de délibération", "Nbre": 2, "Observations": "Pour affichage"}
-    ])
-    
-    df_edite = st.data_editor(
-        df_initial, 
-        num_rows="dynamic", 
-        use_container_width=True,
-        column_config={
-            "Désignation des pièces": st.column_config.TextColumn(width="medium", required=True),
-            "Nbre": st.column_config.NumberColumn(width="small", min_value=1, required=True),
-            "Observations": st.column_config.TextColumn(width="medium")
-        }
-    )
-    donnees_doc['liste_pieces'] = df_edite.to_dict(orient="records")
-        
-    # ----------------------------------------------------
-    
-else:
-    with st.form("form_autres"):
-        donnees_doc['date_creation'] = st.date_input("Date", datetime.now())
-        donnees_doc['contenu'] = st.text_area("Contenu textuel")
-        st.form_submit_button("Valider")
-
-# Action finale de compilation
-if doc_choisi == "Bordereau d'envoi":
-    if st.button("Compiler et Générer le Bordereau Officiel"):
-        if not donnees_doc['destinataire'].strip():
-            st.error("Erreur : Le champ de destination personnalisée ne peut pas être vide.")
+        if choix_dest == "Autres":
+            donnees_doc['destinataire'] = st.text_input("Veuillez saisir la destination personnalisée :", value="")
         else:
-            try:
-                document_final = générer_bordereau_iso(dept_choisi, donnees_doc)
-                
-                output_stream = io.BytesIO()
-                document_final.save(output_stream)
-                output_stream.seek(0)
-                
-                # ENREGISTREMENT DANS L'HISTORIQUE
-                user_email = user.get('email', 'inconnu') if user else 'inconnu'
-                enregistrer_historique_bordereau(donnees_doc, dept_choisi, user_email)
-                
-                st.success(f"✓ Bordereau {donnees_doc['num_reference']} généré et enregistré.")
-                
-                nom_fichier_export = f"Bordereau_{dept_choisi.replace(' ', '_')}.docx"
-                st.download_button(
-                    label="⬇️ Télécharger le document (.docx)",
-                    data=output_stream,
-                    file_name=nom_fichier_export,
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
-            except Exception as error:
-                st.error(f"Échec de l'opération de génération : {str(error)}")
+            donnees_doc['destinataire'] = choix_dest
+            
+        st.markdown("---")
+        st.write("**Configuration du Tableau de Transmission**")
+        
+        df_initial = pd.DataFrame([
+            {"Désignation des pièces": "Fiches de vœux du second semestre", "Nbre": 12, "Observations": "Pour examen"},
+            {"Désignation des pièces": "Procès-verbal de délibération", "Nbre": 2, "Observations": "Pour affichage"}
+        ])
+        
+        df_edite = st.data_editor(
+            df_initial, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            column_config={
+                "Désignation des pièces": st.column_config.TextColumn(width="medium", required=True),
+                "Nbre": st.column_config.NumberColumn(width="small", min_value=1, required=True),
+                "Observations": st.column_config.TextColumn(width="medium")
+            }
+        )
+        donnees_doc['liste_pieces'] = df_edite.to_dict(orient="records")
+            
+    else:
+        with st.form("form_autres"):
+            donnees_doc['date_creation'] = st.date_input("Date", datetime.now())
+            donnees_doc['contenu'] = st.text_area("Contenu textuel")
+            st.form_submit_button("Valider")
 
-# --- HISTORIQUE DES BORDEREAUX ---
-st.divider()
-with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
-    afficher_historique_bordereaux()
+    if doc_choisi == "Bordereau d'envoi":
+        if st.button("Compiler et Générer le Bordereau Officiel"):
+            if not donnees_doc['destinataire'].strip():
+                st.error("Erreur : Le champ de destination personnalisée ne peut pas être vide.")
+            else:
+                try:
+                    document_final = générer_bordereau_iso(dept_choisi, donnees_doc)
+                    
+                    output_stream = io.BytesIO()
+                    document_final.save(output_stream)
+                    output_stream.seek(0)
+                    
+                    user_email = user.get('email', 'inconnu') if user else 'inconnu'
+                    enregistrer_historique_bordereau(donnees_doc, dept_choisi, user_email)
+                    
+                    st.success(f"✓ Bordereau {donnees_doc['num_reference']} généré et enregistré.")
+                    
+                    nom_fichier_export = f"Bordereau_{dept_choisi.replace(' ', '_')}.docx"
+                    st.download_button(
+                        label="⬇️ Télécharger le document (.docx)",
+                        data=output_stream,
+                        file_name=nom_fichier_export,
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+                except Exception as error:
+                    st.error(f"Échec de l'opération de génération : {str(error)}")
+
+    st.divider()
+    with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
+        afficher_historique_bordereaux()
