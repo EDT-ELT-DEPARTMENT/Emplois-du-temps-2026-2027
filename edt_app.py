@@ -3818,6 +3818,14 @@ def run_edt():
 
     if not st.session_state["user_data"]:
         st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
+        
+        # >>> BANDEAU EXPLICATIF POUR LE CHOIX DE MODULE <<<
+        st.info("🔒 **Vous avez sélectionné le Module 2 (Gestion des EDTs).**  \n"
+                "Ce module nécessite une authentification.  \n"
+                "- **Admin** : onglet 🛡️ Admin → code `doctorat2026`  \n"
+                "- **Enseignant** : onglet 🔑 Connexion  \n"
+                "- **Retour au Module 1** : utilisez le menu dans la barre latérale.")
+                
         t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
 
         with t_conn:
@@ -3876,12 +3884,14 @@ def run_edt():
                 else:
                     st.error("Code admin incorrect.")
     # --- SOLUTIONS AUX ERREURS (Remplace le bloc supprimé) ---
+    # --- GARDIEN DE SESSION ---
     user = st.session_state.get("user_data")
-
-    # Le st.stop() est le gardien : si pas de login, on n'affiche pas la suite
     if user is None:
-        st.stop() 
-
+        # On n'arrête plus brutalement — on affiche un avertissement clair
+        st.warning("⚠️ Veuillez vous connecter ci-dessus pour accéder au Module 2. "
+                   "Le sélecteur de module reste disponible dans la barre latérale.")
+        st.stop()
+    
     is_admin = user.get("role") == "admin"
 
     # =============================================================================
