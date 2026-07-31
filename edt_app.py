@@ -606,6 +606,15 @@ def run_assiduite():
 
     st.title("📊 Plateforme de Suivi d'Assiduite des Etudiants")
     st.caption("Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA - Annee 2026-2027")
+    
+    # =============================================================================
+    # SIDEBAR MODULE ASSIDUITE
+    # =============================================================================
+    with st.sidebar:
+        st.markdown('### 📊 Menu Assiduité')
+        st.markdown('---')
+        st.info('Module actif : **Suivi d\'Assiduité**')
+        st.caption('Utilisez les onglets ci-dessus pour naviguer.')
 
     # --- Chargement des donnees ---
     df_etu, df_edt, df_ens = charger_donnees()
@@ -624,25 +633,10 @@ def run_assiduite():
     else:
         LISTE_PROFS = []
 
+    
     df_etu["Nom_Complet"] = df_etu["Nom"].astype(str).str.strip().str.upper() + " " + df_etu["Prénom"].astype(str).str.strip().str.title()
-    # =============================================================================
-    # GESTION DE LA CONNEXION (depuis le portail EDT)  ← DÉPLACER ICI
-    # =============================================================================
-    user = st.session_state.get("user_data")
-    is_enseignant_connecte = user is not None and user.get("role") != "admin"
-    # =============================================================================
-    # ONGLETS
-    # =============================================================================
-    if is_enseignant_connecte:
-        tab1, = st.tabs(["📝 Suivi d'Assiduite"])
-    else:
-        tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
-
 
     # =============================================================================
-    # ONGLET 1 : SUIVI D'ASSIDUITE
-    # =============================================================================
-        # =============================================================================
     # GESTION DE LA CONNEXION (depuis le portail EDT)
     # =============================================================================
     user = st.session_state.get("user_data")
@@ -652,16 +646,15 @@ def run_assiduite():
     # ONGLETS
     # =============================================================================
     if is_enseignant_connecte:
-        tab1 = st.tabs(["📝 Suivi d'Assiduite"])[0]
+        tab1, = st.tabs(["📝 Suivi d'Assiduite"])
     else:
         tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
-
 
     # =============================================================================
     # ONGLET 1 : SUIVI D'ASSIDUITE
     # =============================================================================
-        with tab1:
-            st.header("📝 Suivi de l'Assiduite et Compteur d'Absences")
+    with tab1:
+        st.header("📝 Suivi de l'Assiduite et Compteur d'Absences")
     
             sel_prof = ""
             sel_mat = ""
