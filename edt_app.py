@@ -629,7 +629,10 @@ def run_assiduite():
     # =============================================================================
     # ONGLETS
     # =============================================================================
-    tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
+    if is_enseignant_connecte:
+        tab1, = st.tabs(["📝 Suivi d'Assiduite"])
+    else:
+        tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
 
 
     # =============================================================================
@@ -653,7 +656,7 @@ def run_assiduite():
     # =============================================================================
     # ONGLET 1 : SUIVI D'ASSIDUITE
     # =============================================================================
-    with tab1:
+        with tab1:
         st.header("📝 Suivi de l'Assiduite et Compteur d'Absences")
 
         sel_prof = ""
@@ -662,7 +665,7 @@ def run_assiduite():
         df_matiere = pd.DataFrame()
 
         if is_enseignant_connecte:
-            # >>> MODE ENSEIGNANT CONNECTÉ : accès direct, pas de code, nom verrouillé
+            # >>> MODE ENSEIGNANT : accès direct, pas de code
             sel_prof = user['nom_officiel']
             st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduité")
             c1, c2 = st.columns(2)
@@ -670,17 +673,14 @@ def run_assiduite():
                 st.markdown(f"**Enseignant :** `{sel_prof}`")
             with c2:
                 st.markdown("*Accès direct — Aucun code requis*")
-
         else:
-            # >>> MODE ADMIN / NON CONNECTÉ : code requis
+            # >>> MODE ADMIN : code requis
             pwd = st.text_input("🔑 Code d'acces :", type="password", key="pwd_tab1")
 
             if pwd == CODE_ADMIN:
                 c1, c2 = st.columns(2)
-
                 with c1:
                     sel_prof = st.selectbox("👤 Selectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1")
-
             elif pwd != "":
                 st.error("❌ Code incorrect.")
 
@@ -696,8 +696,9 @@ def run_assiduite():
                     info_rows = df_matiere[df_matiere["Enseignements"] == sel_mat]
                     if not info_rows.empty:
                         promo_c = str(info_rows.iloc[0]["Promotion_Mappee"]).strip()
-          
+
             if sel_mat and promo_c:
+                      
                 df_p = df_etu[df_etu["Promotion"].astype(str).str.strip().str.upper() == promo_c.upper()].copy()
 
                 if not df_p.empty:
