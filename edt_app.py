@@ -162,15 +162,15 @@ def run_assiduite():
             MODE_SUPABASE = True
             
     
-    # CONFIGURATION FICHIERS (CORRIGÉE — utilise _BASE_DIR comme le module EDT)
-    # =============================================================================
-    FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
-    FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
-    FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
-    
-    # =============================================================================
-    # FONCTIONS UTILITAIRES (CORRIGÉE — avec upload fallback)
-    # =============================================================================
+        # CONFIGURATION FICHIERS (CORRIGÉE — utilise _BASE_DIR comme le module EDT)
+        # =============================================================================
+        FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
+        FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
+        FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
+        
+        # =============================================================================
+        # FONCTIONS UTILITAIRES (CORRIGÉE — avec upload fallback)
+        # =============================================================================
     
     @st.cache_data(show_spinner=False)
     def charger_donnees():
