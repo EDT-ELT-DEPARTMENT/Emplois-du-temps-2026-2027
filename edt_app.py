@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import hashlib
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 from supabase import create_client
 import streamlit as st
 
@@ -1660,143 +1660,49 @@ def charger_donnees_supabase():
 # Initialisation du DataFrame principal
 df = charger_donnees_supabase()
 
-
 # --- ÉTAPE 3 : CHARGEMENT DU RÉPERTOIRE (CONTACTS, PRÉNOMS, STATUTS & GRADES) ---
-# =============================================================================
-# CHARGEMENT DU RÉPERTOIRE (CONTACTS, PRÉNOMS, STATUTS & GRADES)
-# =============================================================================
 repertoire_qualites = {} 
-repertoire_grades = {} 
-repertoire_source = {}        # Email par nom de famille
-repertoire_noms_complets = {} # Affichage "NOM Prénom"
-repertoire_telephones = {}
-df_contacts = None
-
-NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
-
-def extraire_nom_famille(nom_complet):
-    """Extrait le nom de famille (premier mot) pour la correspondance."""
-    if not nom_complet or pd.isna(nom_complet):
-        return ""
-    return str(nom_complet).strip().upper().split()[0]
+repertoire_grades = {} # Nouveau dictionnaire pour stocker le Grade (MCA, Prof, etc.)
 
 if os.path.exists(NOM_FICHIER_CONTACTS):
     try:
         df_contacts = pd.read_excel(NOM_FICHIER_CONTACTS)
+        # Nettoyage strict des noms de colonnes
         df_contacts.columns = [str(c).strip() for c in df_contacts.columns]
         
         for _, row in df_contacts.iterrows():
             nom_brut = str(row.get('NOM', '')).strip().upper()
             prenom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
             email_brut = str(row.get('Email', '')).strip()
+            
+            # Récupération de la colonne 'Qualité' (Statut)
             qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
+            
+            # Récupération de la colonne 'Grade'
             grade_brut = str(row.get('Grade', 'N/A')).strip()
-            tel_brut = str(row.get('N°/TEL', '')).strip()
-            tel_nettoye = ''.join([c for c in tel_brut if c.isdigit()])
-            if tel_nettoye and tel_nettoye.lower() != 'nan':
-                repertoire_telephones[nom_brut] = tel_nettoye
-                repertoire_telephones[nom_complet.upper()] = tel_nettoye
-
+            
             if nom_brut:
-                nom_complet = f"{nom_brut} {prenom_brut}".strip()
-                
-                # Stockage par NOM SEUL (clé principale)
+                # 1. Dictionnaire pour les Emails (Inscription)
                 if email_brut and email_brut.lower() != 'nan':
                     repertoire_source[nom_brut] = email_brut
-                repertoire_noms_complets[nom_brut] = nom_complet
+                
+                # 2. Dictionnaire pour l'affichage complet (Ex: ABID Mohamed)
+                repertoire_noms_complets[nom_brut] = f"{nom_brut} {prenom_brut}"
+                
+                # 3. Dictionnaire pour le statut (Ex: Permanent)
                 repertoire_qualites[nom_brut] = qualite_brute
+                
+                # 4. Dictionnaire pour le Grade (Ex: MCA)
                 repertoire_grades[nom_brut] = grade_brut
                 
-                # Stockage aussi par NOM COMPLET (fallback)
-                repertoire_noms_complets[nom_complet.upper()] = nom_complet
-                repertoire_qualites[nom_complet.upper()] = qualite_brute
-                repertoire_grades[nom_complet.upper()] = grade_brut
-                if email_brut and email_brut.lower() != 'nan':
-                    repertoire_source[nom_complet.upper()] = email_brut
-                    
     except Exception as e:
         st.error(f"Erreur lors de la lecture du fichier contacts: {e}")
-else:
-    st.warning(f"⚠️ Fichier {NOM_FICHIER_CONTACTS} introuvable. Les noms complets et emails ne seront pas disponibles.")
-# =============================================================================
-# ACTIVATION DE COMPTE PAR TOKEN (depuis lien email)
-# =============================================================================
-# =============================================================================
-# ACTIVATION DE COMPTE PAR TOKEN (depuis lien email)
-# =============================================================================
-query_params = st.query_params
-if "activation_token" in query_params and query_params["activation_token"]:
-    st.markdown("<h1 class='main-title'>🏛️ ACTIVATION DU COMPTE</h1>", unsafe_allow_html=True)
-    
-    token = str(query_params["activation_token"]).strip()
-    
-    # Vérification du token
-    res = supabase.table("enseignants_auth").select("*").eq("activation_token", token).execute()
-    
-    if not res.data:
-        st.error("❌ Lien d'activation invalide ou déjà utilisé.")
-        st.stop()
-    
-    user_row = res.data[0]
-    expires_str = user_row.get('activation_expires')
-    
-    # Vérification expiration
-    if expires_str:
-        from datetime import timezone
-        expires = datetime.fromisoformat(str(expires_str).replace("Z", "+00:00"))
-        if datetime.now(timezone.utc) > expires:
-            st.error("⏰ Ce lien d'activation a expiré. Veuillez refaire une demande d'inscription.")
-            st.stop()
-    
-    st.success(f"👋 Bienvenue **{user_row['nom_officiel']}**, définissez votre mot de passe pour activer le compte.")
-    
-    # ═══════════════════════════════════════════════════════════════
-    # FORMULAIRE D'ACTIVATION (sans bouton de navigation à l'intérieur)
-    # ═══════════════════════════════════════════════════════════════
-    with st.form("form_activation_token"):
-        new_pass = st.text_input("Choisissez un mot de passe", type="password")
-        confirm_pass = st.text_input("Confirmez le mot de passe", type="password")
-        submitted = st.form_submit_button("🚀 Activer mon compte", use_container_width=True, type="primary")
-        
-        if submitted:
-            if not new_pass or not confirm_pass:
-                st.error("Veuillez remplir les deux champs.")
-            elif len(new_pass) < 6:
-                st.error("Le mot de passe doit contenir au moins 6 caractères.")
-            elif new_pass != confirm_pass:
-                st.error("Les mots de passe ne correspondent pas.")
-            else:
-                try:
-                    supabase.table("enseignants_auth").update({
-                        "password_hash": hash_pw(new_pass),
-                        "activation_token": None,
-                        "activation_expires": None
-                    }).eq("id", user_row['id']).execute()
-                    
-                    # On stocke le succès dans le session_state pour l'afficher hors du form
-                    st.session_state['activation_success'] = True
-                    st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"Erreur technique : {e}")
-    
-    # ═══════════════════════════════════════════════════════════════
-    # BOUTON DE NAVIGATION (HORS DU FORMULAIRE)
-    # ═══════════════════════════════════════════════════════════════
-    if st.session_state.get('activation_success'):
-        st.success("✅ Compte activé avec succès ! Vous pouvez maintenant vous connecter.")
-        if st.button("🔑 Aller à la connexion", use_container_width=True, type="primary"):
-            st.session_state['activation_success'] = False  # Reset
-            st.query_params.clear()
-            st.rerun()
-    
-    st.stop()
 # --- SYSTÈME D'AUTH ---
 if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
 
 if not st.session_state["user_data"]:
-    st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE - UDL SBA</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
     
     with t_conn:
@@ -1872,222 +1778,60 @@ if not st.session_state["user_data"]:
                         else:
                             st.error("Token invalide ou email incorrect.")
                     
-    
-    
     with t_ins:
-        st.subheader("📝 Demande d'activation de compte")
-        st.info("NB : Saisissez votre email professionnel tel qu'envoyé au service d'enseignement. Vos informations personnelles se rempliront automatiquement. Une fois inscrit, veuillez accéder à votre compte via la page de connexion.")
-
-        # ═══════════════════════════════════════════════════════════════
-        # ÉTAPE 1 : AUTHENTIFICATION PAR EMAIL (Filtrage de l'identité)
-        # ═══════════════════════════════════════════════════════════════
-        email_verif = st.text_input(
-            "📧 Saisissez votre email (celui envoyé au service d'enseignement du département)",
-            key="verif_email_insc",
-            placeholder="ex: nom.prenom@univ-sba.dz"
-        )
-
-        # Initialisation des variables de session pour l'inscription
-        if "contact_match" not in st.session_state:
-            st.session_state.contact_match = None
-
-        # Bouton de vérification
-        col_verif, _ = st.columns([1, 3])
-        with col_verif:
-            verifier = st.button("🔍 Vérifier mon identité", use_container_width=True, key="btn_verif_id")
-
-        if verifier and email_verif:
-            if df_contacts is not None and not df_contacts.empty and 'Email' in df_contacts.columns:
-                match = df_contacts[df_contacts["Email"].astype(str).str.strip().str.lower() == email_verif.strip().lower()]
-                if not match.empty:
-                    st.session_state.contact_match = match.iloc[0]
-                    st.success("✅ Identité confirmée. Vos coordonnées ont été récupérées.")
-                else:
-                    st.session_state.contact_match = None
-                    st.error("❌ Cet email n'est pas reconnu dans le répertoire officiel du département. Veuillez contacter l'administrateur.")
-            else:
-                st.error("⚠️ Le fichier répertoire des contacts est introuvable ou corrompu.")
-
-        # ═══════════════════════════════════════════════════════════════
-        # ÉTAPE 2 : AFFICHAGE DU FORMULAIRE PRÉ-REMPLI (SI IDENTITÉ VÉRIFIÉE)
-        # ═══════════════════════════════════════════════════════════════
+        st.subheader("📝 Créer un nouveau compte Enseignant")
+        # Récupération des noms depuis l'Excel
+        noms_possibles = sorted(df["Enseignants"].unique()) if df is not None else []
         
-        if st.session_state.contact_match is not None:
-            row = st.session_state.contact_match
+        col1, col2 = st.columns(2)
+        with col1:
+            new_nom = st.selectbox("Sélectionnez votre nom (dans l'EDT)", noms_possibles)
+            new_email = st.text_input("Votre adresse Email")
             
-            # Extraction sécurisée des données
-            nom_brut = str(row.get('NOM', '')).strip().upper()
-            prenom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
-            email_brut = str(row.get('Email', '')).strip()
-            qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
-            tel_brut = str(row.get('N°/TEL', '')).strip()
+        with col2:
+            # Nouveau : Choix du Statut
+            statut_user = st.radio("Statut de l'enseignant", ["Permanent", "Vacataire"], horizontal=True)
             
-            # Nettoyage strict : uniquement les chiffres
-            tel_nettoye = ''.join([c for c in tel_brut if c.isdigit()])
-            
-            nom_complet = f"{nom_brut} {prenom_brut}"
-            
-            # ═══════════════════════════════════════════════════════════════
-            # CORRECTION CRITIQUE : Forcer la réinitialisation du widget 
-            # téléphone quand on change d'enseignant
-            # ═══════════════════════════════════════════════════════════════
-            contact_id = f"{nom_brut}_{email_brut}"
-            if st.session_state.get("last_verified_contact") != contact_id:
-                if "tel_insc_modifiable" in st.session_state:
-                    del st.session_state["tel_insc_modifiable"]
-                st.session_state["last_verified_contact"] = contact_id
-            
-            st.divider()
-            st.markdown("### 👤 Votre fiche enseignant")
-            
-            # Affichage du nom (LECTURE SEULE)
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
-                        padding: 15px; border-radius: 10px; color: white; margin-bottom: 15px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
-                    Enseignant identifié
-                </div>
-                <div style="font-size: 22px; font-weight: bold; margin-top: 5px;">
-                    {nom_complet}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            c1, c2 = st.columns(2)
-            
-            with c1:
-                st.markdown(f"""
-                <div style="background-color:#f0f2f6;padding:12px;border-radius:8px;border-left:4px solid #22c55e;margin-bottom:10px;">
-                    <span style="font-size:11px;color:#64748b;">📧 Adresse Email</span><br>
-                    <span style="font-weight:bold;color:#1E3A8A;font-size:14px;">{email_brut}</span>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with c2:
-                st.markdown(f"""
-                <div style="background-color:#f0f2f6;padding:12px;border-radius:8px;border-left:4px solid #D4AF37;margin-bottom:10px;">
-                    <span style="font-size:11px;color:#64748b;">🏷️ Qualité (auto-détectée)</span><br>
-                    <span style="font-weight:bold;color:#1E3A8A;font-size:14px;">{qualite_brute}</span>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Téléphone : pré-rempli avec le numéro nettoyé depuis le fichier source
-            default_phone = tel_nettoye if len(tel_nettoye) == 10 else ""
-            new_phone = st.text_input(
-                "📱 Numéro de téléphone (Obligatoire — 10 chiffres)",
-                value=default_phone,
-                key="tel_insc_modifiable",
-                help="Format strict : exactement 10 chiffres, sans espaces ni tirets (ex: 0555123456)",
-                max_chars=10
-            )
-            
-            st.divider()
-            
-            # ═══════════════════════════════════════════════════════════════
-            # ÉTAPE 3 : ENVOI DU LIEN D'ACTIVATION
-            # ═══════════════════════════════════════════════════════════════
-            BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
-            
-            if st.button("📧 Envoyer le lien d'activation à votre adresse Email", use_container_width=True, type="primary"):
-                # Validation...
-                phone_clean = new_phone.strip()
-                
-                if not new_phone:
-                    st.error("📱 Le numéro de téléphone est obligatoire.")
-                elif not phone_clean.isdigit():
-                    st.error("📱 Le numéro ne doit contenir que des chiffres.")
-                elif len(phone_clean) != 10:
-                    st.error(f"📱 Le numéro doit contenir exactement 10 chiffres (actuellement {len(phone_clean)}).")
-                elif not email_brut or "@" not in email_brut:
-                    st.error("❌ L'adresse email récupérée est invalide. Contactez l'administrateur.")
-                elif not qualite_brute or qualite_brute.lower() == "non défini":
-                    st.error("❌ La qualité n'est pas reconnue dans le fichier source. Contactez l'administrateur.")
+            # Nouveau : Champ téléphone conditionnel
+            new_phone = ""
+            if statut_user == "Vacataire":
+                new_phone = st.text_input("📱 Numéro de téléphone (Obligatoire)", placeholder="06XXXXXXXX")
+    
+        st.divider()
+        c_p1, c_p2 = st.columns(2)
+        with c_p1:
+            new_pass = st.text_input("Choisissez un mot de passe", type="password")
+        with c_p2:
+            confirm_pass = st.text_input("Confirmez le mot de passe", type="password")
+        
+        if st.button("Créer mon compte", use_container_width=True, type="primary"):
+            if not new_email or not new_pass:
+                st.warning("Veuillez remplir les champs obligatoires.")
+            elif statut_user == "Vacataire" and not new_phone:
+                st.error("Le numéro de téléphone est requis pour les vacataires.")
+            elif new_pass != confirm_pass:
+                st.error("Les mots de passe ne correspondent pas.")
+            else:
+                # Vérifier si l'email existe déjà
+                check = supabase.table("enseignants_auth").select("email").eq("email", new_email).execute()
+                if check.data:
+                    st.error("Cet email est déjà utilisé.")
                 else:
-                    # Vérifier si un compte actif existe déjà
-                    check = supabase.table("enseignants_auth").select("email,activation_token").eq("email", email_brut).execute()
-                    if check.data and not check.data[0].get('activation_token'):
-                        st.error("❌ Cet email est déjà associé à un compte actif. Utilisez l'onglet **Connexion**.")
-                    else:
-                        import secrets
-                        token = secrets.token_urlsafe(32)
-                        expiration = (datetime.now().replace(microsecond=0) + timedelta(hours=24)).isoformat() + "+01:00"
-                        
-                        data_upsert = {
-                            "nom_officiel": nom_brut,
-                            "email": email_brut,
-                            "password_hash": hash_pw(secrets.token_urlsafe(16)),
-                            "role": "enseignant",
-                            "statut": qualite_brute,
-                            "telephone": phone_clean,
-                            "activation_token": token,
-                            "activation_expires": expiration
-                        }
-                        
-                        try:
-                            if check.data:
-                                supabase.table("enseignants_auth").update(data_upsert).eq("email", email_brut).execute()
-                            else:
-                                supabase.table("enseignants_auth").insert(data_upsert).execute()
-                            
-                            # ─── ENVOI EMAIL SMTP ───
-                            import smtplib
-                            from email.mime.text import MIMEText
-                            from email.mime.multipart import MIMEMultipart
-                            
-                            lien_activation = f"{BASE_URL}/?activation_token={token}"
-                            
-                            msg = MIMEMultipart()
-                            msg['Subject'] = "Activation de votre compte EDT - Département ELT"
-                            msg['From'] = "chef.department.elt.fge@gmail.com"
-                            msg['To'] = email_brut
-                            
-                            body_html = f"""
-                            <html>
-                            <body style="font-family:Arial,sans-serif;color:#333;">
-                                <div style="max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
-                                    <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);padding:20px;color:white;text-align:center;">
-                                        <h2 style="margin:0;">Département d'Électrotechnique - UDL SBA</h2>
-                                    </div>
-                                    <div style="padding:25px;background:#fff;">
-                                        <p>Sallem Aleykoum <b>{nom_complet}</b>,</p>
-                                        <p>Votre demande d'inscription a été enregistrée dans la <b>Plateforme de gestion des EDTs du département d'électrotechnique</b>.</p>
-                                        <p><b>Qualité détectée :</b> {qualite_brute}<br>
-                                        <b>Téléphone :</b> {phone_clean}</p>
-                                        <p>Cliquez sur le bouton ci-dessous pour définir votre mot de passe :</p>
-                                        <div style="text-align:center;margin:25px 0;">
-                                            <a href="{lien_activation}" style="background:#1E3A8A;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
-                                                Activer mon compte
-                                            </a>
-                                        </div>
-                                        <p>Ou copiez ce lien dans votre navigateur :<br>
-                                        <code style="background:#f1f5f9;padding:8px;border-radius:4px;display:block;word-break:break-all;">{lien_activation}</code></p>
-                                        <p style="color:#64748b;font-size:13px;"><i>Ce lien est valable 24 heures.</i></p>
-                                        <hr style="border:none;border-top:1px solid #e2e8f0;">
-                                        <p style="font-size:12px;color:#94a3b8;">Faculté de Génie Électrique - UDL SBA</p>
-                                    </div>
-                                </div>
-                            </body>
-                            </html>
-                            """
-                            msg.attach(MIMEText(body_html, 'html'))
-                            
-                            server = smtplib.SMTP('smtp.gmail.com', 587)
-                            server.starttls()
-                            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
-                            server.send_message(msg)
-                            server.quit()
-                            
-                            st.success("✅ Lien d'activation envoyé ! Consultez votre boîte mail (et vos spams).")
-                            st.info(f"📧 Email envoyé à : `{email_brut}`")
-                            st.balloons()
-                            
-                        except Exception as e:
-                            st.error(f"❌ Erreur lors de l'envoi : {e}")
-        else:
-            if not email_verif:
-                st.info("👆 Saisissez votre email professionnel et cliquez sur **Vérifier mon identité** pour commencer.")
-            # Si email saisi mais pas de match, le message d'erreur est déjà affiché ci-dessus                    
+                    data_ins = {
+                        "nom_officiel": new_nom,
+                        "email": new_email,
+                        "password_hash": hash_pw(new_pass),
+                        "role": "enseignant",
+                        "statut": statut_user,
+                        "telephone": new_phone if statut_user == "Vacataire" else None
+                    }
+                    try:
+                        supabase.table("enseignants_auth").insert(data_ins).execute()
+                        st.success("✅ Compte créé avec succès ! Connectez-vous maintenant.")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"Erreur Supabase : {e}")
+
     with t_adm:
         code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code")
         if st.button("Accès Administration", use_container_width=True):
@@ -2260,7 +2004,7 @@ if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
 
 if not st.session_state["user_data"]:
-    st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE - UDL SBA</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
     
     with t_conn:
@@ -2351,40 +2095,24 @@ map_j = {normalize(j): j for j in jours_list}
 
 # --- BARRE LATÉRALE ---
 with st.sidebar:
+    # On utilise .get() pour éviter le ch si la donnée est corrompue
     st.header(f"👤 {user.get('nom_officiel', 'Utilisateur')}")
-
-    # ─── RESTRICTION DES PORTAILS SELON LE RÔLE ───
-    if is_admin:
-        options_portail = [
-            "📖 Emploi du Temps", 
-            "📅 Surveillances Examens", 
-            "🤖 Générateur Automatique", 
-            "👥 Portail Enseignants", 
-            "🎓 Portail mise à jour EDT", 
-            "📢 Gestion Administrative - Bordereaux & PVs"
-        ]
-    else:
-        # ENSEIGNANT : accès strictement limité
-        options_portail = [
-            "👤 Mon Espace Enseignant",
-            "📅 Surveillances Examens"
-        ]
-
-    portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
+    portail = st.selectbox("🚀 Sélectionner Espace", [
+        "📖 Emploi du Temps", "📅 Surveillances Examens", 
+        "🤖 Générateur Automatique", "👥 Portail Enseignants", "🎓 Portail mise à jour EDT", "📢 Gestion Administrative - Bordereaux & PVs"
+    ])
     st.divider()
-
+    
     mode_view = "Personnel"
     poste_sup = False
-
-    if portail == "📖 Emploi du Temps" and is_admin:
-        mode_view = st.radio("Vue Administration :", [
-            "Promotion", "Enseignant", "🏢 Planning Salles", 
-            "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
-        ])
+    
+    if portail == "📖 Emploi du Temps":
+        if is_admin:
+            mode_view = st.radio("Vue Administration :", ["Promotion", "Enseignant", "🏢 Planning Salles", "🚩 Vérificateur de conflits","✍️ Éditeur de données"])
+        else:
+            mode_view = "Personnel"
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
-    elif portail == "👤 Mon Espace Enseignant":
-        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
-
+        
     if st.button("🚪 Déconnexion du compte"):
         st.session_state["user_data"] = None
         st.rerun()
@@ -2960,26 +2688,14 @@ if df is not None:
             grade_entete = repertoire_grades.get(cible.strip().upper(), "Grade non spécifié")
             statut_entete = repertoire_qualites.get(cible.strip().upper(), "Statut non spécifié")
             
-            
             def format_case(rows):
                 items = []
                 for _, r in rows.iterrows():
-                    code_up = str(r['Code']).upper()
-                    if 'COURS' in code_up:
-                        nat, color, bg = '📘', '#1e40af', '#dbeafe'
-                    elif 'TD' in code_up:
-                        nat, color, bg = '📗', '#166534', '#dcfce7'
-                    else:
-                        nat, color, bg = '🔴', '#b91c1c', '#fee2e2'
-                    
-                    txt = (f"<div style='margin-bottom:6px;padding:6px;border-left:3px solid {color};"
-                           f"background-color:{bg};border-radius:4px;'>"
-                           f"<b style='color:{color};'>{nat} {r['Enseignements']}</b><br>"
-                           f"<span style='font-size:11px;'>({r['Code']})</span><br>"
-                           f"<span style='font-size:11px;'>📍 {r['Lieu']}</span><br>"
-                           f"<b style='font-size:11px;'>🎓 {r['Promotion']}</b></div>")
+                    # Disposition : Enseignements, Code, Lieu, Promotion
+                    nat = '📘' if 'COURS' in str(r['Code']).upper() else '📗' if 'TD' in str(r['Code']).upper() else '🔴'
+                    txt = f"<div style='margin-bottom:8px;'>{nat} <b>{r['Enseignements']}</b><br><small>({r['Code']})</small><br><i>{r['Lieu']}</i><br><b>{r['Promotion']}</b></div>"
                     items.append(txt)
-                return "".join(items)
+                return "<div class='separator'></div>".join(items)
 
             if not df_f.empty:
                 # --- AFFICHAGE À L'ÉCRAN ---
@@ -4303,272 +4019,6 @@ if df is not None:
             else:
                 st.success("✅ Félicitations ! Aucun conflit détecté dans l'emploi du temps actuel.")
                 st.balloons()
-    elif portail == "👤 Mon Espace Enseignant":
-            # ─────────────────────────────────────────────────────────────
-            # 1. IDENTITÉ & INFOS PERSONNELLES
-            # ─────────────────────────────────────────────────────────────
-            cible = user['nom_officiel']
-            nom_affichage_complet = repertoire_noms_complets.get(cible.strip().upper(), cible)
-            grade_enseignant = repertoire_grades.get(cible.strip().upper(), "Grade non spécifié")
-            statut_enseignant = repertoire_qualites.get(cible.strip().upper(), "Statut non spécifié")
-            email_ens = user.get('email', 'Non renseigné')
-            tel_ens = repertoire_telephones.get(cible.strip().upper(), user.get('telephone', 'Non renseigné'))
-        
-            # Carte d'identité stylisée
-            st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
-                            padding: 20px; border-radius: 14px; color: white; margin-bottom: 20px;
-                            box-shadow: 0 6px 12px rgba(0,0,0,0.12);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-                        <div>
-                            <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
-                                Espace Personnel Sécurisé
-                            </div>
-                            <div style="font-size: 24px; font-weight: bold; margin-top: 6px;">
-                                {nom_affichage_complet}
-                            </div>
-                            <div style="margin-top: 10px; display: flex; gap: 8px;">
-                                <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
-                                    {grade_enseignant}
-                                </span>
-                                <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
-                                    {statut_enseignant}
-                                </span>
-                            </div>
-                        </div>
-                        <div style="text-align: right; font-size: 13px; line-height: 1.8;">
-                            <div>📧 {email_ens}</div>
-                            <div>📱 {tel_ens}</div>
-                            <div style="opacity: 0.8; font-size: 11px; margin-top: 4px;">S1 — 2026-2027</div>
-                        </div>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-            # ─────────────────────────────────────────────────────────────
-            # 2. CHARGEMENT DES DONNÉES PERSONNELLES
-            # ─────────────────────────────────────────────────────────────
-            if df is None or df.empty:
-                st.error("❌ Les données EDT ne sont pas disponibles. Contactez l'administrateur.")
-                st.stop()
-        
-            df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
-        
-            if df_f.empty:
-                st.warning("⚠️ Aucun cours n'est programmé pour vous actuellement.")
-                st.stop()
-        
-            # Détermination des types
-            df_f['Type'] = df_f['Code'].apply(
-                lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
-            )
-            df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
-        
-            # Calculs de charge
-            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-            nb_td = len(df_u[df_u['Type'] == 'TD'])
-            nb_tp = len(df_u[df_u['Type'] == 'TP'])
-        
-            seuil_obligatoire = 3.0 if poste_sup else 6.0
-            charge_totale_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
-            delta_eq = charge_totale_eq - seuil_obligatoire
-            h_sup = delta_eq * 1.5
-        
-            abs_h_sup = abs(h_sup)
-            heures_entieres = int(abs_h_sup)
-            minutes_restantes = int((abs_h_sup - heures_entieres) * 60)
-            signe_str = "+" if h_sup >= 0 else "-"
-            h_sup_formattee = f"{signe_str}{heures_entieres}h{minutes_restantes:02d}"
-            charge_effective = (nb_cours + nb_td + nb_tp) * 1.5
-        
-            # ─────────────────────────────────────────────────────────────
-            # 3. MÉTRIQUES DE CHARGE (Style badges)
-            # ─────────────────────────────────────────────────────────────
-            st.markdown(f"""
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                    <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
-                                box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #3b82f6;">
-                        <div style="font-size: 26px; font-weight: 800; color: #1e40af;">{nb_cours}</div>
-                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">📘 Cours</div>
-                    </div>
-                    <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
-                                box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #22c55e;">
-                        <div style="font-size: 26px; font-weight: 800; color: #166534;">{nb_td}</div>
-                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">📗 TD</div>
-                    </div>
-                    <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
-                                box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #f59e0b;">
-                        <div style="font-size: 26px; font-weight: 800; color: #b45309;">{nb_tp}</div>
-                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">🔴 TP</div>
-                    </div>
-                    <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
-                                box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #1E3A8A;">
-                        <div style="font-size: 26px; font-weight: 800; color: #1E3A8A;">{round(charge_effective, 1)}h</div>
-                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Charge Effective</div>
-                    </div>
-                    <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
-                                box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid {'#22c55e' if h_sup >= 0 else '#ef4444'};">
-                        <div style="font-size: 26px; font-weight: 800; color: {'#166534' if h_sup >= 0 else '#dc2626'};">{h_sup_formattee}</div>
-                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">{'Heures Sup.' if h_sup >= 0 else 'Déficit'}</div>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-            # Note de synthèse
-            if h_sup > 0:
-                st.caption(f"✅ Vous avez complété votre charge et totalisez **{h_sup_formattee}** en supplément.")
-            elif h_sup < 0:
-                st.caption(f"⚠️ Sous-charge détectée de **{h_sup_formattee}** par rapport au seuil de {seuil_obligatoire} eq/h.")
-            else:
-                st.caption("⚖️ Service réglementaire exactement rempli.")
-        
-            # ─────────────────────────────────────────────────────────────
-            # 4. EMPLOI DU TEMPS INDIVIDUEL (Grille Jours × Horaires)
-            # ─────────────────────────────────────────────────────────────
-            st.divider()
-            st.markdown("### 📅 Mon Emploi du Temps Individuel")
-            def format_case(rows):
-                items = []
-                for _, r in rows.iterrows():
-                    code_up = str(r['Code']).upper()
-                    if 'COURS' in code_up:
-                        nat, color, bg = '📘', '#1e40af', '#dbeafe'
-                    elif 'TD' in code_up:
-                        nat, color, bg = '📗', '#166534', '#dcfce7'
-                    else:
-                        nat, color, bg = '🔴', '#b91c1c', '#fee2e2'
-                    
-                    txt = (f"<div style='margin-bottom:6px;padding:6px;border-left:3px solid {color};"
-                           f"background-color:{bg};border-radius:4px;'>"
-                           f"<b style='color:{color};'>{nat} {r['Enseignements']}</b><br>"
-                           f"<span style='font-size:11px;'>({r['Code']})</span><br>"
-                           f"<span style='font-size:11px;'>📍 {r['Lieu']}</span><br>"
-                           f"<b style='font-size:11px;'>🎓 {r['Promotion']}</b></div>")
-                    items.append(txt)
-                return "".join(items)   
-            grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
-            grid = grid.reindex(
-                index=[normalize(h) for h in horaires_list], 
-                columns=[normalize(j) for j in jours_list]
-            ).fillna("")
-            grid.index = [map_h.get(i, i) for i in grid.index]
-            grid.columns = [map_j.get(c, c) for c in grid.columns]
-        
-            # Suppression des lignes totalement vides
-            grid = grid[grid.any(axis=1)]
-        
-            st.write(grid.to_html(escape=False), unsafe_allow_html=True)
-        
-            # ─────────────────────────────────────────────────────────────
-            # 5. MES COLLÈGUES PAR PROMOTION (Accès restreint)
-            # ─────────────────────────────────────────────────────────────
-            st.divider()
-            st.markdown("### 👥 Mes collègues par promotion")
-            st.caption("🔒 Vous ne voyez que les enseignants des promotions où vous intervenez.")
-        
-            mes_promotions = [p for p in df_f['Promotion'].unique() 
-                              if p and str(p).strip() not in ["", "nan", "None", "Non defini", "Non défini"]]
-        
-            if len(mes_promotions) > 0:
-                for promo in sorted(mes_promotions):
-                    df_promo = df[df['Promotion'] == promo].copy()
-                    
-                    # Extraction du nom de famille de l'utilisateur connecté
-                    cible_nom_famille = extraire_nom_famille(cible)
-                    
-                    # Enseignants uniques de cette promo (exclusion exacte par nom de famille)
-                    autres_ens = [e for e in df_promo['Enseignants'].unique() 
-                                  if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]
-                                  and extraire_nom_famille(e) != cible_nom_famille]
-        
-                    if len(autres_ens) == 0:
-                        continue
-        
-                    with st.expander(f"🎓 {promo} — {len(autres_ens)} enseignant(s)", expanded=True):
-                        for nom_col in sorted(autres_ens):
-                            # Recherche d'abord par nom de famille, puis par nom complet
-                            nom_key_famille = extraire_nom_famille(nom_col)
-                            nom_key_complet = str(nom_col).strip().upper()
-                            
-                            nom_complet_col = repertoire_noms_complets.get(
-                                nom_key_famille, 
-                                repertoire_noms_complets.get(nom_key_complet, nom_col)
-                            )
-                            grade_col = repertoire_grades.get(
-                                nom_key_famille,
-                                repertoire_grades.get(nom_key_complet, "N/A")
-                            )
-                            qualite_col = repertoire_qualites.get(
-                                nom_key_famille,
-                                repertoire_qualites.get(nom_key_complet, "N/A")
-                            )
-                            email_col = repertoire_source.get(
-                                nom_key_famille,
-                                repertoire_source.get(nom_key_complet, None)
-                            )
-        
-                            # Badge couleur selon qualité
-                            badge_color = "#22c55e" if "PERMANENT" in str(qualite_col).upper() else "#f59e0b"
-        
-                            col1, col2, col3 = st.columns([3, 2, 2])
-                            with col1:
-                                st.markdown(f"**{nom_complet_col}**")
-                                st.caption(f"🏷️ {grade_col}")
-                            with col2:
-                                st.markdown(f"<span style='color:{badge_color}; font-weight:600; font-size:12px;'>{qualite_col}</span>", 
-                                           unsafe_allow_html=True)
-                            with col3:
-                                if email_col and "@" in str(email_col):
-                                    st.markdown(f"📧 `{email_col}`")
-                                else:
-                                    st.markdown("<span style='color:#94a3b8; font-size:12px;'>📧 Non communiqué</span>", 
-                                               unsafe_allow_html=True)
-                            st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #f1f5f9;'>", 
-                                       unsafe_allow_html=True)
-            else:
-                st.info("Vous n'êtes assigné à aucune promotion actuellement.")
-        
-            # ─────────────────────────────────────────────────────────────
-            # 6. TÉLÉCHARGEMENTS (UNIQUEMENT SES PROPRES DONNÉES)
-            # ─────────────────────────────────────────────────────────────
-            st.divider()
-            st.markdown("### 📥 Exporter mes données")
-        
-            col_dl1, col_dl2, col_dl3 = st.columns(3)
-        
-            # Excel
-            with col_dl1:
-                buf_ex = io.BytesIO()
-                df_export = df_f.drop(columns=['h_norm', 'j_norm', 'Type'], errors='ignore')
-                with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
-                    df_export.to_excel(writer, index=False, sheet_name='Mon_EDT')
-                    wb = writer.book
-                    ws = writer.sheets['Mon_EDT']
-                    header_fmt = wb.add_format({'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1})
-                    for col_num, value in enumerate(df_export.columns.values):
-                        ws.write(0, col_num, value, header_fmt)
-                    ws.set_column('A:G', 20)
-                st.download_button("📊 Excel", buf_ex.getvalue(), f"EDT_{cible}_2027.xlsx", 
-                                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                  use_container_width=True)
-        
-            # HTML
-            with col_dl2:
-                html_content = generate_pro_html(df_export, f"EDT - {nom_affichage_complet}", 
-                                                 "Département d'Électrotechnique - FGE/UDL-SBA")
-                st.download_button("🌐 HTML", html_content, f"EDT_{cible}_2027.html", "text/html",
-                                  use_container_width=True)
-        
-            # PDF (grille PPER.03)
-            with col_dl3:
-                pdf_data, err_pdf = generate_edt_individuel_pdf_classique(df_f, nom_affichage_complet)
-                if pdf_data:
-                    st.download_button("📄 PDF", pdf_data, f"EDT_{cible}_2027.pdf", "application/pdf",
-                                      use_container_width=True)
-                else:
-                    st.button("📄 PDF", disabled=True, use_container_width=True, help=err_pdf)
-        
-            st.stop()  # Empêche l'enseignant d'accéder au reste du code
     elif portail == "📅 Surveillances Examens":
         FILE_S = "surveillances_2027.xlsx"
         if os.path.exists(FILE_S):
@@ -4625,7 +4075,7 @@ if df is not None:
             else:
                 st.warning(f"⚠️ Aucune surveillance trouvée pour : {prof_sel}")
         else:
-            st.error("Le fichier 'surveillances_Semestre 01-2026-2027.xlsx' non établi pour le moment.")
+            st.error("Le fichier 'surveillances_2027.xlsx' est absent.")
 
     elif portail == "🤖 Générateur Automatique":
         if not is_admin:
@@ -5471,7 +4921,7 @@ elif mode_envoi == "Par Promotion (Automatique)":
         # =================================================================
         # =================================================================
 # --- LOGIQUE D'AFFICHAGE DU PORTAIL MISE À JOUR ---
-elif portail == "🎓 Portail mise à jour EDT":
+if portail == "🎓 Portail mise à jour EDT":
     st.write(f"**MODE ACTIF :** {portail}")
     st.subheader("📚 Espace mise à jour EDT")
     
@@ -5798,19 +5248,8 @@ if is_admin:
             else:
                 st.success("✅ Aucune surcharge détectée.")
 # --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
-# --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
 else:
     st.subheader("📅 Emploi du Temps - Vue Publique")
-    
-    # ═══════════════════════════════════════════════════════════════
-    # DÉFINITION LOCALE (sécurité contre NameError)
-    # ═══════════════════════════════════════════════════════════════
-    colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-    
-    # Vérification que df existe et n'est pas vide
-    if df is None or df.empty:
-        st.warning("⚠️ Aucune donnée EDT disponible pour l'affichage public.")
-        st.stop()
     
     # Filtres publics
     col_f1, col_f2 = st.columns(2)
@@ -5858,6 +5297,10 @@ else:
         st.download_button("📊 Télécharger la vue (Excel)", out_pub.getvalue(), "EDT_Vue_Publique.xlsx")
     with c2:
         st.download_button("📄 Télécharger la vue (HTML)", df_pub.to_html(index=False), "EDT_Vue_Publique.html", "text/html")
+
+# --- 6. PIED DE PAGE ---
+st.write("---")
+st.caption("🛠️ Application de gestion d'emploi du temps | Mode Admin : {}".format("✅ Actif" if is_admin else "❌ Inactif"))
 
 import streamlit as st
 from docx import Document
