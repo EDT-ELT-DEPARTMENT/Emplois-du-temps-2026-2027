@@ -1443,10 +1443,7 @@ def run_edt():
         elif portail == "👤 Mon Espace Enseignant":
             poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
         
-        if st.button("🚪 Déconnexion", use_container_width=True):
-            st.session_state["user_data"] = None
-            st.rerun()
-
+        
     # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
     
     # Constantes locales pour EDT
@@ -4288,9 +4285,6 @@ with st.sidebar:
     elif portail == "👤 Mon Espace Enseignant":
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
 
-    if st.button("🚪 Déconnexion du compte"):
-        st.session_state["user_data"] = None
-        st.rerun()
 # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
 # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
 if is_admin and mode_view == "✍️ Éditeur de données":
