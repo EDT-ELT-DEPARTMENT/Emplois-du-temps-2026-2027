@@ -1567,12 +1567,13 @@ def run_edt():
 
     import streamlit as st
     import pandas as pd
-    import os
-    import hashlib
+    import base64
     import io
-    from datetime import datetime, timedelta
-    from supabase import create_client
-    import streamlit as st
+    import time
+    import re
+    import os
+    from datetime import datetime
+    from collections import defaultdict
 
     # =============================================================================
     # FONCTIONS UTILITAIRES PRO POUR L'EXPORT (PDF / HTML / EXCEL)
