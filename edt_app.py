@@ -880,7 +880,7 @@ def run_assiduite():
         choix_vue = st.radio("Profil :", ["Etudiant (Depot)", "Administration (Decision)"], horizontal=True)
         st.divider()
 
-        if choix_vue == "Etudiant (Depot)":
+        
         if choix_vue == "Etudiant (Depot)":
             st.subheader("📤 Soumettre une demande de rehabilitation")
     
