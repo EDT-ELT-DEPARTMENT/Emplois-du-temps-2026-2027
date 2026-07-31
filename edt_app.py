@@ -160,12 +160,7 @@ def run_assiduite():
         if SUPABASE_URL and SUPABASE_KEY:
             supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
             MODE_SUPABASE = True
-            st.sidebar.success("☁️ Supabase connecte")
-        else:
-            st.sidebar.info("💾 Mode local (Supabase non configure)")
-    except Exception as e:
-        st.sidebar.warning(f"⚠️ Mode local : {e}")
-
+            
     # =============================================================================
     # CONFIGURATION FICHIERS
     # =============================================================================
