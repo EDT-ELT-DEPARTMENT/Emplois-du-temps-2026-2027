@@ -565,7 +565,38 @@ def run_assiduite():
     # =============================================================================
     # INTERFACE STREAMLIT
     # =============================================================================
+    def get_absences_etudiant(nom_etudiant):
+    """Récupère toutes les absences signalées pour un étudiant donné."""
+    if MODE_SUPABASE:
+        try:
+            res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
+            return res.data if res.data else []
+        except Exception as e:
+            st.error(f"Erreur chargement absences : {e}")
+            return []
+    else:
+        return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]
 
+
+def trouver_requete_existante(nom_etudiant, matiere):
+    """Trouve une requête en attente pour cet étudiant et cette matière."""
+    if MODE_SUPABASE:
+        try:
+            res = supabase.table("requetes_absences").select("*")\
+                .eq("nom_etudiant", nom_etudiant)\
+                .eq("matiere", matiere)\
+                .eq("statut", "En attente").execute()
+            return res.data[0] if res.data else None
+        except Exception as e:
+            st.error(f"Erreur recherche requête : {e}")
+            return None
+    else:
+        for r in st.session_state.requetes:
+            if (r.get("nom_etudiant") == nom_etudiant and 
+                r.get("matiere") == matiere and 
+                r.get("statut") == "En attente"):
+                return r
+        return None
 
     st.title("📊 Plateforme de Suivi d'Assiduite des Etudiants")
     st.caption("Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA - Annee 2026-2027")
@@ -843,58 +874,140 @@ def run_assiduite():
         st.divider()
 
         if choix_vue == "Etudiant (Depot)":
+        if choix_vue == "Etudiant (Depot)":
             st.subheader("📤 Soumettre une demande de rehabilitation")
-
-            with st.form("form_depot", clear_on_submit=True):
-                col1, col2 = st.columns(2)
-                with col1:
-                    promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
-                    promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_depot")
-
-                    df_etu_promo = df_etu[df_etu["Promotion"] == promo_sel]
-                    noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
-                    etudiant_sel = st.selectbox("Votre Nom :", noms_dispo, key="etud_depot")
-                with col2:
-                    mats_dispo = sorted(df_edt["Enseignements"].dropna().unique().tolist())
-                    matiere_sel = st.selectbox("Matiere concernee :", mats_dispo, key="mat_depot")
-                    motif_sel = st.selectbox("Motif :", CAUSES_ABSENCES, key="motif_depot")
-
-                fichier_pdf = st.file_uploader("Joindre le justificatif (PDF)", type=["pdf"])
-                submit = st.form_submit_button("🚀 ENVOYER MA DEMANDE")
-
-            if submit:
-                if not fichier_pdf:
-                    st.error("❌ Vous devez joindre un fichier PDF.")
-                else:
-                    try:
-                        pdf_bytes = fichier_pdf.read()
-                        pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
-
-                        data_insert = {
-                            "date_demande": datetime.now().strftime("%d/%m/%Y"),
-                            "nom_etudiant": etudiant_sel,
-                            "matiere": matiere_sel,
-                            "promotion": promo_sel,
-                            "motif": motif_sel,
-                            "justificatif_pdf": pdf_encoded,
-                            "statut": "En attente"
+    
+            # --- Sélection identité ---
+            col1, col2 = st.columns(2)
+            with col1:
+                promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
+                promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_depot")
+                df_etu_promo = df_etu[df_etu["Promotion"] == promo_sel]
+                noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
+                etudiant_sel = st.selectbox("Votre Nom :", noms_dispo, key="etud_depot")
+            with col2:
+                st.markdown("**ℹ️ Informations**")
+                st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
+    
+            # --- MES ABSENCES SIGNALÉES ---
+            st.divider()
+            st.markdown("### 📋 Mes absences signalées")
+    
+            absences_etu = get_absences_etudiant(etudiant_sel)
+    
+            if absences_etu:
+                # Construction d'un tableau récapitulatif avec statut du justificatif
+                data_display = []
+                for abs_item in absences_etu:
+                    mat = abs_item.get("matiere", "")
+                    req = trouver_requete_existante(etudiant_sel, mat)
+                    
+                    if req:
+                        statut_j = "🟡 " + req.get("statut", "En attente")
+                        date_dep = req.get("date_demande", "-")
+                    else:
+                        statut_j = "🔴 Non déposé"
+                        date_dep = "-"
+    
+                    data_display.append({
+                        "Matière": mat,
+                        "Date d'absence": abs_item.get("date_absence", ""),
+                        "Jour": abs_item.get("jour_absence", ""),
+                        "Horaire": abs_item.get("horaire_absence", ""),
+                        "Motif initial": abs_item.get("cause_non_eligibilite", ""),
+                        "Statut justificatif": statut_j,
+                        "Date dépôt": date_dep
+                    })
+    
+                df_disp = pd.DataFrame(data_display)
+                st.dataframe(df_disp, use_container_width=True, hide_index=True)
+    
+                # --- FORMULAIRE D'ENVOI CIBLÉ ---
+                st.markdown("### 📎 Envoyer un justificatif pour une absence")
+    
+                # On ne propose que les absences sans justificatif déposé
+                absences_sans_justif = [
+                    a for a in absences_etu 
+                    if not trouver_requete_existante(etudiant_sel, a.get("matiere", ""))
+                ]
+    
+                if absences_sans_justif:
+                    with st.form("form_depot_cible", clear_on_submit=True):
+                        options_abs = {
+                            f"{a['matiere']} — {a['date_absence']} ({a['jour_absence']} {a['horaire_absence']})": a 
+                            for a in absences_sans_justif
                         }
-
-                        if MODE_SUPABASE:
-                            if enregistrer_requete_supabase(data_insert):
-                                st.success(f"✅ Demande enregistree pour {etudiant_sel} !")
-                                st.balloons()
-                                time.sleep(0.5)
-                                st.rerun()
+                        sel_abs = st.selectbox("Sélectionnez l'absence concernée :", list(options_abs.keys()))
+                        motif_dep = st.selectbox("Motif du justificatif :", CAUSES_ABSENCES, key="motif_dep_cible")
+                        fichier_pdf_cible = st.file_uploader("Joindre le justificatif (PDF)", type=["pdf"], key="pdf_cible")
+                        submit_cible = st.form_submit_button("🚀 ENVOYER LE JUSTIFICATIF")
+    
+                    if submit_cible:
+                        if not fichier_pdf_cible:
+                            st.error("❌ Vous devez joindre un fichier PDF.")
                         else:
-                            data_insert["id"] = len(st.session_state.requetes) + 1
-                            st.session_state.requetes.append(data_insert)
-                            st.success(f"✅ Demande enregistree (mode local) pour {etudiant_sel} !")
-                            st.balloons()
-                            time.sleep(0.5)
-                            st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Erreur : {e}")
+                            try:
+                                pdf_bytes = fichier_pdf_cible.read()
+                                pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
+                                abs_conc = options_abs[sel_abs]
+    
+                                # Vérifier si une requête auto existe déjà (créée par l'enseignant)
+                                req_ex = trouver_requete_existante(etudiant_sel, abs_conc["matiere"])
+    
+                                if MODE_SUPABASE:
+                                    if req_ex:
+                                        # Mise à jour de la demande déjà présente (créée auto par l'enseignant)
+                                        supabase.table("requetes_absences").update({
+                                            "justificatif_pdf": pdf_encoded,
+                                            "motif": motif_dep,
+                                            "date_demande": datetime.now().strftime("%d/%m/%Y")
+                                        }).eq("id", req_ex["id"]).execute()
+                                        st.success(f"✅ Justificatif ajouté à la demande existante pour **{abs_conc['matiere']}** !")
+                                    else:
+                                        # Création nouvelle demande
+                                        data_insert = {
+                                            "date_demande": datetime.now().strftime("%d/%m/%Y"),
+                                            "nom_etudiant": etudiant_sel,
+                                            "matiere": abs_conc["matiere"],
+                                            "promotion": abs_conc.get("promotion", promo_sel),
+                                            "motif": motif_dep,
+                                            "justificatif_pdf": pdf_encoded,
+                                            "statut": "En attente"
+                                        }
+                                        enregistrer_requete_supabase(data_insert)
+                                        st.success(f"✅ Demande enregistrée pour **{etudiant_sel}** !")
+                                    st.balloons()
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    if req_ex:
+                                        req_ex["justificatif_pdf"] = pdf_encoded
+                                        req_ex["motif"] = motif_dep
+                                        req_ex["date_demande"] = datetime.now().strftime("%d/%m/%Y")
+                                        st.success(f"✅ Justificatif mis à jour (mode local) pour **{abs_conc['matiere']}** !")
+                                    else:
+                                        data_insert = {
+                                            "date_demande": datetime.now().strftime("%d/%m/%Y"),
+                                            "nom_etudiant": etudiant_sel,
+                                            "matiere": abs_conc["matiere"],
+                                            "promotion": abs_conc.get("promotion", promo_sel),
+                                            "motif": motif_dep,
+                                            "justificatif_pdf": pdf_encoded,
+                                            "statut": "En attente",
+                                            "id": len(st.session_state.requetes) + 1
+                                        }
+                                        st.session_state.requetes.append(data_insert)
+                                        st.success(f"✅ Demande enregistrée (mode local) pour **{etudiant_sel}** !")
+                                    st.balloons()
+                                    time.sleep(0.5)
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur : {e}")
+                else:
+                    st.info("✅ Toutes vos absences ont déjà un justificatif déposé ou une demande en cours de traitement.")
+            else:
+                st.info("ℹ️ Aucune absence signalée pour vous actuellement.")
+                st.caption("Si vous pensez qu'il s'agit d'une erreur, contactez l'enseignant de la matière concernée.")
 
         else:
             pwd_admin = st.text_input("🔑 Code Admin :", type="password", key="pwd_admin")
