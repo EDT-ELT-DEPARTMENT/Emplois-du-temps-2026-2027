@@ -590,7 +590,7 @@ def run_assiduite():
             except Exception as e:
                 st.error(f"Erreur recherche requête : {e}")
                 return None
-    else:
+   
         for r in st.session_state.requetes:
             if (r.get("nom_etudiant") == nom_etudiant and 
                 r.get("matiere") == matiere and 
