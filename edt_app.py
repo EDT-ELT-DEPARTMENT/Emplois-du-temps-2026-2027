@@ -653,49 +653,52 @@ def run_assiduite():
     # =============================================================================
     # ONGLET 1 : SUIVI D'ASSIDUITE
     # =============================================================================
-        with tab1:
-            st.header("📝 Suivi de l'Assiduite et Compteur d'Absences")
-        
-                sel_prof = ""
-                sel_mat = ""
-                promo_c = ""
-                df_matiere = pd.DataFrame()
-        
-                if is_enseignant_connecte:
-                    # >>> MODE ENSEIGNANT : accès direct, pas de code
-                    sel_prof = user['nom_officiel']
-                    st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduité")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.markdown(f"**Enseignant :** `{sel_prof}`")
-                    with c2:
-                        st.markdown("*Accès direct — Aucun code requis*")
-                else:
-                    # >>> MODE ADMIN : code requis
-                    pwd = st.text_input("🔑 Code d'acces :", type="password", key="pwd_tab1")
-        
-                    if pwd == CODE_ADMIN:
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            sel_prof = st.selectbox("👤 Selectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1")
-                    elif pwd != "":
-                        st.error("❌ Code incorrect.")
-        
-                # >>> SUITE COMMUNE (enseignant connecté OU admin validé)
-                if sel_prof:
-                    df_matiere = trouver_matiere_promo(sel_prof, df_edt)
-                    if not df_matiere.empty:
-                        liste_mats = sorted(df_matiere["Enseignements"].dropna().unique().tolist())
-                        with c2:
-                            sel_mat = st.selectbox("📚 Selectionnez la Matiere :", [""] + liste_mats, key="mat_T1")
-        
-                        if sel_mat:
-                            info_rows = df_matiere[df_matiere["Enseignements"] == sel_mat]
-                            if not info_rows.empty:
-                                promo_c = str(info_rows.iloc[0]["Promotion_Mappee"]).strip()
-        
-                if sel_mat and promo_c:
-                      
+            # =============================================================================
+    # ONGLET 1 : SUIVI D'ASSIDUITE
+    # =============================================================================
+    with tab1:
+        st.header("📝 Suivi de l'Assiduite et Compteur d'Absences")
+
+        sel_prof = ""
+        sel_mat = ""
+        promo_c = ""
+        df_matiere = pd.DataFrame()
+
+        if is_enseignant_connecte:
+            # >>> MODE ENSEIGNANT : accès direct, pas de code
+            sel_prof = user['nom_officiel']
+            st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduité")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(f"**Enseignant :** `{sel_prof}`")
+            with c2:
+                st.markdown("*Accès direct — Aucun code requis*")
+        else:
+            # >>> MODE ADMIN : code requis
+            pwd = st.text_input("🔑 Code d'acces :", type="password", key="pwd_tab1")
+
+            if pwd == CODE_ADMIN:
+                c1, c2 = st.columns(2)
+                with c1:
+                    sel_prof = st.selectbox("👤 Selectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1")
+            elif pwd != "":
+                st.error("❌ Code incorrect.")
+
+        # >>> SUITE COMMUNE (enseignant connecté OU admin validé)
+        if sel_prof:
+            df_matiere = trouver_matiere_promo(sel_prof, df_edt)
+            if not df_matiere.empty:
+                liste_mats = sorted(df_matiere["Enseignements"].dropna().unique().tolist())
+                with c2:
+                    sel_mat = st.selectbox("📚 Selectionnez la Matiere :", [""] + liste_mats, key="mat_T1")
+
+                if sel_mat:
+                    info_rows = df_matiere[df_matiere["Enseignements"] == sel_mat]
+                    if not info_rows.empty:
+                        promo_c = str(info_rows.iloc[0]["Promotion_Mappee"]).strip()
+
+        if sel_mat and promo_c:              
+                                      
                 df_p = df_etu[df_etu["Promotion"].astype(str).str.strip().str.upper() == promo_c.upper()].copy()
 
                 if not df_p.empty:
