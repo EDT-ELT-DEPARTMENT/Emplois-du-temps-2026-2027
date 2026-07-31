@@ -629,7 +629,7 @@ def run_assiduite():
     # =============================================================================
     # ONGLETS
     # =============================================================================
-    
+    if is_enseignant_connecte:
         tab1, = st.tabs(["📝 Suivi d'Assiduite"])
     else:
         tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
