@@ -5187,6 +5187,57 @@ if df is not None:
                         mime="text/html",
                         use_container_width=True
                     )
+        elif is_admin and mode_view == "🏢 Planning Salles":
+            s_sel = st.selectbox("Choisir Salle / Amphi :", sorted(df["Lieu"].unique()))
+            df_s = df[df["Lieu"].astype(str).str.startswith(s_sel)]
+            
+            def fmt_s(rows):
+                items = [f"<b>{r['Promotion']}</b><br>{r['Enseignements']}<br><i>{r['Enseignants']}</i>" for _, r in rows.iterrows()]
+                return "<div class='separator'></div>".join(items)
+                
+            grid_s = df_s.groupby(['h_norm', 'j_norm']).apply(fmt_s, include_groups=False).unstack('j_norm')
+            grid_s = grid_s.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
+            grid_s.index = horaires_list
+            grid_s.columns = jours_list
+            
+            # Affichage Écran
+            st.write(grid_s.to_html(escape=False), unsafe_allow_html=True)
+
+            # --- SECTION TÉLÉCHARGEMENT ---
+            st.markdown("---")
+            cs1, cs2 = st.columns(2)
+
+            # 1. EXCEL
+            import io
+            buf_s = io.BytesIO()
+            # On exporte la liste brute pour l'Excel (plus exploitable)
+            df_s.drop(columns=['h_norm', 'j_norm'], errors='ignore').to_excel(buf_s, index=False)
+            cs1.download_button(
+                label=f"📥 Liste {s_sel} (Excel)",
+                data=buf_ex.getvalue() if 'buf_ex' in locals() else buf_s.getvalue(), # Sécurité buffer
+                file_name=f"Planning_{s_sel}_2027.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key=f"xl_salle_{s_sel}"
+            )
+
+            # 2. PDF (Centrage et Marges de sécurité)
+            
+            try:
+                pdf_data_s, err_s = generate_edt_individuel_lieu_pdf(df_s, s_sel)
+                if pdf_data_s:
+                    cs2.download_button(
+                        label=f"📄 Planning {s_sel} (PDF)",
+                        data=pdf_data_s,
+                        file_name=f"Planning_{s_sel}_2027.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key=f"pdf_salle_{s_sel}"
+                    )
+                else:
+                    cs2.error(f"Erreur PDF : {err_s}")
+            except Exception as e:
+                cs2.error(f"Erreur PDF : {e}")
         elif is_admin and mode_view == "Promotion":
             # 1. Sélection de la promotion via le menu déroulant
             p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
