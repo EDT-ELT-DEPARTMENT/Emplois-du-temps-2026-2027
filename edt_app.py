@@ -161,13 +161,7 @@ def run_assiduite():
             supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
             MODE_SUPABASE = True
             
-    # =============================================================================
-    # CONFIGURATION FICHIERS
-    # =============================================================================
-    FILE_ETUDIANTS = "Liste des étudiants_2026-2027.xlsx"
-    FILE_EDT       = "dataEDT-ELT-S1-2027.xlsx"
-    FILE_ENS       = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
-        # =============================================================================
+    
     # CONFIGURATION FICHIERS (CORRIGÉE — utilise _BASE_DIR comme le module EDT)
     # =============================================================================
     FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
