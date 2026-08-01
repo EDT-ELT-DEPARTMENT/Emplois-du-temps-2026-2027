@@ -8449,6 +8449,19 @@ if is_admin:
         afficher_historique_bordereaux()
 
 # ═══════════════════════════════════════════════════════════════
+# GARDIEN UNIQUE DE SESSION (À UTILISER UNE SEULE FOIS)
+# ═══════════════════════════════════════════════════════════════
+user = st.session_state.get("user_data")
+
+if user is None:
+    st.warning("🔒 Veuillez vous connecter pour accéder à la plateforme.")
+    st.stop()
+
+# Évaluation unique et fiable du rôle
+is_admin = (user.get("role") == "admin")
+nom_utilisateur = user.get("nom_officiel", "Utilisateur")
+
+# ═══════════════════════════════════════════════════════════════
 # SIDEBAR UNIQUE (TOUS LES PORTAILS)
 # ═══════════════════════════════════════════════════════════════
 with st.sidebar:
