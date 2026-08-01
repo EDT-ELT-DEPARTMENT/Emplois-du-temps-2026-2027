@@ -3181,7 +3181,59 @@ def render_download_hub(df_global, user_data, is_admin):
         .dl-hub p { margin: 0 0 15px 0; opacity: 0.9; font-size: 13px; }
         </style>
     """, unsafe_allow_html=True)
-
+    st.markdown(f"""
+                <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;">
+                    <h3 style="margin: 0;">📊 Charge Horaire hebdomadaire : {nom_affichage_complet}</h3>
+                    <span style="background-color: {color_grade}; color: white; padding: 3px 12px; 
+                                 border-radius: 15px; font-size: 0.8em; font-weight: bold; border: 1px solid rgba(255,255,255,0.1);">
+                        {grade_enseignant}
+                    </span>
+                    <span style="background-color: {color_statut}; color: white; padding: 3px 12px; 
+                                 border-radius: 15px; font-size: 0.8em; font-weight: bold; border: 1px solid rgba(255,255,255,0.1);">
+                        {statut_enseignant}
+                    </span>
+                </div>
+            """, unsafe_allow_html=True)
+                # --- 4. AFFICHAGE DES COMPTEURS (COURS, TD, TP) ---
+                st.markdown(f"""
+                    <div class="stat-container">
+                        <div class="stat-box bg-cours">📘 {nb_cours} Cours</div>
+                        <div class="stat-box bg-td">📗 {nb_td} TD</div>
+                        <div class="stat-box bg-tp">🔴 {nb_tp} TP</div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                # Affichage des détails de charge (Optionnel selon votre interface)          
+                if h_sup < 0:
+                    st.warning(f"⚠️ Attention : Sous-charge détectée de {abs(delta_eq)} eq/h par rapport au seuil.")
+    
+                c1, c2, c3 = st.columns(3)
+                
+                with c1:
+                    st.markdown(f"<div class='metric-card'>Charge Effective<br><h2>{round(charge_effective, 2)} h</h2></div>", unsafe_allow_html=True)
+                
+                with c2:
+                    st.markdown(f"<div class='metric-card'>Seuil Réglementaire<br><h2>{seuil_obligatoire} eq/h</h2></div>", unsafe_allow_html=True)
+                
+                with c3:
+                    # Utilisation de h_sup pour la logique de couleur (résout la NameError)
+                    color_res = "#2ecc71" if h_sup >= 0 else "#e74c3c"
+                    label_res = "Heures Sup. Réelles" if h_sup >= 0 else "Déficit Horaire"            
+           
+                
+                st.markdown(f"""
+                    <div class='metric-card' style='border-bottom: 5px solid {color_res};'>
+                        {label_res}<br>
+                        <h2 style='color: {color_res};'>{h_sup_formattee}</h2>
+                    </div>
+                """, unsafe_allow_html=True)
+            # --- NOTES DE SYNTHÈSE ---
+            if h_sup > 0:
+                st.caption(f"✅ L'enseignant a complété sa charge et totalise {round(h_sup, 2)}h en supplément.")
+            elif h_sup < 0:
+                st.caption(f"⚠️ Attention : Sous-charge détectée de {round(abs(h_sup), 2)}h par rapport au seuil.")
+            else:
+                st.caption("⚖️ Service réglementaire exactement rempli (Pile 6.0 eq/h).")
     st.markdown("""
         <div class="dl-hub">
             <h3>📥 Centre de Telechargement Rapide</h3>
