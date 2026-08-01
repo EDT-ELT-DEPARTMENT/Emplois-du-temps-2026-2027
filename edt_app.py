@@ -3181,31 +3181,7 @@ def render_download_hub(df_global, user_data, is_admin):
         .dl-hub p { margin: 0 0 15px 0; opacity: 0.9; font-size: 13px; }
         </style>
     """, unsafe_allow_html=True)
-    st.markdown(f"""
-                <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;">
-                    <h3 style="margin: 0;">📊 Charge Horaire hebdomadaire : {nom_affichage_complet}</h3>
-                    <span style="background-color: {color_grade}; color: white; padding: 3px 12px; 
-                                 border-radius: 15px; font-size: 0.8em; font-weight: bold; border: 1px solid rgba(255,255,255,0.1);">
-                        {grade_enseignant}
-                    </span>
-                    <span style="background-color: {color_statut}; color: white; padding: 3px 12px; 
-                                 border-radius: 15px; font-size: 0.8em; font-weight: bold; border: 1px solid rgba(255,255,255,0.1);">
-                        {statut_enseignant}
-                    </span>
-                </div>
-            """, unsafe_allow_html=True)
-    # --- 4. AFFICHAGE DES COMPTEURS (COURS, TD, TP) ---
-                  
-    st.markdown(f"""
-        <div class='metric-card' style='border-bottom: 5px solid {color_res};'>
-            {label_res}<br>
-            <h2 style='color: {color_res};'>{h_sup_formattee}</h2>
-        </div>
-    """, unsafe_allow_html=True)
-# --- NOTES DE SYNTHÈSE ---
 
-else:
-    st.caption("⚖️ Service réglementaire exactement rempli (Pile 6.0 eq/h).")
     st.markdown("""
         <div class="dl-hub">
             <h3>📥 Centre de Telechargement Rapide</h3>
@@ -3215,7 +3191,7 @@ else:
 
     if df_global is None or df_global.empty:
         st.warning("Aucune donnee chargee. Verifiez votre connexion Supabase ou votre fichier Excel.")
-     
+        return
 
     # Nettoyage : suppression des colonnes techniques internes pour tous les exports
     COLONNES_CACHEES = ['h_norm', 'j_norm']
