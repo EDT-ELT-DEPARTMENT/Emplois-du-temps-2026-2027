@@ -3218,7 +3218,7 @@ else:
 
     if df_global is None or df_global.empty:
         st.warning("Aucune donnee chargee. Verifiez votre connexion Supabase ou votre fichier Excel.")
-     """   return
+     
 
     # Nettoyage : suppression des colonnes techniques internes pour tous les exports
     COLONNES_CACHEES = ['h_norm', 'j_norm']
