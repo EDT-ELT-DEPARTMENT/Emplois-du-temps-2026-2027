@@ -1038,7 +1038,7 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab3:
-            st.header("📊 Registres et Bilans Agreges")
+            st.header("📊 Registres et Bilans")
 
             promo_filtre = st.selectbox(
                 "Filtrer par Promotion :",
@@ -1092,7 +1092,7 @@ def run_assiduite():
                         use_container_width=True
                     )
 
-                st.subheader("📚 Bilan par Etudiant et Matiere")
+                st.subheader("📚 Bilan par Etudiant et Matière")
                 df_bilan_mat = df_tab.groupby(["Etudiant", "Matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
