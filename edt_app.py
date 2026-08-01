@@ -3203,7 +3203,7 @@ def render_download_hub(df_global, user_data, is_admin):
         </div>
     """, unsafe_allow_html=True)
 # --- NOTES DE SYNTHÈSE ---
-if h_sup > 0:
+elif h_sup > 0:
     st.caption(f"✅ L'enseignant a complété sa charge et totalise {round(h_sup, 2)}h en supplément.")
 elif h_sup < 0:
     st.caption(f"⚠️ Attention : Sous-charge détectée de {round(abs(h_sup), 2)}h par rapport au seuil.")
