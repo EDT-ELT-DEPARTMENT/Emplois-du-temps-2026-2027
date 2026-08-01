@@ -3275,14 +3275,7 @@ def render_download_hub(df_global, user_data, is_admin):
             # ═══════════════════════════════════════════════════════
             
         c1, c2, c3 = st.columns(3)
-        
-        st.markdown("**👤 Par Enseignant**")    
-        sel_prof = st.selectbox("Choisir enseignant", ["Tous"] + profs, key="hub_prof")
-        df_filtre_p = df_propre.copy()
-        if sel_prof != "Tous":
-            df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
-        c1, c2, c3 = st.columns(3)
-        
+              
         # ═══════════════════════════════════════════════════════
         # PDF : individuel ou global
         # ═══════════════════════════════════════════════════════
