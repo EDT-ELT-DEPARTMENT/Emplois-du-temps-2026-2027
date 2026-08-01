@@ -8447,3 +8447,56 @@ if is_admin:
     st.divider()
     with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
         afficher_historique_bordereaux()
+# ═══════════════════════════════════════════════════════════════
+# GARDIEN UNIQUE DE SESSION (À UTILISER UNE SEULE FOIS)
+# ═══════════════════════════════════════════════════════════════
+user = st.session_state.get("user_data")
+
+if user is None:
+    st.warning("🔒 Veuillez vous connecter pour accéder à la plateforme.")
+    st.stop()
+
+# Évaluation unique et fiable du rôle
+is_admin = (user.get("role") == "admin")
+nom_utilisateur = user.get("nom_officiel", "Utilisateur")
+
+# ═══════════════════════════════════════════════════════════════
+# SIDEBAR UNIQUE (TOUS LES PORTAILS)
+# ═══════════════════════════════════════════════════════════════
+with st.sidebar:
+    st.header(f"👤 {nom_utilisateur}")
+    
+    if is_admin:
+        options_portail = [
+            "📖 Emploi du Temps", 
+            "📅 Surveillances Examens", 
+            "🤖 Générateur Automatique", 
+            "👥 Portail Enseignants", 
+            "🎓 Portail mise à jour EDT", 
+            "📢 Gestion Administrative"
+        ]
+    else:
+        options_portail = [
+            "👤 Mon Espace Enseignant",
+            "📅 Surveillances Examens"
+        ]
+    
+    portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
+    st.divider()
+    
+    # Options spécifiques admin
+    mode_view = "Personnel"
+    poste_sup = False
+    
+    if portail == "📖 Emploi du Temps" and is_admin:
+        mode_view = st.radio("Vue Administration :", [
+            "Promotion", "Enseignant", "🏢 Planning Salles", 
+            "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
+        ])
+        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
+    elif portail == "👤 Mon Espace Enseignant":
+        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
+    
+    if st.button("🚪 Déconnexion", use_container_width=True):
+        st.session_state["user_data"] = None
+        st.rerun()
