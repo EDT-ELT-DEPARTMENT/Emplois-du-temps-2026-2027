@@ -3248,8 +3248,35 @@ def render_download_hub(df_global, user_data, is_admin):
         c3.download_button("📊 Excel", xlsx_data, f"EDT_{sel_promo}_2027.xlsx", 
                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="dx_promo")
     
+    
     with col2:
         st.markdown("**👤 Par Enseignant**")
+        sel_prof = st.selectbox("Choisir enseignant", ["Tous"] + profs, key="hub_prof")
+        df_filtre_p = df_propre.copy()
+        if sel_prof != "Tous":
+            df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
+            
+            # ═══════════════════════════════════════════════════════
+            # AJOUT : Compteurs Cours / TD / TP pour l'enseignant sélectionné
+            # ═══════════════════════════════════════════════════════
+            df_filtre_p['Type'] = df_filtre_p['Code'].apply(
+                lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
+            )
+            # On dédoublonne sur Horaire + Jours pour compter les séances uniques
+            df_u = df_filtre_p.drop_duplicates(subset=['Horaire', 'Jours'])
+            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
+            nb_td    = len(df_u[df_u['Type'] == 'TD'])
+            nb_tp    = len(df_u[df_u['Type'] == 'TP'])
+            
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("📘 Cours", nb_cours)
+            mc2.metric("📗 TD", nb_td)
+            mc3.metric("🔴 TP", nb_tp)
+            # ═══════════════════════════════════════════════════════
+            
+        c1, c2, c3 = st.columns(3)
+        
+        st.markdown("**👤 Par Enseignant**")    
         sel_prof = st.selectbox("Choisir enseignant", ["Tous"] + profs, key="hub_prof")
         df_filtre_p = df_propre.copy()
         if sel_prof != "Tous":
