@@ -1599,12 +1599,22 @@ def run_edt():
         cible = user['nom_officiel']
         nom_aff = repertoire_noms_complets.get(cible.strip().upper(), cible)
         
-        st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #1E3A8A, #3B82F6); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
-                <h2 style="margin:0;">👤 {nom_aff}</h2>
-                <p style="margin:5px 0 0 0; opacity:0.9;">Espace Personnel Enseignant - S1 2026-2027</p>
-            </div>
-        """, unsafe_allow_html=True)
+        # ═══════════════════════════════════════════════════════
+        # EN-TÊTE IDENTITÉ + DÉCONNEXION
+        # ═══════════════════════════════════════════════════════
+        col_id, col_deco = st.columns([4, 1])
+        with col_id:
+            st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #1E3A8A, #3B82F6); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+                    <h2 style="margin:0;">👤 {nom_aff}</h2>
+                    <p style="margin:5px 0 0 0; opacity:0.9;">Espace Personnel Enseignant - S1 2026-2027</p>
+                </div>
+            """, unsafe_allow_html=True)
+        with col_deco:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🚪 Déconnexion", use_container_width=True, type="primary", key="deco_ens_indiv_main"):
+                st.session_state["user_data"] = None
+                st.rerun()
 
         df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
         if df_f.empty:
