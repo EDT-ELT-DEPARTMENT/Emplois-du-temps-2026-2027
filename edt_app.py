@@ -1452,200 +1452,55 @@ def run_edt():
     # ============================================================
     if portail == "📖 Emploi du Temps" and is_admin:
         if mode_view == "Enseignant":
-       
-                    # ─────────────────────────────────────────────────────────────
-                    # SÉLECTION ADMIN (conservée)
-                    # ─────────────────────────────────────────────────────────────
-                    options_affichage = [repertoire_noms_complets.get(n.strip().upper(), n) 
-                                        for n in sorted([e for e in df["Enseignants"].unique() if e and e != "Non défini"])]
-                    inverse_map = {repertoire_noms_complets.get(n.strip().upper(), n): n 
-                                  for n in sorted([e for e in df["Enseignants"].unique() if e and e != "Non défini"])}
-                    
-                    choix_utilisateur = st.selectbox("Sélectionner l'Enseignant :", options=options_affichage, index=0)
-                    cible = inverse_map[choix_utilisateur]
-                    nom_affichage_complet = choix_utilisateur
-        
-                    # ─────────────────────────────────────────────────────────────
-                    # INFOS PERSONNELLES (identique Espace Enseignant)
-                    # ─────────────────────────────────────────────────────────────
-                    grade_enseignant = repertoire_grades.get(cible.strip().upper(), "Grade non spécifié")
-                    statut_enseignant = repertoire_qualites.get(cible.strip().upper(), "Statut non spécifié")
-                    email_ens = repertoire_source.get(cible.strip().upper(), "Non renseigné")
-                    tel_ens = repertoire_telephones.get(cible.strip().upper(), "Non renseigné")
-        
-                    st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
-                                    padding: 20px; border-radius: 14px; color: white; margin-bottom: 20px;
-                                    box-shadow: 0 6px 12px rgba(0,0,0,0.12);">
-                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-                                <div>
-                                    <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
-                                        Vue Administration — Fiche Enseignant
-                                    </div>
-                                    <div style="font-size: 24px; font-weight: bold; margin-top: 6px;">
-                                        {nom_affichage_complet}
-                                    </div>
-                                    <div style="margin-top: 10px; display: flex; gap: 8px;">
-                                        <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
-                                            {grade_enseignant}
-                                        </span>
-                                        <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
-                                            {statut_enseignant}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div style="text-align: right; font-size: 13px; line-height: 1.8;">
-                                    <div>📧 {email_ens}</div>
-                                    <div>📱 {tel_ens}</div>
-                                    <div style="opacity: 0.8; font-size: 11px; margin-top: 4px;">S1 — 2026-2027</div>
-                                </div>
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-        
-                    # ─────────────────────────────────────────────────────────────
-                    # CHARGEMENT DONNÉES & CALCULS (identique Espace Enseignant)
-                    # ─────────────────────────────────────────────────────────────
-                    df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
-                    
-                    if df_f.empty:
-                        st.warning("⚠️ Aucun cours n'est programmé pour cet enseignant.")
+            cible = st.selectbox("Sélectionner l'Enseignant :", 
+                                sorted([e for e in df["Enseignants"].unique() if e and e != "Non défini"]))
+            
+            df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
+            df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
+            df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
+
+            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
+            nb_td = len(df_u[df_u['Type'] == 'TD'])
+            nb_tp = len(df_u[df_u['Type'] == 'TP'])
+            seuil = 3.0 if poste_sup else 6.0
+            charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
+            delta = charge_eq - seuil
+            h_sup = delta * 1.5
+
+            st.markdown(f"### 📊 Charge Horaire : {cible}")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("📘 Cours", nb_cours)
+            c2.metric("📗 TD", nb_td)
+            c3.metric("🔴 TP", nb_tp)
+            c4.metric("Charge Eq/h", f"{charge_eq:.1f}")
+
+            if h_sup > 0:
+                st.success(f"✅ Heures supplémentaires : +{h_sup:.1f}h")
+            elif h_sup < 0:
+                st.warning(f"⚠️ Déficit : {h_sup:.1f}h")
+            else:
+                st.info("⚖️ Seuil exact")
+
+            # Grille EDT
+            def format_case(rows):
+                items = []
+                for _, r in rows.iterrows():
+                    code_up = str(r['Code']).upper()
+                    if 'COURS' in code_up:
+                        nat = '📘'
+                    elif 'TD' in code_up:
+                        nat = '📗'
                     else:
-                        df_f['Type'] = df_f['Code'].apply(
-                            lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
-                        )
-                        df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
-                        
-                        nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-                        nb_td = len(df_u[df_u['Type'] == 'TD'])
-                        nb_tp = len(df_u[df_u['Type'] == 'TP'])
-                        
-                        seuil_obligatoire = 3.0 if poste_sup else 6.0
-                        charge_totale_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
-                        delta_eq = charge_totale_eq - seuil_obligatoire
-                        h_sup = delta_eq * 1.5
-                        
-                        abs_h_sup = abs(h_sup)
-                        heures_entieres = int(abs_h_sup)
-                        minutes_restantes = int((abs_h_sup - heures_entieres) * 60)
-                        signe_str = "+" if h_sup >= 0 else "-"
-                        h_sup_formattee = f"{signe_str}{heures_entieres}h{minutes_restantes:02d}"
-                        charge_effective = (nb_cours + nb_td + nb_tp) * 1.5
-        
-                        # ─────────────────────────────────────────────────────────────
-                        # MÉTRIQUES (identique Espace Enseignant — 5 cartes)
-                        # ─────────────────────────────────────────────────────────────
-                        st.markdown(f"""
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                                <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
-                                            box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #3b82f6;">
-                                    <div style="font-size: 26px; font-weight: 800; color: #1e40af;">{nb_cours}</div>
-                                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">📘 Cours</div>
-                                </div>
-                                <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
-                                            box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #22c55e;">
-                                    <div style="font-size: 26px; font-weight: 800; color: #166534;">{nb_td}</div>
-                                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">📗 TD</div>
-                                </div>
-                                <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
-                                            box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #f59e0b;">
-                                    <div style="font-size: 26px; font-weight: 800; color: #b45309;">{nb_tp}</div>
-                                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">🔴 TP</div>
-                                </div>
-                                <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
-                                            box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid #1E3A8A;">
-                                    <div style="font-size: 26px; font-weight: 800; color: #1E3A8A;">{round(charge_effective, 1)}h</div>
-                                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Charge Effective</div>
-                                </div>
-                                <div style="background: white; border-radius: 12px; padding: 16px; text-align: center; 
-                                            box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid {'#22c55e' if h_sup >= 0 else '#ef4444'};">
-                                    <div style="font-size: 26px; font-weight: 800; color: {'#166534' if h_sup >= 0 else '#dc2626'};">{h_sup_formattee}</div>
-                                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">{'Heures Sup.' if h_sup >= 0 else 'Déficit'}</div>
-                                </div>
-                            </div>
-                        """, unsafe_allow_html=True)
-        
-                        # Note de synthèse
-                        if h_sup > 0:
-                            st.caption(f"✅ L'enseignant a complété sa charge et totalise **{h_sup_formattee}** en supplément.")
-                        elif h_sup < 0:
-                            st.caption(f"⚠️ Sous-charge détectée de **{h_sup_formattee}** par rapport au seuil de {seuil_obligatoire} eq/h.")
-                        else:
-                            st.caption("⚖️ Service réglementaire exactement rempli.")
-        
-                        # ─────────────────────────────────────────────────────────────
-                        # GRILLE EDT (identique Espace Enseignant)
-                        # ─────────────────────────────────────────────────────────────
-                        st.divider()
-                        st.markdown("### 📅 Emploi du Temps Individuel")
-                        
-                        def format_case(rows):
-                            items = []
-                            for _, r in rows.iterrows():
-                                code_up = str(r['Code']).upper()
-                                if 'COURS' in code_up:
-                                    nat, color, bg = '📘', '#1e40af', '#dbeafe'
-                                elif 'TD' in code_up:
-                                    nat, color, bg = '📗', '#166534', '#dcfce7'
-                                else:
-                                    nat, color, bg = '🔴', '#b91c1c', '#fee2e2'
-                                
-                                txt = (f"<div style='margin-bottom:6px;padding:6px;border-left:3px solid {color};"
-                                       f"background-color:{bg};border-radius:4px;'>"
-                                       f"<b style='color:{color};'>{nat} {r['Enseignements']}</b><br>"
-                                       f"<span style='font-size:11px;'>({r['Code']})</span><br>"
-                                       f"<span style='font-size:11px;'>📍 {r['Lieu']}</span><br>"
-                                       f"<b style='font-size:11px;'>🎓 {r['Promotion']}</b></div>")
-                                items.append(txt)
-                            return "".join(items)
-        
-                        grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
-                        grid = grid.reindex(
-                            index=[normalize(h) for h in horaires_list], 
-                            columns=[normalize(j) for j in jours_list]
-                        ).fillna("")
-                        grid.index = [map_h.get(i, i) for i in grid.index]
-                        grid.columns = [map_j.get(c, c) for c in grid.columns]
-                        grid = grid[grid.any(axis=1)]
-                        
-                        st.write(grid.to_html(escape=False), unsafe_allow_html=True)
-        
-                        # ─────────────────────────────────────────────────────────────
-                        # TÉLÉCHARGEMENTS (identique Espace Enseignant)
-                        # ─────────────────────────────────────────────────────────────
-                        st.divider()
-                        st.markdown("### 📥 Exporter les données")
-                        
-                        col_dl1, col_dl2, col_dl3 = st.columns(3)
-                        
-                        with col_dl1:
-                            buf_ex = io.BytesIO()
-                            df_export = df_f.drop(columns=['h_norm', 'j_norm', 'Type'], errors='ignore')
-                            with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
-                                df_export.to_excel(writer, index=False, sheet_name='Mon_EDT')
-                                wb = writer.book
-                                ws = writer.sheets['Mon_EDT']
-                                header_fmt = wb.add_format({'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1})
-                                for col_num, value in enumerate(df_export.columns.values):
-                                    ws.write(0, col_num, value, header_fmt)
-                                ws.set_column('A:G', 20)
-                            st.download_button("📊 Excel", buf_ex.getvalue(), f"EDT_{cible}_2027.xlsx", 
-                                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                              use_container_width=True)
-        
-                        with col_dl2:
-                            html_content = generate_pro_html(df_export, f"EDT - {nom_affichage_complet}", 
-                                                             "Département d'Électrotechnique - FGE/UDL-SBA")
-                            st.download_button("🌐 HTML", html_content, f"EDT_{cible}_2027.html", "text/html",
-                                              use_container_width=True)
-        
-                        with col_dl3:
-                            pdf_data, err_pdf = generate_edt_individuel_pdf_classique(df_f, nom_affichage_complet)
-                            if pdf_data:
-                                st.download_button("📄 PDF", pdf_data, f"EDT_{cible}_2027.pdf", "application/pdf",
-                                                  use_container_width=True)
-                            else:
-                                st.button("📄 PDF", disabled=True, use_container_width=True, help=err_pdf)                 
+                        nat = '🔴'
+                    items.append(f"<b>{nat} {r['Enseignements']}</b><br><small>{r['Lieu']} | {r['Promotion']}</small>")
+                return "<hr style='margin:4px 0;'>".join(items)
+
+            if not df_f.empty:
+                grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
+                grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
+                grid.index = [map_h.get(i, i) for i in grid.index]
+                grid.columns = [map_j.get(c, c) for c in grid.columns]
+                st.write(grid.to_html(escape=False), unsafe_allow_html=True)
 
         elif mode_view == "Promotion":
             p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
