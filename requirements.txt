@@ -8,3 +8,7 @@ plotly
 fpdf2
 python-docx
 openpyxl>=3.1.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+xlrd>=2.0.1
+pyxlsb>=1.0.10
