@@ -3487,10 +3487,7 @@ def render_download_hub(df_global, user_data, is_admin):
         # PDF : individuel ou global
         if sel_promo != "Toutes":
             pdf_data, err = generate_pro_pdf(df_filtre, f"EDT - {sel_promo}", "Export promotion")
-            if pdf_data is not None:
-                c1.download_button("📄 PDF", pdf_data, f"EDT_{sel_promo}_2027.pdf", "application/pdf", use_container_width=True, key="dp_promo_single")
-            else:
-                
+                            
             if c1.button("📄 Générer PDF Global", use_container_width=True, key="btn_gen_all_pdf_promo"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
