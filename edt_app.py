@@ -156,11 +156,11 @@ def extraire_nom_famille(nom_complet):
 def mapper_promotion(promo_edt):
     p = str(promo_edt).strip().upper()
     mapping_direct = {
-        "ING1": "ING1", "ING2ST": "ING2", "ING2TM": "ING2",
-        "ING3EI": "ING3EI", "ING3RSE": "ING3RSE", "ING3TM": "ING3EI",
-        "ING4EI": "ING4", "ING4": "ING4", "ING5RSE": "ING3RSE",
-        "L1MCIL": "L1MCIL", "L2ELT": "L2ELT", "L2MCIL": "L2MCIL",
-        "L3ELT": "L3ELT", "MCIL2": "L2MCIL", "MCIL3": "MCIL3",
+        "ING1": "ING1", "ING2RSE": "ING2", "ING2RSE": "ING2",
+        "ING3EI": "ING3EI", "ING3RSE": "ING3RSE", "ING3RSE": "ING3TM",
+        "ING4EI": "ING4", "ING4EI": "ING4RSE", "ING5RSE": "ING5EI",
+        "L1MCIL": "L1MCIL", "L2ELT": "L2ELT", "MCIL2": "MCIL2",
+        "L3ELT": "L3ELT", "MCIL2": "MCIL2", "MCIL3": "MCIL3",
         "M1CE": "M1CE", "M1ER": "M1ER", "M1MCIL": "M1MCIL",
         "M1ME": "M1ME", "M1RE": "M1RE", "M2CE": "M2CE",
         "M2ER": "M2ER", "M2MCIL": "M2MCIL", "M2ME": "M2ME", "M2RE": "M1RE",
@@ -176,7 +176,7 @@ def mapper_promotion(promo_edt):
     elif "ING4" in p: return "ING4"
     elif "L1" in p and "MCIL" in p: return "L1MCIL"
     elif "L2" in p and "ELT" in p: return "L2ELT"
-    elif "L2" in p and "MCIL" in p: return "L2MCIL"
+    elif "L2" in p and "MCIL" in p: return "MCIL2"
     elif "L3" in p and "ELT" in p: return "L3ELT"
     elif "MCIL3" in p: return "MCIL3"
     elif "M1" in p:
