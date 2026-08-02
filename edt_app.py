@@ -288,7 +288,7 @@ def run_assiduite():
     
     # --- Chargement des donnees ---
     @st.cache_data(show_spinner=False)
-    def charger_donnees():
+    def charger_donnees( ):
         fichiers = {
             "étudiants": FILE_ETUDIANTS,
             "EDT": FILE_EDT,
