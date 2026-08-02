@@ -289,41 +289,32 @@ def generer_page_html(df_data, titre_bilan, colonnes, entetes):
         if chemin_ou_fichier is None:
             return None
         
-        # Remettre le curseur au début (important pour les uploads)
         if hasattr(chemin_ou_fichier, 'seek'):
             chemin_ou_fichier.seek(0)
         
-        # Essai 1 : Auto-détection par pandas
-        try:
-            return pd.read_excel(chemin_ou_fichier, sheet_name=sheet_name)
-        except Exception:
-            pass
+        # Détection prioritaire selon l'extension
+        nom = ""
+        if hasattr(chemin_ou_fichier, 'name'):
+            nom = chemin_ou_fichier.name.lower()
+        elif isinstance(chemin_ou_fichier, str):
+            nom = os.path.basename(chemin_ou_fichier).lower()
         
-        # Essai 2 : openpyxl (.xlsx)
-        try:
-            if hasattr(chemin_ou_fichier, 'seek'):
-                chemin_ou_fichier.seek(0)
-            return pd.read_excel(chemin_ou_fichier, sheet_name=sheet_name, engine='openpyxl')
-        except Exception:
-            pass
+        # Ordre des engines : xlrd prioritaire pour les .xls anciens
+        engines = ['openpyxl', 'xlrd', 'pyxlsb']
+        if nom.endswith('.xls') and not nom.endswith('.xlsx'):
+            engines = ['xlrd', 'openpyxl', 'pyxlsb']
         
-        # Essai 3 : xlrd (.xls anciens)
-        try:
-            if hasattr(chemin_ou_fichier, 'seek'):
-                chemin_ou_fichier.seek(0)
-            return pd.read_excel(chemin_ou_fichier, sheet_name=sheet_name, engine='xlrd')
-        except Exception:
-            pass
-        
-        # Essai 4 : pyxlsb (.xlsb)
-        try:
-            if hasattr(chemin_ou_fichier, 'seek'):
-                chemin_ou_fichier.seek(0)
-            return pd.read_excel(chemin_ou_fichier, sheet_name=sheet_name, engine='pyxlsb')
-        except Exception:
-            pass
-        
-        raise ValueError("❌ Format non reconnu. Utilisez un fichier Excel valide : .xlsx, .xls ou .xlsb")
+        last_err = None
+        for engine in engines:
+            try:
+                if hasattr(chemin_ou_fichier, 'seek'):
+                    chemin_ou_fichier.seek(0)
+                return pd.read_excel(chemin_ou_fichier, sheet_name=sheet_name, engine=engine)
+            except Exception as e:
+                last_err = e
+                continue
+                
+        raise ValueError(f"❌ Format non reconnu. Utilisez un fichier Excel valide (.xlsx, .xls, .xlsb). Erreur : {last_err}")
 
     # =============================================================================
     # CHARGEMENT DES DONNÉES (CORRIGÉ - SANS CACHE BLOQUANT)
@@ -406,16 +397,14 @@ def generer_page_html(df_data, titre_bilan, colonnes, entetes):
         st.stop()
 
  
+
 def run_assiduite():
     st.title("📊 Plateforme de Suivi d'Assiduite des Etudiants")
     st.caption("Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA - Annee 2026-2027")
     
-    # --- Chargement des donnees ---
     # =============================================================================
-    # CHARGEMENT DES DONNÉES (CORRIGÉ - SANS CACHE BLOQUANT)
+    # CHARGEMENT DES DONNÉES (UNIFIÉ)
     # =============================================================================
-    
-    # Vérification présence fichiers locaux
     fichiers_locaux_ok = all(os.path.exists(c) for c in [FILE_ETUDIANTS, FILE_EDT, FILE_ENS])
     
     df_etu, df_edt, df_ens = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -424,75 +413,61 @@ def run_assiduite():
         st.warning("⚠️ Fichiers locaux manquants. Veuillez uploader les 3 fichiers Excel :")
         c1, c2, c3 = st.columns(3)
         with c1:
-            up_etu = st.file_uploader("Liste des étudiants (.xlsx)", type=["xlsx"], key="up_etu")
+            up_etu = st.file_uploader("Liste des étudiants", type=["xlsx", "xls", "xlsb"], key="up_etu")
         with c2:
-            up_edt = st.file_uploader("Données EDT (.xlsx)", type=["xlsx"], key="up_edt")
+            up_edt = st.file_uploader("Données EDT", type=["xlsx", "xls", "xlsb"], key="up_edt")
         with c3:
-            up_ens = st.file_uploader("Liste enseignants (.xlsx)", type=["xlsx"], key="up_ens")
+            up_ens = st.file_uploader("Liste enseignants", type=["xlsx", "xls", "xlsb"], key="up_ens")
         
         if not all([up_etu, up_edt, up_ens]):
             st.info("📤 En attente des fichiers...")
             st.stop()
         
-        # Lecture depuis les uploads (engine openpyxl forcé)
         try:
-            df_etu = pd.read_excel(up_etu, engine='openpyxl')
+            df_etu = lire_excel_robuste(up_etu)
             df_etu.columns = df_etu.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur lecture étudiants : {e}")
             st.stop()
         try:
-            df_edt = pd.read_excel(up_edt, engine='openpyxl')
+            df_edt = lire_excel_robuste(up_edt)
             df_edt.columns = df_edt.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur lecture EDT : {e}")
             st.stop()
         try:
-            df_ens = pd.read_excel(up_ens, sheet_name=0, engine='openpyxl')
+            df_ens = lire_excel_robuste(up_ens, sheet_name=0)
             df_ens.columns = df_ens.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur lecture enseignants : {e}")
             st.stop()
     else:
-        # Lecture depuis fichiers locaux
         try:
-            df_etu = pd.read_excel(FILE_ETUDIANTS, engine='openpyxl')
+            df_etu = lire_excel_robuste(FILE_ETUDIANTS)
             df_etu.columns = df_etu.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur chargement étudiants : {e}")
+            st.stop()
         try:
-            df_edt = pd.read_excel(FILE_EDT, engine='openpyxl')
+            df_edt = lire_excel_robuste(FILE_EDT)
             df_edt.columns = df_edt.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur chargement EDT : {e}")
+            st.stop()
         try:
-            df_ens = pd.read_excel(FILE_ENS, sheet_name=0, engine='openpyxl')
+            df_ens = lire_excel_robuste(FILE_ENS, sheet_name=0)
             df_ens.columns = df_ens.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur chargement enseignants : {e}")
+            st.stop()
 
-    # ═══════ DIAGNOSTIC PROMOTIONS (intégré) ═══════
-    if not df_etu.empty and not df_edt.empty:
-        with st.sidebar:
-            st.markdown("---")
-            with st.expander("🔧 Diagnostic Promotions", expanded=False):
-                promos_etu = sorted(df_etu["Promotion"].dropna().unique())
-                promos_edt_brut = sorted(df_edt["Promotion"].dropna().unique())
-                promos_edt_mapped = sorted(set([mapper_promotion(x) for x in promos_edt_brut]))
-                st.write("**Étudiants :**", promos_etu)
-                st.write("**EDT (brut) :**", promos_edt_brut)
-                st.write("**EDT (mappé) :**", promos_edt_mapped)
-                manquants = [p for p in promos_edt_mapped if p not in promos_etu]
-                if manquants:
-                    st.error(f"❌ Absents du fichier étudiants : {manquants}")
-                else:
-                    st.success("✅ Correspondance OK")
-    # ════════════════════════════════════════════════
-
+    # Vérification finale
     if df_etu.empty or df_edt.empty or df_ens.empty:
-        st.error("❌ Données incomplètes. Vérifiez vos fichiers source.")
+        st.error("❌ Données incomplètes après chargement. Vérifiez vos fichiers source.")
         st.stop()
-
+    
+    # ... suite de votre code ...    
+    
     # --- Preparation des listes ---
     if "NOM" in df_ens.columns and "PRÉNOM" in df_ens.columns:
         df_ens["Nom_Complet"] = df_ens["NOM"].astype(str).str.strip().str.upper() + " " + df_ens["PRÉNOM"].astype(str).str.strip().str.title()
