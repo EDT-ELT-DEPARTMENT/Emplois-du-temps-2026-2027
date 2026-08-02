@@ -155,15 +155,31 @@ def extraire_nom_famille(nom_complet):
 
 def mapper_promotion(promo_edt):
     p = str(promo_edt).strip().upper()
+    # Mapping direct sans doublons ni erreurs
     mapping_direct = {
-        "ING1": "ING1", "ING2RSE": "ING2", "ING2RSE": "ING2",
-        "ING3EI": "ING3EI", "ING3RSE": "ING3RSE", "ING3RSE": "ING3TM",
-        "ING4EI": "ING4", "ING4EI": "ING4RSE", "ING5RSE": "ING5EI",
-        "L1MCIL": "L1MCIL", "L2ELT": "L2ELT", "MCIL2": "MCIL2",
-        "L3ELT": "L3ELT", "MCIL2": "MCIL2", "MCIL3": "MCIL3",
-        "M1CE": "M1CE", "M1ER": "M1ER", "M1MCIL": "M1MCIL",
-        "M1ME": "M1ME", "M1RE": "M1RE", "M2CE": "M2CE",
-        "M2ER": "M2ER", "M2MCIL": "M2MCIL", "M2ME": "M2ME", "M2RE": "M1RE",
+        "ING1": "ING1",
+        "ING2RSE": "ING2",
+        "ING3EI": "ING3EI",
+        "ING3RSE": "ING3RSE",
+        "ING4EI": "ING4",
+        "ING4RSE": "ING4RSE",
+        "ING5RSE": "ING5RSE",
+        "L1MCIL": "L1MCIL",
+        "L2ELT": "L2ELT",
+        "L2MCIL": "MCIL2",
+        "L3ELT": "L3ELT",
+        "MCIL2": "MCIL2",
+        "MCIL3": "MCIL3",
+        "M1CE": "M1CE",
+        "M1ER": "M1ER",
+        "M1MCIL": "M1MCIL",
+        "M1ME": "M1ME",
+        "M1RE": "M1RE",
+        "M2CE": "M2CE",
+        "M2ER": "M2ER",
+        "M2MCIL": "M2MCIL",
+        "M2ME": "M2ME",
+        "M2RE": "M2RE",
     }
     if p in mapping_direct:
         return mapping_direct[p]
@@ -334,6 +350,24 @@ def run_assiduite():
 
     df_etu, df_edt, df_ens = charger_donnees()
 
+    # ═══════ DIAGNOSTIC PROMOTIONS (intégré) ═══════
+    if not df_etu.empty and not df_edt.empty:
+        with st.sidebar:
+            st.markdown("---")
+            with st.expander("🔧 Diagnostic Promotions", expanded=False):
+                promos_etu = sorted(df_etu["Promotion"].dropna().unique())
+                promos_edt_brut = sorted(df_edt["Promotion"].dropna().unique())
+                promos_edt_mapped = sorted(set([mapper_promotion(x) for x in promos_edt_brut]))
+                st.write("**Étudiants :**", promos_etu)
+                st.write("**EDT (brut) :**", promos_edt_brut)
+                st.write("**EDT (mappé) :**", promos_edt_mapped)
+                manquants = [p for p in promos_edt_mapped if p not in promos_etu]
+                if manquants:
+                    st.error(f"❌ Absents du fichier étudiants : {manquants}")
+                else:
+                    st.success("✅ Correspondance OK")
+    # ════════════════════════════════════════════════
+
     if df_etu.empty or df_edt.empty or df_ens.empty:
         st.error("❌ Un ou plusieurs fichiers sources sont manquants. Verifiez que les 3 fichiers .xlsx sont dans le meme dossier que ce script.")
         st.stop()
@@ -348,7 +382,20 @@ def run_assiduite():
     else:
         LISTE_PROFS = []
 
-    df_etu["Nom_Complet"] = df_etu["Nom"].astype(str).str.strip().str.upper() + " " + df_etu["Prénom"].astype(str).str.strip().str.title()
+    # Détection automatique des colonnes Nom/Prénom (insensible à la casse)
+    col_nom = None
+    col_prenom = None
+    for c in df_etu.columns:
+        if c.strip().upper() == "NOM":
+            col_nom = c
+        if c.strip().upper() in ["PRÉNOM", "PRENOM"]:
+            col_prenom = c
+
+    if col_nom and col_prenom:
+        df_etu["Nom_Complet"] = df_etu[col_nom].astype(str).str.strip().str.upper() + " " + df_etu[col_prenom].astype(str).str.strip().str.title()
+    else:
+        st.error(f"❌ Colonnes 'Nom' et 'Prénom' introuvables dans le fichier étudiants. Colonnes trouvées : {list(df_etu.columns)}")
+        st.stop()
 
     # =============================================================================
     # INITIALISATION SESSION STATE
