@@ -287,68 +287,65 @@ def run_assiduite():
     st.caption("Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA - Annee 2026-2027")
     
     # --- Chargement des donnees ---
-    @st.cache_data(show_spinner=False)
-    def charger_donnees( ):
-        fichiers = {
-            "étudiants": FILE_ETUDIANTS,
-            "EDT": FILE_EDT,
-            "enseignants": FILE_ENS
-        }
-        df_etu, df_edt, df_ens = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-        manquants = []
-        for nom, chemin in fichiers.items():
-            if not os.path.exists(chemin):
-                manquants.append(nom)
+    # =============================================================================
+    # CHARGEMENT DES DONNÉES (CORRIGÉ - SANS CACHE BLOQUANT)
+    # =============================================================================
+    
+    # Vérification présence fichiers locaux
+    fichiers_locaux_ok = all(os.path.exists(c) for c in [FILE_ETUDIANTS, FILE_EDT, FILE_ENS])
+    
+    df_etu, df_edt, df_ens = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
+    if not fichiers_locaux_ok:
+        st.warning("⚠️ Fichiers locaux manquants. Veuillez uploader les 3 fichiers Excel :")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            up_etu = st.file_uploader("Liste des étudiants (.xlsx)", type=["xlsx"], key="up_etu")
+        with c2:
+            up_edt = st.file_uploader("Données EDT (.xlsx)", type=["xlsx"], key="up_edt")
+        with c3:
+            up_ens = st.file_uploader("Liste enseignants (.xlsx)", type=["xlsx"], key="up_ens")
         
-        if manquants:
-            st.warning(f"⚠️ Fichiers locaux manquants : {', '.join(manquants)}")
-            st.info("📤 Veuillez uploader les fichiers Excel manquants ci-dessous pour continuer :")
-            uploaded = {}
-            if "étudiants" in manquants:
-                uploaded["étudiants"] = st.file_uploader("Liste des étudiants (.xlsx)", type=["xlsx"], key="up_etu")
-            if "EDT" in manquants:
-                uploaded["EDT"] = st.file_uploader("Données EDT (.xlsx)", type=["xlsx"], key="up_edt")
-            if "enseignants" in manquants:
-                uploaded["enseignants"] = st.file_uploader("Liste enseignants (.xlsx)", type=["xlsx"], key="up_ens")
-            
-            if not all(v is not None for v in uploaded.values()):
-                st.error("❌ Tous les fichiers sont requis pour continuer.")
-                st.stop()
-            
-            try:
-                df_etu = pd.read_excel(uploaded["étudiants"])
-                df_etu.columns = df_etu.columns.str.strip()
-            except Exception as e:
-                st.error(f"❌ Erreur lecture étudiants (upload) : {e}")
-            try:
-                df_edt = pd.read_excel(uploaded["EDT"])
-                df_edt.columns = df_edt.columns.str.strip()
-            except Exception as e:
-                st.error(f"❌ Erreur lecture EDT (upload) : {e}")
-            try:
-                df_ens = pd.read_excel(uploaded["enseignants"], sheet_name=0)
-                df_ens.columns = df_ens.columns.str.strip()
-            except Exception as e:
-                st.error(f"❌ Erreur lecture enseignants (upload) : {e}")
-        else:
-            try:
-                df_etu = pd.read_excel(FILE_ETUDIANTS)
-                df_etu.columns = df_etu.columns.str.strip()
-            except Exception as e:
-                st.error(f"❌ Erreur chargement étudiants : {e}")
-            try:
-                df_edt = pd.read_excel(FILE_EDT)
-                df_edt.columns = df_edt.columns.str.strip()
-            except Exception as e:
-                st.error(f"❌ Erreur chargement EDT : {e}")
-            try:
-                df_ens = pd.read_excel(FILE_ENS, sheet_name=0)
-                df_ens.columns = df_ens.columns.str.strip()
-            except Exception as e:
-                st.error(f"❌ Erreur chargement enseignants : {e}")
-        return df_etu, df_edt, df_ens
-
-    df_etu, df_edt, df_ens = charger_donnees()
+        if not all([up_etu, up_edt, up_ens]):
+            st.info("📤 En attente des fichiers...")
+            st.stop()
+        
+        # Lecture depuis les uploads (engine openpyxl forcé)
+        try:
+            df_etu = pd.read_excel(up_etu, engine='openpyxl')
+            df_etu.columns = df_etu.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur lecture étudiants : {e}")
+            st.stop()
+        try:
+            df_edt = pd.read_excel(up_edt, engine='openpyxl')
+            df_edt.columns = df_edt.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur lecture EDT : {e}")
+            st.stop()
+        try:
+            df_ens = pd.read_excel(up_ens, sheet_name=0, engine='openpyxl')
+            df_ens.columns = df_ens.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur lecture enseignants : {e}")
+            st.stop()
+    else:
+        # Lecture depuis fichiers locaux
+        try:
+            df_etu = pd.read_excel(FILE_ETUDIANTS, engine='openpyxl')
+            df_etu.columns = df_etu.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur chargement étudiants : {e}")
+        try:
+            df_edt = pd.read_excel(FILE_EDT, engine='openpyxl')
+            df_edt.columns = df_edt.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur chargement EDT : {e}")
+        try:
+            df_ens = pd.read_excel(FILE_ENS, sheet_name=0, engine='openpyxl')
+            df_ens.columns = df_ens.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur chargement enseignants : {e}")
 
     # ═══════ DIAGNOSTIC PROMOTIONS (intégré) ═══════
     if not df_etu.empty and not df_edt.empty:
@@ -369,7 +366,7 @@ def run_assiduite():
     # ════════════════════════════════════════════════
 
     if df_etu.empty or df_edt.empty or df_ens.empty:
-        st.error("❌ Un ou plusieurs fichiers sources sont manquants. Verifiez que les 3 fichiers .xlsx sont dans le meme dossier que ce script.")
+        st.error("❌ Données incomplètes. Vérifiez vos fichiers source.")
         st.stop()
 
     # --- Preparation des listes ---
@@ -584,27 +581,27 @@ def run_assiduite():
                 if sel_mat:
                     info_rows = df_matiere[df_matiere["Enseignements"] == sel_mat]
                     if not info_rows.empty:
-                        # 1. Récupération de la promotion brute depuis le fichier EDT
+                        # 1. Promotion brute dans l'EDT
                         promo_edt_brut = str(info_rows.iloc[0]["Promotion"]).strip()
-                        
                         # 2. Mapping standard (ING2RSE → ING2, etc.)
                         promo_mapped = mapper_promotion(promo_edt_brut)
                         
-                        # 3. Recherche intelligente dans le fichier Étudiants
-                        promos_etu_uniques = df_etu["Promotion"].dropna().unique()
-                        promo_c = promo_mapped  # Valeur par défaut (fallback)
+                        # 3. Recherche intelligente dans le fichier ÉTUDIANTS
+                        promos_etu_uniques = df_etu["Promotion"].dropna().astype(str).str.strip().unique()
+                        promo_c = promo_mapped  # fallback
                         
                         # A. Correspondance exacte
                         if promo_mapped in promos_etu_uniques:
                             promo_c = promo_mapped
                         else:
-                            # B. Correspondance partielle intelligente
+                            # B. Correspondance partielle (ex: ING2 dans ING2RSE ou inverse)
+                            pm_upper = promo_mapped.upper()
                             for p in promos_etu_uniques:
-                                p_str = str(p).strip().upper()
-                                pm_str = promo_mapped.upper()
-                                if pm_str == p_str or pm_str in p_str or p_str in pm_str:
-                                    promo_c = str(p).strip()
+                                p_upper = p.upper()
+                                if pm_upper == p_upper or pm_upper in p_upper or p_upper in pm_upper:
+                                    promo_c = p  # On prend la valeur EXACTE du fichier étudiants
                                     break
+                                 
         if sel_mat and promo_c:
             df_p = df_etu[df_etu["Promotion"].astype(str).str.strip().str.upper() == promo_c.upper()].copy()
 
