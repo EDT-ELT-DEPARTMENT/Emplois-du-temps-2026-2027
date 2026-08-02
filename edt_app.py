@@ -282,6 +282,130 @@ def generer_page_html(df_data, titre_bilan, colonnes, entetes):
 # =============================================================================
 # MODULE 1 : SUIVI ASSIDUITE DES ETUDIANTS
 # =============================================================================
+# FONCTION DE LECTURE EXCEL ROBUSTE
+    # =============================================================================
+    def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
+        """Lit un fichier Excel en essayant plusieurs engines (.xlsx, .xls, .xlsb)."""
+        if chemin_ou_fichier is None:
+            return None
+        
+        # Remettre le curseur au début (important pour les uploads)
+        if hasattr(chemin_ou_fichier, 'seek'):
+            chemin_ou_fichier.seek(0)
+        
+        # Essai 1 : Auto-détection par pandas
+        try:
+            return pd.read_excel(chemin_ou_fichier, sheet_name=sheet_name)
+        except Exception:
+            pass
+        
+        # Essai 2 : openpyxl (.xlsx)
+        try:
+            if hasattr(chemin_ou_fichier, 'seek'):
+                chemin_ou_fichier.seek(0)
+            return pd.read_excel(chemin_ou_fichier, sheet_name=sheet_name, engine='openpyxl')
+        except Exception:
+            pass
+        
+        # Essai 3 : xlrd (.xls anciens)
+        try:
+            if hasattr(chemin_ou_fichier, 'seek'):
+                chemin_ou_fichier.seek(0)
+            return pd.read_excel(chemin_ou_fichier, sheet_name=sheet_name, engine='xlrd')
+        except Exception:
+            pass
+        
+        # Essai 4 : pyxlsb (.xlsb)
+        try:
+            if hasattr(chemin_ou_fichier, 'seek'):
+                chemin_ou_fichier.seek(0)
+            return pd.read_excel(chemin_ou_fichier, sheet_name=sheet_name, engine='pyxlsb')
+        except Exception:
+            pass
+        
+        raise ValueError("❌ Format non reconnu. Utilisez un fichier Excel valide : .xlsx, .xls ou .xlsb")
+
+    # =============================================================================
+    # CHARGEMENT DES DONNÉES (CORRIGÉ - SANS CACHE BLOQUANT)
+    # =============================================================================
+    fichiers_locaux_ok = all(os.path.exists(c) for c in [FILE_ETUDIANTS, FILE_EDT, FILE_ENS])
+    
+    df_etu, df_edt, df_ens = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
+    if not fichiers_locaux_ok:
+        st.warning("⚠️ Fichiers locaux manquants. Veuillez uploader les 3 fichiers Excel :")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            up_etu = st.file_uploader("Liste des étudiants (.xlsx/.xls)", type=["xlsx", "xls", "xlsb"], key="up_etu")
+        with c2:
+            up_edt = st.file_uploader("Données EDT (.xlsx/.xls)", type=["xlsx", "xls", "xlsb"], key="up_edt")
+        with c3:
+            up_ens = st.file_uploader("Liste enseignants (.xlsx/.xls)", type=["xlsx", "xls", "xlsb"], key="up_ens")
+        
+        if not all([up_etu, up_edt, up_ens]):
+            st.info("📤 En attente des fichiers...")
+            st.stop()
+        
+        # Lecture robuste depuis les uploads
+        try:
+            df_etu = lire_excel_robuste(up_etu)
+            df_etu.columns = df_etu.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur lecture étudiants : {e}")
+            st.stop()
+        try:
+            df_edt = lire_excel_robuste(up_edt)
+            df_edt.columns = df_edt.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur lecture EDT : {e}")
+            st.stop()
+        try:
+            df_ens = lire_excel_robuste(up_ens, sheet_name=0)
+            df_ens.columns = df_ens.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur lecture enseignants : {e}")
+            st.stop()
+    else:
+        # Lecture robuste depuis fichiers locaux
+        try:
+            df_etu = lire_excel_robuste(FILE_ETUDIANTS)
+            df_etu.columns = df_etu.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur chargement étudiants : {e}")
+        try:
+            df_edt = lire_excel_robuste(FILE_EDT)
+            df_edt.columns = df_edt.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur chargement EDT : {e}")
+        try:
+            df_ens = lire_excel_robuste(FILE_ENS, sheet_name=0)
+            df_ens.columns = df_ens.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur chargement enseignants : {e}")
+
+    # ═══════ DIAGNOSTIC PROMOTIONS ═══════
+    if not df_etu.empty and not df_edt.empty:
+        with st.sidebar:
+            st.markdown("---")
+            with st.expander("🔧 Diagnostic Promotions", expanded=False):
+                promos_etu = sorted(df_etu["Promotion"].dropna().unique())
+                promos_edt_brut = sorted(df_edt["Promotion"].dropna().unique())
+                promos_edt_mapped = sorted(set([mapper_promotion(x) for x in promos_edt_brut]))
+                st.write("**Étudiants :**", promos_etu)
+                st.write("**EDT (brut) :**", promos_edt_brut)
+                st.write("**EDT (mappé) :**", promos_edt_mapped)
+                manquants = [p for p in promos_edt_mapped if p not in promos_etu]
+                if manquants:
+                    st.error(f"❌ Absents du fichier étudiants : {manquants}")
+                else:
+                    st.success("✅ Correspondance OK")
+    # ══════════════════════════════════════
+
+    if df_etu.empty or df_edt.empty or df_ens.empty:
+        st.error("❌ Données incomplètes. Vérifiez vos fichiers source.")
+        st.stop()
+
+ 
 def run_assiduite():
     st.title("📊 Plateforme de Suivi d'Assiduite des Etudiants")
     st.caption("Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA - Annee 2026-2027")
