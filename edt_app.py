@@ -544,7 +544,7 @@ def run_assiduite():
 
             if not df_p.empty:
                 noms_e = sorted(df_p["Nom_Complet"].tolist())
-                st.info(f"📍 Promotion detectee : **{promo_c}** | **{len(noms_e)}** etudiants")
+                st.info(f"📍 Promotion detectee : **{promo_c}** | **{len(noms_e)}** étudiants")
 
                 if MODE_SUPABASE:
                     absences_filtrees = charger_absences_supabase(sel_mat, promo_c)
