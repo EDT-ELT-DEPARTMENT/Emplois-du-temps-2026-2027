@@ -3490,8 +3490,7 @@ def render_download_hub(df_global, user_data, is_admin):
             if pdf_data is not None:
                 c1.download_button("📄 PDF", pdf_data, f"EDT_{sel_promo}_2027.pdf", "application/pdf", use_container_width=True, key="dp_promo_single")
             else:
-                c1.button("📄 PDF", disabled=True, use_container_width=True, key="dp_promo_single")
-        else:
+                
             if c1.button("📄 Générer PDF Global", use_container_width=True, key="btn_gen_all_pdf_promo"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
@@ -3504,11 +3503,7 @@ def render_download_hub(df_global, user_data, is_admin):
                     else:
                         st.error(f"❌ Erreur : {err_all}")
             
-            if st.session_state.get('pdf_all_promo_ready') and 'pdf_all_promo_data' in st.session_state:
-                c1.download_button("⬇️ Télécharger PDF Global", st.session_state['pdf_all_promo_data'],
-                                  "EDT_Toutes_Promotions_2027.pdf", "application/pdf",
-                                  use_container_width=True, key="dp_down_promo")
-        
+                    
         # HTML et Excel
         html_data = generate_pro_html(df_filtre, f"EDT {sel_promo}", "Faculte de Genie Electrique - UDL-SBA")
         c2.download_button("🌐 HTML", html_data, f"EDT_{sel_promo}_2027.html", "text/html", use_container_width=True, key="dh_promo")
