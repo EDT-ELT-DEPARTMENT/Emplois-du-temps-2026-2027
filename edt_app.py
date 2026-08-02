@@ -580,12 +580,31 @@ def run_assiduite():
                 liste_mats = sorted(df_matiere["Enseignements"].dropna().unique().tolist())
                 with c2:
                     sel_mat = st.selectbox("📚 Selectionnez la Matiere :", [""] + liste_mats, key="mat_T1")
-
+                
                 if sel_mat:
                     info_rows = df_matiere[df_matiere["Enseignements"] == sel_mat]
                     if not info_rows.empty:
-                        promo_c = str(info_rows.iloc[0]["Promotion_Mappee"]).strip()
-
+                        # 1. Récupération de la promotion brute depuis le fichier EDT
+                        promo_edt_brut = str(info_rows.iloc[0]["Promotion"]).strip()
+                        
+                        # 2. Mapping standard (ING2RSE → ING2, etc.)
+                        promo_mapped = mapper_promotion(promo_edt_brut)
+                        
+                        # 3. Recherche intelligente dans le fichier Étudiants
+                        promos_etu_uniques = df_etu["Promotion"].dropna().unique()
+                        promo_c = promo_mapped  # Valeur par défaut (fallback)
+                        
+                        # A. Correspondance exacte
+                        if promo_mapped in promos_etu_uniques:
+                            promo_c = promo_mapped
+                        else:
+                            # B. Correspondance partielle intelligente
+                            for p in promos_etu_uniques:
+                                p_str = str(p).strip().upper()
+                                pm_str = promo_mapped.upper()
+                                if pm_str == p_str or pm_str in p_str or p_str in pm_str:
+                                    promo_c = str(p).strip()
+                                    break
         if sel_mat and promo_c:
             df_p = df_etu[df_etu["Promotion"].astype(str).str.strip().str.upper() == promo_c.upper()].copy()
 
