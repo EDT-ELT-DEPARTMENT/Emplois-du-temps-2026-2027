@@ -283,6 +283,8 @@ def generer_page_html(df_data, titre_bilan, colonnes, entetes):
 # MODULE 1 : SUIVI ASSIDUITE DES ETUDIANTS
 # =============================================================================
 # FONCTION DE LECTURE EXCEL ROBUSTE
+    # =============================================================================
+def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
     """Lit un fichier Excel en essayant plusieurs engines (.xlsx, .xls, .xlsb)."""
     if chemin_ou_fichier is None:
         return None
