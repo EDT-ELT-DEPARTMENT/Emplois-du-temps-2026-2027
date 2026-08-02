@@ -1038,7 +1038,7 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab3:
-            st.header("📊 Registres et Bilans")
+            st.header("📊 Registres et Bilans Agreges")
 
             promo_filtre = st.selectbox(
                 "Filtrer par Promotion :",
@@ -1066,7 +1066,7 @@ def run_assiduite():
                                  "nom_etudiant", "matiere", "motif", "statut"]]
                 df_tab.columns = ["Date", "Promotion", "Charge", "Etudiant", "Matiere", "Motif", "Statut"]
 
-                st.subheader("📋 Registre Général")
+                st.subheader("📋 Registre General")
                 st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
                 buf_xl = io.BytesIO()
@@ -1092,7 +1092,7 @@ def run_assiduite():
                         use_container_width=True
                     )
 
-                st.subheader("📚 Bilan par Etudiant et Matière")
+                st.subheader("📚 Bilan par Etudiant et Matiere")
                 df_bilan_mat = df_tab.groupby(["Etudiant", "Matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
@@ -3529,24 +3529,87 @@ def render_download_hub(df_global, user_data, is_admin):
             df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
             
             # ═══════════════════════════════════════════════════════
-            # AJOUT : Compteurs Cours / TD / TP pour l'enseignant sélectionné
+            # AFFICHEUR NUMÉRIQUE : CHARGE HORAIRE & HEURES SUP
             # ═══════════════════════════════════════════════════════
             df_filtre_p['Type'] = df_filtre_p['Code'].apply(
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
-            # On dédoublonne sur Horaire + Jours pour compter les séances uniques
+            # Déduplication sur Horaire + Jours pour compter les séances uniques
             df_u = df_filtre_p.drop_duplicates(subset=['Horaire', 'Jours'])
             nb_cours = len(df_u[df_u['Type'] == 'COURS'])
             nb_td    = len(df_u[df_u['Type'] == 'TD'])
             nb_tp    = len(df_u[df_u['Type'] == 'TP'])
-            
-            mc1, mc2, mc3 = st.columns(3)
-            mc1.metric("📘 Cours", nb_cours)
-            mc2.metric("📗 TD", nb_td)
-            mc3.metric("🔴 TP", nb_tp)
+
+            # Calcul de la charge équivalente
+            # 1h Cours = 1.5 eq/h  |  1h TD/TP = 1.0 eq/h
+            charge_eq = round((nb_cours * 1.5) + (nb_td * 1.0) + (nb_tp * 1.0), 2)
+            SEUIL_REGLEMENTAIRE = 6.0  # 6 heures équivalent/semaine
+
+            delta = round(charge_eq - SEUIL_REGLEMENTAIRE, 2)
+
+            # Style conditionnel
+            if delta > 0:
+                statut_label = "Heures Supplémentaires"
+                statut_color = "#22c55e"  # vert
+                statut_bg = "#f0fdf4"
+                delta_str = f"+{delta} eq/h"
+                emoji = "✅"
+            elif delta < 0:
+                statut_label = "Déficit Horaire"
+                statut_color = "#ef4444"  # rouge
+                statut_bg = "#fef2f2"
+                delta_str = f"{delta} eq/h"
+                emoji = "⚠️"
+            else:
+                statut_label = "Charge Exacte"
+                statut_color = "#3b82f6"  # bleu
+                statut_bg = "#eff6ff"
+                delta_str = "0 eq/h"
+                emoji = "⚖️"
+
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
+                        padding: 16px; border-radius: 12px; color: white; margin: 10px 0;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                <div style="text-align: center; font-size: 13px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
+                    📊 Bilan Hebdomadaire — {sel_prof}
+                </div>
+                <div style="display: flex; justify-content: center; gap: 20px; margin-top: 12px; flex-wrap: wrap;">
+                    <div style="text-align: center; min-width: 80px;">
+                        <div style="font-size: 24px; font-weight: bold;">{nb_cours}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">📘 Cours</div>
+                    </div>
+                    <div style="text-align: center; min-width: 80px;">
+                        <div style="font-size: 24px; font-weight: bold;">{nb_td}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">📗 TD</div>
+                    </div>
+                    <div style="text-align: center; min-width: 80px;">
+                        <div style="font-size: 24px; font-weight: bold;">{nb_tp}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">🔴 TP</div>
+                    </div>
+                    <div style="border-left: 1px solid rgba(255,255,255,0.3); height: 40px; align-self: center;"></div>
+                    <div style="text-align: center; min-width: 100px;">
+                        <div style="font-size: 28px; font-weight: bold;">{charge_eq}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">Charge Eq/h</div>
+                    </div>
+                    <div style="text-align: center; min-width: 100px;">
+                        <div style="font-size: 28px; font-weight: bold;">{SEUIL_REGLEMENTAIRE}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">Seuil Réglem.</div>
+                    </div>
+                </div>
+            </div>
+            <div style="background-color: {statut_bg}; border-left: 5px solid {statut_color}; 
+                        padding: 12px 16px; border-radius: 8px; margin-top: 8px;">
+                <div style="font-size: 18px; font-weight: bold; color: {statut_color};">
+                    {emoji} {statut_label} : {delta_str}
+                </div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
+                    Règle : 1h Cours = 1.5 eq/h | 1h TD/TP = 1.0 eq/h | Seuil = 6.0 eq/h/semaine
+                </div>
+            </div>
+            """)
             # ═══════════════════════════════════════════════════════
-            
-        c1, c2, c3 = st.columns(3)
+
               
         # ═══════════════════════════════════════════════════════
         # PDF : individuel ou global
