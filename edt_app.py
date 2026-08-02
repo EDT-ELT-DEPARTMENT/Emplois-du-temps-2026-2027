@@ -3607,7 +3607,7 @@ def render_download_hub(df_global, user_data, is_admin):
                     Règle : 1h Cours = 1.5 eq/h | 1h TD/TP = 1.0 eq/h | Seuil = 6.0 eq/h/semaine
                 </div>
             </div>
-            """)
+            """, unsafe_allow_html=True)
             # ═══════════════════════════════════════════════════════
 
               
