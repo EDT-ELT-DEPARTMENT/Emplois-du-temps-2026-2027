@@ -3461,6 +3461,38 @@ def render_download_hub(df_global, user_data, is_admin):
         </div>
     """, unsafe_allow_html=True)
 
+    # ═══════════════════════════════════════════════════════
+    # BARRE DE SESSION : UTILISATEUR + DÉCONNEXION
+    # ═══════════════════════════════════════════════════════
+    if user_data is not None:
+        nom_session = user_data.get('nom_officiel', 'Utilisateur')
+        role_session = user_data.get('role', 'enseignant').upper()
+        col_user, col_deco = st.columns([4, 1])
+        with col_user:
+            st.markdown(f"""
+                <div style="background: linear-gradient(90deg, #f0f9ff 0%, #e0f2fe 100%); 
+                            border-left: 4px solid #1E3A8A; padding: 10px 16px; border-radius: 8px; 
+                            margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">👤</span>
+                    <div>
+                        <div style="font-weight: bold; color: #1E3A8A; font-size: 14px;">{nom_session}</div>
+                        <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                            Connecté · {role_session}
+                        </div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+        with col_deco:
+            if st.button("🚪 Déconnexion", use_container_width=True, type="primary"):
+                st.session_state["user_data"] = None
+                st.session_state.pop("pdf_all_ready", None)
+                st.session_state.pop("pdf_all_data", None)
+                st.session_state.pop("pdf_all_promo_ready", None)
+                st.session_state.pop("pdf_all_promo_data", None)
+                st.session_state.pop("pdf_all_lieu_ready", None)
+                st.session_state.pop("pdf_all_lieu_data", None)
+                st.rerun()
+
     if df_global is None or df_global.empty:
         st.warning("Aucune donnee chargee. Verifiez votre connexion Supabase ou votre fichier Excel.")
         return
