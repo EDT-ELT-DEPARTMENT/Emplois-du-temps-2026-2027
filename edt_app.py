@@ -1,3 +1,1893 @@
+import streamlit as st
+import pandas as pd
+import os
+import hashlib
+import io
+from datetime import datetime, timedelta
+from supabase import create_client
+import streamlit as st
+
+# =============================================================================
+# FONCTIONS UTILITAIRES PRO POUR L'EXPORT (PDF / HTML / EXCEL)
+# =============================================================================
+
+import zipfile
+
+def sanitize_for_pdf(text):
+    """Nettoie le texte pour fpdf (latin-1) en remplacant les caracteres problematiques."""
+    if text is None or pd.isna(text):
+        return ""
+    text = str(text)
+    replacements = {
+        "'": "'", "'": "'", """: "\"", """: "\"", "–": "-", "—": "-",
+        "…": "...", "«": "\"", "»": "\"", "œ": "oe", "Œ": "OE",
+        "à": "a", "â": "a", "ä": "a", "á": "a", "ã": "a", "å": "a",
+        "è": "e", "é": "e", "ê": "e", "ë": "e", "ē": "e", "ė": "e", "ę": "e",
+        "ì": "i", "í": "i", "î": "i", "ï": "i", "ī": "i", "į": "i",
+        "ò": "o", "ó": "o", "ô": "o", "ö": "o", "õ": "o", "ō": "o",
+        "ù": "u", "ú": "u", "û": "u", "ü": "u", "ū": "u",
+        "ç": "c", "ć": "c", "č": "c", "ñ": "n", "ń": "n",
+        "ÿ": "y", "ý": "y",
+        "À": "A", "Â": "A", "Ä": "A", "Á": "A", "Ã": "A",
+        "È": "E", "É": "E", "Ê": "E", "Ë": "E",
+        "Ì": "I", "Í": "I", "Î": "I", "Ï": "I",
+        "Ò": "O", "Ó": "O", "Ô": "O", "Ö": "O", "Õ": "O",
+        "Ù": "U", "Ú": "U", "Û": "U", "Ü": "U",
+        "Ç": "C", "Ñ": "N",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text.encode('latin-1', 'ignore').decode('latin-1')
+
+
+def generate_pro_pdf(df_source, title, subtitle="", orientation="L"):
+    """Généré un PDF professionnel avec fpdf. Retourne des bytes utilisables par st.download_button."""
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return None, "fpdf non installe"
+
+    class ProPDF(FPDF):
+        def header(self):
+            self.set_font('Arial', 'B', 9)
+            self.set_text_color(30, 58, 138)
+            header_text = sanitize_for_pdf("Plateforme de gestion des EDTs-Semestre 01_2026-2027 - Département d'Electrotechnique - FGE/UDL-SBA")
+            self.cell(0, 6, header_text, 0, 1, 'C')
+            self.set_draw_color(212, 175, 55)
+            self.line(10, self.get_y(), self.w - 10, self.get_y())
+            self.ln(3)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.set_text_color(128, 128, 128)
+            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+    pdf = ProPDF(orientation=orientation, unit="mm", format="A4")
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    pdf.set_font("Arial", "B", 16)
+    pdf.set_text_color(30, 58, 138)
+    pdf.cell(0, 10, sanitize_for_pdf(title), 0, 1, "C")
+
+    if subtitle:
+        pdf.set_font("Arial", "I", 10)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(0, 6, sanitize_for_pdf(subtitle), 0, 1, "C")
+
+    pdf.ln(5)
+
+    if df_source is not None and not df_source.empty:
+        df_clean = df_source.fillna("").astype(str)
+        cols = list(df_clean.columns)
+        n_cols = len(cols)
+        page_w = pdf.w - 20
+        col_w = page_w / n_cols if n_cols > 0 else page_w
+
+        pdf.set_font("Arial", "B", 8)
+        pdf.set_fill_color(30, 58, 138)
+        pdf.set_text_color(255, 255, 255)
+
+        for col in cols:
+            pdf.cell(col_w, 8, sanitize_for_pdf(str(col)), 1, 0, "C", True)
+        pdf.ln()
+
+        pdf.set_font("Arial", "", 7)
+        pdf.set_text_color(0, 0, 0)
+
+        for idx, row in df_clean.iterrows():
+            if idx % 2 == 0:
+                pdf.set_fill_color(248, 250, 252)
+            else:
+                pdf.set_fill_color(255, 255, 255)
+
+            for val in row:
+                cell_text = sanitize_for_pdf(str(val))
+                if len(cell_text) > 50:
+                    cell_text = cell_text[:47] + "..."
+                pdf.cell(col_w, 6, cell_text, 1, 0, "L", True)
+            pdf.ln()
+
+    pdf.ln(5)
+    pdf.set_font("Arial", "I", 8)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(0, 5, sanitize_for_pdf(f"Document géneré le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"), 0, 0, "R")
+
+    return bytes(pdf.output()), None
+
+
+def generate_pro_html(df_source, title, subtitle=""):
+    """Généré un HTML professionnel et responsive. Retourne une str."""
+    if df_source is not None and not df_source.empty:
+        df_clean = df_source.fillna("").astype(str)
+        rows_html = ""
+        for idx, row in df_clean.iterrows():
+            bg = "#f8fafc" if idx % 2 == 0 else "#ffffff"
+            cells = "".join([f'<td style="padding:10px;border:1px solid #e2e8f0;font-size:13px;">{val}</td>' for val in row])
+            rows_html += f'<tr style="background-color:{bg};">{cells}</tr>'
+
+        headers = "".join([f'<th style="padding:10px;border:1px solid #e2e8f0;background:#1E3A8A;color:white;font-size:13px;">{c}</th>' for c in df_clean.columns])
+        table_html = f'<table style="width:100%;border-collapse:collapse;margin-top:15px;">{headers}{rows_html}</table>'
+    else:
+        table_html = '<p style="text-align:center;color:#999;">Aucune donnee disponible</p>'
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {{ font-family: 'Inter', 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); margin: 0; padding: 30px; color: #1e293b; }}
+        .container {{ max-width: 1200px; margin: 0 auto; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow: hidden; }}
+        .header {{ background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); color: white; padding: 30px 40px; text-align: center; }}
+        .header h1 {{ margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }}
+        .header p {{ margin: 8px 0 0 0; opacity: 0.9; font-size: 14px; }}
+        .badge {{ display: inline-block; background: #D4AF37; color: #1E3A8A; padding: 4px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; margin-top: 10px; }}
+        .content {{ padding: 30px 40px; }}
+        .meta {{ display: flex; justify-content: space-between; color: #64748b; font-size: 12px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #f1f5f9; }}
+        table {{ width: 100%; border-collapse: separate; border-spacing: 0; }}
+        th {{ position: sticky; top: 0; z-index: 10; }}
+        tr:hover {{ background-color: #eff6ff !important; transition: background 0.2s; }}
+        .footer {{ text-align: center; padding: 20px; color: #94a3b8; font-size: 12px; border-top: 1px solid #f1f5f9; }}
+        @media print {{ body {{ background: white; padding: 0; }} .container {{ box-shadow: none; border-radius: 0; }} }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
+            <span class="badge">EDT Semestre 01_2026-2027 - Département d'électrotechnuqe-FGE/UDL-SBA</span>
+        </div>
+        <div class="content">
+            <div class="meta">
+                <span>Généré le {datetime.now().strftime('%d/%m/%Y a %H:%M')}</span>
+                <span>{len(df_source) if df_source is not None else 0} lignes</span>
+            </div>
+            {table_html}
+        </div>
+        <div class="footer">
+            Plateforme de gestion des EDTs - Département d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA
+        </div>
+    </div>
+</body>
+</html>"""
+    return html_content
+
+
+def generate_pro_excel(df_source, title, sheet_name="Donnees"):
+    """Généré un Excel professionnel avec xlsxwriter. Retourne des bytes."""
+    buffer = io.BytesIO()
+
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        df_clean = df_source.fillna("").astype(str) if df_source is not None else pd.DataFrame()
+        df_clean.to_excel(writer, index=False, sheet_name=sheet_name)
+
+        workbook = writer.book
+        worksheet = writer.sheets[sheet_name]
+
+        header_fmt = workbook.add_format({
+            'bold': True, 'font_size': 11, 'font_color': 'white',
+            'bg_color': '#1E3A8A', 'border': 1, 'align': 'center', 'valign': 'vcenter'
+        })
+        cell_fmt = workbook.add_format({
+            'font_size': 10, 'border': 1, 'valign': 'vcenter', 'text_wrap': True
+        })
+        alt_fmt = workbook.add_format({
+            'font_size': 10, 'border': 1, 'valign': 'vcenter', 'text_wrap': True, 'bg_color': '#F8FAFC'
+        })
+        title_fmt = workbook.add_format({
+            'bold': True, 'font_size': 14, 'font_color': '#1E3A8A', 'bottom': 2, 'bottom_color': '#D4AF37'
+        })
+
+        worksheet.write(0, 0, title, title_fmt)
+        worksheet.merge_range(0, 0, 0, len(df_clean.columns)-1, title, title_fmt)
+
+        for col_num, col_name in enumerate(df_clean.columns):
+            worksheet.write(1, col_num, col_name, header_fmt)
+            max_len = max(df_clean[col_name].astype(str).map(len).max(), len(str(col_name))) + 3
+            worksheet.set_column(col_num, col_num, min(max_len, 50))
+
+        for row_num, (_, row) in enumerate(df_clean.iterrows(), start=2):
+            fmt = alt_fmt if row_num % 2 == 0 else cell_fmt
+            for col_num, val in enumerate(row):
+                worksheet.write(row_num, col_num, val, fmt)
+
+        worksheet.freeze_panes(2, 0)
+
+        if len(df_clean) > 0:
+            recap = pd.DataFrame({
+                'Metrique': ['Total lignes', 'Date generation', 'Source'],
+                'Valeur': [len(df_clean), datetime.now().strftime('%d/%m/%Y %H:%M'), 'Plateforme EDT UDL']
+            })
+            recap.to_excel(writer, index=False, sheet_name='Recap')
+            ws_recap = writer.sheets['Recap']
+            ws_recap.set_column(0, 0, 20)
+            ws_recap.set_column(1, 1, 30)
+
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
+    """Généré un PDF individuel avec en-tete PPER.03 centree et texte infos aligne a gauche."""
+    try:
+        from fpdf import FPDF
+        import math
+    except ImportError:
+        return None, "fpdf non installe"
+    
+    if df_source is None or df_source.empty:
+        return None, "Aucune donnee"
+    
+    # Dimensions exactes PPER.03
+    W_LOGO = 1.19 * 25.4
+    W_MILIEU = 3.70 * 25.4
+    W_INFO = 1.40 * 25.4
+    H_ENTETE = 1.04 * 25.4
+    H_HAUT_MILIEU = 0.60 * 25.4
+    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
+    W_TOT = W_LOGO + W_MILIEU + W_INFO
+    
+    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+    horaires_ordre = [
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
+        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
+        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+    ]
+    
+    def norm(x):
+        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
+            return "vide"
+        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
+        s = s.replace(":00", "").replace("h00", "h")
+        return s
+    
+    map_j = {norm(j): j for j in jours_ordre}
+    map_h = {norm(h): h for h in horaires_ordre}
+    
+    # Remplacer les emojis par des codes courts pour un calcul de largeur fiable
+    def format_cell(rows):
+        items = []
+        for _, r in rows.iterrows():
+            code_up = str(r.get('Code', '')).upper()
+            if 'COURS' in code_up:
+                nat = '[C]'
+            elif 'TD' in code_up:
+                nat = '[T]'
+            else:
+                nat = '[P]'
+            txt = f"{nat} {r.get('Enseignements', '')}\n{r.get('Lieu', '')}\n{r.get('Promotion', '')}"
+            items.append(txt)
+        return "\n".join(items)
+    
+    df = df_source.copy()
+    df['Jours_Norm'] = df['Jours'].apply(norm)
+    df['Horaire_Norm'] = df['Horaire'].apply(norm)
+    
+    # Pivot : Jours en lignes, Horaires en colonnes
+    grouped = df.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+    if grouped.empty:
+        grid = pd.DataFrame(index=[norm(j) for j in jours_ordre], columns=[norm(h) for h in horaires_ordre]).fillna("")
+    else:
+        grid = grouped.unstack(fill_value="")
+    
+    jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
+    horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
+    
+    if not jours_present or not horaires_present:
+        grid = pd.DataFrame(index=["Aucun"], columns=["Aucun"]).fillna("Aucun cours")
+    else:
+        grid = grid.reindex(index=jours_present, columns=horaires_present)
+        grid.index = [map_j.get(i, i) for i in grid.index]
+        grid.columns = [map_h.get(c, c) for c in grid.columns]
+    
+    class EDTIndivPDF(FPDF):
+        def header(self):
+            X0 = 10 + ((self.w - 20) - W_TOT) / 2
+            Y0 = 10
+            X_MILIEU = X0 + W_LOGO
+            X_INFO = X_MILIEU + W_MILIEU
+            Y_SEP = Y0 + H_HAUT_MILIEU
+            
+            self.set_draw_color(0, 0, 0)
+            self.set_line_width(0.3)
+            self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
+            self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
+            self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
+            self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
+            
+            if os.path.exists("logo.PNG"):
+                logo_w = W_LOGO - 4
+                logo_h = H_ENTETE - 4
+                self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=logo_w, h=logo_h)
+            
+            self.set_xy(X_MILIEU, Y0 + 1.5)
+            self.set_font('Arial', 'B', 11)
+            self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
+            self.set_font('Arial', '', 10)
+            self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
+            
+            self.set_xy(X_MILIEU, Y_SEP + 0.5)
+            self.set_font('Arial', 'B', 12)
+            self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
+            
+            self.set_font('Arial', '', 9)
+            line_h = H_ENTETE / 4
+            infos = [
+                "Code : PPER.03",
+                "Révision : 00",
+                "Date : 16/05/2026",
+                f"Pages : {self.page_no()}/{{nb}}"
+            ]
+            for i, info in enumerate(infos):
+                self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
+                self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
+            
+            self.set_y(Y0 + H_ENTETE + 5)
+        
+        def footer(self):
+            self.set_y(-12)
+            self.set_font('Arial', 'I', 7)
+            self.set_text_color(128, 128, 128)
+            self.cell(0, 10, sanitize_for_pdf(f"{self.page_no()}/{{nb}}"), 0, 0, "R")
+    
+    pdf = EDTIndivPDF(orientation="L", unit="mm", format="A4")
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    
+    # Sous-titre
+    pdf.set_font("Arial", "B", 11)
+    pdf.set_text_color(30, 58, 138)
+    pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
+    pdf.set_font("Arial", "I", 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+    pdf.ln(3)
+        
+    if grid.empty:
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 10, "Aucun cours programme pour cet enseignant.", 0, 1, "C")
+        return bytes(pdf.output()), None
+    
+    n_cols = len(grid.columns)
+    page_w = pdf.w - 20
+    col_jour_w = 22
+    col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
+    
+    # Parametres de rendu (marges internes de securite)
+    interline = 3.2      # hauteur d'une ligne de texte
+    margin_h = 4.0       # marge horizontale totale (2mm de chaque cote)
+    padding_v = 3.0      # marge verticale de securite
+    
+    # === CALCUL PRECIS DES HAUTEURS DE LIGNE ===
+    pdf.set_font("Arial", "", 5.5)
+    row_heights = []
+    for _, row in grid.iterrows():
+        max_lines = 1
+        for val in row:
+            if val and str(val).strip():
+                txt_propre = sanitize_for_pdf(str(val))
+                lines = 0
+                for para in txt_propre.split('\n'):
+                    w_txt = pdf.get_string_width(para)
+                    if w_txt == 0:
+                        lines += 1
+                    else:
+                        # Largeur utile reelle avec marge de securite
+                        usable_w = max(col_h_w - margin_h - 1.0, 10)
+                        lines += max(1, math.ceil(w_txt / usable_w))
+                if lines > max_lines:
+                    max_lines = lines
+        # Hauteur exacte necessaire (PAS de plafond arbitraire)
+        h_needed = max_lines * interline + padding_v * 2 + 2.0
+        row_heights.append(max(10, h_needed))
+    
+    # En-tetes du tableau EDT
+    pdf.set_font("Arial", "B", 7)
+    pdf.set_fill_color(30, 58, 138)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+    for h in grid.columns:
+        h_txt = sanitize_for_pdf(str(h))
+        if len(h_txt) > 12:
+            h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+        pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+    pdf.ln()
+    
+    # Donnees du tableau EDT
+    pdf.set_text_color(0, 0, 0)
+    
+    for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
+        # Saut de page si la ligne entiere ne tient pas dans l'espace restant
+        if pdf.get_y() + row_h > pdf.h - 15:
+            pdf.add_page()
+            # Re-imprimer l'en-tete du tableau sur la nouvelle page
+            pdf.set_font("Arial", "B", 7)
+            pdf.set_fill_color(30, 58, 138)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+            for h in grid.columns:
+                h_txt = sanitize_for_pdf(str(h))
+                if len(h_txt) > 12:
+                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_text_color(0, 0, 0)
+        
+        bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
+        
+        pdf.set_font("Arial", "B", 7)
+        pdf.set_fill_color(*bg_color)
+        pdf.set_draw_color(180, 180, 180)
+        pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
+        
+        pdf.set_font("Arial", "", 5.5)
+        for val in row:
+            cell_text = sanitize_for_pdf(str(val)) if val else ""
+            x, y = pdf.get_x(), pdf.get_y()
+            
+            if cell_text.strip():
+                raw_up = str(val).upper()
+                if "COURS" in raw_up:
+                    bg = (225, 238, 255)
+                elif "TD" in raw_up:
+                    bg = (232, 252, 235)
+                elif "TP" in raw_up:
+                    bg = (255, 235, 235)
+                else:
+                    bg = bg_color
+            else:
+                bg = bg_color
+            
+            pdf.set_fill_color(*bg)
+            pdf.set_draw_color(180, 180, 180)
+            pdf.rect(x, y, col_h_w, row_h, 'FD')
+            
+            if cell_text.strip():
+                # Recalcul precis du nombre de lignes pour le centrage vertical
+                n_lines = 0
+                for para in cell_text.split('\n'):
+                    w_txt = pdf.get_string_width(para)
+                    if w_txt == 0:
+                        n_lines += 1
+                    else:
+                        usable_w = max(col_h_w - margin_h - 1.0, 10)
+                        n_lines += max(1, math.ceil(w_txt / usable_w))
+                
+                text_block_h = n_lines * interline
+                offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
+                
+                pdf.set_xy(x + margin_h / 2, y + offset_y)
+                pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
+                pdf.set_xy(x + col_h_w, y)
+            else:
+                pdf.set_xy(x + col_h_w, y)
+        pdf.ln(row_h)
+    
+    return bytes(pdf.output()), None    
+    # ═══════════════════════════════════════════════════════════════
+    # PASSE 1 : COMPTAGE SILENCIEUX (sans barre de progression)
+    # ═══════════════════════════════════════════════════════════════
+    pdf_count = _build_pdf(total_pages=0, show_progress=False)
+    total_pages = pdf_count.page_no()
+def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
+    """Genere un PDF unique avec l'EDT de TOUS les enseignants (format grille jour/horaire)."""
+    try:
+        from fpdf import FPDF
+        import math
+    except ImportError:
+        return None, "fpdf non installe"
+
+    if df_source is None or df_source.empty:
+        return None, "Aucune donnee"
+
+    W_LOGO = 1.19 * 25.4
+    W_MILIEU = 3.70 * 25.4
+    W_INFO = 1.40 * 25.4
+    H_ENTETE = 1.04 * 25.4
+    H_HAUT_MILIEU = 0.60 * 25.4
+    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
+    W_TOT = W_LOGO + W_MILIEU + W_INFO
+    MARGE_BAS = 15
+
+    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+    horaires_ordre = [
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
+        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
+        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+    ]
+
+    def norm(x):
+        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
+            return "vide"
+        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
+        s = s.replace(":00", "").replace("h00", "h")
+        return s
+
+    map_j = {norm(j): j for j in jours_ordre}
+    map_h = {norm(h): h for h in horaires_ordre}
+
+    def format_cell(rows):
+        items = []
+        for _, r in rows.iterrows():
+            code_up = str(r.get('Code', '')).upper()
+            if 'COURS' in code_up:
+                nat = '[C]'
+            elif 'TD' in code_up:
+                nat = '[TD]'
+            else:
+                nat = '[TP]'
+            txt = f"{nat} {r.get('Enseignements', '')}\nPromo: {r.get('Promotion', '')}\nSalle: {r.get('Lieu', '')}"
+            items.append(txt)
+        return "\n".join(items)
+
+    df = df_source.copy()
+    df['Jours_Norm'] = df['Jours'].apply(norm)
+    df['Horaire_Norm'] = df['Horaire'].apply(norm)
+
+    enseignants = sorted([e for e in df['Enseignants'].unique() 
+                         if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+    if not enseignants:
+        return None, "Aucun enseignant trouve"
+
+    def _build_pdf(total_pages, show_progress=False):
+        class EnsGlobalPDF(FPDF):
+            def header(self):
+                X0 = 10 + ((self.w - 20) - W_TOT) / 2
+                Y0 = 10
+                X_MILIEU = X0 + W_LOGO
+                X_INFO = X_MILIEU + W_MILIEU
+                Y_SEP = Y0 + H_HAUT_MILIEU
+
+                self.set_draw_color(0, 0, 0)
+                self.set_line_width(0.3)
+                self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
+                self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
+                self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
+                self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
+
+                if os.path.exists("logo.PNG"):
+                    self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
+
+                self.set_xy(X_MILIEU, Y0 + 1.5)
+                self.set_font('Arial', 'B', 11)
+                self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
+                self.set_font('Arial', '', 10)
+                self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
+
+                self.set_xy(X_MILIEU, Y_SEP + 0.5)
+                self.set_font('Arial', 'B', 12)
+                self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
+
+                self.set_font('Arial', '', 9)
+                line_h = H_ENTETE / 4
+                infos = [
+                    "Code : PPER.03",
+                    "Revision : 00",
+                    "Date : 16/05/2026",
+                    f"Pages : {self.page_no()}/{total_pages}"
+                ]
+                for i, info in enumerate(infos):
+                    self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
+                    self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
+
+                self.set_y(Y0 + H_ENTETE + 5)
+
+            def footer(self):
+                self.set_y(-15)
+                self.set_font('Arial', '', 8)
+                self.set_text_color(80, 80, 80)
+                self.cell(0, 10, f"{self.page_no()}/{total_pages}", 0, 0, "R")
+
+        pdf = EnsGlobalPDF(orientation="L", unit="mm", format="A4")
+        pdf.set_auto_page_break(auto=False, margin=MARGE_BAS)
+
+        def draw_title(pdf, ens):
+            pdf.set_font("Arial", "B", 12)
+            pdf.set_text_color(30, 58, 138)
+            pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS - {str(ens).upper()}"), 0, 1, "C")
+            pdf.set_font("Arial", "I", 8)
+            pdf.set_text_color(100, 100, 100)
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.ln(2)
+
+        def draw_table_header(pdf, grid, col_jour_w, col_h_w):
+            pdf.set_font("Arial", "B", 7)
+            pdf.set_fill_color(30, 58, 138)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+            for h in grid.columns:
+                h_txt = sanitize_for_pdf(str(h))
+                if len(h_txt) > 12:
+                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_text_color(0, 0, 0)
+
+        n_ens = len(enseignants)
+
+        for idx_ens, ens in enumerate(enseignants):
+            if show_progress and progress_bar is not None:
+                progress_bar.progress((idx_ens) / n_ens, text=f"Generation : {ens} ({idx_ens+1}/{n_ens})")
+
+            df_ens = df[df['Enseignants'] == ens].copy()
+            if df_ens.empty:
+                continue
+
+            pdf.add_page()
+
+            grouped = df_ens.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+            grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
+
+            jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
+            horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
+
+            if not jours_present or not horaires_present:
+                draw_title(pdf, ens)
+                pdf.set_font("Arial", "", 10)
+                pdf.cell(0, 10, "Aucun cours programme pour cet enseignant.", 0, 1, "C")
+                continue
+
+            grid = grid.reindex(index=jours_present, columns=horaires_present)
+            grid.index = [map_j.get(i, i) for i in grid.index]
+            grid.columns = [map_h.get(c, c) for c in grid.columns]
+
+            n_cols = len(grid.columns)
+            page_w = pdf.w - 20
+            col_jour_w = 22
+            col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
+
+            interline = 3.2
+            margin_h  = 4.0
+            padding_v = 3.0
+
+            pdf.set_font("Arial", "", 5.5)
+            row_heights = []
+            for _, row in grid.iterrows():
+                max_lines = 1
+                for val in row:
+                    if val and str(val).strip():
+                        txt_propre = sanitize_for_pdf(str(val))
+                        lines = 0
+                        for para in txt_propre.split('\n'):
+                            w_txt = pdf.get_string_width(para)
+                            if w_txt == 0:
+                                lines += 1
+                            else:
+                                usable_w = max(col_h_w - margin_h - 1.0, 10)
+                                lines += max(1, math.ceil(w_txt / usable_w))
+                        if lines > max_lines:
+                            max_lines = lines
+                h_needed = max_lines * interline + padding_v * 2 + 2.0
+                row_heights.append(max(10, h_needed))
+
+            title_h = 8 + 5 + 2
+            header_h = 8
+            if pdf.get_y() + title_h + header_h + row_heights[0] > pdf.h - MARGE_BAS:
+                pdf.add_page()
+
+            draw_title(pdf, ens)
+            draw_table_header(pdf, grid, col_jour_w, col_h_w)
+
+            for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
+                if pdf.get_y() + row_h > pdf.h - MARGE_BAS:
+                    pdf.add_page()
+                    draw_title(pdf, ens)
+                    draw_table_header(pdf, grid, col_jour_w, col_h_w)
+
+                bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
+
+                pdf.set_font("Arial", "B", 7)
+                pdf.set_fill_color(*bg_color)
+                pdf.set_draw_color(180, 180, 180)
+                pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
+
+                pdf.set_font("Arial", "", 5.5)
+                for val in row:
+                    cell_text = sanitize_for_pdf(str(val)) if val else ""
+                    x, y = pdf.get_x(), pdf.get_y()
+
+                    if cell_text.strip():
+                        raw_up = str(val).upper()
+                        if "COURS" in raw_up:
+                            bg = (225, 238, 255)
+                        elif "TD" in raw_up:
+                            bg = (232, 252, 235)
+                        elif "TP" in raw_up:
+                            bg = (255, 235, 235)
+                        else:
+                            bg = bg_color
+                    else:
+                        bg = bg_color
+
+                    pdf.set_fill_color(*bg)
+                    pdf.set_draw_color(180, 180, 180)
+                    pdf.rect(x, y, col_h_w, row_h, 'FD')
+
+                    if cell_text.strip():
+                        n_lines = 0
+                        for para in cell_text.split('\n'):
+                            w_txt = pdf.get_string_width(para)
+                            if w_txt == 0:
+                                n_lines += 1
+                            else:
+                                usable_w = max(col_h_w - margin_h - 1.0, 10)
+                                n_lines += max(1, math.ceil(w_txt / usable_w))
+
+                        text_block_h = n_lines * interline
+                        offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
+
+                        pdf.set_xy(x + margin_h / 2, y + offset_y)
+                        pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
+                        pdf.set_xy(x + col_h_w, y)
+                    else:
+                        pdf.set_xy(x + col_h_w, y)
+
+                pdf.ln(row_h)
+
+        return pdf
+
+    pdf_count = _build_pdf(total_pages=0, show_progress=False)
+    total_pages = pdf_count.page_no()
+
+    if progress_bar is not None:
+        progress_bar.progress(0, text=f"Generation finale sur {total_pages} pages...")
+
+    pdf_final = _build_pdf(total_pages=total_pages, show_progress=True)
+
+    if progress_bar is not None:
+        progress_bar.empty()
+
+    return bytes(pdf_final.output()), None
+
+
+
+def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
+    """Généré un PDF unique avec l'EDT de TOUTES les promotions (format grille jour/horaire)."""
+    try:
+        from fpdf import FPDF
+        import math
+    except ImportError:
+        return None, "fpdf non installe"
+    
+    if df_source is None or df_source.empty:
+        return None, "Aucune donnee"
+    
+    # Dimensions en-tete PPER.03 (inch -> mm)
+    W_LOGO = 1.19 * 25.4
+    W_MILIEU = 3.70 * 25.4
+    W_INFO = 1.40 * 25.4
+    H_ENTETE = 1.04 * 25.4
+    H_HAUT_MILIEU = 0.60 * 25.4
+    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
+    W_TOT = W_LOGO + W_MILIEU + W_INFO
+    MARGE_BAS = 15
+    
+    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+    horaires_ordre = [
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
+        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
+        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+    ]
+    
+    def norm(x):
+        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
+            return "vide"
+        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
+        s = s.replace(":00", "").replace("h00", "h")
+        return s
+    
+    map_j = {norm(j): j for j in jours_ordre}
+    map_h = {norm(h): h for h in horaires_ordre}
+    
+    def format_cell(rows):
+        items = []
+        for _, r in rows.iterrows():
+            code_up = str(r.get('Code', '')).upper()
+            if 'COURS' in code_up:
+                nat = '[C]'
+            elif 'TD' in code_up:
+                nat = '[TD]'
+            else:
+                nat = '[TP]'
+            
+            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nSalle: {r.get('Lieu', '')}"
+            items.append(txt)
+        return "\n".join(items)
+    
+    df = df_source.copy()
+    df['Jours_Norm'] = df['Jours'].apply(norm)
+    df['Horaire_Norm'] = df['Horaire'].apply(norm)
+    
+    promotions = sorted([p for p in df['Promotion'].unique() 
+                        if p and str(p).strip() not in ["", "nan", "None", "Non defini"]])
+    if not promotions:
+        return None, "Aucune promotion trouvee"
+    
+    def _build_pdf(total_pages, show_progress=False):
+        class PromoGlobalPDF(FPDF):
+            def header(self):
+                X0 = 10 + ((self.w - 20) - W_TOT) / 2
+                Y0 = 10
+                X_MILIEU = X0 + W_LOGO
+                X_INFO = X_MILIEU + W_MILIEU
+                Y_SEP = Y0 + H_HAUT_MILIEU
+                
+                self.set_draw_color(0, 0, 0)
+                self.set_line_width(0.3)
+                self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
+                self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
+                self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
+                self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
+                
+                if os.path.exists("logo.PNG"):
+                    self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
+                
+                self.set_xy(X_MILIEU, Y0 + 1.5)
+                self.set_font('Arial', 'B', 11)
+                self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
+                self.set_font('Arial', '', 10)
+                self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
+                
+                self.set_xy(X_MILIEU, Y_SEP + 0.5)
+                self.set_font('Arial', 'B', 12)
+                self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
+                
+                self.set_font('Arial', '', 9)
+                line_h = H_ENTETE / 4
+                infos = [
+                    "Code : PPER.03",
+                    "Révision : 00",
+                    "Date : 16/05/2026",
+                    f"Pages : {total_pages}/{total_pages}"
+                ]
+                for i, info in enumerate(infos):
+                    self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
+                    self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
+                
+                self.set_y(Y0 + H_ENTETE + 5)
+            
+            def footer(self):
+                self.set_y(-15)
+                self.set_font('Arial', '', 8)
+                self.set_text_color(80, 80, 80)
+                self.cell(0, 10, f"{self.page_no()}/{total_pages}", 0, 0, "R")
+        
+        pdf = PromoGlobalPDF(orientation="L", unit="mm", format="A4")
+        pdf.set_auto_page_break(auto=False, margin=MARGE_BAS)
+        
+        def draw_title(pdf, promo):
+            pdf.set_font("Arial", "B", 12)
+            pdf.set_text_color(30, 58, 138)
+            pdf.cell(0, 8, sanitize_for_pdf(f"PROMOTION {str(promo).upper()}"), 0, 1, "C")
+            pdf.set_font("Arial", "I", 8)
+            pdf.set_text_color(100, 100, 100)
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.ln(2)
+        
+        def draw_table_header(pdf, grid, col_jour_w, col_h_w):
+            pdf.set_font("Arial", "B", 7)
+            pdf.set_fill_color(30, 58, 138)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+            for h in grid.columns:
+                h_txt = sanitize_for_pdf(str(h))
+                if len(h_txt) > 12:
+                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_text_color(0, 0, 0)
+        
+        n_promo = len(promotions)
+        
+        for idx_promo, promo in enumerate(promotions):
+            if show_progress and progress_bar is not None:
+                progress_bar.progress((idx_promo) / n_promo, text=f"Generation : {promo} ({idx_promo+1}/{n_promo})")
+            
+            df_promo = df[df['Promotion'] == promo].copy()
+            if df_promo.empty:
+                continue
+            
+            pdf.add_page()
+            
+            grouped = df_promo.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+            grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
+            
+            jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
+            horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
+            
+            if not jours_present or not horaires_present:
+                draw_title(pdf, promo)
+                pdf.set_font("Arial", "", 10)
+                pdf.cell(0, 10, "Aucun cours programme pour cette promotion.", 0, 1, "C")
+                continue
+            
+            grid = grid.reindex(index=jours_present, columns=horaires_present)
+            grid.index = [map_j.get(i, i) for i in grid.index]
+            grid.columns = [map_h.get(c, c) for c in grid.columns]
+            
+            n_cols = len(grid.columns)
+            page_w = pdf.w - 20
+            col_jour_w = 22
+            col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
+            
+            interline = 3.2
+            margin_h  = 4.0
+            padding_v = 3.0
+            
+            pdf.set_font("Arial", "", 5.5)
+            row_heights = []
+            for _, row in grid.iterrows():
+                max_lines = 1
+                for val in row:
+                    if val and str(val).strip():
+                        txt_propre = sanitize_for_pdf(str(val))
+                        lines = 0
+                        for para in txt_propre.split('\n'):
+                            w_txt = pdf.get_string_width(para)
+                            if w_txt == 0:
+                                lines += 1
+                            else:
+                                usable_w = max(col_h_w - margin_h - 1.0, 10)
+                                lines += max(1, math.ceil(w_txt / usable_w))
+                        if lines > max_lines:
+                            max_lines = lines
+                h_needed = max_lines * interline + padding_v * 2 + 2.0
+                row_heights.append(max(10, h_needed))
+            
+            title_h = 8 + 5 + 2
+            header_h = 8
+            if pdf.get_y() + title_h + header_h + row_heights[0] > pdf.h - MARGE_BAS:
+                pdf.add_page()
+            
+            draw_title(pdf, promo)
+            draw_table_header(pdf, grid, col_jour_w, col_h_w)
+            
+            for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
+                if pdf.get_y() + row_h > pdf.h - MARGE_BAS:
+                    pdf.add_page()
+                    draw_title(pdf, promo)
+                    draw_table_header(pdf, grid, col_jour_w, col_h_w)
+                
+                bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
+                
+                pdf.set_font("Arial", "B", 7)
+                pdf.set_fill_color(*bg_color)
+                pdf.set_draw_color(180, 180, 180)
+                pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
+                
+                pdf.set_font("Arial", "", 5.5)
+                for val in row:
+                    cell_text = sanitize_for_pdf(str(val)) if val else ""
+                    x, y = pdf.get_x(), pdf.get_y()
+                    
+                    if cell_text.strip():
+                        raw_up = str(val).upper()
+                        if "COURS" in raw_up:
+                            bg = (225, 238, 255)
+                        elif "TD" in raw_up:
+                            bg = (232, 252, 235)
+                        elif "TP" in raw_up:
+                            bg = (255, 235, 235)
+                        else:
+                            bg = bg_color
+                    else:
+                        bg = bg_color
+                    
+                    pdf.set_fill_color(*bg)
+                    pdf.set_draw_color(180, 180, 180)
+                    pdf.rect(x, y, col_h_w, row_h, 'FD')
+                    
+                    if cell_text.strip():
+                        n_lines = 0
+                        for para in cell_text.split('\n'):
+                            w_txt = pdf.get_string_width(para)
+                            if w_txt == 0:
+                                n_lines += 1
+                            else:
+                                usable_w = max(col_h_w - margin_h - 1.0, 10)
+                                n_lines += max(1, math.ceil(w_txt / usable_w))
+                        
+                        text_block_h = n_lines * interline
+                        offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
+                        
+                        pdf.set_xy(x + margin_h / 2, y + offset_y)
+                        pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
+                        pdf.set_xy(x + col_h_w, y)
+                    else:
+                        pdf.set_xy(x + col_h_w, y)
+                
+                pdf.ln(row_h)
+        
+        return pdf
+    
+    # PASSE 1 : comptage silencieux
+    pdf_count = _build_pdf(total_pages=0, show_progress=False)
+    total_pages = pdf_count.page_no()
+    
+    # PASSE 2 : generation avec pagination correcte
+    if progress_bar is not None:
+        progress_bar.progress(0, text=f"Generation finale sur {total_pages} pages...")
+    
+    pdf_final = _build_pdf(total_pages=total_pages, show_progress=True)
+    
+    if progress_bar is not None:
+        progress_bar.empty()
+    
+    return bytes(pdf_final.output()), None    
+def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
+    """Genere un PDF unique avec le planning de TOUS les lieux (format grille jour/horaire)."""
+    try:
+        from fpdf import FPDF
+        import math
+    except ImportError:
+        return None, "fpdf non installe"
+    
+    if df_source is None or df_source.empty:
+        return None, "Aucune donnee"
+    
+    # Dimensions en-tete PPER.03 (inch -> mm)
+    W_LOGO = 1.19 * 25.4
+    W_MILIEU = 3.70 * 25.4
+    W_INFO = 1.40 * 25.4
+    H_ENTETE = 1.04 * 25.4
+    H_HAUT_MILIEU = 0.60 * 25.4
+    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
+    W_TOT = W_LOGO + W_MILIEU + W_INFO
+    MARGE_BAS = 15
+    
+    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+    horaires_ordre = [
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
+        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
+        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+    ]
+    
+    def norm(x):
+        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
+            return "vide"
+        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
+        s = s.replace(":00", "").replace("h00", "h")
+        return s
+    
+    map_j = {norm(j): j for j in jours_ordre}
+    map_h = {norm(h): h for h in horaires_ordre}
+    
+    def format_cell(rows):
+        items = []
+        for _, r in rows.iterrows():
+            code_up = str(r.get('Code', '')).upper()
+            if 'COURS' in code_up:
+                nat = '[C]'
+            elif 'TD' in code_up:
+                nat = '[TD]'
+            else:
+                nat = '[TP]'
+            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
+            items.append(txt)
+        return "\n".join(items)
+    
+    df = df_source.copy()
+    df['Jours_Norm'] = df['Jours'].apply(norm)
+    df['Horaire_Norm'] = df['Horaire'].apply(norm)
+    
+    lieux = sorted([l for l in df['Lieu'].unique() 
+                    if l and str(l).strip() not in ["", "nan", "None", "Non defini"]])
+    if not lieux:
+        return None, "Aucun lieu trouve"
+    
+    def _build_pdf(total_pages, show_progress=False):
+        class LieuGlobalPDF(FPDF):
+            def header(self):
+                X0 = 10 + ((self.w - 20) - W_TOT) / 2
+                Y0 = 10
+                X_MILIEU = X0 + W_LOGO
+                X_INFO = X_MILIEU + W_MILIEU
+                Y_SEP = Y0 + H_HAUT_MILIEU
+                
+                self.set_draw_color(0, 0, 0)
+                self.set_line_width(0.3)
+                self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
+                self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
+                self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
+                self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
+                
+                if os.path.exists("logo.PNG"):
+                    self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
+                
+                self.set_xy(X_MILIEU, Y0 + 1.5)
+                self.set_font('Arial', 'B', 11)
+                self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
+                self.set_font('Arial', '', 10)
+                self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
+                
+                self.set_xy(X_MILIEU, Y_SEP + 0.5)
+                self.set_font('Arial', 'B', 12)
+                self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
+                
+                self.set_font('Arial', '', 9)
+                line_h = H_ENTETE / 4
+                infos = [
+                    "Code : PPER.03",
+                    "Revision : 00",
+                    "Date : 16/05/2026",
+                    f"Pages : {self.page_no()}/{total_pages}"
+                ]
+                for i, info in enumerate(infos):
+                    self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
+                    self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
+                
+                self.set_y(Y0 + H_ENTETE + 5)
+            
+            def footer(self):
+                self.set_y(-15)
+                self.set_font('Arial', '', 8)
+                self.set_text_color(80, 80, 80)
+                self.cell(0, 10, f"{self.page_no()}/{total_pages}", 0, 0, "R")
+        
+        pdf = LieuGlobalPDF(orientation="L", unit="mm", format="A4")
+        pdf.set_auto_page_break(auto=False, margin=MARGE_BAS)
+        
+        def draw_title(pdf, lieu):
+            pdf.set_font("Arial", "B", 12)
+            pdf.set_text_color(30, 58, 138)
+            pdf.cell(0, 8, sanitize_for_pdf(f"PLANNING - {str(lieu).upper()}"), 0, 1, "C")
+            pdf.set_font("Arial", "I", 8)
+            pdf.set_text_color(100, 100, 100)
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.ln(2)
+        
+        def draw_table_header(pdf, grid, col_jour_w, col_h_w):
+            pdf.set_font("Arial", "B", 7)
+            pdf.set_fill_color(30, 58, 138)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+            for h in grid.columns:
+                h_txt = sanitize_for_pdf(str(h))
+                if len(h_txt) > 12:
+                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_text_color(0, 0, 0)
+        
+        n_lieu = len(lieux)
+        
+        for idx_lieu, lieu in enumerate(lieux):
+            if show_progress and progress_bar is not None:
+                progress_bar.progress((idx_lieu) / n_lieu, text=f"Generation : {lieu} ({idx_lieu+1}/{n_lieu})")
+            
+            df_lieu = df[df['Lieu'] == lieu].copy()
+            if df_lieu.empty:
+                continue
+            
+            pdf.add_page()
+            
+            grouped = df_lieu.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+            grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
+            
+            jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
+            horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
+            
+            if not jours_present or not horaires_present:
+                draw_title(pdf, lieu)
+                pdf.set_font("Arial", "", 10)
+                pdf.cell(0, 10, "Aucun cours programme pour ce lieu.", 0, 1, "C")
+                continue
+            
+            grid = grid.reindex(index=jours_present, columns=horaires_present)
+            grid.index = [map_j.get(i, i) for i in grid.index]
+            grid.columns = [map_h.get(c, c) for c in grid.columns]
+            
+            n_cols = len(grid.columns)
+            page_w = pdf.w - 20
+            col_jour_w = 22
+            col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
+            
+            interline = 3.2
+            margin_h  = 4.0
+            padding_v = 3.0
+            
+            pdf.set_font("Arial", "", 5.5)
+            row_heights = []
+            for _, row in grid.iterrows():
+                max_lines = 1
+                for val in row:
+                    if val and str(val).strip():
+                        txt_propre = sanitize_for_pdf(str(val))
+                        lines = 0
+                        for para in txt_propre.split('\n'):
+                            w_txt = pdf.get_string_width(para)
+                            if w_txt == 0:
+                                lines += 1
+                            else:
+                                usable_w = max(col_h_w - margin_h - 1.0, 10)
+                                lines += max(1, math.ceil(w_txt / usable_w))
+                        if lines > max_lines:
+                            max_lines = lines
+                h_needed = max_lines * interline + padding_v * 2 + 2.0
+                row_heights.append(max(10, h_needed))
+            
+            title_h = 8 + 5 + 2
+            header_h = 8
+            if pdf.get_y() + title_h + header_h + row_heights[0] > pdf.h - MARGE_BAS:
+                pdf.add_page()
+            
+            draw_title(pdf, lieu)
+            draw_table_header(pdf, grid, col_jour_w, col_h_w)
+            
+            for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
+                if pdf.get_y() + row_h > pdf.h - MARGE_BAS:
+                    pdf.add_page()
+                    draw_title(pdf, lieu)
+                    draw_table_header(pdf, grid, col_jour_w, col_h_w)
+                
+                bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
+                
+                pdf.set_font("Arial", "B", 7)
+                pdf.set_fill_color(*bg_color)
+                pdf.set_draw_color(180, 180, 180)
+                pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
+                
+                pdf.set_font("Arial", "", 5.5)
+                for val in row:
+                    cell_text = sanitize_for_pdf(str(val)) if val else ""
+                    x, y = pdf.get_x(), pdf.get_y()
+                    
+                    if cell_text.strip():
+                        raw_up = str(val).upper()
+                        if "COURS" in raw_up:
+                            bg = (225, 238, 255)
+                        elif "TD" in raw_up:
+                            bg = (232, 252, 235)
+                        elif "TP" in raw_up:
+                            bg = (255, 235, 235)
+                        else:
+                            bg = bg_color
+                    else:
+                        bg = bg_color
+                    
+                    pdf.set_fill_color(*bg)
+                    pdf.set_draw_color(180, 180, 180)
+                    pdf.rect(x, y, col_h_w, row_h, 'FD')
+                    
+                    if cell_text.strip():
+                        n_lines = 0
+                        for para in cell_text.split('\n'):
+                            w_txt = pdf.get_string_width(para)
+                            if w_txt == 0:
+                                n_lines += 1
+                            else:
+                                usable_w = max(col_h_w - margin_h - 1.0, 10)
+                                n_lines += max(1, math.ceil(w_txt / usable_w))
+                        
+                        text_block_h = n_lines * interline
+                        offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
+                        
+                        pdf.set_xy(x + margin_h / 2, y + offset_y)
+                        pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
+                        pdf.set_xy(x + col_h_w, y)
+                    else:
+                        pdf.set_xy(x + col_h_w, y)
+                
+                pdf.ln(row_h)
+        
+        return pdf
+    
+    # PASSE 1 : comptage silencieux
+    pdf_count = _build_pdf(total_pages=0, show_progress=False)
+    total_pages = pdf_count.page_no()
+    
+    # PASSE 2 : generation avec pagination correcte
+    if progress_bar is not None:
+        progress_bar.progress(0, text=f"Generation finale sur {total_pages} pages...")
+    
+    pdf_final = _build_pdf(total_pages=total_pages, show_progress=True)
+    
+    if progress_bar is not None:
+        progress_bar.empty()
+    
+    return bytes(pdf_final.output()), None    
+def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
+    """Génère un PDF individuel pour UN lieu (Amphi/Salle) avec grille Jours×Horaires et en-tête PPER.03."""
+    try:
+        from fpdf import FPDF
+        import math
+    except ImportError:
+        return None, "fpdf non installe"
+    
+    if df_source is None or df_source.empty:
+        return None, "Aucune donnee"
+    
+    # Dimensions exactes PPER.03
+    W_LOGO = 1.19 * 25.4
+    W_MILIEU = 3.70 * 25.4
+    W_INFO = 1.40 * 25.4
+    H_ENTETE = 1.04 * 25.4
+    H_HAUT_MILIEU = 0.60 * 25.4
+    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
+    W_TOT = W_LOGO + W_MILIEU + W_INFO
+    MARGE_BAS = 15
+    
+    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+    horaires_ordre = [
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
+        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
+        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+    ]
+    
+    def norm(x):
+        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
+            return "vide"
+        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
+        s = s.replace(":00", "").replace("h00", "h")
+        return s
+    
+    map_j = {norm(j): j for j in jours_ordre}
+    map_h = {norm(h): h for h in horaires_ordre}
+    
+    def format_cell(rows):
+        items = []
+        for _, r in rows.iterrows():
+            code_up = str(r.get('Code', '')).upper()
+            if 'COURS' in code_up:
+                nat = '[C]'
+            elif 'TD' in code_up:
+                nat = '[TD]'
+            else:
+                nat = '[TP]'
+            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
+            items.append(txt)
+        return "\n".join(items)
+    
+    df = df_source.copy()
+    df['Jours_Norm'] = df['Jours'].apply(norm)
+    df['Horaire_Norm'] = df['Horaire'].apply(norm)
+    
+    grouped = df.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+    grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
+    
+    jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
+    horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
+    
+    if not jours_present or not horaires_present:
+        grid = pd.DataFrame(index=["Aucun"], columns=["Aucun"]).fillna("Aucun cours")
+    else:
+        grid = grid.reindex(index=jours_present, columns=horaires_present)
+        grid.index = [map_j.get(i, i) for i in grid.index]
+        grid.columns = [map_h.get(c, c) for c in grid.columns]
+    
+    class LieuIndivPDF(FPDF):
+        def header(self):
+            X0 = 10 + ((self.w - 20) - W_TOT) / 2
+            Y0 = 10
+            X_MILIEU = X0 + W_LOGO
+            X_INFO = X_MILIEU + W_MILIEU
+            Y_SEP = Y0 + H_HAUT_MILIEU
+            
+            self.set_draw_color(0, 0, 0)
+            self.set_line_width(0.3)
+            self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
+            self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
+            self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
+            self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
+            
+            if os.path.exists("logo.PNG"):
+                self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
+            
+            self.set_xy(X_MILIEU, Y0 + 1.5)
+            self.set_font('Arial', 'B', 11)
+            self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
+            self.set_font('Arial', '', 10)
+            self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
+            
+            self.set_xy(X_MILIEU, Y_SEP + 0.5)
+            self.set_font('Arial', 'B', 12)
+            self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
+            
+            self.set_font('Arial', '', 9)
+            line_h = H_ENTETE / 4
+            infos = [
+                "Code : PPER.03",
+                "Revision : 00",
+                "Date : 16/05/2026",
+                f"Page : {self.page_no()}/{{nb}}"
+            ]
+            for i, info in enumerate(infos):
+                self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
+                self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
+            
+            self.set_y(Y0 + H_ENTETE + 5)
+        
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Arial', '', 8)
+            self.set_text_color(80, 80, 80)
+            self.cell(0, 10, f"{self.page_no()}/{{nb}}", 0, 0, "R")
+    
+    pdf = LieuIndivPDF(orientation="L", unit="mm", format="A4")
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=MARGE_BAS)
+    pdf.add_page()
+    
+    # Sous-titre
+    pdf.set_font("Arial", "B", 11)
+    pdf.set_text_color(30, 58, 138)
+    pdf.cell(0, 8, sanitize_for_pdf(f"PLANNING - {nom_lieu.upper()}"), 0, 1, "C")
+    pdf.set_font("Arial", "I", 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+    pdf.ln(3)
+    
+    if grid.empty or (grid.shape == (1,1) and grid.iloc[0,0] == "Aucun cours"):
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 10, "Aucun cours programme pour ce lieu.", 0, 1, "C")
+        return bytes(pdf.output()), None
+    
+    n_cols = len(grid.columns)
+    page_w = pdf.w - 20
+    col_jour_w = 22
+    col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
+    
+    interline = 3.2
+    margin_h = 4.0
+    padding_v = 3.0
+    
+    # Calcul des hauteurs de ligne
+    pdf.set_font("Arial", "", 5.5)
+    row_heights = []
+    for _, row in grid.iterrows():
+        max_lines = 1
+        for val in row:
+            if val and str(val).strip():
+                txt_propre = sanitize_for_pdf(str(val))
+                lines = 0
+                for para in txt_propre.split('\n'):
+                    w_txt = pdf.get_string_width(para)
+                    if w_txt == 0:
+                        lines += 1
+                    else:
+                        usable_w = max(col_h_w - margin_h - 1.0, 10)
+                        lines += max(1, math.ceil(w_txt / usable_w))
+                if lines > max_lines:
+                    max_lines = lines
+        h_needed = max_lines * interline + padding_v * 2 + 2.0
+        row_heights.append(max(10, h_needed))
+    
+    # En-têtes
+    pdf.set_font("Arial", "B", 7)
+    pdf.set_fill_color(30, 58, 138)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+    for h in grid.columns:
+        h_txt = sanitize_for_pdf(str(h))
+        if len(h_txt) > 12:
+            h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+        pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+    pdf.ln()
+    
+    # Données
+    pdf.set_text_color(0, 0, 0)
+    
+    for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
+        if pdf.get_y() + row_h > pdf.h - MARGE_BAS:
+            pdf.add_page()
+            # Ré-imprimer l'en-tête du tableau
+            pdf.set_font("Arial", "B", 7)
+            pdf.set_fill_color(30, 58, 138)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+            for h in grid.columns:
+                h_txt = sanitize_for_pdf(str(h))
+                if len(h_txt) > 12:
+                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_text_color(0, 0, 0)
+        
+        bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
+        
+        pdf.set_font("Arial", "B", 7)
+        pdf.set_fill_color(*bg_color)
+        pdf.set_draw_color(180, 180, 180)
+        pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
+        
+        pdf.set_font("Arial", "", 5.5)
+        for val in row:
+            cell_text = sanitize_for_pdf(str(val)) if val else ""
+            x, y = pdf.get_x(), pdf.get_y()
+            
+            if cell_text.strip():
+                raw_up = str(val).upper()
+                if "COURS" in raw_up:
+                    bg = (225, 238, 255)
+                elif "TD" in raw_up:
+                    bg = (232, 252, 235)
+                elif "TP" in raw_up:
+                    bg = (255, 235, 235)
+                else:
+                    bg = bg_color
+            else:
+                bg = bg_color
+            
+            pdf.set_fill_color(*bg)
+            pdf.set_draw_color(180, 180, 180)
+            pdf.rect(x, y, col_h_w, row_h, 'FD')
+            
+            if cell_text.strip():
+                n_lines = 0
+                for para in cell_text.split('\n'):
+                    w_txt = pdf.get_string_width(para)
+                    if w_txt == 0:
+                        n_lines += 1
+                    else:
+                        usable_w = max(col_h_w - margin_h - 1.0, 10)
+                        n_lines += max(1, math.ceil(w_txt / usable_w))
+                
+                text_block_h = n_lines * interline
+                offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
+                
+                pdf.set_xy(x + margin_h / 2, y + offset_y)
+                pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
+                pdf.set_xy(x + col_h_w, y)
+            else:
+                pdf.set_xy(x + col_h_w, y)
+        pdf.ln(row_h)
+    
+    return bytes(pdf.output()), None
+    # ═══════════════════════════════════════════════════════════════
+    # PASSE 2 : GENERATION FINALE AVEC BONNE PAGINATION
+    # ═══════════════════════════════════════════════════════════════
+    if progress_bar is not None:
+        progress_bar.progress(0, text=f"Generation finale sur {total_pages} pages...")
+    
+    pdf_final = _build_pdf(total_pages=total_pages, show_progress=True)
+    
+    if progress_bar is not None:
+        progress_bar.empty()
+    
+    return bytes(pdf_final.output()), None
+def render_download_hub(df_global, user_data, is_admin):
+    """Affiche un hub de telechargement rapide en haut de page."""
+    st.markdown("""
+        <style>
+        .dl-hub { background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
+                   border-radius: 12px; padding: 20px; color: white; margin-bottom: 20px; }
+        .dl-hub h3 { margin: 0 0 10px 0; font-size: 18px; }
+        .dl-hub p { margin: 0 0 15px 0; opacity: 0.9; font-size: 13px; }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+        <div class="dl-hub">
+            <h3>📥 Centre de Telechargement Rapide</h3>
+            <p>Exportez vos emplois du temps dans le format de votre choix (PDF, HTML, Excel)</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ═══════════════════════════════════════════════════════
+    # BARRE DE SESSION : UTILISATEUR + DÉCONNEXION
+    # ═══════════════════════════════════════════════════════
+    if user_data is not None:
+        nom_session = user_data.get('nom_officiel', 'Utilisateur')
+        role_session = user_data.get('role', 'enseignant').upper()
+        col_user, col_deco = st.columns([4, 1])
+        with col_user:
+            st.markdown(f"""
+                <div style="background: linear-gradient(90deg, #f0f9ff 0%, #e0f2fe 100%); 
+                            border-left: 4px solid #1E3A8A; padding: 10px 16px; border-radius: 8px; 
+                            margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">👤</span>
+                    <div>
+                        <div style="font-weight: bold; color: #1E3A8A; font-size: 14px;">{nom_session}</div>
+                        <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                            Connecté · {role_session}
+                        </div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+        with col_deco:
+            if st.button("🚪 Déconnexion", use_container_width=True, type="primary"):
+                st.session_state["user_data"] = None
+                st.session_state.pop("pdf_all_ready", None)
+                st.session_state.pop("pdf_all_data", None)
+                st.session_state.pop("pdf_all_promo_ready", None)
+                st.session_state.pop("pdf_all_promo_data", None)
+                st.session_state.pop("pdf_all_lieu_ready", None)
+                st.session_state.pop("pdf_all_lieu_data", None)
+                st.rerun()
+
+    if df_global is None or df_global.empty:
+        st.warning("Aucune donnee chargee. Verifiez votre connexion Supabase ou votre fichier Excel.")
+        return
+
+    # Nettoyage : suppression des colonnes techniques internes pour tous les exports
+    COLONNES_CACHEES = ['h_norm', 'j_norm']
+    df_propre = df_global.drop(columns=[c for c in COLONNES_CACHEES if c in df_global.columns], errors='ignore')
+
+    promos = sorted([p for p in df_propre["Promotion"].unique() if p and p != "Non defini"])
+    profs = sorted([p for p in df_propre["Enseignants"].unique() if p and p != "Non defini"])
+    salles = sorted([s for s in df_propre["Lieu"].unique() if s and s != "Non defini"])
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+    
+        st.markdown("**🎓 Par Promotion**")
+        sel_promo = st.selectbox("Choisir promotion", ["Toutes"] + promos, key="hub_promo")
+        df_filtre = df_propre.copy()
+        if sel_promo != "Toutes":
+            df_filtre = df_filtre[df_filtre["Promotion"] == sel_promo]
+        c1, c2, c3 = st.columns(3)
+        
+        # ═══════════════════════════════════════════════════════
+        # PDF : individuel ou global (meme logique que Enseignants)
+        # ═══════════════════════════════════════════════════════
+        if sel_promo != "Toutes":
+            # Une seule promotion → generation immediate
+            pdf_data, err = generate_pro_pdf(df_filtre, f"EDT - {sel_promo}", "Export promotion")
+            if pdf_data is not None:
+                c1.download_button("📄 PDF", pdf_data, f"EDT_{sel_promo}_2027.pdf", "application/pdf", use_container_width=True, key="dp_promo_single")
+            else:
+                c1.button("📄 PDF", disabled=True, use_container_width=True, key="dp_promo_single")
+        else:
+            # Toutes les promotions → generation au clic avec progression
+            if c1.button("📄 Générer PDF Global", use_container_width=True, key="btn_gen_all_pdf_promo"):
+                with st.spinner("Preparation du fichier global..."):
+                    prog = st.progress(0, text="Demarrage...")
+                    pdf_data_all, err_all = generate_edt_toutes_promotions_pdf(df_propre, progress_bar=prog)
+                    if pdf_data_all:
+                        st.session_state['pdf_all_promo_data'] = pdf_data_all
+                        st.session_state['pdf_all_promo_ready'] = True
+                        st.success(f"✅ PDF Généré : {len(promos)} promotions")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Erreur : {err_all}")
+            
+            if st.session_state.get('pdf_all_promo_ready') and 'pdf_all_promo_data' in st.session_state:
+                c1.download_button("⬇️ Telecharger PDF Global", st.session_state['pdf_all_promo_data'],
+                                  "EDT_Toutes_Promotions_2027.pdf", "application/pdf",
+                                  use_container_width=True, key="dp_down_promo")
+        
+        # HTML et Excel (toujours disponibles)
+        html_data = generate_pro_html(df_filtre, f"EDT {sel_promo}", "Faculte de Genie Electrique - UDL-SBA")
+        c2.download_button("🌐 HTML", html_data, f"EDT_{sel_promo}_2027.html", "text/html", use_container_width=True, key="dh_promo")
+        xlsx_data = generate_pro_excel(df_filtre, f"EDT {sel_promo}")
+        c3.download_button("📊 Excel", xlsx_data, f"EDT_{sel_promo}_2027.xlsx", 
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="dx_promo")
+    
+    
+    with col2:
+        st.markdown("**👤 Par Enseignant**")
+        sel_prof = st.selectbox("Choisir enseignant", ["Tous"] + profs, key="hub_prof")
+        df_filtre_p = df_propre.copy()
+        if sel_prof != "Tous":
+            df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
+            
+            # ═══════════════════════════════════════════════════════
+            # AFFICHEUR NUMÉRIQUE : CHARGE HORAIRE & HEURES SUP
+            # ═══════════════════════════════════════════════════════
+            df_filtre_p['Type'] = df_filtre_p['Code'].apply(
+                lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
+            )
+            # Déduplication sur Horaire + Jours pour compter les séances uniques
+            df_u = df_filtre_p.drop_duplicates(subset=['Horaire', 'Jours'])
+            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
+            nb_td    = len(df_u[df_u['Type'] == 'TD'])
+            nb_tp    = len(df_u[df_u['Type'] == 'TP'])
+
+            # Calcul de la charge équivalente
+            # 1h Cours = 1.5 eq/h  |  1h TD/TP = 1.0 eq/h
+            charge_eq = round((nb_cours * 1.5) + (nb_td * 1.0) + (nb_tp * 1.0), 2)
+            SEUIL_REGLEMENTAIRE = 6.0  # 6 heures équivalent/semaine
+
+            delta = round(charge_eq - SEUIL_REGLEMENTAIRE, 2)
+
+            # Style conditionnel
+            if delta > 0:
+                statut_label = "Heures Supplémentaires"
+                statut_color = "#22c55e"  # vert
+                statut_bg = "#f0fdf4"
+                delta_str = f"+{delta} eq/h"
+                emoji = "✅"
+            elif delta < 0:
+                statut_label = "Déficit Horaire"
+                statut_color = "#ef4444"  # rouge
+                statut_bg = "#fef2f2"
+                delta_str = f"{delta} eq/h"
+                emoji = "⚠️"
+            else:
+                statut_label = "Charge Exacte"
+                statut_color = "#3b82f6"  # bleu
+                statut_bg = "#eff6ff"
+                delta_str = "0 eq/h"
+                emoji = "⚖️"
+
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
+                        padding: 16px; border-radius: 12px; color: white; margin: 10px 0;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                <div style="text-align: center; font-size: 13px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
+                    📊 Bilan Hebdomadaire — {sel_prof}
+                </div>
+                <div style="display: flex; justify-content: center; gap: 20px; margin-top: 12px; flex-wrap: wrap;">
+                    <div style="text-align: center; min-width: 80px;">
+                        <div style="font-size: 24px; font-weight: bold;">{nb_cours}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">📘 Cours</div>
+                    </div>
+                    <div style="text-align: center; min-width: 80px;">
+                        <div style="font-size: 24px; font-weight: bold;">{nb_td}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">📗 TD</div>
+                    </div>
+                    <div style="text-align: center; min-width: 80px;">
+                        <div style="font-size: 24px; font-weight: bold;">{nb_tp}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">🔴 TP</div>
+                    </div>
+                    <div style="border-left: 1px solid rgba(255,255,255,0.3); height: 40px; align-self: center;"></div>
+                    <div style="text-align: center; min-width: 100px;">
+                        <div style="font-size: 28px; font-weight: bold;">{charge_eq}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">Charge Eq/h</div>
+                    </div>
+                    <div style="text-align: center; min-width: 100px;">
+                        <div style="font-size: 28px; font-weight: bold;">{SEUIL_REGLEMENTAIRE}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">Seuil Réglem.</div>
+                    </div>
+                </div>
+            </div>
+            <div style="background-color: {statut_bg}; border-left: 5px solid {statut_color}; 
+                        padding: 12px 16px; border-radius: 8px; margin-top: 8px;">
+                <div style="font-size: 18px; font-weight: bold; color: {statut_color};">
+                    {emoji} {statut_label} : {delta_str}
+                </div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
+                    Règle : 1h Cours = 1.5 eq/h | 1h TD/TP = 1.0 eq/h | Seuil = 6.0 eq/h/semaine
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            # ═══════════════════════════════════════════════════════
+
+              
+        # ═══════════════════════════════════════════════════════
+        # PDF : individuel ou global
+        # ═══════════════════════════════════════════════════════
+        if sel_prof != "Tous":
+            # Un seul enseignant → generation immediate
+            pdf_data_p, _ = generate_edt_individuel_pdf_classique(df_filtre_p, sel_prof)
+            if pdf_data_p is not None:
+                c1.download_button("📄 PDF", pdf_data_p, f"EDT_{sel_prof}_2027.pdf", 
+                                  "application/pdf", use_container_width=True, key="dp")
+            else:
+                c1.button("📄 PDF", disabled=True, use_container_width=True, key="dp")
+        else:
+            # Tous les enseignants → generation au clic avec progression
+            if c1.button("📄 Générer PDF Global", use_container_width=True, key="btn_gen_all_pdf"):
+                with st.spinner("Preparation du fichier global..."):
+                    prog = st.progress(0, text="Demarrage...")
+                    pdf_data_all, err_all = generate_edt_tous_enseignants_pdf(df_propre, progress_bar=prog)
+                    if pdf_data_all:
+                        st.session_state['pdf_all_data'] = pdf_data_all
+                        st.session_state['pdf_all_ready'] = True
+                        st.success(f"✅ PDF Généré : {len(profs)} enseignants")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Erreur : {err_all}")
+            
+            if st.session_state.get('pdf_all_ready') and 'pdf_all_data' in st.session_state:
+                c1.download_button("⬇️ Telecharger PDF Global", st.session_state['pdf_all_data'],
+                                  "EDT_Tous_Enseignants_2027.pdf", "application/pdf",
+                                  use_container_width=True, key="dp_down")
+        
+        # HTML et Excel (toujours disponibles)
+        html_data_p = generate_pro_html(df_filtre_p, f"EDT {sel_prof}", "Faculte de Genie Electrique - UDL-SBA")
+        if html_data_p:
+            c2.download_button("🌐 HTML", html_data_p, f"EDT_{sel_prof}_2027.html", 
+                              "text/html", use_container_width=True, key="dh")
+        else:
+            c2.button("🌐 HTML", disabled=True, use_container_width=True, key="dh")
+            
+        xlsx_data_p = generate_pro_excel(df_filtre_p, f"EDT {sel_prof}")
+        if xlsx_data_p:
+            c3.download_button("📊 Excel", xlsx_data_p, f"EDT_{sel_prof}_2027.xlsx", 
+                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                              use_container_width=True, key="dx")
+        else:
+            c3.button("📊 Excel", disabled=True, use_container_width=True, key="dx")                
+            
+    
+    with col3:
+        st.markdown("**🏢 Par Lieu**")
+        sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", ["Toutes"] + salles, key="hub_salle")
+        df_filtre_s = df_propre.copy()
+        
+        if sel_salle != "Toutes":
+            df_filtre_s = df_filtre_s[df_filtre_s["Lieu"].astype(str).str.startswith(sel_salle)]
+        
+        c1, c2, c3 = st.columns(3)
+        
+        # ═══════════════════════════════════════════════════════
+        # PDF : individuel ou global (meme logique que Promotions)
+        # ═══════════════════════════════════════════════════════
+        if sel_salle != "Toutes":
+            # Un seul lieu → generation immediate avec grille standard PPER.03
+            pdf_data_s, _ = generate_edt_individuel_lieu_pdf(df_filtre_s, sel_salle)
+            if pdf_data_s is not None:
+                c1.download_button("📄 PDF", pdf_data_s, f"Planning_{sel_salle}_2027.pdf", "application/pdf", use_container_width=True, key="sp")
+            else:
+                c1.button("📄 PDF", disabled=True, use_container_width=True, key="sp")
+        else:
+            # Tous les lieux → generation au clic avec progression
+            if c1.button("📄 Generer PDF Global", use_container_width=True, key="btn_gen_all_pdf_lieu"):
+                with st.spinner("Preparation du fichier global..."):
+                    prog = st.progress(0, text="Demarrage...")
+                    pdf_data_all, err_all = generate_edt_tous_lieux_pdf(df_propre, progress_bar=prog)
+                    if pdf_data_all:
+                        st.session_state['pdf_all_lieu_data'] = pdf_data_all
+                        st.session_state['pdf_all_lieu_ready'] = True
+                        st.success(f"✅ PDF Genere : {len(salles)} lieux")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Erreur : {err_all}")
+            
+            if st.session_state.get('pdf_all_lieu_ready') and 'pdf_all_lieu_data' in st.session_state:
+                c1.download_button("⬇️ Telecharger PDF Global", st.session_state['pdf_all_lieu_data'],
+                                  "Planning_Tous_Lieux_2027.pdf", "application/pdf",
+                                  use_container_width=True, key="dp_down_lieu")
+        
+        # HTML et Excel (toujours disponibles)
+        html_data_s = generate_pro_html(df_filtre_s, f"Planning {sel_salle}", "Faculte de Genie Electrique - UDL-SBA")
+        c2.download_button("🌐 HTML", html_data_s, f"Planning_{sel_salle}_2027.html", "text/html", use_container_width=True, key="sh")
+        xlsx_data_s = generate_pro_excel(df_filtre_s, f"Planning {sel_salle}")
+        c3.download_button("📊 Excel", xlsx_data_s, f"Planning_{sel_salle}_2027.xlsx", 
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="sx")
+    
+    if is_admin:
+        st.divider()
+        st.markdown("**🌍 Export Global (Admin)**")
+        cg1, cg2, cg3, cg4 = st.columns(4)
+        pdf_g, _ = generate_pro_pdf(df_propre, "EDT GLOBAL S1-2027", "Département d'Electrotechnique - Toutes promotions")
+        if pdf_g is not None:
+            cg1.download_button("📄 PDF Global", pdf_g, "EDT_GLOBAL_S1_2027.pdf", "application/pdf", use_container_width=True)
+        html_g = generate_pro_html(df_propre, "EDT Global S1-2027", "Département d'Electrotechnique - FGE/UDL-SBA")
+        cg2.download_button("🌐 HTML Global", html_g, "EDT_GLOBAL_S1_2027.html", "text/html", use_container_width=True)
+        xlsx_g = generate_pro_excel(df_propre, "EDT Global S1-2027", "EDT_Global")
+        cg3.download_button("📊 Excel Global", xlsx_g, "EDT_GLOBAL_S1_2027.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            if pdf_g is not None:
+                zf.writestr("EDT_GLOBAL.pdf", pdf_g)
+            zf.writestr("EDT_GLOBAL.html", html_g)
+            zf.writestr("EDT_GLOBAL.xlsx", xlsx_g)
+        cg4.download_button("🗜️ Pack ZIP", zip_buffer.getvalue(), "Pack_EDT_GLOBAL_S1_2027.zip", "application/zip", use_container_width=True)
+
+    st.divider()
+
+# =============================================================================
+
 """
 ================================================================================
 Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
@@ -2215,1892 +4105,3 @@ else:
     # Fallback sécurisé
     run_assiduite()                 
 
-import streamlit as st
-import pandas as pd
-import os
-import hashlib
-import io
-from datetime import datetime, timedelta
-from supabase import create_client
-import streamlit as st
-
-# =============================================================================
-# FONCTIONS UTILITAIRES PRO POUR L'EXPORT (PDF / HTML / EXCEL)
-# =============================================================================
-
-import zipfile
-
-def sanitize_for_pdf(text):
-    """Nettoie le texte pour fpdf (latin-1) en remplacant les caracteres problematiques."""
-    if text is None or pd.isna(text):
-        return ""
-    text = str(text)
-    replacements = {
-        "'": "'", "'": "'", """: "\"", """: "\"", "–": "-", "—": "-",
-        "…": "...", "«": "\"", "»": "\"", "œ": "oe", "Œ": "OE",
-        "à": "a", "â": "a", "ä": "a", "á": "a", "ã": "a", "å": "a",
-        "è": "e", "é": "e", "ê": "e", "ë": "e", "ē": "e", "ė": "e", "ę": "e",
-        "ì": "i", "í": "i", "î": "i", "ï": "i", "ī": "i", "į": "i",
-        "ò": "o", "ó": "o", "ô": "o", "ö": "o", "õ": "o", "ō": "o",
-        "ù": "u", "ú": "u", "û": "u", "ü": "u", "ū": "u",
-        "ç": "c", "ć": "c", "č": "c", "ñ": "n", "ń": "n",
-        "ÿ": "y", "ý": "y",
-        "À": "A", "Â": "A", "Ä": "A", "Á": "A", "Ã": "A",
-        "È": "E", "É": "E", "Ê": "E", "Ë": "E",
-        "Ì": "I", "Í": "I", "Î": "I", "Ï": "I",
-        "Ò": "O", "Ó": "O", "Ô": "O", "Ö": "O", "Õ": "O",
-        "Ù": "U", "Ú": "U", "Û": "U", "Ü": "U",
-        "Ç": "C", "Ñ": "N",
-    }
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-    return text.encode('latin-1', 'ignore').decode('latin-1')
-
-
-def generate_pro_pdf(df_source, title, subtitle="", orientation="L"):
-    """Généré un PDF professionnel avec fpdf. Retourne des bytes utilisables par st.download_button."""
-    try:
-        from fpdf import FPDF
-    except ImportError:
-        return None, "fpdf non installe"
-
-    class ProPDF(FPDF):
-        def header(self):
-            self.set_font('Arial', 'B', 9)
-            self.set_text_color(30, 58, 138)
-            header_text = sanitize_for_pdf("Plateforme de gestion des EDTs-Semestre 01_2026-2027 - Département d'Electrotechnique - FGE/UDL-SBA")
-            self.cell(0, 6, header_text, 0, 1, 'C')
-            self.set_draw_color(212, 175, 55)
-            self.line(10, self.get_y(), self.w - 10, self.get_y())
-            self.ln(3)
-
-        def footer(self):
-            self.set_y(-15)
-            self.set_font('Arial', 'I', 8)
-            self.set_text_color(128, 128, 128)
-            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
-
-    pdf = ProPDF(orientation=orientation, unit="mm", format="A4")
-    pdf.alias_nb_pages()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-
-    pdf.set_font("Arial", "B", 16)
-    pdf.set_text_color(30, 58, 138)
-    pdf.cell(0, 10, sanitize_for_pdf(title), 0, 1, "C")
-
-    if subtitle:
-        pdf.set_font("Arial", "I", 10)
-        pdf.set_text_color(100, 100, 100)
-        pdf.cell(0, 6, sanitize_for_pdf(subtitle), 0, 1, "C")
-
-    pdf.ln(5)
-
-    if df_source is not None and not df_source.empty:
-        df_clean = df_source.fillna("").astype(str)
-        cols = list(df_clean.columns)
-        n_cols = len(cols)
-        page_w = pdf.w - 20
-        col_w = page_w / n_cols if n_cols > 0 else page_w
-
-        pdf.set_font("Arial", "B", 8)
-        pdf.set_fill_color(30, 58, 138)
-        pdf.set_text_color(255, 255, 255)
-
-        for col in cols:
-            pdf.cell(col_w, 8, sanitize_for_pdf(str(col)), 1, 0, "C", True)
-        pdf.ln()
-
-        pdf.set_font("Arial", "", 7)
-        pdf.set_text_color(0, 0, 0)
-
-        for idx, row in df_clean.iterrows():
-            if idx % 2 == 0:
-                pdf.set_fill_color(248, 250, 252)
-            else:
-                pdf.set_fill_color(255, 255, 255)
-
-            for val in row:
-                cell_text = sanitize_for_pdf(str(val))
-                if len(cell_text) > 50:
-                    cell_text = cell_text[:47] + "..."
-                pdf.cell(col_w, 6, cell_text, 1, 0, "L", True)
-            pdf.ln()
-
-    pdf.ln(5)
-    pdf.set_font("Arial", "I", 8)
-    pdf.set_text_color(150, 150, 150)
-    pdf.cell(0, 5, sanitize_for_pdf(f"Document géneré le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"), 0, 0, "R")
-
-    return bytes(pdf.output()), None
-
-
-def generate_pro_html(df_source, title, subtitle=""):
-    """Généré un HTML professionnel et responsive. Retourne une str."""
-    if df_source is not None and not df_source.empty:
-        df_clean = df_source.fillna("").astype(str)
-        rows_html = ""
-        for idx, row in df_clean.iterrows():
-            bg = "#f8fafc" if idx % 2 == 0 else "#ffffff"
-            cells = "".join([f'<td style="padding:10px;border:1px solid #e2e8f0;font-size:13px;">{val}</td>' for val in row])
-            rows_html += f'<tr style="background-color:{bg};">{cells}</tr>'
-
-        headers = "".join([f'<th style="padding:10px;border:1px solid #e2e8f0;background:#1E3A8A;color:white;font-size:13px;">{c}</th>' for c in df_clean.columns])
-        table_html = f'<table style="width:100%;border-collapse:collapse;margin-top:15px;">{headers}{rows_html}</table>'
-    else:
-        table_html = '<p style="text-align:center;color:#999;">Aucune donnee disponible</p>'
-
-    html_content = f"""<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        body {{ font-family: 'Inter', 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); margin: 0; padding: 30px; color: #1e293b; }}
-        .container {{ max-width: 1200px; margin: 0 auto; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow: hidden; }}
-        .header {{ background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); color: white; padding: 30px 40px; text-align: center; }}
-        .header h1 {{ margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }}
-        .header p {{ margin: 8px 0 0 0; opacity: 0.9; font-size: 14px; }}
-        .badge {{ display: inline-block; background: #D4AF37; color: #1E3A8A; padding: 4px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; margin-top: 10px; }}
-        .content {{ padding: 30px 40px; }}
-        .meta {{ display: flex; justify-content: space-between; color: #64748b; font-size: 12px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #f1f5f9; }}
-        table {{ width: 100%; border-collapse: separate; border-spacing: 0; }}
-        th {{ position: sticky; top: 0; z-index: 10; }}
-        tr:hover {{ background-color: #eff6ff !important; transition: background 0.2s; }}
-        .footer {{ text-align: center; padding: 20px; color: #94a3b8; font-size: 12px; border-top: 1px solid #f1f5f9; }}
-        @media print {{ body {{ background: white; padding: 0; }} .container {{ box-shadow: none; border-radius: 0; }} }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>{title}</h1>
-            <p>{subtitle}</p>
-            <span class="badge">EDT Semestre 01_2026-2027 - Département d'électrotechnuqe-FGE/UDL-SBA</span>
-        </div>
-        <div class="content">
-            <div class="meta">
-                <span>Généré le {datetime.now().strftime('%d/%m/%Y a %H:%M')}</span>
-                <span>{len(df_source) if df_source is not None else 0} lignes</span>
-            </div>
-            {table_html}
-        </div>
-        <div class="footer">
-            Plateforme de gestion des EDTs - Département d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA
-        </div>
-    </div>
-</body>
-</html>"""
-    return html_content
-
-
-def generate_pro_excel(df_source, title, sheet_name="Donnees"):
-    """Généré un Excel professionnel avec xlsxwriter. Retourne des bytes."""
-    buffer = io.BytesIO()
-
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        df_clean = df_source.fillna("").astype(str) if df_source is not None else pd.DataFrame()
-        df_clean.to_excel(writer, index=False, sheet_name=sheet_name)
-
-        workbook = writer.book
-        worksheet = writer.sheets[sheet_name]
-
-        header_fmt = workbook.add_format({
-            'bold': True, 'font_size': 11, 'font_color': 'white',
-            'bg_color': '#1E3A8A', 'border': 1, 'align': 'center', 'valign': 'vcenter'
-        })
-        cell_fmt = workbook.add_format({
-            'font_size': 10, 'border': 1, 'valign': 'vcenter', 'text_wrap': True
-        })
-        alt_fmt = workbook.add_format({
-            'font_size': 10, 'border': 1, 'valign': 'vcenter', 'text_wrap': True, 'bg_color': '#F8FAFC'
-        })
-        title_fmt = workbook.add_format({
-            'bold': True, 'font_size': 14, 'font_color': '#1E3A8A', 'bottom': 2, 'bottom_color': '#D4AF37'
-        })
-
-        worksheet.write(0, 0, title, title_fmt)
-        worksheet.merge_range(0, 0, 0, len(df_clean.columns)-1, title, title_fmt)
-
-        for col_num, col_name in enumerate(df_clean.columns):
-            worksheet.write(1, col_num, col_name, header_fmt)
-            max_len = max(df_clean[col_name].astype(str).map(len).max(), len(str(col_name))) + 3
-            worksheet.set_column(col_num, col_num, min(max_len, 50))
-
-        for row_num, (_, row) in enumerate(df_clean.iterrows(), start=2):
-            fmt = alt_fmt if row_num % 2 == 0 else cell_fmt
-            for col_num, val in enumerate(row):
-                worksheet.write(row_num, col_num, val, fmt)
-
-        worksheet.freeze_panes(2, 0)
-
-        if len(df_clean) > 0:
-            recap = pd.DataFrame({
-                'Metrique': ['Total lignes', 'Date generation', 'Source'],
-                'Valeur': [len(df_clean), datetime.now().strftime('%d/%m/%Y %H:%M'), 'Plateforme EDT UDL']
-            })
-            recap.to_excel(writer, index=False, sheet_name='Recap')
-            ws_recap = writer.sheets['Recap']
-            ws_recap.set_column(0, 0, 20)
-            ws_recap.set_column(1, 1, 30)
-
-    buffer.seek(0)
-    return buffer.getvalue()
-
-def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
-    """Généré un PDF individuel avec en-tete PPER.03 centree et texte infos aligne a gauche."""
-    try:
-        from fpdf import FPDF
-        import math
-    except ImportError:
-        return None, "fpdf non installe"
-    
-    if df_source is None or df_source.empty:
-        return None, "Aucune donnee"
-    
-    # Dimensions exactes PPER.03
-    W_LOGO = 1.19 * 25.4
-    W_MILIEU = 3.70 * 25.4
-    W_INFO = 1.40 * 25.4
-    H_ENTETE = 1.04 * 25.4
-    H_HAUT_MILIEU = 0.60 * 25.4
-    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
-    W_TOT = W_LOGO + W_MILIEU + W_INFO
-    
-    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-    horaires_ordre = [
-        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
-    ]
-    
-    def norm(x):
-        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
-            return "vide"
-        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
-        s = s.replace(":00", "").replace("h00", "h")
-        return s
-    
-    map_j = {norm(j): j for j in jours_ordre}
-    map_h = {norm(h): h for h in horaires_ordre}
-    
-    # Remplacer les emojis par des codes courts pour un calcul de largeur fiable
-    def format_cell(rows):
-        items = []
-        for _, r in rows.iterrows():
-            code_up = str(r.get('Code', '')).upper()
-            if 'COURS' in code_up:
-                nat = '[C]'
-            elif 'TD' in code_up:
-                nat = '[T]'
-            else:
-                nat = '[P]'
-            txt = f"{nat} {r.get('Enseignements', '')}\n{r.get('Lieu', '')}\n{r.get('Promotion', '')}"
-            items.append(txt)
-        return "\n".join(items)
-    
-    df = df_source.copy()
-    df['Jours_Norm'] = df['Jours'].apply(norm)
-    df['Horaire_Norm'] = df['Horaire'].apply(norm)
-    
-    # Pivot : Jours en lignes, Horaires en colonnes
-    grouped = df.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
-    if grouped.empty:
-        grid = pd.DataFrame(index=[norm(j) for j in jours_ordre], columns=[norm(h) for h in horaires_ordre]).fillna("")
-    else:
-        grid = grouped.unstack(fill_value="")
-    
-    jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
-    horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
-    
-    if not jours_present or not horaires_present:
-        grid = pd.DataFrame(index=["Aucun"], columns=["Aucun"]).fillna("Aucun cours")
-    else:
-        grid = grid.reindex(index=jours_present, columns=horaires_present)
-        grid.index = [map_j.get(i, i) for i in grid.index]
-        grid.columns = [map_h.get(c, c) for c in grid.columns]
-    
-    class EDTIndivPDF(FPDF):
-        def header(self):
-            X0 = 10 + ((self.w - 20) - W_TOT) / 2
-            Y0 = 10
-            X_MILIEU = X0 + W_LOGO
-            X_INFO = X_MILIEU + W_MILIEU
-            Y_SEP = Y0 + H_HAUT_MILIEU
-            
-            self.set_draw_color(0, 0, 0)
-            self.set_line_width(0.3)
-            self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
-            self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
-            self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
-            self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
-            
-            if os.path.exists("logo.PNG"):
-                logo_w = W_LOGO - 4
-                logo_h = H_ENTETE - 4
-                self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=logo_w, h=logo_h)
-            
-            self.set_xy(X_MILIEU, Y0 + 1.5)
-            self.set_font('Arial', 'B', 11)
-            self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
-            self.set_font('Arial', '', 10)
-            self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
-            
-            self.set_xy(X_MILIEU, Y_SEP + 0.5)
-            self.set_font('Arial', 'B', 12)
-            self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
-            
-            self.set_font('Arial', '', 9)
-            line_h = H_ENTETE / 4
-            infos = [
-                "Code : PPER.03",
-                "Révision : 00",
-                "Date : 16/05/2026",
-                f"Pages : {self.page_no()}/{{nb}}"
-            ]
-            for i, info in enumerate(infos):
-                self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
-                self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
-            
-            self.set_y(Y0 + H_ENTETE + 5)
-        
-        def footer(self):
-            self.set_y(-12)
-            self.set_font('Arial', 'I', 7)
-            self.set_text_color(128, 128, 128)
-            self.cell(0, 10, sanitize_for_pdf(f"{self.page_no()}/{{nb}}"), 0, 0, "R")
-    
-    pdf = EDTIndivPDF(orientation="L", unit="mm", format="A4")
-    pdf.alias_nb_pages()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    
-    # Sous-titre
-    pdf.set_font("Arial", "B", 11)
-    pdf.set_text_color(30, 58, 138)
-    pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
-    pdf.set_font("Arial", "I", 8)
-    pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
-    pdf.ln(3)
-        
-    if grid.empty:
-        pdf.set_font("Arial", "", 10)
-        pdf.cell(0, 10, "Aucun cours programme pour cet enseignant.", 0, 1, "C")
-        return bytes(pdf.output()), None
-    
-    n_cols = len(grid.columns)
-    page_w = pdf.w - 20
-    col_jour_w = 22
-    col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
-    
-    # Parametres de rendu (marges internes de securite)
-    interline = 3.2      # hauteur d'une ligne de texte
-    margin_h = 4.0       # marge horizontale totale (2mm de chaque cote)
-    padding_v = 3.0      # marge verticale de securite
-    
-    # === CALCUL PRECIS DES HAUTEURS DE LIGNE ===
-    pdf.set_font("Arial", "", 5.5)
-    row_heights = []
-    for _, row in grid.iterrows():
-        max_lines = 1
-        for val in row:
-            if val and str(val).strip():
-                txt_propre = sanitize_for_pdf(str(val))
-                lines = 0
-                for para in txt_propre.split('\n'):
-                    w_txt = pdf.get_string_width(para)
-                    if w_txt == 0:
-                        lines += 1
-                    else:
-                        # Largeur utile reelle avec marge de securite
-                        usable_w = max(col_h_w - margin_h - 1.0, 10)
-                        lines += max(1, math.ceil(w_txt / usable_w))
-                if lines > max_lines:
-                    max_lines = lines
-        # Hauteur exacte necessaire (PAS de plafond arbitraire)
-        h_needed = max_lines * interline + padding_v * 2 + 2.0
-        row_heights.append(max(10, h_needed))
-    
-    # En-tetes du tableau EDT
-    pdf.set_font("Arial", "B", 7)
-    pdf.set_fill_color(30, 58, 138)
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
-    for h in grid.columns:
-        h_txt = sanitize_for_pdf(str(h))
-        if len(h_txt) > 12:
-            h_txt = h_txt.replace(" - ", "-").replace(" ", "")
-        pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
-    pdf.ln()
-    
-    # Donnees du tableau EDT
-    pdf.set_text_color(0, 0, 0)
-    
-    for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
-        # Saut de page si la ligne entiere ne tient pas dans l'espace restant
-        if pdf.get_y() + row_h > pdf.h - 15:
-            pdf.add_page()
-            # Re-imprimer l'en-tete du tableau sur la nouvelle page
-            pdf.set_font("Arial", "B", 7)
-            pdf.set_fill_color(30, 58, 138)
-            pdf.set_text_color(255, 255, 255)
-            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
-            for h in grid.columns:
-                h_txt = sanitize_for_pdf(str(h))
-                if len(h_txt) > 12:
-                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
-                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
-            pdf.ln()
-            pdf.set_text_color(0, 0, 0)
-        
-        bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
-        
-        pdf.set_font("Arial", "B", 7)
-        pdf.set_fill_color(*bg_color)
-        pdf.set_draw_color(180, 180, 180)
-        pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
-        
-        pdf.set_font("Arial", "", 5.5)
-        for val in row:
-            cell_text = sanitize_for_pdf(str(val)) if val else ""
-            x, y = pdf.get_x(), pdf.get_y()
-            
-            if cell_text.strip():
-                raw_up = str(val).upper()
-                if "COURS" in raw_up:
-                    bg = (225, 238, 255)
-                elif "TD" in raw_up:
-                    bg = (232, 252, 235)
-                elif "TP" in raw_up:
-                    bg = (255, 235, 235)
-                else:
-                    bg = bg_color
-            else:
-                bg = bg_color
-            
-            pdf.set_fill_color(*bg)
-            pdf.set_draw_color(180, 180, 180)
-            pdf.rect(x, y, col_h_w, row_h, 'FD')
-            
-            if cell_text.strip():
-                # Recalcul precis du nombre de lignes pour le centrage vertical
-                n_lines = 0
-                for para in cell_text.split('\n'):
-                    w_txt = pdf.get_string_width(para)
-                    if w_txt == 0:
-                        n_lines += 1
-                    else:
-                        usable_w = max(col_h_w - margin_h - 1.0, 10)
-                        n_lines += max(1, math.ceil(w_txt / usable_w))
-                
-                text_block_h = n_lines * interline
-                offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
-                
-                pdf.set_xy(x + margin_h / 2, y + offset_y)
-                pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
-                pdf.set_xy(x + col_h_w, y)
-            else:
-                pdf.set_xy(x + col_h_w, y)
-        pdf.ln(row_h)
-    
-    return bytes(pdf.output()), None    
-    # ═══════════════════════════════════════════════════════════════
-    # PASSE 1 : COMPTAGE SILENCIEUX (sans barre de progression)
-    # ═══════════════════════════════════════════════════════════════
-    pdf_count = _build_pdf(total_pages=0, show_progress=False)
-    total_pages = pdf_count.page_no()
-def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
-    """Genere un PDF unique avec l'EDT de TOUS les enseignants (format grille jour/horaire)."""
-    try:
-        from fpdf import FPDF
-        import math
-    except ImportError:
-        return None, "fpdf non installe"
-
-    if df_source is None or df_source.empty:
-        return None, "Aucune donnee"
-
-    W_LOGO = 1.19 * 25.4
-    W_MILIEU = 3.70 * 25.4
-    W_INFO = 1.40 * 25.4
-    H_ENTETE = 1.04 * 25.4
-    H_HAUT_MILIEU = 0.60 * 25.4
-    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
-    W_TOT = W_LOGO + W_MILIEU + W_INFO
-    MARGE_BAS = 15
-
-    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-    horaires_ordre = [
-        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
-    ]
-
-    def norm(x):
-        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
-            return "vide"
-        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
-        s = s.replace(":00", "").replace("h00", "h")
-        return s
-
-    map_j = {norm(j): j for j in jours_ordre}
-    map_h = {norm(h): h for h in horaires_ordre}
-
-    def format_cell(rows):
-        items = []
-        for _, r in rows.iterrows():
-            code_up = str(r.get('Code', '')).upper()
-            if 'COURS' in code_up:
-                nat = '[C]'
-            elif 'TD' in code_up:
-                nat = '[TD]'
-            else:
-                nat = '[TP]'
-            txt = f"{nat} {r.get('Enseignements', '')}\nPromo: {r.get('Promotion', '')}\nSalle: {r.get('Lieu', '')}"
-            items.append(txt)
-        return "\n".join(items)
-
-    df = df_source.copy()
-    df['Jours_Norm'] = df['Jours'].apply(norm)
-    df['Horaire_Norm'] = df['Horaire'].apply(norm)
-
-    enseignants = sorted([e for e in df['Enseignants'].unique() 
-                         if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
-    if not enseignants:
-        return None, "Aucun enseignant trouve"
-
-    def _build_pdf(total_pages, show_progress=False):
-        class EnsGlobalPDF(FPDF):
-            def header(self):
-                X0 = 10 + ((self.w - 20) - W_TOT) / 2
-                Y0 = 10
-                X_MILIEU = X0 + W_LOGO
-                X_INFO = X_MILIEU + W_MILIEU
-                Y_SEP = Y0 + H_HAUT_MILIEU
-
-                self.set_draw_color(0, 0, 0)
-                self.set_line_width(0.3)
-                self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
-                self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
-                self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
-                self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
-
-                if os.path.exists("logo.PNG"):
-                    self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
-
-                self.set_xy(X_MILIEU, Y0 + 1.5)
-                self.set_font('Arial', 'B', 11)
-                self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
-                self.set_font('Arial', '', 10)
-                self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
-
-                self.set_xy(X_MILIEU, Y_SEP + 0.5)
-                self.set_font('Arial', 'B', 12)
-                self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
-
-                self.set_font('Arial', '', 9)
-                line_h = H_ENTETE / 4
-                infos = [
-                    "Code : PPER.03",
-                    "Revision : 00",
-                    "Date : 16/05/2026",
-                    f"Pages : {self.page_no()}/{total_pages}"
-                ]
-                for i, info in enumerate(infos):
-                    self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
-                    self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
-
-                self.set_y(Y0 + H_ENTETE + 5)
-
-            def footer(self):
-                self.set_y(-15)
-                self.set_font('Arial', '', 8)
-                self.set_text_color(80, 80, 80)
-                self.cell(0, 10, f"{self.page_no()}/{total_pages}", 0, 0, "R")
-
-        pdf = EnsGlobalPDF(orientation="L", unit="mm", format="A4")
-        pdf.set_auto_page_break(auto=False, margin=MARGE_BAS)
-
-        def draw_title(pdf, ens):
-            pdf.set_font("Arial", "B", 12)
-            pdf.set_text_color(30, 58, 138)
-            pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS - {str(ens).upper()}"), 0, 1, "C")
-            pdf.set_font("Arial", "I", 8)
-            pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
-            pdf.ln(2)
-
-        def draw_table_header(pdf, grid, col_jour_w, col_h_w):
-            pdf.set_font("Arial", "B", 7)
-            pdf.set_fill_color(30, 58, 138)
-            pdf.set_text_color(255, 255, 255)
-            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
-            for h in grid.columns:
-                h_txt = sanitize_for_pdf(str(h))
-                if len(h_txt) > 12:
-                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
-                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
-            pdf.ln()
-            pdf.set_text_color(0, 0, 0)
-
-        n_ens = len(enseignants)
-
-        for idx_ens, ens in enumerate(enseignants):
-            if show_progress and progress_bar is not None:
-                progress_bar.progress((idx_ens) / n_ens, text=f"Generation : {ens} ({idx_ens+1}/{n_ens})")
-
-            df_ens = df[df['Enseignants'] == ens].copy()
-            if df_ens.empty:
-                continue
-
-            pdf.add_page()
-
-            grouped = df_ens.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
-            grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
-
-            jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
-            horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
-
-            if not jours_present or not horaires_present:
-                draw_title(pdf, ens)
-                pdf.set_font("Arial", "", 10)
-                pdf.cell(0, 10, "Aucun cours programme pour cet enseignant.", 0, 1, "C")
-                continue
-
-            grid = grid.reindex(index=jours_present, columns=horaires_present)
-            grid.index = [map_j.get(i, i) for i in grid.index]
-            grid.columns = [map_h.get(c, c) for c in grid.columns]
-
-            n_cols = len(grid.columns)
-            page_w = pdf.w - 20
-            col_jour_w = 22
-            col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
-
-            interline = 3.2
-            margin_h  = 4.0
-            padding_v = 3.0
-
-            pdf.set_font("Arial", "", 5.5)
-            row_heights = []
-            for _, row in grid.iterrows():
-                max_lines = 1
-                for val in row:
-                    if val and str(val).strip():
-                        txt_propre = sanitize_for_pdf(str(val))
-                        lines = 0
-                        for para in txt_propre.split('\n'):
-                            w_txt = pdf.get_string_width(para)
-                            if w_txt == 0:
-                                lines += 1
-                            else:
-                                usable_w = max(col_h_w - margin_h - 1.0, 10)
-                                lines += max(1, math.ceil(w_txt / usable_w))
-                        if lines > max_lines:
-                            max_lines = lines
-                h_needed = max_lines * interline + padding_v * 2 + 2.0
-                row_heights.append(max(10, h_needed))
-
-            title_h = 8 + 5 + 2
-            header_h = 8
-            if pdf.get_y() + title_h + header_h + row_heights[0] > pdf.h - MARGE_BAS:
-                pdf.add_page()
-
-            draw_title(pdf, ens)
-            draw_table_header(pdf, grid, col_jour_w, col_h_w)
-
-            for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
-                if pdf.get_y() + row_h > pdf.h - MARGE_BAS:
-                    pdf.add_page()
-                    draw_title(pdf, ens)
-                    draw_table_header(pdf, grid, col_jour_w, col_h_w)
-
-                bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
-
-                pdf.set_font("Arial", "B", 7)
-                pdf.set_fill_color(*bg_color)
-                pdf.set_draw_color(180, 180, 180)
-                pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
-
-                pdf.set_font("Arial", "", 5.5)
-                for val in row:
-                    cell_text = sanitize_for_pdf(str(val)) if val else ""
-                    x, y = pdf.get_x(), pdf.get_y()
-
-                    if cell_text.strip():
-                        raw_up = str(val).upper()
-                        if "COURS" in raw_up:
-                            bg = (225, 238, 255)
-                        elif "TD" in raw_up:
-                            bg = (232, 252, 235)
-                        elif "TP" in raw_up:
-                            bg = (255, 235, 235)
-                        else:
-                            bg = bg_color
-                    else:
-                        bg = bg_color
-
-                    pdf.set_fill_color(*bg)
-                    pdf.set_draw_color(180, 180, 180)
-                    pdf.rect(x, y, col_h_w, row_h, 'FD')
-
-                    if cell_text.strip():
-                        n_lines = 0
-                        for para in cell_text.split('\n'):
-                            w_txt = pdf.get_string_width(para)
-                            if w_txt == 0:
-                                n_lines += 1
-                            else:
-                                usable_w = max(col_h_w - margin_h - 1.0, 10)
-                                n_lines += max(1, math.ceil(w_txt / usable_w))
-
-                        text_block_h = n_lines * interline
-                        offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
-
-                        pdf.set_xy(x + margin_h / 2, y + offset_y)
-                        pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
-                        pdf.set_xy(x + col_h_w, y)
-                    else:
-                        pdf.set_xy(x + col_h_w, y)
-
-                pdf.ln(row_h)
-
-        return pdf
-
-    pdf_count = _build_pdf(total_pages=0, show_progress=False)
-    total_pages = pdf_count.page_no()
-
-    if progress_bar is not None:
-        progress_bar.progress(0, text=f"Generation finale sur {total_pages} pages...")
-
-    pdf_final = _build_pdf(total_pages=total_pages, show_progress=True)
-
-    if progress_bar is not None:
-        progress_bar.empty()
-
-    return bytes(pdf_final.output()), None
-
-
-
-def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
-    """Généré un PDF unique avec l'EDT de TOUTES les promotions (format grille jour/horaire)."""
-    try:
-        from fpdf import FPDF
-        import math
-    except ImportError:
-        return None, "fpdf non installe"
-    
-    if df_source is None or df_source.empty:
-        return None, "Aucune donnee"
-    
-    # Dimensions en-tete PPER.03 (inch -> mm)
-    W_LOGO = 1.19 * 25.4
-    W_MILIEU = 3.70 * 25.4
-    W_INFO = 1.40 * 25.4
-    H_ENTETE = 1.04 * 25.4
-    H_HAUT_MILIEU = 0.60 * 25.4
-    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
-    W_TOT = W_LOGO + W_MILIEU + W_INFO
-    MARGE_BAS = 15
-    
-    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-    horaires_ordre = [
-        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
-    ]
-    
-    def norm(x):
-        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
-            return "vide"
-        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
-        s = s.replace(":00", "").replace("h00", "h")
-        return s
-    
-    map_j = {norm(j): j for j in jours_ordre}
-    map_h = {norm(h): h for h in horaires_ordre}
-    
-    def format_cell(rows):
-        items = []
-        for _, r in rows.iterrows():
-            code_up = str(r.get('Code', '')).upper()
-            if 'COURS' in code_up:
-                nat = '[C]'
-            elif 'TD' in code_up:
-                nat = '[TD]'
-            else:
-                nat = '[TP]'
-            
-            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nSalle: {r.get('Lieu', '')}"
-            items.append(txt)
-        return "\n".join(items)
-    
-    df = df_source.copy()
-    df['Jours_Norm'] = df['Jours'].apply(norm)
-    df['Horaire_Norm'] = df['Horaire'].apply(norm)
-    
-    promotions = sorted([p for p in df['Promotion'].unique() 
-                        if p and str(p).strip() not in ["", "nan", "None", "Non defini"]])
-    if not promotions:
-        return None, "Aucune promotion trouvee"
-    
-    def _build_pdf(total_pages, show_progress=False):
-        class PromoGlobalPDF(FPDF):
-            def header(self):
-                X0 = 10 + ((self.w - 20) - W_TOT) / 2
-                Y0 = 10
-                X_MILIEU = X0 + W_LOGO
-                X_INFO = X_MILIEU + W_MILIEU
-                Y_SEP = Y0 + H_HAUT_MILIEU
-                
-                self.set_draw_color(0, 0, 0)
-                self.set_line_width(0.3)
-                self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
-                self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
-                self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
-                self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
-                
-                if os.path.exists("logo.PNG"):
-                    self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
-                
-                self.set_xy(X_MILIEU, Y0 + 1.5)
-                self.set_font('Arial', 'B', 11)
-                self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
-                self.set_font('Arial', '', 10)
-                self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
-                
-                self.set_xy(X_MILIEU, Y_SEP + 0.5)
-                self.set_font('Arial', 'B', 12)
-                self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
-                
-                self.set_font('Arial', '', 9)
-                line_h = H_ENTETE / 4
-                infos = [
-                    "Code : PPER.03",
-                    "Révision : 00",
-                    "Date : 16/05/2026",
-                    f"Pages : {total_pages}/{total_pages}"
-                ]
-                for i, info in enumerate(infos):
-                    self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
-                    self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
-                
-                self.set_y(Y0 + H_ENTETE + 5)
-            
-            def footer(self):
-                self.set_y(-15)
-                self.set_font('Arial', '', 8)
-                self.set_text_color(80, 80, 80)
-                self.cell(0, 10, f"{self.page_no()}/{total_pages}", 0, 0, "R")
-        
-        pdf = PromoGlobalPDF(orientation="L", unit="mm", format="A4")
-        pdf.set_auto_page_break(auto=False, margin=MARGE_BAS)
-        
-        def draw_title(pdf, promo):
-            pdf.set_font("Arial", "B", 12)
-            pdf.set_text_color(30, 58, 138)
-            pdf.cell(0, 8, sanitize_for_pdf(f"PROMOTION {str(promo).upper()}"), 0, 1, "C")
-            pdf.set_font("Arial", "I", 8)
-            pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
-            pdf.ln(2)
-        
-        def draw_table_header(pdf, grid, col_jour_w, col_h_w):
-            pdf.set_font("Arial", "B", 7)
-            pdf.set_fill_color(30, 58, 138)
-            pdf.set_text_color(255, 255, 255)
-            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
-            for h in grid.columns:
-                h_txt = sanitize_for_pdf(str(h))
-                if len(h_txt) > 12:
-                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
-                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
-            pdf.ln()
-            pdf.set_text_color(0, 0, 0)
-        
-        n_promo = len(promotions)
-        
-        for idx_promo, promo in enumerate(promotions):
-            if show_progress and progress_bar is not None:
-                progress_bar.progress((idx_promo) / n_promo, text=f"Generation : {promo} ({idx_promo+1}/{n_promo})")
-            
-            df_promo = df[df['Promotion'] == promo].copy()
-            if df_promo.empty:
-                continue
-            
-            pdf.add_page()
-            
-            grouped = df_promo.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
-            grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
-            
-            jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
-            horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
-            
-            if not jours_present or not horaires_present:
-                draw_title(pdf, promo)
-                pdf.set_font("Arial", "", 10)
-                pdf.cell(0, 10, "Aucun cours programme pour cette promotion.", 0, 1, "C")
-                continue
-            
-            grid = grid.reindex(index=jours_present, columns=horaires_present)
-            grid.index = [map_j.get(i, i) for i in grid.index]
-            grid.columns = [map_h.get(c, c) for c in grid.columns]
-            
-            n_cols = len(grid.columns)
-            page_w = pdf.w - 20
-            col_jour_w = 22
-            col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
-            
-            interline = 3.2
-            margin_h  = 4.0
-            padding_v = 3.0
-            
-            pdf.set_font("Arial", "", 5.5)
-            row_heights = []
-            for _, row in grid.iterrows():
-                max_lines = 1
-                for val in row:
-                    if val and str(val).strip():
-                        txt_propre = sanitize_for_pdf(str(val))
-                        lines = 0
-                        for para in txt_propre.split('\n'):
-                            w_txt = pdf.get_string_width(para)
-                            if w_txt == 0:
-                                lines += 1
-                            else:
-                                usable_w = max(col_h_w - margin_h - 1.0, 10)
-                                lines += max(1, math.ceil(w_txt / usable_w))
-                        if lines > max_lines:
-                            max_lines = lines
-                h_needed = max_lines * interline + padding_v * 2 + 2.0
-                row_heights.append(max(10, h_needed))
-            
-            title_h = 8 + 5 + 2
-            header_h = 8
-            if pdf.get_y() + title_h + header_h + row_heights[0] > pdf.h - MARGE_BAS:
-                pdf.add_page()
-            
-            draw_title(pdf, promo)
-            draw_table_header(pdf, grid, col_jour_w, col_h_w)
-            
-            for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
-                if pdf.get_y() + row_h > pdf.h - MARGE_BAS:
-                    pdf.add_page()
-                    draw_title(pdf, promo)
-                    draw_table_header(pdf, grid, col_jour_w, col_h_w)
-                
-                bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
-                
-                pdf.set_font("Arial", "B", 7)
-                pdf.set_fill_color(*bg_color)
-                pdf.set_draw_color(180, 180, 180)
-                pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
-                
-                pdf.set_font("Arial", "", 5.5)
-                for val in row:
-                    cell_text = sanitize_for_pdf(str(val)) if val else ""
-                    x, y = pdf.get_x(), pdf.get_y()
-                    
-                    if cell_text.strip():
-                        raw_up = str(val).upper()
-                        if "COURS" in raw_up:
-                            bg = (225, 238, 255)
-                        elif "TD" in raw_up:
-                            bg = (232, 252, 235)
-                        elif "TP" in raw_up:
-                            bg = (255, 235, 235)
-                        else:
-                            bg = bg_color
-                    else:
-                        bg = bg_color
-                    
-                    pdf.set_fill_color(*bg)
-                    pdf.set_draw_color(180, 180, 180)
-                    pdf.rect(x, y, col_h_w, row_h, 'FD')
-                    
-                    if cell_text.strip():
-                        n_lines = 0
-                        for para in cell_text.split('\n'):
-                            w_txt = pdf.get_string_width(para)
-                            if w_txt == 0:
-                                n_lines += 1
-                            else:
-                                usable_w = max(col_h_w - margin_h - 1.0, 10)
-                                n_lines += max(1, math.ceil(w_txt / usable_w))
-                        
-                        text_block_h = n_lines * interline
-                        offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
-                        
-                        pdf.set_xy(x + margin_h / 2, y + offset_y)
-                        pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
-                        pdf.set_xy(x + col_h_w, y)
-                    else:
-                        pdf.set_xy(x + col_h_w, y)
-                
-                pdf.ln(row_h)
-        
-        return pdf
-    
-    # PASSE 1 : comptage silencieux
-    pdf_count = _build_pdf(total_pages=0, show_progress=False)
-    total_pages = pdf_count.page_no()
-    
-    # PASSE 2 : generation avec pagination correcte
-    if progress_bar is not None:
-        progress_bar.progress(0, text=f"Generation finale sur {total_pages} pages...")
-    
-    pdf_final = _build_pdf(total_pages=total_pages, show_progress=True)
-    
-    if progress_bar is not None:
-        progress_bar.empty()
-    
-    return bytes(pdf_final.output()), None    
-def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
-    """Genere un PDF unique avec le planning de TOUS les lieux (format grille jour/horaire)."""
-    try:
-        from fpdf import FPDF
-        import math
-    except ImportError:
-        return None, "fpdf non installe"
-    
-    if df_source is None or df_source.empty:
-        return None, "Aucune donnee"
-    
-    # Dimensions en-tete PPER.03 (inch -> mm)
-    W_LOGO = 1.19 * 25.4
-    W_MILIEU = 3.70 * 25.4
-    W_INFO = 1.40 * 25.4
-    H_ENTETE = 1.04 * 25.4
-    H_HAUT_MILIEU = 0.60 * 25.4
-    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
-    W_TOT = W_LOGO + W_MILIEU + W_INFO
-    MARGE_BAS = 15
-    
-    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-    horaires_ordre = [
-        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
-    ]
-    
-    def norm(x):
-        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
-            return "vide"
-        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
-        s = s.replace(":00", "").replace("h00", "h")
-        return s
-    
-    map_j = {norm(j): j for j in jours_ordre}
-    map_h = {norm(h): h for h in horaires_ordre}
-    
-    def format_cell(rows):
-        items = []
-        for _, r in rows.iterrows():
-            code_up = str(r.get('Code', '')).upper()
-            if 'COURS' in code_up:
-                nat = '[C]'
-            elif 'TD' in code_up:
-                nat = '[TD]'
-            else:
-                nat = '[TP]'
-            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
-            items.append(txt)
-        return "\n".join(items)
-    
-    df = df_source.copy()
-    df['Jours_Norm'] = df['Jours'].apply(norm)
-    df['Horaire_Norm'] = df['Horaire'].apply(norm)
-    
-    lieux = sorted([l for l in df['Lieu'].unique() 
-                    if l and str(l).strip() not in ["", "nan", "None", "Non defini"]])
-    if not lieux:
-        return None, "Aucun lieu trouve"
-    
-    def _build_pdf(total_pages, show_progress=False):
-        class LieuGlobalPDF(FPDF):
-            def header(self):
-                X0 = 10 + ((self.w - 20) - W_TOT) / 2
-                Y0 = 10
-                X_MILIEU = X0 + W_LOGO
-                X_INFO = X_MILIEU + W_MILIEU
-                Y_SEP = Y0 + H_HAUT_MILIEU
-                
-                self.set_draw_color(0, 0, 0)
-                self.set_line_width(0.3)
-                self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
-                self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
-                self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
-                self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
-                
-                if os.path.exists("logo.PNG"):
-                    self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
-                
-                self.set_xy(X_MILIEU, Y0 + 1.5)
-                self.set_font('Arial', 'B', 11)
-                self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
-                self.set_font('Arial', '', 10)
-                self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
-                
-                self.set_xy(X_MILIEU, Y_SEP + 0.5)
-                self.set_font('Arial', 'B', 12)
-                self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
-                
-                self.set_font('Arial', '', 9)
-                line_h = H_ENTETE / 4
-                infos = [
-                    "Code : PPER.03",
-                    "Revision : 00",
-                    "Date : 16/05/2026",
-                    f"Pages : {self.page_no()}/{total_pages}"
-                ]
-                for i, info in enumerate(infos):
-                    self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
-                    self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
-                
-                self.set_y(Y0 + H_ENTETE + 5)
-            
-            def footer(self):
-                self.set_y(-15)
-                self.set_font('Arial', '', 8)
-                self.set_text_color(80, 80, 80)
-                self.cell(0, 10, f"{self.page_no()}/{total_pages}", 0, 0, "R")
-        
-        pdf = LieuGlobalPDF(orientation="L", unit="mm", format="A4")
-        pdf.set_auto_page_break(auto=False, margin=MARGE_BAS)
-        
-        def draw_title(pdf, lieu):
-            pdf.set_font("Arial", "B", 12)
-            pdf.set_text_color(30, 58, 138)
-            pdf.cell(0, 8, sanitize_for_pdf(f"PLANNING - {str(lieu).upper()}"), 0, 1, "C")
-            pdf.set_font("Arial", "I", 8)
-            pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
-            pdf.ln(2)
-        
-        def draw_table_header(pdf, grid, col_jour_w, col_h_w):
-            pdf.set_font("Arial", "B", 7)
-            pdf.set_fill_color(30, 58, 138)
-            pdf.set_text_color(255, 255, 255)
-            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
-            for h in grid.columns:
-                h_txt = sanitize_for_pdf(str(h))
-                if len(h_txt) > 12:
-                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
-                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
-            pdf.ln()
-            pdf.set_text_color(0, 0, 0)
-        
-        n_lieu = len(lieux)
-        
-        for idx_lieu, lieu in enumerate(lieux):
-            if show_progress and progress_bar is not None:
-                progress_bar.progress((idx_lieu) / n_lieu, text=f"Generation : {lieu} ({idx_lieu+1}/{n_lieu})")
-            
-            df_lieu = df[df['Lieu'] == lieu].copy()
-            if df_lieu.empty:
-                continue
-            
-            pdf.add_page()
-            
-            grouped = df_lieu.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
-            grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
-            
-            jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
-            horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
-            
-            if not jours_present or not horaires_present:
-                draw_title(pdf, lieu)
-                pdf.set_font("Arial", "", 10)
-                pdf.cell(0, 10, "Aucun cours programme pour ce lieu.", 0, 1, "C")
-                continue
-            
-            grid = grid.reindex(index=jours_present, columns=horaires_present)
-            grid.index = [map_j.get(i, i) for i in grid.index]
-            grid.columns = [map_h.get(c, c) for c in grid.columns]
-            
-            n_cols = len(grid.columns)
-            page_w = pdf.w - 20
-            col_jour_w = 22
-            col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
-            
-            interline = 3.2
-            margin_h  = 4.0
-            padding_v = 3.0
-            
-            pdf.set_font("Arial", "", 5.5)
-            row_heights = []
-            for _, row in grid.iterrows():
-                max_lines = 1
-                for val in row:
-                    if val and str(val).strip():
-                        txt_propre = sanitize_for_pdf(str(val))
-                        lines = 0
-                        for para in txt_propre.split('\n'):
-                            w_txt = pdf.get_string_width(para)
-                            if w_txt == 0:
-                                lines += 1
-                            else:
-                                usable_w = max(col_h_w - margin_h - 1.0, 10)
-                                lines += max(1, math.ceil(w_txt / usable_w))
-                        if lines > max_lines:
-                            max_lines = lines
-                h_needed = max_lines * interline + padding_v * 2 + 2.0
-                row_heights.append(max(10, h_needed))
-            
-            title_h = 8 + 5 + 2
-            header_h = 8
-            if pdf.get_y() + title_h + header_h + row_heights[0] > pdf.h - MARGE_BAS:
-                pdf.add_page()
-            
-            draw_title(pdf, lieu)
-            draw_table_header(pdf, grid, col_jour_w, col_h_w)
-            
-            for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
-                if pdf.get_y() + row_h > pdf.h - MARGE_BAS:
-                    pdf.add_page()
-                    draw_title(pdf, lieu)
-                    draw_table_header(pdf, grid, col_jour_w, col_h_w)
-                
-                bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
-                
-                pdf.set_font("Arial", "B", 7)
-                pdf.set_fill_color(*bg_color)
-                pdf.set_draw_color(180, 180, 180)
-                pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
-                
-                pdf.set_font("Arial", "", 5.5)
-                for val in row:
-                    cell_text = sanitize_for_pdf(str(val)) if val else ""
-                    x, y = pdf.get_x(), pdf.get_y()
-                    
-                    if cell_text.strip():
-                        raw_up = str(val).upper()
-                        if "COURS" in raw_up:
-                            bg = (225, 238, 255)
-                        elif "TD" in raw_up:
-                            bg = (232, 252, 235)
-                        elif "TP" in raw_up:
-                            bg = (255, 235, 235)
-                        else:
-                            bg = bg_color
-                    else:
-                        bg = bg_color
-                    
-                    pdf.set_fill_color(*bg)
-                    pdf.set_draw_color(180, 180, 180)
-                    pdf.rect(x, y, col_h_w, row_h, 'FD')
-                    
-                    if cell_text.strip():
-                        n_lines = 0
-                        for para in cell_text.split('\n'):
-                            w_txt = pdf.get_string_width(para)
-                            if w_txt == 0:
-                                n_lines += 1
-                            else:
-                                usable_w = max(col_h_w - margin_h - 1.0, 10)
-                                n_lines += max(1, math.ceil(w_txt / usable_w))
-                        
-                        text_block_h = n_lines * interline
-                        offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
-                        
-                        pdf.set_xy(x + margin_h / 2, y + offset_y)
-                        pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
-                        pdf.set_xy(x + col_h_w, y)
-                    else:
-                        pdf.set_xy(x + col_h_w, y)
-                
-                pdf.ln(row_h)
-        
-        return pdf
-    
-    # PASSE 1 : comptage silencieux
-    pdf_count = _build_pdf(total_pages=0, show_progress=False)
-    total_pages = pdf_count.page_no()
-    
-    # PASSE 2 : generation avec pagination correcte
-    if progress_bar is not None:
-        progress_bar.progress(0, text=f"Generation finale sur {total_pages} pages...")
-    
-    pdf_final = _build_pdf(total_pages=total_pages, show_progress=True)
-    
-    if progress_bar is not None:
-        progress_bar.empty()
-    
-    return bytes(pdf_final.output()), None    
-def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
-    """Génère un PDF individuel pour UN lieu (Amphi/Salle) avec grille Jours×Horaires et en-tête PPER.03."""
-    try:
-        from fpdf import FPDF
-        import math
-    except ImportError:
-        return None, "fpdf non installe"
-    
-    if df_source is None or df_source.empty:
-        return None, "Aucune donnee"
-    
-    # Dimensions exactes PPER.03
-    W_LOGO = 1.19 * 25.4
-    W_MILIEU = 3.70 * 25.4
-    W_INFO = 1.40 * 25.4
-    H_ENTETE = 1.04 * 25.4
-    H_HAUT_MILIEU = 0.60 * 25.4
-    H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
-    W_TOT = W_LOGO + W_MILIEU + W_INFO
-    MARGE_BAS = 15
-    
-    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-    horaires_ordre = [
-        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
-    ]
-    
-    def norm(x):
-        if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
-            return "vide"
-        s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
-        s = s.replace(":00", "").replace("h00", "h")
-        return s
-    
-    map_j = {norm(j): j for j in jours_ordre}
-    map_h = {norm(h): h for h in horaires_ordre}
-    
-    def format_cell(rows):
-        items = []
-        for _, r in rows.iterrows():
-            code_up = str(r.get('Code', '')).upper()
-            if 'COURS' in code_up:
-                nat = '[C]'
-            elif 'TD' in code_up:
-                nat = '[TD]'
-            else:
-                nat = '[TP]'
-            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
-            items.append(txt)
-        return "\n".join(items)
-    
-    df = df_source.copy()
-    df['Jours_Norm'] = df['Jours'].apply(norm)
-    df['Horaire_Norm'] = df['Horaire'].apply(norm)
-    
-    grouped = df.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
-    grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
-    
-    jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
-    horaires_present = [h for h in [norm(h) for h in horaires_ordre] if h in grid.columns]
-    
-    if not jours_present or not horaires_present:
-        grid = pd.DataFrame(index=["Aucun"], columns=["Aucun"]).fillna("Aucun cours")
-    else:
-        grid = grid.reindex(index=jours_present, columns=horaires_present)
-        grid.index = [map_j.get(i, i) for i in grid.index]
-        grid.columns = [map_h.get(c, c) for c in grid.columns]
-    
-    class LieuIndivPDF(FPDF):
-        def header(self):
-            X0 = 10 + ((self.w - 20) - W_TOT) / 2
-            Y0 = 10
-            X_MILIEU = X0 + W_LOGO
-            X_INFO = X_MILIEU + W_MILIEU
-            Y_SEP = Y0 + H_HAUT_MILIEU
-            
-            self.set_draw_color(0, 0, 0)
-            self.set_line_width(0.3)
-            self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
-            self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
-            self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
-            self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
-            
-            if os.path.exists("logo.PNG"):
-                self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
-            
-            self.set_xy(X_MILIEU, Y0 + 1.5)
-            self.set_font('Arial', 'B', 11)
-            self.cell(W_MILIEU, 5.5, sanitize_for_pdf("Universite Djillali Liabes"), 0, 2, "C")
-            self.set_font('Arial', '', 10)
-            self.cell(W_MILIEU, 5, sanitize_for_pdf("Sidi Bel Abbes"), 0, 2, "C")
-            
-            self.set_xy(X_MILIEU, Y_SEP + 0.5)
-            self.set_font('Arial', 'B', 12)
-            self.cell(W_MILIEU, H_BAS_MILIEU - 1, sanitize_for_pdf("EMPLOI DU TEMPS"), 0, 0, "C")
-            
-            self.set_font('Arial', '', 9)
-            line_h = H_ENTETE / 4
-            infos = [
-                "Code : PPER.03",
-                "Revision : 00",
-                "Date : 16/05/2026",
-                f"Page : {self.page_no()}/{{nb}}"
-            ]
-            for i, info in enumerate(infos):
-                self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
-                self.cell(W_INFO - 3, line_h, sanitize_for_pdf(info), 0, 2, "L")
-            
-            self.set_y(Y0 + H_ENTETE + 5)
-        
-        def footer(self):
-            self.set_y(-15)
-            self.set_font('Arial', '', 8)
-            self.set_text_color(80, 80, 80)
-            self.cell(0, 10, f"{self.page_no()}/{{nb}}", 0, 0, "R")
-    
-    pdf = LieuIndivPDF(orientation="L", unit="mm", format="A4")
-    pdf.alias_nb_pages()
-    pdf.set_auto_page_break(auto=True, margin=MARGE_BAS)
-    pdf.add_page()
-    
-    # Sous-titre
-    pdf.set_font("Arial", "B", 11)
-    pdf.set_text_color(30, 58, 138)
-    pdf.cell(0, 8, sanitize_for_pdf(f"PLANNING - {nom_lieu.upper()}"), 0, 1, "C")
-    pdf.set_font("Arial", "I", 8)
-    pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
-    pdf.ln(3)
-    
-    if grid.empty or (grid.shape == (1,1) and grid.iloc[0,0] == "Aucun cours"):
-        pdf.set_font("Arial", "", 10)
-        pdf.cell(0, 10, "Aucun cours programme pour ce lieu.", 0, 1, "C")
-        return bytes(pdf.output()), None
-    
-    n_cols = len(grid.columns)
-    page_w = pdf.w - 20
-    col_jour_w = 22
-    col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
-    
-    interline = 3.2
-    margin_h = 4.0
-    padding_v = 3.0
-    
-    # Calcul des hauteurs de ligne
-    pdf.set_font("Arial", "", 5.5)
-    row_heights = []
-    for _, row in grid.iterrows():
-        max_lines = 1
-        for val in row:
-            if val and str(val).strip():
-                txt_propre = sanitize_for_pdf(str(val))
-                lines = 0
-                for para in txt_propre.split('\n'):
-                    w_txt = pdf.get_string_width(para)
-                    if w_txt == 0:
-                        lines += 1
-                    else:
-                        usable_w = max(col_h_w - margin_h - 1.0, 10)
-                        lines += max(1, math.ceil(w_txt / usable_w))
-                if lines > max_lines:
-                    max_lines = lines
-        h_needed = max_lines * interline + padding_v * 2 + 2.0
-        row_heights.append(max(10, h_needed))
-    
-    # En-têtes
-    pdf.set_font("Arial", "B", 7)
-    pdf.set_fill_color(30, 58, 138)
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
-    for h in grid.columns:
-        h_txt = sanitize_for_pdf(str(h))
-        if len(h_txt) > 12:
-            h_txt = h_txt.replace(" - ", "-").replace(" ", "")
-        pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
-    pdf.ln()
-    
-    # Données
-    pdf.set_text_color(0, 0, 0)
-    
-    for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
-        if pdf.get_y() + row_h > pdf.h - MARGE_BAS:
-            pdf.add_page()
-            # Ré-imprimer l'en-tête du tableau
-            pdf.set_font("Arial", "B", 7)
-            pdf.set_fill_color(30, 58, 138)
-            pdf.set_text_color(255, 255, 255)
-            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
-            for h in grid.columns:
-                h_txt = sanitize_for_pdf(str(h))
-                if len(h_txt) > 12:
-                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
-                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
-            pdf.ln()
-            pdf.set_text_color(0, 0, 0)
-        
-        bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
-        
-        pdf.set_font("Arial", "B", 7)
-        pdf.set_fill_color(*bg_color)
-        pdf.set_draw_color(180, 180, 180)
-        pdf.cell(col_jour_w, row_h, sanitize_for_pdf(str(jour)), 1, 0, "C", True)
-        
-        pdf.set_font("Arial", "", 5.5)
-        for val in row:
-            cell_text = sanitize_for_pdf(str(val)) if val else ""
-            x, y = pdf.get_x(), pdf.get_y()
-            
-            if cell_text.strip():
-                raw_up = str(val).upper()
-                if "COURS" in raw_up:
-                    bg = (225, 238, 255)
-                elif "TD" in raw_up:
-                    bg = (232, 252, 235)
-                elif "TP" in raw_up:
-                    bg = (255, 235, 235)
-                else:
-                    bg = bg_color
-            else:
-                bg = bg_color
-            
-            pdf.set_fill_color(*bg)
-            pdf.set_draw_color(180, 180, 180)
-            pdf.rect(x, y, col_h_w, row_h, 'FD')
-            
-            if cell_text.strip():
-                n_lines = 0
-                for para in cell_text.split('\n'):
-                    w_txt = pdf.get_string_width(para)
-                    if w_txt == 0:
-                        n_lines += 1
-                    else:
-                        usable_w = max(col_h_w - margin_h - 1.0, 10)
-                        n_lines += max(1, math.ceil(w_txt / usable_w))
-                
-                text_block_h = n_lines * interline
-                offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
-                
-                pdf.set_xy(x + margin_h / 2, y + offset_y)
-                pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
-                pdf.set_xy(x + col_h_w, y)
-            else:
-                pdf.set_xy(x + col_h_w, y)
-        pdf.ln(row_h)
-    
-    return bytes(pdf.output()), None
-    # ═══════════════════════════════════════════════════════════════
-    # PASSE 2 : GENERATION FINALE AVEC BONNE PAGINATION
-    # ═══════════════════════════════════════════════════════════════
-    if progress_bar is not None:
-        progress_bar.progress(0, text=f"Generation finale sur {total_pages} pages...")
-    
-    pdf_final = _build_pdf(total_pages=total_pages, show_progress=True)
-    
-    if progress_bar is not None:
-        progress_bar.empty()
-    
-    return bytes(pdf_final.output()), None
-def render_download_hub(df_global, user_data, is_admin):
-    """Affiche un hub de telechargement rapide en haut de page."""
-    st.markdown("""
-        <style>
-        .dl-hub { background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
-                   border-radius: 12px; padding: 20px; color: white; margin-bottom: 20px; }
-        .dl-hub h3 { margin: 0 0 10px 0; font-size: 18px; }
-        .dl-hub p { margin: 0 0 15px 0; opacity: 0.9; font-size: 13px; }
-        </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-        <div class="dl-hub">
-            <h3>📥 Centre de Telechargement Rapide</h3>
-            <p>Exportez vos emplois du temps dans le format de votre choix (PDF, HTML, Excel)</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # ═══════════════════════════════════════════════════════
-    # BARRE DE SESSION : UTILISATEUR + DÉCONNEXION
-    # ═══════════════════════════════════════════════════════
-    if user_data is not None:
-        nom_session = user_data.get('nom_officiel', 'Utilisateur')
-        role_session = user_data.get('role', 'enseignant').upper()
-        col_user, col_deco = st.columns([4, 1])
-        with col_user:
-            st.markdown(f"""
-                <div style="background: linear-gradient(90deg, #f0f9ff 0%, #e0f2fe 100%); 
-                            border-left: 4px solid #1E3A8A; padding: 10px 16px; border-radius: 8px; 
-                            margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 20px;">👤</span>
-                    <div>
-                        <div style="font-weight: bold; color: #1E3A8A; font-size: 14px;">{nom_session}</div>
-                        <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
-                            Connecté · {role_session}
-                        </div>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-        with col_deco:
-            if st.button("🚪 Déconnexion", use_container_width=True, type="primary"):
-                st.session_state["user_data"] = None
-                st.session_state.pop("pdf_all_ready", None)
-                st.session_state.pop("pdf_all_data", None)
-                st.session_state.pop("pdf_all_promo_ready", None)
-                st.session_state.pop("pdf_all_promo_data", None)
-                st.session_state.pop("pdf_all_lieu_ready", None)
-                st.session_state.pop("pdf_all_lieu_data", None)
-                st.rerun()
-
-    if df_global is None or df_global.empty:
-        st.warning("Aucune donnee chargee. Verifiez votre connexion Supabase ou votre fichier Excel.")
-        return
-
-    # Nettoyage : suppression des colonnes techniques internes pour tous les exports
-    COLONNES_CACHEES = ['h_norm', 'j_norm']
-    df_propre = df_global.drop(columns=[c for c in COLONNES_CACHEES if c in df_global.columns], errors='ignore')
-
-    promos = sorted([p for p in df_propre["Promotion"].unique() if p and p != "Non defini"])
-    profs = sorted([p for p in df_propre["Enseignants"].unique() if p and p != "Non defini"])
-    salles = sorted([s for s in df_propre["Lieu"].unique() if s and s != "Non defini"])
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-    
-        st.markdown("**🎓 Par Promotion**")
-        sel_promo = st.selectbox("Choisir promotion", ["Toutes"] + promos, key="hub_promo")
-        df_filtre = df_propre.copy()
-        if sel_promo != "Toutes":
-            df_filtre = df_filtre[df_filtre["Promotion"] == sel_promo]
-        c1, c2, c3 = st.columns(3)
-        
-        # ═══════════════════════════════════════════════════════
-        # PDF : individuel ou global (meme logique que Enseignants)
-        # ═══════════════════════════════════════════════════════
-        if sel_promo != "Toutes":
-            # Une seule promotion → generation immediate
-            pdf_data, err = generate_pro_pdf(df_filtre, f"EDT - {sel_promo}", "Export promotion")
-            if pdf_data is not None:
-                c1.download_button("📄 PDF", pdf_data, f"EDT_{sel_promo}_2027.pdf", "application/pdf", use_container_width=True, key="dp_promo_single")
-            else:
-                c1.button("📄 PDF", disabled=True, use_container_width=True, key="dp_promo_single")
-        else:
-            # Toutes les promotions → generation au clic avec progression
-            if c1.button("📄 Générer PDF Global", use_container_width=True, key="btn_gen_all_pdf_promo"):
-                with st.spinner("Preparation du fichier global..."):
-                    prog = st.progress(0, text="Demarrage...")
-                    pdf_data_all, err_all = generate_edt_toutes_promotions_pdf(df_propre, progress_bar=prog)
-                    if pdf_data_all:
-                        st.session_state['pdf_all_promo_data'] = pdf_data_all
-                        st.session_state['pdf_all_promo_ready'] = True
-                        st.success(f"✅ PDF Généré : {len(promos)} promotions")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Erreur : {err_all}")
-            
-            if st.session_state.get('pdf_all_promo_ready') and 'pdf_all_promo_data' in st.session_state:
-                c1.download_button("⬇️ Telecharger PDF Global", st.session_state['pdf_all_promo_data'],
-                                  "EDT_Toutes_Promotions_2027.pdf", "application/pdf",
-                                  use_container_width=True, key="dp_down_promo")
-        
-        # HTML et Excel (toujours disponibles)
-        html_data = generate_pro_html(df_filtre, f"EDT {sel_promo}", "Faculte de Genie Electrique - UDL-SBA")
-        c2.download_button("🌐 HTML", html_data, f"EDT_{sel_promo}_2027.html", "text/html", use_container_width=True, key="dh_promo")
-        xlsx_data = generate_pro_excel(df_filtre, f"EDT {sel_promo}")
-        c3.download_button("📊 Excel", xlsx_data, f"EDT_{sel_promo}_2027.xlsx", 
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="dx_promo")
-    
-    
-    with col2:
-        st.markdown("**👤 Par Enseignant**")
-        sel_prof = st.selectbox("Choisir enseignant", ["Tous"] + profs, key="hub_prof")
-        df_filtre_p = df_propre.copy()
-        if sel_prof != "Tous":
-            df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
-            
-            # ═══════════════════════════════════════════════════════
-            # AFFICHEUR NUMÉRIQUE : CHARGE HORAIRE & HEURES SUP
-            # ═══════════════════════════════════════════════════════
-            df_filtre_p['Type'] = df_filtre_p['Code'].apply(
-                lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
-            )
-            # Déduplication sur Horaire + Jours pour compter les séances uniques
-            df_u = df_filtre_p.drop_duplicates(subset=['Horaire', 'Jours'])
-            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-            nb_td    = len(df_u[df_u['Type'] == 'TD'])
-            nb_tp    = len(df_u[df_u['Type'] == 'TP'])
-
-            # Calcul de la charge équivalente
-            # 1h Cours = 1.5 eq/h  |  1h TD/TP = 1.0 eq/h
-            charge_eq = round((nb_cours * 1.5) + (nb_td * 1.0) + (nb_tp * 1.0), 2)
-            SEUIL_REGLEMENTAIRE = 6.0  # 6 heures équivalent/semaine
-
-            delta = round(charge_eq - SEUIL_REGLEMENTAIRE, 2)
-
-            # Style conditionnel
-            if delta > 0:
-                statut_label = "Heures Supplémentaires"
-                statut_color = "#22c55e"  # vert
-                statut_bg = "#f0fdf4"
-                delta_str = f"+{delta} eq/h"
-                emoji = "✅"
-            elif delta < 0:
-                statut_label = "Déficit Horaire"
-                statut_color = "#ef4444"  # rouge
-                statut_bg = "#fef2f2"
-                delta_str = f"{delta} eq/h"
-                emoji = "⚠️"
-            else:
-                statut_label = "Charge Exacte"
-                statut_color = "#3b82f6"  # bleu
-                statut_bg = "#eff6ff"
-                delta_str = "0 eq/h"
-                emoji = "⚖️"
-
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
-                        padding: 16px; border-radius: 12px; color: white; margin: 10px 0;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-                <div style="text-align: center; font-size: 13px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
-                    📊 Bilan Hebdomadaire — {sel_prof}
-                </div>
-                <div style="display: flex; justify-content: center; gap: 20px; margin-top: 12px; flex-wrap: wrap;">
-                    <div style="text-align: center; min-width: 80px;">
-                        <div style="font-size: 24px; font-weight: bold;">{nb_cours}</div>
-                        <div style="font-size: 11px; opacity: 0.8;">📘 Cours</div>
-                    </div>
-                    <div style="text-align: center; min-width: 80px;">
-                        <div style="font-size: 24px; font-weight: bold;">{nb_td}</div>
-                        <div style="font-size: 11px; opacity: 0.8;">📗 TD</div>
-                    </div>
-                    <div style="text-align: center; min-width: 80px;">
-                        <div style="font-size: 24px; font-weight: bold;">{nb_tp}</div>
-                        <div style="font-size: 11px; opacity: 0.8;">🔴 TP</div>
-                    </div>
-                    <div style="border-left: 1px solid rgba(255,255,255,0.3); height: 40px; align-self: center;"></div>
-                    <div style="text-align: center; min-width: 100px;">
-                        <div style="font-size: 28px; font-weight: bold;">{charge_eq}</div>
-                        <div style="font-size: 11px; opacity: 0.8;">Charge Eq/h</div>
-                    </div>
-                    <div style="text-align: center; min-width: 100px;">
-                        <div style="font-size: 28px; font-weight: bold;">{SEUIL_REGLEMENTAIRE}</div>
-                        <div style="font-size: 11px; opacity: 0.8;">Seuil Réglem.</div>
-                    </div>
-                </div>
-            </div>
-            <div style="background-color: {statut_bg}; border-left: 5px solid {statut_color}; 
-                        padding: 12px 16px; border-radius: 8px; margin-top: 8px;">
-                <div style="font-size: 18px; font-weight: bold; color: {statut_color};">
-                    {emoji} {statut_label} : {delta_str}
-                </div>
-                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
-                    Règle : 1h Cours = 1.5 eq/h | 1h TD/TP = 1.0 eq/h | Seuil = 6.0 eq/h/semaine
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            # ═══════════════════════════════════════════════════════
-
-              
-        # ═══════════════════════════════════════════════════════
-        # PDF : individuel ou global
-        # ═══════════════════════════════════════════════════════
-        if sel_prof != "Tous":
-            # Un seul enseignant → generation immediate
-            pdf_data_p, _ = generate_edt_individuel_pdf_classique(df_filtre_p, sel_prof)
-            if pdf_data_p is not None:
-                c1.download_button("📄 PDF", pdf_data_p, f"EDT_{sel_prof}_2027.pdf", 
-                                  "application/pdf", use_container_width=True, key="dp")
-            else:
-                c1.button("📄 PDF", disabled=True, use_container_width=True, key="dp")
-        else:
-            # Tous les enseignants → generation au clic avec progression
-            if c1.button("📄 Générer PDF Global", use_container_width=True, key="btn_gen_all_pdf"):
-                with st.spinner("Preparation du fichier global..."):
-                    prog = st.progress(0, text="Demarrage...")
-                    pdf_data_all, err_all = generate_edt_tous_enseignants_pdf(df_propre, progress_bar=prog)
-                    if pdf_data_all:
-                        st.session_state['pdf_all_data'] = pdf_data_all
-                        st.session_state['pdf_all_ready'] = True
-                        st.success(f"✅ PDF Généré : {len(profs)} enseignants")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Erreur : {err_all}")
-            
-            if st.session_state.get('pdf_all_ready') and 'pdf_all_data' in st.session_state:
-                c1.download_button("⬇️ Telecharger PDF Global", st.session_state['pdf_all_data'],
-                                  "EDT_Tous_Enseignants_2027.pdf", "application/pdf",
-                                  use_container_width=True, key="dp_down")
-        
-        # HTML et Excel (toujours disponibles)
-        html_data_p = generate_pro_html(df_filtre_p, f"EDT {sel_prof}", "Faculte de Genie Electrique - UDL-SBA")
-        if html_data_p:
-            c2.download_button("🌐 HTML", html_data_p, f"EDT_{sel_prof}_2027.html", 
-                              "text/html", use_container_width=True, key="dh")
-        else:
-            c2.button("🌐 HTML", disabled=True, use_container_width=True, key="dh")
-            
-        xlsx_data_p = generate_pro_excel(df_filtre_p, f"EDT {sel_prof}")
-        if xlsx_data_p:
-            c3.download_button("📊 Excel", xlsx_data_p, f"EDT_{sel_prof}_2027.xlsx", 
-                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
-                              use_container_width=True, key="dx")
-        else:
-            c3.button("📊 Excel", disabled=True, use_container_width=True, key="dx")                
-            
-    
-    with col3:
-        st.markdown("**🏢 Par Lieu**")
-        sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", ["Toutes"] + salles, key="hub_salle")
-        df_filtre_s = df_propre.copy()
-        
-        if sel_salle != "Toutes":
-            df_filtre_s = df_filtre_s[df_filtre_s["Lieu"].astype(str).str.startswith(sel_salle)]
-        
-        c1, c2, c3 = st.columns(3)
-        
-        # ═══════════════════════════════════════════════════════
-        # PDF : individuel ou global (meme logique que Promotions)
-        # ═══════════════════════════════════════════════════════
-        if sel_salle != "Toutes":
-            # Un seul lieu → generation immediate avec grille standard PPER.03
-            pdf_data_s, _ = generate_edt_individuel_lieu_pdf(df_filtre_s, sel_salle)
-            if pdf_data_s is not None:
-                c1.download_button("📄 PDF", pdf_data_s, f"Planning_{sel_salle}_2027.pdf", "application/pdf", use_container_width=True, key="sp")
-            else:
-                c1.button("📄 PDF", disabled=True, use_container_width=True, key="sp")
-        else:
-            # Tous les lieux → generation au clic avec progression
-            if c1.button("📄 Generer PDF Global", use_container_width=True, key="btn_gen_all_pdf_lieu"):
-                with st.spinner("Preparation du fichier global..."):
-                    prog = st.progress(0, text="Demarrage...")
-                    pdf_data_all, err_all = generate_edt_tous_lieux_pdf(df_propre, progress_bar=prog)
-                    if pdf_data_all:
-                        st.session_state['pdf_all_lieu_data'] = pdf_data_all
-                        st.session_state['pdf_all_lieu_ready'] = True
-                        st.success(f"✅ PDF Genere : {len(salles)} lieux")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Erreur : {err_all}")
-            
-            if st.session_state.get('pdf_all_lieu_ready') and 'pdf_all_lieu_data' in st.session_state:
-                c1.download_button("⬇️ Telecharger PDF Global", st.session_state['pdf_all_lieu_data'],
-                                  "Planning_Tous_Lieux_2027.pdf", "application/pdf",
-                                  use_container_width=True, key="dp_down_lieu")
-        
-        # HTML et Excel (toujours disponibles)
-        html_data_s = generate_pro_html(df_filtre_s, f"Planning {sel_salle}", "Faculte de Genie Electrique - UDL-SBA")
-        c2.download_button("🌐 HTML", html_data_s, f"Planning_{sel_salle}_2027.html", "text/html", use_container_width=True, key="sh")
-        xlsx_data_s = generate_pro_excel(df_filtre_s, f"Planning {sel_salle}")
-        c3.download_button("📊 Excel", xlsx_data_s, f"Planning_{sel_salle}_2027.xlsx", 
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="sx")
-    
-    if is_admin:
-        st.divider()
-        st.markdown("**🌍 Export Global (Admin)**")
-        cg1, cg2, cg3, cg4 = st.columns(4)
-        pdf_g, _ = generate_pro_pdf(df_propre, "EDT GLOBAL S1-2027", "Département d'Electrotechnique - Toutes promotions")
-        if pdf_g is not None:
-            cg1.download_button("📄 PDF Global", pdf_g, "EDT_GLOBAL_S1_2027.pdf", "application/pdf", use_container_width=True)
-        html_g = generate_pro_html(df_propre, "EDT Global S1-2027", "Département d'Electrotechnique - FGE/UDL-SBA")
-        cg2.download_button("🌐 HTML Global", html_g, "EDT_GLOBAL_S1_2027.html", "text/html", use_container_width=True)
-        xlsx_g = generate_pro_excel(df_propre, "EDT Global S1-2027", "EDT_Global")
-        cg3.download_button("📊 Excel Global", xlsx_g, "EDT_GLOBAL_S1_2027.xlsx",
-                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            if pdf_g is not None:
-                zf.writestr("EDT_GLOBAL.pdf", pdf_g)
-            zf.writestr("EDT_GLOBAL.html", html_g)
-            zf.writestr("EDT_GLOBAL.xlsx", xlsx_g)
-        cg4.download_button("🗜️ Pack ZIP", zip_buffer.getvalue(), "Pack_EDT_GLOBAL_S1_2027.zip", "application/zip", use_container_width=True)
-
-    st.divider()
-
-# =============================================================================
