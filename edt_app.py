@@ -1191,7 +1191,7 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab3:
-            st.header("📊 Registres et Bilans Agreges")
+            st.header("📊 Registres et Bilans")
 
             promo_filtre = st.selectbox(
                 "Filtrer par Promotion :",
