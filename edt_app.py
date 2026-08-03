@@ -4057,4 +4057,3 @@ def render_download_hub(df_global, user_data, is_admin):
 
 # =============================================================================
 # Masquer les éléments du menu supérieur (Share, Star, Edit, etc.)
-hide_st_style = """
