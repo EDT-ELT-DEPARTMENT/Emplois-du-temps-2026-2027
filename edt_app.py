@@ -1264,8 +1264,8 @@ def run_assiduite():
             if data_hist:
                 df_tab = pd.DataFrame(data_hist)
 
-                def trouver_enseignant_par_matiere(matiere):
-                    rows = df_edt[df_edt["Enseignements"] == matiere]
+                def trouver_enseignant_par_matière(matiere):
+                    rows = df_edt[df_edt["Enseignements"] == matière]
                     if not rows.empty:
                         return str(rows.iloc[0]["Enseignants"])
                     return "Non assigne"
