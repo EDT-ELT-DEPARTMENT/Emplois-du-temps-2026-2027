@@ -1293,7 +1293,7 @@ def run_assiduite():
                         use_container_width=True
                     )
                 with c2:
-                    html_reg = generer_page_html(df_tab, "Registre General", df_tab.columns, df_tab.columns)
+                    html_reg = generer_page_html(df_tab, "Registre Géneral", df_tab.columns, df_tab.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_reg,
@@ -1302,29 +1302,29 @@ def run_assiduite():
                         use_container_width=True
                     )
 
-                st.subheader("📚 Bilan par Etudiant et Matiere")
-                df_bilan_mat = df_tab.groupby(["Etudiant", "Matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
+                st.subheader("📚 Bilan par Etudiant et Matière")
+                df_bilan_mat = df_tab.groupby(["Etudiant", "Matière", "Chargé de matière", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
                 buf_mat = io.BytesIO()
                 with pd.ExcelWriter(buf_mat, engine='xlsxwriter') as w:
-                    df_bilan_mat.to_excel(w, index=False, sheet_name='Absences_Matiere')
+                    df_bilan_mat.to_excel(w, index=False, sheet_name='Absences_Matière')
 
                 c3, c4 = st.columns(2)
                 with c3:
                     st.download_button(
                         "📥 EXCEL",
                         buf_mat.getvalue(),
-                        f"Bilan_Matiere_{promo_filtre}.xlsx",
+                        f"Bilan_Matière_{promo_filtre}.xlsx",
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
                 with c4:
-                    html_mat = generer_page_html(df_bilan_mat, "Bilan par Matiere", df_bilan_mat.columns, df_bilan_mat.columns)
+                    html_mat = generer_page_html(df_bilan_mat, "Bilan par Matière", df_bilan_mat.columns, df_bilan_mat.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_mat,
-                        f"Bilan_Matiere_{promo_filtre}.html",
+                        f"Bilan_Matière_{promo_filtre}.html",
                         "text/html",
                         use_container_width=True
                     )
@@ -1378,7 +1378,7 @@ def run_assiduite():
                 if "justifie" not in df_abs.columns:
                     df_abs["justifie"] = False
 
-                df_abs_count = df_abs.groupby(["etud_non_eligible", "matiere"]).agg(
+                df_abs_count = df_abs.groupby(["etud_non_eligible", "matière"]).agg(
                     Nombre_Absences=("etud_non_eligible", "size"),
                     Dont_Justifiees=("justifie", lambda x: (x == True).sum())
                 ).reset_index()
@@ -5057,7 +5057,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                     salle_label = f"🏢 {row['Lieu']}"
                     prof_label = f"(Prof: {row['Enseignants']})"
                     promo_label = f"🎓 {row['Promotion']}"
-                    matiere_label = f"📚 {row['Enseignements']}"
+                    matière_label = f"📚 {row['Enseignements']}"
                     heure_label = f"🕒 {row['Horaire']}"
 
                     cell_html = (
@@ -5066,7 +5066,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                         f"<b>{salle_label}</b><br>"
                         f"{prof_label}<br>"
                         f"<b>{promo_label}</b><br>"
-                        f"{matiere_label}<br>"
+                        f"{matière_label}<br>"
                         f"{heure_label}"
                         f"</div>"
                     )
@@ -5900,11 +5900,11 @@ if df is not None:
             # --- NOUVEAU : BILAN GLOBAL DE LA PROMOTION (SANS DOUBLONS) ---
             # On retire les doublons basés sur le nom de l'enseignement et le code (type)
             # pour ne compter chaque matière qu'une seule fois pour toute la promo
-            df_unique_matieres = df_p.drop_duplicates(subset=['Enseignements', 'Code'])
+            df_unique_matières = df_p.drop_duplicates(subset=['Enseignements', 'Code'])
             
-            total_p_cours = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('COURS', case=False, na=False)])
-            total_p_td = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('TD', case=False, na=False)])
-            total_p_tp = len(df_unique_matieres[~df_unique_matieres['Code'].str.contains('COURS|TD', case=False, na=False)])
+            total_p_cours = len(df_unique_matières[df_unique_matières['Code'].str.contains('COURS', case=False, na=False)])
+            total_p_td = len(df_unique_matières[df_unique_matières['Code'].str.contains('TD', case=False, na=False)])
+            total_p_tp = len(df_unique_matières[~df_unique_matières['Code'].str.contains('COURS|TD', case=False, na=False)])
                     # --- 8. BOUTONS DE TÉLÉCHARGEMENT ---
             st.markdown("---")
             cp1, cp2, cp3 = st.columns(3)
@@ -6075,7 +6075,7 @@ if df is not None:
                 df_ens = df_p[df_p["Enseignants"] == ens].copy()
                 
                 # 2. Organisation par type (Ordre : COURS > TD > TP) sans doublons pour l'affichage des badges
-                matieres_brutes = df_ens.drop_duplicates(subset=['Enseignements', 'Code'])
+                matières_brutes = df_ens.drop_duplicates(subset=['Enseignements', 'Code'])
                 
                 cours_list = matieres_brutes[matieres_brutes['Code'].str.contains('COURS', case=False, na=False)]['Enseignements'].unique()
                 td_list = matieres_brutes[matieres_brutes['Code'].str.contains('TD', case=False, na=False)]['Enseignements'].unique()
