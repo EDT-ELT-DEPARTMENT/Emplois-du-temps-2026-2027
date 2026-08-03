@@ -106,12 +106,12 @@ HORAIRES_LIST = [
 JOURS_SEMAINE = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
 CAUSES_ABSENCES = [
-    "Non justifie",
-    "Deces dans l'ascendance, la descendance ou la parente",
-    "Mariage de l'interesse(e)",
-    "Conge de paternite ou de maternite de l'interesse(e)",
+    "Non justifié",
+    "Décès dans l'ascendance, la déscendance ou la parenté",
+    "Mariage de l'interessé(e)",
+    "Congé de paternité ou de maternité de l'interessé(e)",
     "Mission ou convocation officielle",
-    "Maladie de l'interesse(e)",
+    "Maladie de l'interessé(e)",
     "Autres"
 ]
 
