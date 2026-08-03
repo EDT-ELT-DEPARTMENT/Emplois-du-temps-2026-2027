@@ -106,12 +106,12 @@ HORAIRES_LIST = [
 JOURS_SEMAINE = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
 CAUSES_ABSENCES = [
-    "Non justifié",
-    "Décès dans l'ascendance, la déscendance ou la parenté",
-    "Mariage de l'interessé(e)",
-    "Congé de paternité ou de maternité de l'interessé(e)",
+    "Non justifie",
+    "Deces dans l'ascendance, la descendance ou la parente",
+    "Mariage de l'interesse(e)",
+    "Conge de paternite ou de maternite de l'interesse(e)",
     "Mission ou convocation officielle",
-    "Maladie de l'interessé(e)",
+    "Maladie de l'interesse(e)",
     "Autres"
 ]
 
@@ -546,6 +546,38 @@ def run_assiduite():
                 return r
         return None
 
+    def supprimer_derniere_absence_supabase(etudiant, matiere, promotion):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            res = supabase.table("suivi_assiduite_2026").select("*")\
+                .eq("etud_non_eligible", etudiant)\
+                .eq("matiere", matiere)\
+                .eq("promotion", promotion)\
+                .order("id", desc=True).limit(1).execute()
+            if res.data:
+                last_id = res.data[0]["id"]
+                supabase.table("suivi_assiduite_2026").delete().eq("id", last_id).execute()
+                return True
+            return False
+        except Exception as e:
+            st.error(f"Erreur Supabase (annulation) : {e}")
+            return False
+
+    def supprimer_derniere_absence_locale(etudiant, matiere, promotion):
+        candidates = [
+            (idx, a) for idx, a in enumerate(st.session_state.absences)
+            if a.get("etud_non_eligible") == etudiant
+            and a.get("matiere") == matiere
+            and a.get("promotion") == promotion
+        ]
+        if candidates:
+            last_idx = candidates[-1][0]
+            st.session_state.absences.pop(last_idx)
+            return True
+        return False
+
+
     # =============================================================================
     # GESTION DE LA CONNEXION (depuis le portail EDT)
     # =============================================================================
@@ -636,10 +668,23 @@ def run_assiduite():
                     ]
                 df_db_full = pd.DataFrame(absences_filtrees)
 
+                # Détection automatique de la colonne Mat. BAC
+                col_mat_bac = None
+                for c in df_p.columns:
+                    c_up = str(c).strip().upper().replace(".", "").replace(" ", "").replace("_", "")
+                    if "MAT" in c_up and "BAC" in c_up:
+                        col_mat_bac = c
+                        break
+
                 st.markdown("#### 📥 Enregistrement d'une Absence")
                 cn1, cn2, cn3 = st.columns(3)
                 with cn1:
                     etud_non = st.selectbox("👤 Etudiant :", [""] + noms_e, key="ne_et_t1")
+                    if etud_non and col_mat_bac:
+                        mat_bac_val = df_p[df_p["Nom_Complet"] == etud_non][col_mat_bac]
+                        if not mat_bac_val.empty:
+                            mat_bac_str = str(mat_bac_val.iloc[0])
+                            st.markdown(f"<div style='background:linear-gradient(90deg,#1E3A8A,#3B82F6);color:white;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:600;text-align:center;margin-top:4px;'>🎓 Mat. BAC : {mat_bac_str}</div>", unsafe_allow_html=True)
                 with cn2:
                     status_assid = st.selectbox("📊 Statut :", ["", "Absent"], key="status_t1")
                 with cn3:
@@ -653,7 +698,7 @@ def run_assiduite():
                 with c_d3:
                     horaire_abs = st.selectbox("🕒 Horaire :", HORAIRES_LIST, key="horaire_t1")
 
-                # Compteur
+                # ─── COMPTEUR NUMÉRIQUE D'ABSENCES ───
                 if etud_non and status_assid == "Absent":
                     if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
                         absences_etu_matiere = df_db_full[df_db_full["etud_non_eligible"] == etud_non]
@@ -669,13 +714,21 @@ def run_assiduite():
                         abs_global = [a for a in st.session_state.absences if a.get("etud_non_eligible") == etud_non]
                     nb_abs_global = len(abs_global)
 
-                    c1, c2, c3 = st.columns(3)
+                    # Afficheur numérique stylisé
+                    st.markdown("<div style='margin:10px 0;'>", unsafe_allow_html=True)
+                    c1, c2, c3, c4 = st.columns(4)
                     with c1:
-                        st.metric("🔢 Absences dans cette matière", f"{nb_abs_matiere}/5")
+                        color = "#ef4444" if nb_abs_matiere >= 5 else "#f59e0b" if nb_abs_matiere >= 3 else "#22c55e"
+                        st.markdown(f"<div style='background:{color}15;border:2px solid {color};border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:{color};'>{nb_abs_matiere}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>🔢 Absences matière</div></div>", unsafe_allow_html=True)
                     with c2:
-                        st.metric("✅ Dont justifiées", f"{nb_abs_justif}")
+                        st.markdown(f"<div style='background:#22c55e15;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#22c55e;'>{nb_abs_justif}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>✅ Justifiées</div></div>", unsafe_allow_html=True)
                     with c3:
-                        st.metric("🌍 Total global (toutes matières)", f"{nb_abs_global}")
+                        st.markdown(f"<div style='background:#3b82f615;border:2px solid #3b82f6;border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#3b82f6;'>{nb_abs_global}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>🌍 Total global</div></div>", unsafe_allow_html=True)
+                    with c4:
+                        reste = max(0, 5 - nb_abs_matiere)
+                        color_r = "#ef4444" if reste == 0 else "#f59e0b" if reste <= 2 else "#22c55e"
+                        st.markdown(f"<div style='background:{color_r}15;border:2px solid {color_r};border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:{color_r};'>{reste}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>⏳ Avant exclusion</div></div>", unsafe_allow_html=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
 
                     if nb_abs_matiere >= 5:
                         st.error(f"🚫 **EXCLU de la matière {sel_mat}** — Seuil de 5 absences atteint.")
@@ -684,36 +737,55 @@ def run_assiduite():
                     else:
                         st.info(f"ℹ️ {nb_abs_matiere} absence(s) dans {sel_mat}. Seuil d'exclusion : 5.")
 
-                if st.button("💾 ENREGISTRER L'ABSENCE", use_container_width=True):
-                    if not etud_non:
-                        st.error("❌ Veuillez selectionner un etudiant.")
-                    elif status_assid != "Absent":
-                        st.warning("⚠️ L'enregistrement necessite le statut 'Absent'.")
-                    else:
-                        payload = {
-                            "enseignant": sel_prof,
-                            "matiere": sel_mat,
-                            "promotion": promo_c,
-                            "etud_non_eligible": etud_non,
-                            "cause_non_eligibilite": cause_s if cause_s else "Non justifie",
-                            "date_absence": str(date_abs),
-                            "jour_absence": jour_abs,
-                            "horaire_absence": horaire_abs,
-                            "date_saisie": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                            "justifie": False
-                        }
-                        if MODE_SUPABASE:
-                            if enregistrer_absence_supabase(payload):
-                                st.success(f"✅ Absence enregistree pour {etud_non} !")
+                # ─── BOUTONS D'ACTION ───
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("💾 ENREGISTRER L'ABSENCE", use_container_width=True, type="primary"):
+                        if not etud_non:
+                            st.error("❌ Veuillez selectionner un etudiant.")
+                        elif status_assid != "Absent":
+                            st.warning("⚠️ L'enregistrement necessite le statut 'Absent'.")
+                        else:
+                            payload = {
+                                "enseignant": sel_prof,
+                                "matiere": sel_mat,
+                                "promotion": promo_c,
+                                "etud_non_eligible": etud_non,
+                                "cause_non_eligibilite": cause_s if cause_s else "Non justifie",
+                                "date_absence": str(date_abs),
+                                "jour_absence": jour_abs,
+                                "horaire_absence": horaire_abs,
+                                "date_saisie": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                "justifie": False
+                            }
+                            if MODE_SUPABASE:
+                                if enregistrer_absence_supabase(payload):
+                                    st.success(f"✅ Absence enregistree pour {etud_non} !")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                            else:
+                                payload["id"] = len(st.session_state.absences) + 1
+                                st.session_state.absences.append(payload)
+                                st.success(f"✅ Absence enregistree (mode local) pour {etud_non} !")
                                 time.sleep(0.5)
                                 st.rerun()
-                        else:
-                            payload["id"] = len(st.session_state.absences) + 1
-                            st.session_state.absences.append(payload)
-                            st.success(f"✅ Absence enregistree (mode local) pour {etud_non} !")
-                            time.sleep(0.5)
-                            st.rerun()
 
+                with col_btn2:
+                    if etud_non and st.button("🔄 ANNULER LA DERNIERE ABSENCE", use_container_width=True):
+                        if MODE_SUPABASE:
+                            if supprimer_derniere_absence_supabase(etud_non, sel_mat, promo_c):
+                                st.success(f"✅ Dernière absence annulée pour {etud_non} dans {sel_mat} ! L'exclusion est levée si applicable.")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Aucune absence à annuler pour cet étudiant dans cette matière.")
+                        else:
+                            if supprimer_derniere_absence_locale(etud_non, sel_mat, promo_c):
+                                st.success(f"✅ Dernière absence annulée (mode local) pour {etud_non} ! L'exclusion est levée si applicable.")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Aucune absence à annuler pour cet étudiant dans cette matière.")
                 # LISTE GLOBALE DES ABSENCES
                 st.divider()
                 st.subheader("📋 Liste Globale des Absences")
@@ -8874,3 +8946,4 @@ if is_admin:
     st.divider()
     with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
         afficher_historique_bordereaux()
+
