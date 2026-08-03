@@ -340,50 +340,50 @@ def run_assiduite():
         
         if not all([up_etu, up_edt, up_ens]):
             st.info("📤 En attente des fichiers...")
-            return
+            st.stop()
         
         try:
             df_etu = lire_excel_robuste(up_etu)
             df_etu.columns = df_etu.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur lecture étudiants : {e}")
-            return
+            st.stop()
         try:
             df_edt = lire_excel_robuste(up_edt)
             df_edt.columns = df_edt.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur lecture EDT : {e}")
-            return
+            st.stop()
         try:
             df_ens = lire_excel_robuste(up_ens, sheet_name=0)
             df_ens.columns = df_ens.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur lecture enseignants : {e}")
-            return
+            st.stop()
     else:
         try:
             df_etu = lire_excel_robuste(FILE_ETUDIANTS)
             df_etu.columns = df_etu.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur chargement étudiants : {e}")
-            return
+            st.stop()
         try:
             df_edt = lire_excel_robuste(FILE_EDT)
             df_edt.columns = df_edt.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur chargement EDT : {e}")
-            return
+            st.stop()
         try:
             df_ens = lire_excel_robuste(FILE_ENS, sheet_name=0)
             df_ens.columns = df_ens.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur chargement enseignants : {e}")
-            return
+            st.stop()
 
     # Vérification finale
     if df_etu.empty or df_edt.empty or df_ens.empty:
         st.error("❌ Données incomplètes après chargement. Vérifiez vos fichiers source.")
-        return
+        st.stop()
     
     # ... suite de votre code ...    
     
@@ -410,7 +410,7 @@ def run_assiduite():
         df_etu["Nom_Complet"] = df_etu[col_nom].astype(str).str.strip().str.upper() + " " + df_etu[col_prenom].astype(str).str.strip().str.title()
     else:
         st.error(f"❌ Colonnes 'Nom' et 'Prénom' introuvables dans le fichier étudiants. Colonnes trouvées : {list(df_etu.columns)}")
-        return
+        st.stop()
 
     # =============================================================================
     # INITIALISATION SESSION STATE
