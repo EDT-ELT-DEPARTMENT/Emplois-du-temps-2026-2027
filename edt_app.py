@@ -609,6 +609,10 @@ def run_assiduite():
     # =============================================================================
     # AUTHENTIFICATION ETUDIANT (Mat. BAC + OTP)
     # =============================================================================
+    # Récupération connexion enseignant (depuis Module 2 EDT)
+    user = st.session_state.get("user_data")
+    is_enseignant_connecte = user is not None and user.get("role") != "admin"
+
     etudiant_connecte = st.session_state.get("etudiant_auth") is not None
 
     if not is_enseignant_connecte and not etudiant_connecte:
