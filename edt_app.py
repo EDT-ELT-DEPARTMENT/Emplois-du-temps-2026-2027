@@ -613,7 +613,7 @@ def run_assiduite():
     user = st.session_state.get("user_data")
     is_enseignant_connecte = user is not None and user.get("role") != "admin"
 
-    etudiant_connecte = st.session_state.get("etudiant_auth") is not None
+    etudiant_connecte = st.session_state.get("etudiant_auth")
 
     if not is_enseignant_connecte and not etudiant_connecte:
         st.markdown("<h3 style='text-align:center;color:#1E3A8A;'>🔐 Portail Étudiant</h3>", unsafe_allow_html=True)
