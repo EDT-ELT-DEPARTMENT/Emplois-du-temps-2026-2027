@@ -1303,7 +1303,7 @@ def run_assiduite():
                     )
 
                 st.subheader("📚 Bilan par Etudiant et Matiere")
-                df_bilan_mat = df_tab.groupby(["Etudiant", "Matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
+                df_bilan_mat = df_tab.groupby(["Etudiant", "Matière", "Chargé", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
                 buf_mat = io.BytesIO()
