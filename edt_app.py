@@ -813,8 +813,8 @@ def run_assiduite():
                     df_liste["Statut Exclusion"] = df_liste["Abs Matiere"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Eligible")
 
                     affichage_cols = {
-                        "enseignant": "Charge de Cours",
-                        "matiere": "Matiere",
+                        "enseignant": "Chargé de Cours",
+                        "matiere": "Matière",
                         "promotion": "Promotion",
                         "etud_non_eligible": "Etudiant",
                         "jour_absence": "Jour",
@@ -910,8 +910,8 @@ def run_assiduite():
                             "Date Absence": "Date",
                             "Horaire": "Horaire"
                         })
-                        df_export["Matiere"] = sel_mat
-                        df_export["Charge"] = sel_prof
+                        df_export["Matière"] = sel_mat
+                        df_export["Chargé de matière"] = sel_prof
                         df_export["Promotion"] = promo_rapport
 
                         output = io.BytesIO()
@@ -1270,11 +1270,11 @@ def run_assiduite():
                         return str(rows.iloc[0]["Enseignants"])
                     return "Non assigne"
 
-                df_tab["Charge"] = df_tab["matiere"].apply(trouver_enseignant_par_matiere)
+                df_tab["Chargé de matière"] = df_tab["matière"].apply(trouver_enseignant_par_matiere)
 
-                df_tab = df_tab[["date_demande", "promotion", "Charge",
-                                 "nom_etudiant", "matiere", "motif", "statut"]]
-                df_tab.columns = ["Date", "Promotion", "Charge", "Etudiant", "Matiere", "Motif", "Statut"]
+                df_tab = df_tab[["date_demande", "promotion", "Chargé de matière",
+                                 "nom_etudiant", "matière", "motif", "statut"]]
+                df_tab.columns = ["Date", "Promotion", "Chargé de matière", "Etudiant", "Matière", "Motif", "Statut"]
 
                 st.subheader("📋 Registre General")
                 st.dataframe(df_tab, use_container_width=True, hide_index=True)
