@@ -614,7 +614,60 @@ def run_assiduite():
     is_enseignant_connecte = user is not None and user.get("role") != "admin"
 
     etudiant_connecte = st.session_state.get("etudiant_auth")
+                    if pwd_admin == CODE_ADMIN:
+                    st.subheader("⚖️ Dossiers en attente")
 
+                    if MODE_SUPABASE:
+                        resultats = charger_requetes_supabase(statut="En attente")
+                    else:
+                        resultats = [r for r in st.session_state.requetes if r.get("statut") == "En attente"]
+
+                    if not resultats:
+                        st.info("📭 Aucun dossier en attente.")
+                    else:
+                        for req in resultats:
+                            with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']}"):
+                                st.write(f"**Promotion :** {req['promotion']}")
+                                st.write(f"**Motif :** {req['motif']}")
+                                st.write(f"**Date :** {req['date_demande']}")
+
+                                pdf_decoded = base64.b64decode(req['justificatif_pdf'])
+                                st.download_button(
+                                    label="👁️ Telecharger le PDF",
+                                    data=pdf_decoded,
+                                    file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"dl_{req['id']}"
+                                )
+
+                                col_acc, col_rej = st.columns(2)
+                                if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
+                                    if MODE_SUPABASE:
+                                        mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
+                                        rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'])
+                                    else:
+                                        for r in st.session_state.requetes:
+                                            if r["id"] == req["id"]:
+                                                r["statut"] = "Favorable"
+                                        for a in st.session_state.absences:
+                                            if (a.get("etud_non_eligible") == req['nom_etudiant']
+                                                    and a.get("matiere") == req['matiere']):
+                                                a["justifie"] = True
+                                                a["cause_non_eligibilite"] = "Justifiee - " + str(a.get("cause_non_eligibilite", ""))
+                                    st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+                                if col_rej.button("❌ REJETER", key=f"rej_{req['id']}", use_container_width=True):
+                                    if MODE_SUPABASE:
+                                        mettre_a_jour_statut_requete_supabase(req["id"], "Defavorable")
+                                    else:
+                                        for r in st.session_state.requetes:
+                                            if r["id"] == req["id"]:
+                                                r["statut"] = "Defavorable"
+                                    st.warning(f"❌ Dossier de {req['nom_etudiant']} rejete.")
+                                    time.sleep(0.5)
+                                    st.rerun()
     if not is_enseignant_connecte and not etudiant_connecte:
         st.markdown("<h3 style='text-align:center;color:#1E3A8A;'>🔐 Portail Étudiant</h3>", unsafe_allow_html=True)
         st.info("Accédez à votre espace pour consulter vos absences et déposer des justificatifs.")
@@ -9056,58 +9109,5 @@ if is_admin:
     st.divider()
     with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
         afficher_historique_bordereaux()
-if pwd_admin == CODE_ADMIN:
-                    st.subheader("⚖️ Dossiers en attente")
 
-                    if MODE_SUPABASE:
-                        resultats = charger_requetes_supabase(statut="En attente")
-                    else:
-                        resultats = [r for r in st.session_state.requetes if r.get("statut") == "En attente"]
-
-                    if not resultats:
-                        st.info("📭 Aucun dossier en attente.")
-                    else:
-                        for req in resultats:
-                            with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']}"):
-                                st.write(f"**Promotion :** {req['promotion']}")
-                                st.write(f"**Motif :** {req['motif']}")
-                                st.write(f"**Date :** {req['date_demande']}")
-
-                                pdf_decoded = base64.b64decode(req['justificatif_pdf'])
-                                st.download_button(
-                                    label="👁️ Telecharger le PDF",
-                                    data=pdf_decoded,
-                                    file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"dl_{req['id']}"
-                                )
-
-                                col_acc, col_rej = st.columns(2)
-                                if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
-                                    if MODE_SUPABASE:
-                                        mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
-                                        rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'])
-                                    else:
-                                        for r in st.session_state.requetes:
-                                            if r["id"] == req["id"]:
-                                                r["statut"] = "Favorable"
-                                        for a in st.session_state.absences:
-                                            if (a.get("etud_non_eligible") == req['nom_etudiant']
-                                                    and a.get("matiere") == req['matiere']):
-                                                a["justifie"] = True
-                                                a["cause_non_eligibilite"] = "Justifiee - " + str(a.get("cause_non_eligibilite", ""))
-                                    st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
-                                    time.sleep(0.5)
-                                    st.rerun()
-
-                                if col_rej.button("❌ REJETER", key=f"rej_{req['id']}", use_container_width=True):
-                                    if MODE_SUPABASE:
-                                        mettre_a_jour_statut_requete_supabase(req["id"], "Defavorable")
-                                    else:
-                                        for r in st.session_state.requetes:
-                                            if r["id"] == req["id"]:
-                                                r["statut"] = "Defavorable"
-                                    st.warning(f"❌ Dossier de {req['nom_etudiant']} rejete.")
-                                    time.sleep(0.5)
-                                    st.rerun()
 # =============================================================================
