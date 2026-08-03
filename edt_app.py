@@ -413,6 +413,18 @@ def run_assiduite():
         st.stop()
 
     # =============================================================================
+    # DÉTECTION GLOBALE DE LA COLONNE MATRICULE BAC (pour onglet Justificatifs)
+    # =============================================================================
+    COL_MAT_BAC = None
+    for c in df_etu.columns:
+        c_up = str(c).strip().upper().replace(".", "").replace(" ", "").replace("_", "")
+        if "MAT" in c_up and "BAC" in c_up:
+            COL_MAT_BAC = c
+            break
+    if COL_MAT_BAC:
+        df_etu["Mat_BAC_Clean"] = df_etu[COL_MAT_BAC].astype(str).str.strip().str.upper().str.replace(" ", "").str.replace("-", "").str.replace(".", "")
+
+    # =============================================================================
     # INITIALISATION SESSION STATE
     # =============================================================================
     if "absences" not in st.session_state:
@@ -978,16 +990,61 @@ def run_assiduite():
             if choix_vue == "Etudiant (Depot)":
                 st.subheader("📤 Soumettre une demande de rehabilitation")
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
-                    promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_depot")
-                    df_etu_promo = df_etu[df_etu["Promotion"] == promo_sel]
-                    noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
-                    etudiant_sel = st.selectbox("Votre Nom :", noms_dispo, key="etud_depot")
-                with col2:
-                    st.markdown("**ℹ️ Informations**")
-                    st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
+                # ─── IDENTIFICATION PAR MATRICULE BAC ───
+                if not COL_MAT_BAC:
+                    st.error("❌ Colonne 'Mat. BAC' introuvable dans le fichier étudiants. Contactez l'administrateur.")
+                    st.stop()
+
+                col_mat, col_info = st.columns([1, 2])
+                with col_mat:
+                    mat_bac_input = st.text_input("🎓 N° Matricule du BAC", key="mat_bac_input_depot", placeholder="Ex: 12345678")
+                mat_bac_clean = str(mat_bac_input).strip().upper().replace(" ", "").replace("-", "").replace(".", "")
+
+                etudiant_sel = None
+                promo_sel = None
+
+                if mat_bac_clean:
+                    match = df_etu[df_etu["Mat_BAC_Clean"] == mat_bac_clean]
+                    if not match.empty:
+                        etudiant_sel = match.iloc[0]["Nom_Complet"]
+                        promo_sel = match.iloc[0]["Promotion"]
+                        with col_info:
+                            st.success(f"✅ Étudiant identifié : **{etudiant_sel}**")
+                            st.info(f"📍 Promotion : **{promo_sel}**  |  🎓 Mat. BAC : **{mat_bac_input}**")
+                    else:
+                        st.error("❌ Matricule non trouvé dans la base. Vérifiez votre numéro.")
+                        st.stop()
+                else:
+                    st.info("👆 Saisissez votre matricule du BAC pour commencer.")
+                    st.stop()
+
+                # ─── CODE D'ACTIVATION PAR EMAIL ───
+                st.divider()
+                st.markdown("### 🔐 Activation du compte")
+                email_etu = st.text_input("📧 Votre adresse Email", key="email_etu_depot", placeholder="ex: nom.prenom@email.dz")
+
+                if email_etu and "@" in email_etu:
+                    if st.button("📩 Recevoir mon code d'activation", use_container_width=True, type="primary", key="btn_code_activation"):
+                        import secrets
+                        code_activation = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+
+                        if "codes_activation_etu" not in st.session_state:
+                            st.session_state.codes_activation_etu = {}
+
+                        st.session_state.codes_activation_etu[mat_bac_clean] = {
+                            "code": code_activation,
+                            "email": email_etu,
+                            "nom": etudiant_sel,
+                            "promotion": promo_sel,
+                            "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M")
+                        }
+
+                        st.success(f"✅ Code d'activation généré et envoyé à `{email_etu}` !")
+                        st.info(f"🔑 Votre code d'activation : **{code_activation}**")
+                        st.caption("💡 En production, ce code serait envoyé automatiquement par email SMTP.")
+                        st.balloons()
+                elif email_etu:
+                    st.warning("⚠️ Veuillez saisir une adresse email valide.")
 
                 st.divider()
                 st.markdown("### 📋 Mes absences signalées")
