@@ -315,7 +315,133 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
             continue
             
     raise ValueError(f"❌ Format non reconnu. Utilisez un fichier Excel valide (.xlsx, .xls, .xlsb). Erreur : {last_err}")
-
+# =============================================================================
+# ESPACE ÉTUDIANT LIMITÉ
+# =============================================================================
+def run_espace_etudiant(df_etu, df_edt):
+    """Espace étudiant strictement limité : consultation de ses absences uniquement
+    et dépôt de justificatifs. Aucun accès aux bilans, exports ou données des autres."""
+    
+    etu_nom = st.session_state.get("etudiant_connecte")
+    etu_promo = st.session_state.get("promo_etudiant")
+    
+    st.title("📚 Mon Espace Étudiant")
+    st.success(f"👤 Bienvenue **{etu_nom}** — Promotion **{etu_promo}**")
+    
+    if st.button("🚪 Déconnexion", type="primary"):
+        st.session_state.etudiant_connecte = None
+        st.session_state.promo_etudiant = None
+        st.rerun()
+    
+    st.divider()
+    
+    # --- RÉCUPÉRATION DES ABSENCES PERSONNELLES ---
+    if MODE_SUPABASE:
+        try:
+            res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", etu_nom).execute()
+            absences_etu = res.data if res.data else []
+        except Exception as e:
+            st.error(f"Erreur chargement : {e}")
+            absences_etu = []
+    else:
+        absences_etu = [a for a in st.session_state.absences if a.get("etud_non_eligible") == etu_nom]
+    
+    st.subheader("📋 Mes absences signalées")
+    
+    if not absences_etu:
+        st.info("✅ Aucune absence signalée pour le moment.")
+    else:
+        df_abs = pd.DataFrame(absences_etu)
+        if "justifie" not in df_abs.columns:
+            df_abs["justifie"] = False
+        df_abs["justifie"] = df_abs["justifie"].fillna(False)
+        df_abs["Statut"] = df_abs["justifie"].apply(lambda x: "✅ Justifiée" if x else "❌ Non justifiée")
+        
+        cols_aff = ["matiere", "promotion", "date_absence", "jour_absence", 
+                    "horaire_absence", "cause_non_eligibilite", "Statut"]
+        cols_exist = [c for c in cols_aff if c in df_abs.columns]
+        st.dataframe(df_abs[cols_exist].rename(columns={
+            "matiere": "Matière",
+            "promotion": "Promotion",
+            "date_absence": "Date",
+            "jour_absence": "Jour",
+            "horaire_absence": "Horaire",
+            "cause_non_eligibilite": "Motif",
+            "Statut": "Statut"
+        }), use_container_width=True, hide_index=True)
+        
+        nb_total = len(df_abs)
+        nb_justif = len(df_abs[df_abs["justifie"] == True])
+        nb_non_justif = nb_total - nb_justif
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total absences", nb_total)
+        c2.metric("Justifiées", nb_justif)
+        c3.metric("Non justifiées", nb_non_justif)
+        
+        st.divider()
+        st.subheader("📤 Déposer un justificatif")
+        
+        absences_non_justif = [a for a in absences_etu if not a.get("justifie", False)]
+        
+        if not absences_non_justif:
+            st.success("🎉 Toutes vos absences sont déjà justifiées ou en cours de traitement.")
+        else:
+            with st.form("form_depot_etudiant", clear_on_submit=True):
+                options = {
+                    f"{a['matiere']} — {a.get('date_absence', '')} ({a.get('jour_absence', '')} {a.get('horaire_absence', '')})": a
+                    for a in absences_non_justif
+                }
+                sel_abs = st.selectbox("Absence concernée :", list(options.keys()))
+                motif_dep = st.selectbox("Motif du justificatif :", CAUSES_ABSENCES)
+                fichier_pdf = st.file_uploader("Joindre le justificatif (PDF)", type=["pdf"])
+                submitted = st.form_submit_button("🚀 Envoyer le justificatif")
+            
+            if submitted:
+                if not fichier_pdf:
+                    st.error("❌ Vous devez joindre un fichier PDF.")
+                else:
+                    try:
+                        pdf_bytes = fichier_pdf.read()
+                        pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
+                        abs_conc = options[sel_abs]
+                        
+                        if MODE_SUPABASE:
+                            data_insert = {
+                                "date_demande": datetime.now().strftime("%d/%m/%Y"),
+                                "nom_etudiant": etu_nom,
+                                "matiere": abs_conc["matiere"],
+                                "promotion": abs_conc.get("promotion", etu_promo),
+                                "motif": motif_dep,
+                                "justificatif_pdf": pdf_encoded,
+                                "statut": "En attente"
+                            }
+                            supabase.table("requetes_absences").insert(data_insert).execute()
+                            st.success("✅ Demande enregistrée avec succès !")
+                            st.balloons()
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            data_insert = {
+                                "date_demande": datetime.now().strftime("%d/%m/%Y"),
+                                "nom_etudiant": etu_nom,
+                                "matiere": abs_conc["matiere"],
+                                "promotion": abs_conc.get("promotion", etu_promo),
+                                "motif": motif_dep,
+                                "justificatif_pdf": pdf_encoded,
+                                "statut": "En attente",
+                                "id": len(st.session_state.requetes) + 1
+                            }
+                            st.session_state.requetes.append(data_insert)
+                            st.success("✅ Demande enregistrée (mode local) !")
+                            st.balloons()
+                            time.sleep(0.5)
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Erreur : {e}")
+    
+    st.divider()
+    st.caption("🔒 Cet espace est strictement limité à vos données personnelles.")
 
 def run_assiduite():
     st.title("📊 Plateforme de Suivi d'Assiduite des Etudiants")
@@ -411,7 +537,71 @@ def run_assiduite():
     else:
         st.error(f"❌ Colonnes 'Nom' et 'Prénom' introuvables dans le fichier étudiants. Colonnes trouvées : {list(df_etu.columns)}")
         st.stop()
+        # =============================================================================
+    # AUTHENTIFICATION ÉTUDIANTE (ESPACE LIMITÉ)
+    # =============================================================================
+    if "etudiant_connecte" not in st.session_state:
+        st.session_state.etudiant_connecte = None
+    if "promo_etudiant" not in st.session_state:
+        st.session_state.promo_etudiant = None
 
+    # Détection connexion enseignant depuis le portail EDT
+    user = st.session_state.get("user_data")
+    is_enseignant_connecte = user is not None and user.get("role") != "admin"
+
+    # --- PANNEAU DE CONNEXION ÉTUDIANT (Sidebar) ---
+    if not is_enseignant_connecte:
+        with st.sidebar:
+            st.markdown("---")
+            st.caption("🔐 Accès Étudiant")
+            mode_accès = st.radio("Je suis :", ["Enseignant / Admin", "Étudiant"], key="mode_accès_global")
+            
+            if mode_accès == "Étudiant":
+                promo_login = st.selectbox("🎓 Promotion", sorted(df_etu["Promotion"].dropna().unique()), key="promo_login_etu")
+                df_etu_login = df_etu[df_etu["Promotion"] == promo_login]
+                noms_login = sorted(df_etu_login["Nom_Complet"].unique())
+                nom_login = st.selectbox("👤 Nom & Prénom", noms_login, key="nom_login_etu")
+                
+                col_mat_bac_login = None
+                for c in df_etu_login.columns:
+                    c_up = str(c).strip().upper().replace(".", "").replace(" ", "").replace("_", "")
+                    if "MAT" in c_up and "BAC" in c_up:
+                        col_mat_bac_login = c
+                
+                pwd_etu = st.text_input("🔑 Matricule BAC", type="password", key="pwd_etu_login",
+                                         help="Saisissez votre numéro de matricule BAC comme mot de passe.")
+                
+                c_login, c_logout = st.columns(2)
+                with c_login:
+                    if st.button("Se connecter", use_container_width=True, key="btn_login_etu"):
+                        if col_mat_bac_login:
+                            mat_val = str(df_etu_login[df_etu_login["Nom_Complet"] == nom_login][col_mat_bac_login].iloc[0]).strip()
+                            if pwd_etu.strip() == mat_val.strip():
+                                st.session_state.etudiant_connecte = nom_login
+                                st.session_state.promo_etudiant = promo_login
+                                st.success("✅ Connecté")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.error("❌ Matricule incorrect")
+                        else:
+                            st.session_state.etudiant_connecte = nom_login
+                            st.session_state.promo_etudiant = promo_login
+                            st.success("✅ Connecté (sans vérification matricule)")
+                            time.sleep(0.5)
+                            st.rerun()
+                with c_logout:
+                    if st.session_state.etudiant_connecte and st.button("Déconnexion", use_container_width=True, key="btn_logout_etu"):
+                        st.session_state.etudiant_connecte = None
+                        st.session_state.promo_etudiant = None
+                        st.rerun()
+
+    # =============================================================================
+    # REDIRECTION ESPACE ÉTUDIANT (BLOCAGE TOTAL DU RESTE)
+    # =============================================================================
+    if st.session_state.get("etudiant_connecte"):
+        run_espace_etudiant(df_etu, df_edt)
+        return  # ← EMPÊCHE L'ACCÈS À TOUT LE RESTE DE run_assiduite()
     # =============================================================================
     # INITIALISATION SESSION STATE
     # =============================================================================
