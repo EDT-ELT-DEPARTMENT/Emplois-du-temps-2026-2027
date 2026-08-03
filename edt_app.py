@@ -688,12 +688,6 @@ def run_assiduite():
     # =============================================================================
     # Création des onglets (toujours 3 pour éviter UnboundLocalError)
     tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
-
-
-
-    # =============================================================================
-    # ONGLET 1 : SUIVI D'ASSIDUITE
-    # =============================================================================
     with tab1:
         st.header("📝 Suivi de l'Assiduite et Compteur d'Absences")
 
