@@ -1103,9 +1103,7 @@ def run_assiduite():
                 with col2:
                     st.markdown("**ℹ️ Informations**")
                     st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
-
-                st.subheader("📤 Soumettre une demande de rehabilitation")
-
+               
                 st.divider()
                 st.markdown("### 📋 Mes absences signalées")
 
