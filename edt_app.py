@@ -106,12 +106,12 @@ HORAIRES_LIST = [
 JOURS_SEMAINE = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
 CAUSES_ABSENCES = [
-    "Non justifie",
-    "Deces dans l'ascendance, la descendance ou la parente",
-    "Mariage de l'interesse(e)",
-    "Conge de paternite ou de maternite de l'interesse(e)",
+    "Non justifié",
+    "Décès dans l'ascendance, la déscendance ou la parenté",
+    "Mariage de l'intéressé(e)",
+    "Congé de paternité ou de maternité de l'interessé(e)",
     "Mission ou convocation officielle",
-    "Maladie de l'interesse(e)",
+    "Maladie de l'intéressé(e)",
     "Autres"
 ]
 
@@ -813,8 +813,8 @@ def run_assiduite():
                     df_liste["Statut Exclusion"] = df_liste["Abs Matiere"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Eligible")
 
                     affichage_cols = {
-                        "enseignant": "Chargé de Cours",
-                        "matiere": "Matière",
+                        "enseignant": "Charge de Cours",
+                        "matiere": "Matiere",
                         "promotion": "Promotion",
                         "etud_non_eligible": "Etudiant",
                         "jour_absence": "Jour",
@@ -910,8 +910,8 @@ def run_assiduite():
                             "Date Absence": "Date",
                             "Horaire": "Horaire"
                         })
-                        df_export["Matière"] = sel_mat
-                        df_export["Chargé de matière"] = sel_prof
+                        df_export["Matiere"] = sel_mat
+                        df_export["Charge"] = sel_prof
                         df_export["Promotion"] = promo_rapport
 
                         output = io.BytesIO()
@@ -1264,17 +1264,17 @@ def run_assiduite():
             if data_hist:
                 df_tab = pd.DataFrame(data_hist)
 
-                def trouver_enseignant_par_matière(matiere):
-                    rows = df_edt[df_edt["Enseignements"] == matière]
+                def trouver_enseignant_par_matiere(matiere):
+                    rows = df_edt[df_edt["Enseignements"] == matiere]
                     if not rows.empty:
                         return str(rows.iloc[0]["Enseignants"])
                     return "Non assigne"
 
-                df_tab["Chargé de matière"] = df_tab["matière"].apply(trouver_enseignant_par_matiere)
+                df_tab["Charge"] = df_tab["matiere"].apply(trouver_enseignant_par_matiere)
 
-                df_tab = df_tab[["date_demande", "promotion", "Chargé de matière",
-                                 "nom_etudiant", "matière", "motif", "statut"]]
-                df_tab.columns = ["Date", "Promotion", "Chargé de matière", "Etudiant", "Matière", "Motif", "Statut"]
+                df_tab = df_tab[["date_demande", "promotion", "Charge",
+                                 "nom_etudiant", "matiere", "motif", "statut"]]
+                df_tab.columns = ["Date", "Promotion", "Charge", "Etudiant", "Matiere", "Motif", "Statut"]
 
                 st.subheader("📋 Registre General")
                 st.dataframe(df_tab, use_container_width=True, hide_index=True)
@@ -1303,7 +1303,7 @@ def run_assiduite():
                     )
 
                 st.subheader("📚 Bilan par Etudiant et Matiere")
-                df_bilan_mat = df_tab.groupby(["Etudiant", "Matière", "Chargé", "Promotion"]).size().reset_index(name="Nombre d'Absences")
+                df_bilan_mat = df_tab.groupby(["Etudiant", "Matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
                 buf_mat = io.BytesIO()
