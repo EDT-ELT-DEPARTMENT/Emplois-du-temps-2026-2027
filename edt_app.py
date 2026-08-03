@@ -1662,7 +1662,7 @@ def run_edt():
     # --- INTERFACE PRINCIPALE APRÈS CONNEXION ---
     st.markdown(f"<div class='portal-badge'>MODE ACTIF : {'ADMINISTRATEUR' if is_admin else 'ENSEIGNANT'}</div>", unsafe_allow_html=True)
 
-
+    # Barre latérale interne pour le module EDT
     # --- MENU DE NAVIGATION INTERNE (Main Panel) ---
     col_user, col_deco = st.columns([4, 1])
     with col_user:
@@ -4055,3 +4055,5 @@ def render_download_hub(df_global, user_data, is_admin):
     st.divider()
 
 # =============================================================================
+# Masquer les éléments du menu supérieur (Share, Star, Edit, etc.)
+hide_st_style = """
