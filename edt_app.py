@@ -340,50 +340,50 @@ def run_assiduite():
         
         if not all([up_etu, up_edt, up_ens]):
             st.info("📤 En attente des fichiers...")
-            return
+            st.stop()
         
         try:
             df_etu = lire_excel_robuste(up_etu)
             df_etu.columns = df_etu.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur lecture étudiants : {e}")
-            return
+            st.stop()
         try:
             df_edt = lire_excel_robuste(up_edt)
             df_edt.columns = df_edt.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur lecture EDT : {e}")
-            return
+            st.stop()
         try:
             df_ens = lire_excel_robuste(up_ens, sheet_name=0)
             df_ens.columns = df_ens.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur lecture enseignants : {e}")
-            return
+            st.stop()
     else:
         try:
             df_etu = lire_excel_robuste(FILE_ETUDIANTS)
             df_etu.columns = df_etu.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur chargement étudiants : {e}")
-            return
+            st.stop()
         try:
             df_edt = lire_excel_robuste(FILE_EDT)
             df_edt.columns = df_edt.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur chargement EDT : {e}")
-            return
+            st.stop()
         try:
             df_ens = lire_excel_robuste(FILE_ENS, sheet_name=0)
             df_ens.columns = df_ens.columns.str.strip()
         except Exception as e:
             st.error(f"❌ Erreur chargement enseignants : {e}")
-            return
+            st.stop()
 
     # Vérification finale
     if df_etu.empty or df_edt.empty or df_ens.empty:
         st.error("❌ Données incomplètes après chargement. Vérifiez vos fichiers source.")
-        return
+        st.stop()
     
     # ... suite de votre code ...    
     
@@ -410,7 +410,7 @@ def run_assiduite():
         df_etu["Nom_Complet"] = df_etu[col_nom].astype(str).str.strip().str.upper() + " " + df_etu[col_prenom].astype(str).str.strip().str.title()
     else:
         st.error(f"❌ Colonnes 'Nom' et 'Prénom' introuvables dans le fichier étudiants. Colonnes trouvées : {list(df_etu.columns)}")
-        return
+        st.stop()
 
     # =============================================================================
     # INITIALISATION SESSION STATE
@@ -425,13 +425,6 @@ def run_assiduite():
         st.session_state.confirm_reset_abs = False
 
     # =============================================================================
-    if 'etudiant_auth' not in st.session_state:
-        st.session_state.etudiant_auth = None
-    if 'etudiant_otp' not in st.session_state:
-        st.session_state.etudiant_otp = None
-    if 'etudiant_otp_email' not in st.session_state:
-        st.session_state.etudiant_otp_email = None
-
     # FONCTIONS SUPABASE
     # =============================================================================
     def charger_absences_supabase(matiere=None, promotion=None):
@@ -586,110 +579,18 @@ def run_assiduite():
 
 
     # =============================================================================
-
-    def envoyer_otp_etudiant(email_dest, nom_etud, code_otp):
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            body = f"Bonjour {nom_etud},\n\nVotre code d'accès à la Plateforme de Suivi d'Assiduité est : {code_otp}\n\nCe code est valable 10 minutes.\n\nDépartement d'Électrotechnique - FGE/UDL-SBA"
-            msg = MIMEText(body)
-            msg["Subject"] = "Code d'accès - Plateforme Assiduité"
-            msg["From"] = "chef.department.elt.fge@gmail.com"
-            msg["To"] = str(email_dest).strip()
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
-            server.send_message(msg)
-            server.quit()
-            return True
-        except Exception as e:
-            st.error(f"Erreur envoi email : {e}")
-            return False
-
+    # GESTION DE LA CONNEXION (depuis le portail EDT)
     # =============================================================================
-    # AUTHENTIFICATION ETUDIANT (Mat. BAC + OTP)
-    # =============================================================================
-    # Récupération connexion enseignant (depuis Module 2 EDT)
     user = st.session_state.get("user_data")
     is_enseignant_connecte = user is not None and user.get("role") != "admin"
-
-    etudiant_connecte = st.session_state.get("etudiant_auth") is not None
-
-    if not is_enseignant_connecte and not etudiant_connecte:
-        st.markdown("<h3 style='text-align:center;color:#1E3A8A;'>🔐 Portail Étudiant</h3>", unsafe_allow_html=True)
-        st.info("Accédez à votre espace pour consulter vos absences et déposer des justificatifs.")
-
-        mat_bac_input = st.text_input("🎓 Numéro de Matricule BAC :", key="mat_bac_auth", placeholder="Ex: 12345678")
-
-        if mat_bac_input:
-            mat_bac_clean = str(mat_bac_input).strip().upper().replace(" ", "").replace("-", "")
-            df_match = pd.DataFrame()
-            col_mat_bac = None
-            for c in df_etu.columns:
-                c_up = str(c).strip().upper().replace('.', '').replace(' ', '').replace('_', '').replace('-', '')
-                if "MAT" in c_up and "BAC" in c_up:
-                    col_mat_bac = c
-                    break
-
-            if col_mat_bac:
-                mask_mat = df_etu[col_mat_bac].astype(str).str.strip().str.upper().str.replace(' ', '').str.replace('-', '') == mat_bac_clean
-                df_match = df_etu[mask_mat]
-            else:
-                for c in df_etu.columns:
-                    vals = df_etu[c].astype(str).str.strip().str.upper().str.replace(' ', '').str.replace('-', '')
-                    if vals.eq(mat_bac_clean).any():
-                        df_match = df_etu[vals == mat_bac_clean]
-                        break
-
-            if not df_match.empty:
-                etud_nom = str(df_match.iloc[0]['Nom_Complet']).strip()
-                etud_promo = str(df_match.iloc[0]['Promotion']).strip() if 'Promotion' in df_match.columns else ''
-                st.success(f"✅ Étudiant trouvé : **{etud_nom}** ({etud_promo})")
-
-                email_input = st.text_input("📧 Votre adresse email :", key="email_etud_auth", placeholder="ex: nom@email.com")
-
-                if email_input and "@" in str(email_input):
-                    if st.button("📧 Recevoir mon code d'accès", use_container_width=True, key="btn_otp"):
-                        import random
-                        otp_code = str(random.randint(100000, 999999))
-                        st.session_state.etudiant_otp = otp_code
-                        st.session_state.etudiant_otp_email = str(email_input).strip()
-
-                        sent = envoyer_otp_etudiant(email_input, etud_nom, otp_code)
-                        if sent:
-                            st.success(f"✅ Code envoyé à : `{email_input}` — Vérifiez votre boîte mail (et les spams).")
-                        else:
-                            st.warning(f"⚠️ Impossible d'envoyer l'email. Votre code (mode démo) : `{otp_code}`")
-
-                if st.session_state.get("etudiant_otp"):
-                    otp_input = st.text_input("🔑 Saisissez le code reçu par email :", type="password", key="otp_input_auth")
-                    if st.button("✅ Valider mon accès", use_container_width=True, key="btn_valider_otp"):
-                        if otp_input == st.session_state.get("etudiant_otp"):
-                            st.session_state.etudiant_auth = {
-                                "mat_bac": mat_bac_clean,
-                                "nom": etud_nom,
-                                "email": st.session_state.etudiant_otp_email,
-                                "promotion": etud_promo
-                            }
-                            st.session_state.etudiant_otp = None
-                            st.session_state.etudiant_otp_email = None
-                            st.success(f"🎓 Bienvenue {etud_nom} ! Accès autorisé...")
-                            time.sleep(0.8)
-                            st.rerun()
-                        else:
-                            st.error("❌ Code incorrect. Veuillez réessayer.")
-            else:
-                st.error("❌ Matricule BAC non reconnu dans la base étudiants.")
-
-        return
 
     # =============================================================================
     # ONGLETS
     # =============================================================================
-    # Création des onglets (toujours 3 pour éviter UnboundLocalError)
-    tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
-
-
+    if is_enseignant_connecte:
+        tab1, = st.tabs(["📝 Suivi d'Assiduite"])
+    else:
+        tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
 
     # =============================================================================
     # ONGLET 1 : SUIVI D'ASSIDUITE
@@ -1068,42 +969,13 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab2:
-            st.header("📩 Système de Gestion des Justificatifs")
-            st.caption("Dépôt étudiant et validation administration")
+            st.header("📩 Systeme de Gestion des Justificatifs")
+            st.caption("Depot etudiant et validation administration")
 
-            if etudiant_connecte:
-                # Mode étudiant connecté : accès direct au dépôt
-                choix_vue = "Etudiant (Depot)"
-                st.success(f"👤 Connecté en tant qu'étudiant : **{etudiant_connecte['nom']}** — Mat. BAC: {etudiant_connecte['mat_bac']}")
-                if st.button("🚪 Se déconnecter", use_container_width=True):
-                    st.session_state.etudiant_auth = None
-                    st.rerun()
-                st.divider()
-            else:
-                choix_vue = st.radio("Profil :", ["Etudiant (Depot)", "Administration (Decision)"], horizontal=True)
-                st.divider()
+            choix_vue = st.radio("Profil :", ["Etudiant (Depot)", "Administration (Decision)"], horizontal=True)
+            st.divider()
 
             if choix_vue == "Etudiant (Depot)":
-                st.subheader("📤 Soumettre une demande de réhabilitation")
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    if etudiant_connecte:
-                        promo_sel = etudiant_connecte["promotion"]
-                        st.markdown(f"**🎓 Promotion :** `{promo_sel}`")
-                        df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
-                        etudiant_sel = etudiant_connecte["nom"]
-                        st.markdown(f"**👤 Nom :** `{etudiant_sel}`")
-                    else:
-                        promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
-                        promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_depot")
-                        df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
-                        noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
-                        etudiant_sel = st.selectbox("Votre Nom :", noms_dispo, key="etud_depot")
-                with col2:
-                    st.markdown("**ℹ️ Informations**")
-                    st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
-
                 st.subheader("📤 Soumettre une demande de rehabilitation")
 
                 col1, col2 = st.columns(2)
@@ -1659,46 +1531,44 @@ def run_edt():
     # --- INTERFACE PRINCIPALE APRÈS CONNEXION ---
     st.markdown(f"<div class='portal-badge'>MODE ACTIF : {'ADMINISTRATEUR' if is_admin else 'ENSEIGNANT'}</div>", unsafe_allow_html=True)
 
+    # Barre latérale interne pour le module EDT
+    with st.sidebar:
+        st.markdown("---")
+        st.header(f"👤 {user.get('nom_officiel', 'Utilisateur')}")
+        
+        if is_admin:
+            options_portail = [
+                "📖 Emploi du Temps", 
+                "📅 Surveillances Examens", 
+                "🤖 Générateur Automatique", 
+                "👥 Portail Enseignants", 
+                "🎓 Portail mise à jour EDT", 
+                "📢 Gestion Administrative"
+            ]
+        else:
+            options_portail = [
+                "👤 Mon Espace Enseignant",
+                "📅 Surveillances Examens"
+            ]
 
-    # --- MENU DE NAVIGATION INTERNE (Main Panel) ---
-    col_user, col_deco = st.columns([4, 1])
-    with col_user:
-        st.markdown(f"**👤 Connecté :** `{user.get('nom_officiel', 'Utilisateur')}` | Rôle : `{user.get('role', 'enseignant').upper()}`")
-    with col_deco:
+        portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
+        st.divider()
+        
+        mode_view = "Personnel"
+        poste_sup = False
+        
+        if portail == "📖 Emploi du Temps" and is_admin:
+            mode_view = st.radio("Vue Administration :", [
+                "Promotion", "Enseignant", "🏢 Planning Salles", 
+                "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
+            ])
+            poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
+        elif portail == "👤 Mon Espace Enseignant":
+            poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
+        
         if st.button("🚪 Déconnexion", use_container_width=True):
             st.session_state["user_data"] = None
             st.rerun()
-    
-    st.divider()
-    
-    if is_admin:
-        options_portail = [
-            "📖 Emploi du Temps", 
-            "📅 Surveillances Examens", 
-            "🤖 Générateur Automatique", 
-            "👥 Portail Enseignants", 
-            "🎓 Portail mise à jour EDT", 
-            "📢 Gestion Administrative"
-        ]
-    else:
-        options_portail = [
-            "👤 Mon Espace Enseignant",
-            "📅 Surveillances Examens"
-        ]
-
-    portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
-    
-    mode_view = "Personnel"
-    poste_sup = False
-    
-    if portail == "📖 Emploi du Temps" and is_admin:
-        mode_view = st.radio("Vue Administration :", [
-            "Promotion", "Enseignant", "🏢 Planning Salles", 
-            "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
-        ], horizontal=True)
-        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
-    elif portail == "👤 Mon Espace Enseignant":
-        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
 
     # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
     
@@ -4050,6 +3920,7 @@ def render_download_hub(df_global, user_data, is_admin):
         cg4.download_button("🗜️ Pack ZIP", zip_buffer.getvalue(), "Pack_EDT_GLOBAL_S1_2027.zip", "application/zip", use_container_width=True)
 
     st.divider()
+
 # =============================================================================
 # Masquer les éléments du menu supérieur (Share, Star, Edit, etc.)
 hide_st_style = """
@@ -9076,4 +8947,3 @@ if is_admin:
     with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
         afficher_historique_bordereaux()
 
-# =============================================================================
