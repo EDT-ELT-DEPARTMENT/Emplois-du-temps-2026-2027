@@ -614,7 +614,7 @@ def run_assiduite():
     is_enseignant_connecte = user is not None and user.get("role") != "admin"
 
     etudiant_connecte = st.session_state.get("etudiant_auth")
-                    if pwd_admin == CODE_ADMIN:
+    if pwd_admin == CODE_ADMIN:
                     st.subheader("⚖️ Dossiers en attente")
 
                     if MODE_SUPABASE:
