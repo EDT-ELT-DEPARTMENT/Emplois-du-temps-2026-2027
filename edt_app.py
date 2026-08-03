@@ -119,20 +119,58 @@ CODE_ADMIN = "1234"
 CODE_ADMIN_EDT = "doctorat2026"
 
 # =============================================================================
-# SIDEBAR PRINCIPALE (TOUJOURS VISIBLE)
+# SIDEBAR PRINCIPALE — SÉLECTION DU PROFIL
 # =============================================================================
 with st.sidebar:
     st.markdown("<h2 style='text-align:center;color:#1E3A8A;'>🏛️ UDL-SBA</h2>", unsafe_allow_html=True)
     st.caption("Département d'Électrotechnique - FGE")
     st.markdown("---")
-    
-    module_sel = st.radio(
-        "📂 Choix du module :",
-        ["📊 Suivi d'Assiduité", "📅 Gestion des EDTs & Admin"],
+
+    # ─── 1. SÉLECTION DU TYPE DE COMPTE ───
+    st.markdown("### 🔐 Connexion")
+    profil_sel = st.radio(
+        "Sélectionnez votre profil :",
+        ["👤 Étudiant", "👨‍🏫 Enseignant", "🛡️ Administrateur"],
         index=0,
-        key="module_selector"
+        key="profil_selector"
     )
-    
+
+    st.markdown("---")
+
+    # ─── 2. MODULES ACCESSIBLES SELON LE PROFIL ───
+    if profil_sel == "🛡️ Administrateur":
+        module_sel = st.radio(
+            "📂 Espace Admin :",
+            ["📊 Suivi d'Assiduité", "📅 Gestion des EDTs & Admin"],
+            index=1,
+            key="module_admin"
+        )
+        # Force le rôle admin dans la session EDT si pas déjà connecté
+        if not st.session_state.get("user_data"):
+            st.info("🔑 Connectez-vous avec le code admin dans le module EDT.")
+
+    elif profil_sel == "👨‍🏫 Enseignant":
+        module_sel = st.radio(
+            "📂 Espace Enseignant :",
+            ["📅 Gestion des EDTs & Admin"],  # L'enseignant accède à son espace EDT
+            index=0,
+            key="module_ens"
+        )
+        # Réinitialise l'auth étudiant si jamais l'utilisateur change de profil
+        if st.session_state.get("etudiant_auth"):
+            st.session_state.etudiant_auth = None
+
+    else:  # 👤 Étudiant
+        module_sel = st.radio(
+            "📂 Espace Étudiant :",
+            ["📊 Suivi d'Assiduité"],  # L'étudiant n'accède qu'à l'assiduité
+            index=0,
+            key="module_etu"
+        )
+        # Réinitialise l'auth enseignant/admin si changement de profil
+        if st.session_state.get("user_data"):
+            st.session_state.user_data = None
+
     st.markdown("---")
     st.caption("Année universitaire 2026-2027")
 
@@ -2152,16 +2190,30 @@ def run_edt():
 
 
 # =============================================================================
-# POINT D'ENTRÉE PRINCIPAL
+# POINT D'ENTRÉE PRINCIPAL — ROUTAGE SELON PROFIL
 # =============================================================================
-if module_sel == "📊 Suivi d'Assiduité":
+
+# Récupération du profil sélectionné
+profil = st.session_state.get("profil_selector", "👤 Étudiant")
+
+if profil == "👤 Étudiant":
+    # L'étudiant est automatiquement redirigé vers le module assiduité
     run_assiduite()
+
+elif profil == "👨‍🏫 Enseignant":
+    # L'enseignant est redirigé vers le module EDT (son espace personnel)
+    run_edt()
+
+elif profil == "🛡️ Administrateur":
+    # L'admin choisit entre les deux modules
+    if module_sel == "📊 Suivi d'Assiduité":
+        run_assiduite()
+    else:
+        run_edt()
+
 else:
-    run_edt() 
-
-
-
-                     
+    # Fallback sécurisé
+    run_assiduite()                 
 
 import streamlit as st
 import pandas as pd
