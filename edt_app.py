@@ -668,7 +668,7 @@ def run_assiduite():
                     ]
                 df_db_full = pd.DataFrame(absences_filtrees)
 
-                # Détection automatique de la colonne Mat. Etudiant
+                # Détection automatique de la colonne Mat. BAC
                 col_mat_bac = None
                 for c in df_p.columns:
                     c_up = str(c).strip().upper().replace(".", "").replace(" ", "").replace("_", "")
@@ -684,7 +684,7 @@ def run_assiduite():
                         mat_bac_val = df_p[df_p["Nom_Complet"] == etud_non][col_mat_bac]
                         if not mat_bac_val.empty:
                             mat_bac_str = str(mat_bac_val.iloc[0])
-                            st.markdown(f"<div style='background:linear-gradient(90deg,#1E3A8A,#3B82F6);color:white;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:600;text-align:center;margin-top:4px;'>🎓 Mat. Etudiant : {mat_Etudiant_str}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='background:linear-gradient(90deg,#1E3A8A,#3B82F6);color:white;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:600;text-align:center;margin-top:4px;'>🎓 Mat. BAC : {mat_bac_str}</div>", unsafe_allow_html=True)
                 with cn2:
                     status_assid = st.selectbox("📊 Statut :", ["", "Absent"], key="status_t1")
                 with cn3:
