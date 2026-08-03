@@ -681,7 +681,7 @@ def run_assiduite():
             else:
                 st.error("❌ Matricule BAC non reconnu dans la base étudiants.")
 
-        st.stop()
+        return
 
     # =============================================================================
     # ONGLETS
