@@ -1106,17 +1106,6 @@ def run_assiduite():
 
                 st.subheader("📤 Soumettre une demande de rehabilitation")
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
-                    promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_depot")
-                    df_etu_promo = df_etu[df_etu["Promotion"] == promo_sel]
-                    noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
-                    etudiant_sel = st.selectbox("Votre Nom :", noms_dispo, key="etud_depot")
-                with col2:
-                    st.markdown("**ℹ️ Informations**")
-                    st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
-
                 st.divider()
                 st.markdown("### 📋 Mes absences signalées")
 
