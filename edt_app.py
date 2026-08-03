@@ -425,6 +425,13 @@ def run_assiduite():
         st.session_state.confirm_reset_abs = False
 
     # =============================================================================
+    if 'etudiant_auth' not in st.session_state:
+        st.session_state.etudiant_auth = None
+    if 'etudiant_otp' not in st.session_state:
+        st.session_state.etudiant_otp = None
+    if 'etudiant_otp_email' not in st.session_state:
+        st.session_state.etudiant_otp_email = None
+
     # FONCTIONS SUPABASE
     # =============================================================================
     def charger_absences_supabase(matiere=None, promotion=None):
@@ -579,18 +586,109 @@ def run_assiduite():
 
 
     # =============================================================================
-    # GESTION DE LA CONNEXION (depuis le portail EDT)
+
+    def envoyer_otp_etudiant(email_dest, nom_etud, code_otp):
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            body = f"Bonjour {nom_etud},\n\nVotre code d'accès à la Plateforme de Suivi d'Assiduité est : {code_otp}\n\nCe code est valable 10 minutes.\n\nDépartement d'Électrotechnique - FGE/UDL-SBA"
+            msg = MIMEText(body)
+            msg["Subject"] = "Code d'accès - Plateforme Assiduité"
+            msg["From"] = "chef.department.elt.fge@gmail.com"
+            msg["To"] = str(email_dest).strip()
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+            server.send_message(msg)
+            server.quit()
+            return True
+        except Exception as e:
+            st.error(f"Erreur envoi email : {e}")
+            return False
+
     # =============================================================================
-    user = st.session_state.get("user_data")
-    is_enseignant_connecte = user is not None and user.get("role") != "admin"
+    # AUTHENTIFICATION ETUDIANT (Mat. BAC + OTP)
+    # =============================================================================
+    etudiant_connecte = st.session_state.get("etudiant_auth") is not None
+
+    if not is_enseignant_connecte and not etudiant_connecte:
+        st.markdown("<h3 style='text-align:center;color:#1E3A8A;'>🔐 Portail Étudiant</h3>", unsafe_allow_html=True)
+        st.info("Accédez à votre espace pour consulter vos absences et déposer des justificatifs.")
+
+        mat_bac_input = st.text_input("🎓 Numéro de Matricule BAC :", key="mat_bac_auth", placeholder="Ex: 12345678")
+
+        if mat_bac_input:
+            mat_bac_clean = str(mat_bac_input).strip().upper().replace(" ", "").replace("-", "")
+            df_match = pd.DataFrame()
+            col_mat_bac = None
+            for c in df_etu.columns:
+                c_up = str(c).strip().upper().replace('.', '').replace(' ', '').replace('_', '').replace('-', '')
+                if "MAT" in c_up and "BAC" in c_up:
+                    col_mat_bac = c
+                    break
+
+            if col_mat_bac:
+                mask_mat = df_etu[col_mat_bac].astype(str).str.strip().str.upper().str.replace(' ', '').str.replace('-', '') == mat_bac_clean
+                df_match = df_etu[mask_mat]
+            else:
+                for c in df_etu.columns:
+                    vals = df_etu[c].astype(str).str.strip().str.upper().str.replace(' ', '').str.replace('-', '')
+                    if vals.eq(mat_bac_clean).any():
+                        df_match = df_etu[vals == mat_bac_clean]
+                        break
+
+            if not df_match.empty:
+                etud_nom = str(df_match.iloc[0]['Nom_Complet']).strip()
+                etud_promo = str(df_match.iloc[0]['Promotion']).strip() if 'Promotion' in df_match.columns else ''
+                st.success(f"✅ Étudiant trouvé : **{etud_nom}** ({etud_promo})")
+
+                email_input = st.text_input("📧 Votre adresse email :", key="email_etud_auth", placeholder="ex: nom@email.com")
+
+                if email_input and "@" in str(email_input):
+                    if st.button("📧 Recevoir mon code d'accès", use_container_width=True, key="btn_otp"):
+                        import random
+                        otp_code = str(random.randint(100000, 999999))
+                        st.session_state.etudiant_otp = otp_code
+                        st.session_state.etudiant_otp_email = str(email_input).strip()
+
+                        sent = envoyer_otp_etudiant(email_input, etud_nom, otp_code)
+                        if sent:
+                            st.success(f"✅ Code envoyé à : `{email_input}` — Vérifiez votre boîte mail (et les spams).")
+                        else:
+                            st.warning(f"⚠️ Impossible d'envoyer l'email. Votre code (mode démo) : `{otp_code}`")
+
+                if st.session_state.get("etudiant_otp"):
+                    otp_input = st.text_input("🔑 Saisissez le code reçu par email :", type="password", key="otp_input_auth")
+                    if st.button("✅ Valider mon accès", use_container_width=True, key="btn_valider_otp"):
+                        if otp_input == st.session_state.get("etudiant_otp"):
+                            st.session_state.etudiant_auth = {
+                                "mat_bac": mat_bac_clean,
+                                "nom": etud_nom,
+                                "email": st.session_state.etudiant_otp_email,
+                                "promotion": etud_promo
+                            }
+                            st.session_state.etudiant_otp = None
+                            st.session_state.etudiant_otp_email = None
+                            st.success(f"🎓 Bienvenue {etud_nom} ! Accès autorisé...")
+                            time.sleep(0.8)
+                            st.rerun()
+                        else:
+                            st.error("❌ Code incorrect. Veuillez réessayer.")
+            else:
+                st.error("❌ Matricule BAC non reconnu dans la base étudiants.")
+
+        st.stop()
 
     # =============================================================================
     # ONGLETS
     # =============================================================================
     if is_enseignant_connecte:
         tab1, = st.tabs(["📝 Suivi d'Assiduite"])
+    elif etudiant_connecte:
+        tab2, = st.tabs(["📩 Justificatifs"])
     else:
         tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
+
 
     # =============================================================================
     # ONGLET 1 : SUIVI D'ASSIDUITE
@@ -969,13 +1067,42 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab2:
-            st.header("📩 Systeme de Gestion des Justificatifs")
-            st.caption("Depot etudiant et validation administration")
+            st.header("📩 Système de Gestion des Justificatifs")
+            st.caption("Dépôt étudiant et validation administration")
 
-            choix_vue = st.radio("Profil :", ["Etudiant (Depot)", "Administration (Decision)"], horizontal=True)
-            st.divider()
+            if etudiant_connecte:
+                # Mode étudiant connecté : accès direct au dépôt
+                choix_vue = "Etudiant (Depot)"
+                st.success(f"👤 Connecté en tant qu'étudiant : **{etudiant_connecte['nom']}** — Mat. BAC: {etudiant_connecte['mat_bac']}")
+                if st.button("🚪 Se déconnecter", use_container_width=True):
+                    st.session_state.etudiant_auth = None
+                    st.rerun()
+                st.divider()
+            else:
+                choix_vue = st.radio("Profil :", ["Etudiant (Depot)", "Administration (Decision)"], horizontal=True)
+                st.divider()
 
             if choix_vue == "Etudiant (Depot)":
+                st.subheader("📤 Soumettre une demande de réhabilitation")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if etudiant_connecte:
+                        promo_sel = etudiant_connecte["promotion"]
+                        st.markdown(f"**🎓 Promotion :** `{promo_sel}`")
+                        df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
+                        etudiant_sel = etudiant_connecte["nom"]
+                        st.markdown(f"**👤 Nom :** `{etudiant_sel}`")
+                    else:
+                        promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
+                        promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_depot")
+                        df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
+                        noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
+                        etudiant_sel = st.selectbox("Votre Nom :", noms_dispo, key="etud_depot")
+                with col2:
+                    st.markdown("**ℹ️ Informations**")
+                    st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
+
                 st.subheader("📤 Soumettre une demande de rehabilitation")
 
                 col1, col2 = st.columns(2)
