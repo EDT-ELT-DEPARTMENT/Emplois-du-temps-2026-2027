@@ -2157,15 +2157,7 @@ def run_edt():
 # =============================================================================
 # POINT D'ENTRÉE PRINCIPAL
 # =============================================================================
-if module_sel == "📊 Suivi d'Assiduité":
-    run_assiduite()
-else:
-    run_edt() 
-
-
-
-                     
-
+                  
 import streamlit as st
 import pandas as pd
 import os
@@ -2178,7 +2170,10 @@ import streamlit as st
 # =============================================================================
 # FONCTIONS UTILITAIRES PRO POUR L'EXPORT (PDF / HTML / EXCEL)
 # =============================================================================
-
+if module_sel == "📊 Suivi d'Assiduité":
+    run_assiduite()
+else:
+    run_edt()
 import zipfile
 
 def sanitize_for_pdf(text):
