@@ -981,14 +981,14 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab2:
-            st.header("📩 Système de Gestion des Justificatifs")
-            st.caption("dépôt étudiant et validation administration")
+            st.header("📩 Systeme de Gestion des Justificatifs")
+            st.caption("Depot etudiant et validation administration")
 
-            choix_vue = st.radio("Profil :", ["Etudiant (dépôt)", "Administration (Décision)"], horizontal=True)
+            choix_vue = st.radio("Profil :", ["Etudiant (Depot)", "Administration (Decision)"], horizontal=True)
             st.divider()
 
-            if choix_vue == "Etudiant (dépôt)":
-                st.subheader("📤 Soumettre une demande de réhabilitation")
+            if choix_vue == "Etudiant (Depot)":
+                st.subheader("📤 Soumettre une demande de rehabilitation")
 
                 # ─── IDENTIFICATION PAR MATRICULE BAC ───
                 if not COL_MAT_BAC:
@@ -1248,7 +1248,7 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab3:
-            st.header("📊 Registres et Bilans")
+            st.header("📊 Registres et Bilans Agreges")
 
             promo_filtre = st.selectbox(
                 "Filtrer par Promotion :",
@@ -1276,7 +1276,7 @@ def run_assiduite():
                                  "nom_etudiant", "matiere", "motif", "statut"]]
                 df_tab.columns = ["Date", "Promotion", "Charge", "Etudiant", "Matiere", "Motif", "Statut"]
 
-                st.subheader("📋 Registre général")
+                st.subheader("📋 Registre General")
                 st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
                 buf_xl = io.BytesIO()
@@ -1293,7 +1293,7 @@ def run_assiduite():
                         use_container_width=True
                     )
                 with c2:
-                    html_reg = generer_page_html(df_tab, "Registre général", df_tab.columns, df_tab.columns)
+                    html_reg = generer_page_html(df_tab, "Registre General", df_tab.columns, df_tab.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_reg,
@@ -1302,7 +1302,7 @@ def run_assiduite():
                         use_container_width=True
                     )
 
-                st.subheader("📚 Bilan par Etudiant et Matière")
+                st.subheader("📚 Bilan par Etudiant et Matiere")
                 df_bilan_mat = df_tab.groupby(["Etudiant", "Matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
