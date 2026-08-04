@@ -481,7 +481,7 @@ def run_assiduite():
             supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", etudiant).eq("matiere", matiere).execute()
             return True
         except Exception as e:
-            st.error(f"Erreur Supabase (rehabilitation) : {e}")
+            st.error(f"Erreur Supabase (réhabilitation) : {e}")
             return False
 
     def charger_requetes_supabase(statut=None, promotion=None):
