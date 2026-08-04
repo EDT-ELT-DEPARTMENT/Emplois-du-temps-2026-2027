@@ -1331,6 +1331,13 @@ def run_assiduite():
         with tab3:
             st.header("📊 Registres et Bilans Agreges")
 
+            pwd_admin_bilan = st.text_input("🔑 Code d'acces :", type="password", key="pwd_bilan_tab3")
+            if pwd_admin_bilan != CODE_ADMIN:
+                if pwd_admin_bilan != "":
+                    st.error("❌ Code incorrect.")
+                st.info("🔒 Veuillez saisir le code d'acces pour consulter les bilans et exports.")
+                st.stop()
+
             promo_filtre = st.selectbox(
                 "Filtrer par Promotion :",
                 sorted(df_etu["Promotion"].dropna().unique().tolist()),
