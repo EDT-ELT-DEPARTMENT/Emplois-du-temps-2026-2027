@@ -606,6 +606,87 @@ def run_assiduite():
             st.error(f"Erreur envoi email : {e}")
             return False
 
+    def envoyer_notification_absence_etudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause):
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"Signalement d'absence - {matiere}"
+            msg["From"] = "chef.department.elt.fge@gmail.com"
+            msg["To"] = str(email_dest).strip()
+            html_body = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
+<h1 style="margin:0;font-size:20px;">Departement d'Electrotechnique - FGE/UDL-SBA</h1>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduite - Annee 2026-2027</p>
+</div>
+<div style="background:#fef2f2;border-left:5px solid #ef4444;padding:15px;margin:20px;color:#991b1b;font-weight:600;">
+Vous avez ete signale(e) absent(e) lors d'une seance de cours.
+</div>
+<div style="padding:20px 30px;">
+<p style="color:#334155;margin-bottom:20px;">Bonjour <strong>{nom_etud}</strong>,</p>
+<p style="color:#64748b;font-size:14px;">L'enseignant ci-dessous a enregistre votre absence. Voici les details de la seance :</p>
+<table style="width:100%;border-collapse:collapse;margin-top:15px;">
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Matiere</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{matiere}</td></tr>
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Charge de cours</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{enseignant}</td></tr>
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Date</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{date_abs}</td></tr>
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Jour</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{jour}</td></tr>
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Horaire</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{horaire}</td></tr>
+<tr><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Motif enregistre</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{cause}</td></tr>
+</table>
+<p style="color:#64748b;font-size:13px;margin-top:20px;">Si vous estimez que cette absence est injustifiee, vous pouvez deposer un justificatif via l'onglet <strong>Justificatifs</strong> de la plateforme.</p>
+</div>
+<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
+Faculte de Genie Electrique - Universite Djillali Liabes - Sidi Bel Abbes<br>
+Cet email est genere automatiquement - merci de ne pas y repondre.
+</div>
+</div>
+</body>
+</html>"""
+            msg.attach(MIMEText(html_body, "html"))
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+            server.send_message(msg)
+            server.quit()
+            return True
+        except Exception as e:
+            st.warning(f"Notification email non envoyee : {e}")
+            return False
+
+    def trouver_email_etudiant(nom_etudiant, df_etudiants):
+        # 1. Priorité : base de données Supabase (email saisi lors de connexion étudiant)
+        if MODE_SUPABASE:
+            try:
+                res = supabase.table("etudiants_emails").select("email").eq("nom_complet", str(nom_etudiant).strip()).execute()
+                if res.data and len(res.data) > 0:
+                    email_db = str(res.data[0]["email"]).strip()
+                    if email_db and email_db.lower() not in ["nan", "none", ""]:
+                        return email_db
+            except Exception:
+                pass
+        # 2. Fallback : fichier Excel source (colonne Email / Mail / E-mail)
+        if df_etudiants is None or df_etudiants.empty:
+            return None
+        col_email = None
+        for c in df_etudiants.columns:
+            c_up = str(c).strip().upper()
+            if c_up in ["EMAIL", "E-MAIL", "MAIL", "COURRIEL", "ADRESSE EMAIL"]:
+                col_email = c
+                break
+        if not col_email:
+            return None
+        mask = df_etudiants["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_etudiant).strip().upper()
+        match = df_etudiants[mask]
+        if not match.empty:
+            val = str(match.iloc[0][col_email]).strip()
+            if val and val.lower() not in ["nan", "none", ""]:
+                return val
+        return None
+
     # =============================================================================
     # AUTHENTIFICATION ETUDIANT (Mat. BAC + OTP)
     # =============================================================================
@@ -672,6 +753,18 @@ def run_assiduite():
                                 "email": st.session_state.etudiant_otp_email,
                                 "promotion": etud_promo
                             }
+                            # Stockage persistant de l'email dans Supabase pour notifications futures
+                            if MODE_SUPABASE:
+                                try:
+                                    supabase.table("etudiants_emails").upsert({
+                                        "nom_complet": etud_nom,
+                                        "mat_bac": mat_bac_clean,
+                                        "email": st.session_state.etudiant_otp_email,
+                                        "promotion": etud_promo,
+                                        "derniere_connexion": datetime.now().isoformat()
+                                    }, on_conflict="nom_complet").execute()
+                                except Exception:
+                                    pass
                             st.session_state.etudiant_otp = None
                             st.session_state.etudiant_otp_email = None
                             st.success(f"🎓 Bienvenue {etud_nom} ! Accès autorisé...")
@@ -861,12 +954,34 @@ def run_assiduite():
                             }
                             if MODE_SUPABASE:
                                 if enregistrer_absence_supabase(payload):
+                                    # Envoi notification instantanee a l'etudiant
+                                    email_etu = trouver_email_etudiant(etud_non, df_etu)
+                                    if email_etu:
+                                        envoyer_notification_absence_etudiant(
+                                            email_etu, etud_non, sel_mat, sel_prof,
+                                            jour_abs, horaire_abs, str(date_abs),
+                                            cause_s if cause_s else "Non justifie"
+                                        )
+                                        st.info(f"📧 Notification envoyee a {etud_non} ({email_etu})")
+                                    else:
+                                        st.caption(f"ℹ️ Email de {etud_non} non trouve dans la base etudiants.")
                                     st.success(f"✅ Absence enregistree pour {etud_non} !")
                                     time.sleep(0.5)
                                     st.rerun()
                             else:
                                 payload["id"] = len(st.session_state.absences) + 1
                                 st.session_state.absences.append(payload)
+                                # Envoi notification instantanee a l'etudiant
+                                email_etu = trouver_email_etudiant(etud_non, df_etu)
+                                if email_etu:
+                                    envoyer_notification_absence_etudiant(
+                                        email_etu, etud_non, sel_mat, sel_prof,
+                                        jour_abs, horaire_abs, str(date_abs),
+                                        cause_s if cause_s else "Non justifie"
+                                    )
+                                    st.info(f"📧 Notification envoyee a {etud_non} ({email_etu})")
+                                else:
+                                    st.caption(f"ℹ️ Email de {etud_non} non trouve dans la base etudiants.")
                                 st.success(f"✅ Absence enregistree (mode local) pour {etud_non} !")
                                 time.sleep(0.5)
                                 st.rerun()
