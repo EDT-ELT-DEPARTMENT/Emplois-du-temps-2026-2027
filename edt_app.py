@@ -1021,86 +1021,111 @@ def run_assiduite():
                 # ─── CODE D'ACTIVATION PAR EMAIL (ENVOI SMTP RÉEL) ───
                 st.divider()
                 st.markdown("### 🔐 Activation du compte")
-                email_etu = st.text_input("📧 Votre adresse Email", key="email_etu_depot", placeholder="ex: nom.prenom@email.dz")
 
-                if email_etu and "@" in email_etu:
-                    if st.button("📩 Recevoir mon code d'activation", use_container_width=True, type="primary", key="btn_code_activation"):
-                        import secrets
-                        import smtplib
-                        from email.mime.text import MIMEText
-                        from email.mime.multipart import MIMEMultipart
+                # Clé unique pour cet étudiant dans le session_state
+                key_activ = f"etu_activé_{mat_bac_clean}"
 
-                        code_activation = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+                if not st.session_state.get(key_activ, False):
+                    email_etu = st.text_input("📧 Votre adresse Email", key="email_etu_depot", placeholder="ex: nom.prenom@email.dz")
 
-                        if "codes_activation_etu" not in st.session_state:
-                            st.session_state.codes_activation_etu = {}
+                    if email_etu and "@" in email_etu:
+                        if st.button("📩 Recevoir mon code d'activation", use_container_width=True, type="primary", key="btn_code_activation"):
+                            import secrets
+                            import smtplib
+                            from email.mime.text import MIMEText
+                            from email.mime.multipart import MIMEMultipart
 
-                        st.session_state.codes_activation_etu[mat_bac_clean] = {
-                            "code": code_activation,
-                            "email": email_etu,
-                            "nom": etudiant_sel,
-                            "promotion": promo_sel,
-                            "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M")
-                        }
+                            code_activation = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
 
-                        # ─── ENVOI SMTP RÉEL ───
-                        try:
-                            SMTP_SERVER = "smtp.gmail.com"
-                            SMTP_PORT = 587
-                            SMTP_USER = "chef.department.elt.fge@gmail.com"
-                            SMTP_PASS = "gkzs pdza yodb icvd"
+                            if "codes_activation_etu" not in st.session_state:
+                                st.session_state.codes_activation_etu = {}
 
-                            msg = MIMEMultipart()
-                            msg['Subject'] = "🔐 Votre code d'activation - Plateforme Suivi d'Assiduité ELT"
-                            msg['From'] = f"Département d'Électrotechnique <{SMTP_USER}>"
-                            msg['To'] = email_etu
+                            st.session_state.codes_activation_etu[mat_bac_clean] = {
+                                "code": code_activation,
+                                "email": email_etu,
+                                "nom": etudiant_sel,
+                                "promotion": promo_sel,
+                                "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M")
+                            }
 
-                            body_html = f"""
-                            <html>
-                            <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-                                <div style="max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
-                                    <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); padding: 20px; color: white; text-align: center;">
-                                        <h2 style="margin: 0;">Département d'Électrotechnique - UDL SBA</h2>
-                                        <p style="margin: 5px 0 0 0; opacity: 0.9;">Plateforme de Suivi d'Assiduité</p>
-                                    </div>
-                                    <div style="padding: 25px; background: #fff;">
-                                        <p>Bonjour <b>{etudiant_sel}</b>,</p>
-                                        <p>Vous avez demandé un code d'activation pour accéder à l'espace <b>Dépôt de justificatifs</b>.</p>
+                            # ─── ENVOI SMTP RÉEL ───
+                            try:
+                                SMTP_SERVER = "smtp.gmail.com"
+                                SMTP_PORT = 587
+                                SMTP_USER = "chef.department.elt.fge@gmail.com"
+                                SMTP_PASS = "gkzs pdza yodb icvd"
 
-                                        <div style="background: #f0f9ff; border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
-                                            <div style="font-size: 14px; color: #64748b; margin-bottom: 8px;">Votre code d'activation</div>
-                                            <div style="font-size: 36px; font-weight: bold; color: #1E3A8A; letter-spacing: 8px;">{code_activation}</div>
+                                msg = MIMEMultipart()
+                                msg['Subject'] = "🔐 Votre code d'activation - Plateforme Suivi d'Assiduité ELT"
+                                msg['From'] = f"Département d'Électrotechnique <{SMTP_USER}>"
+                                msg['To'] = email_etu
+
+                                body_html = f"""
+                                <html>
+                                <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+                                    <div style="max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+                                        <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); padding: 20px; color: white; text-align: center;">
+                                            <h2 style="margin: 0;">Département d'Électrotechnique - UDL SBA</h2>
+                                            <p style="margin: 5px 0 0 0; opacity: 0.9;">Plateforme de Suivi d'Assiduité</p>
                                         </div>
+                                        <div style="padding: 25px; background: #fff;">
+                                            <p>Bonjour <b>{etudiant_sel}</b>,</p>
+                                            <p>Vous avez demandé un code d'activation pour accéder à l'espace <b>Dépôt de justificatifs</b>.</p>
 
-                                        <p style="color: #b91c1c; font-weight: bold;">⏳ Ce code est valable 24 heures.</p>
-                                        <p>Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer cet email.</p>
-                                        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-                                        <p style="font-size: 12px; color: #94a3b8;">
-                                            Faculté de Génie Électrique - Département d'Électrotechnique<br>
-                                            Université Djillali Liabes - Sidi Bel Abbès
-                                        </p>
+                                            <div style="background: #f0f9ff; border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
+                                                <div style="font-size: 14px; color: #64748b; margin-bottom: 8px;">Votre code d'activation</div>
+                                                <div style="font-size: 36px; font-weight: bold; color: #1E3A8A; letter-spacing: 8px;">{code_activation}</div>
+                                            </div>
+
+                                            <p style="color: #b91c1c; font-weight: bold;">⏳ Ce code est valable 24 heures.</p>
+                                            <p>Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer cet email.</p>
+                                            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                                            <p style="font-size: 12px; color: #94a3b8;">
+                                                Faculté de Génie Électrique - Département d'Électrotechnique<br>
+                                                Université Djillali Liabes - Sidi Bel Abbès
+                                            </p>
+                                        </div>
                                     </div>
-                                </div>
-                            </body>
-                            </html>
-                            """
-                            msg.attach(MIMEText(body_html, 'html'))
+                                </body>
+                                </html>
+                                """
+                                msg.attach(MIMEText(body_html, 'html'))
 
-                            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-                            server.starttls()
-                            server.login(SMTP_USER, SMTP_PASS)
-                            server.send_message(msg)
-                            server.quit()
+                                server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                                server.starttls()
+                                server.login(SMTP_USER, SMTP_PASS)
+                                server.send_message(msg)
+                                server.quit()
 
-                            st.success(f"✅ Code d'activation envoyé avec succès à `{email_etu}` !")
-                            st.info("📩 Veuillez consulter votre boîte mail (et vos spams) pour récupérer le code.")
-                            st.balloons()
+                                st.success(f"✅ Code d'activation envoyé avec succès à `{email_etu}` !")
+                                st.info("📩 Veuillez consulter votre boîte mail (et vos spams) pour récupérer le code.")
+                                st.balloons()
 
-                        except Exception as e:
-                            st.error(f"❌ Erreur lors de l'envoi de l'email : {e}")
-                            st.warning("Le code a été généré mais n'a pas pu être envoyé. Veuillez réessayer ou contacter l'administrateur.")
-                elif email_etu:
-                    st.warning("⚠️ Veuillez saisir une adresse email valide.")
+                            except Exception as e:
+                                st.error(f"❌ Erreur lors de l'envoi de l'email : {e}")
+                                st.warning("Le code a été généré mais n'a pas pu être envoyé. Veuillez réessayer ou contacter l'administrateur.")
+                    elif email_etu:
+                        st.warning("⚠️ Veuillez saisir une adresse email valide.")
+
+                    # ─── SAISIE ET VÉRIFICATION DU CODE ───
+                    st.divider()
+                    st.markdown("### 🔑 Valider mon code d'activation")
+                    code_saisi = st.text_input("Entrez le code à 6 chiffres reçu par email", max_chars=6, key="code_saisi_depot")
+
+                    if st.button("✅ Valider le code", use_container_width=True, key="btn_valider_code"):
+                        stored = st.session_state.get("codes_activation_etu", {}).get(mat_bac_clean, {})
+                        if stored and str(stored.get("code", "")) == str(code_saisi).strip():
+                            st.session_state[key_activ] = True
+                            st.success("🔓 Compte activé avec succès ! Vous pouvez maintenant consulter vos absences et déposer vos justificatifs.")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("❌ Code incorrect. Veuillez vérifier votre email et réessayer.")
+
+                    # ─── BLOCAGE DE L'ACCÈS TANT QUE NON ACTIVÉ ───
+                    st.stop()
+                else:
+                    st.success(f"🔓 Compte activé — Bienvenue **{etudiant_sel}**")
 
                 st.divider()
                 st.markdown("### 📋 Mes absences signalées")
