@@ -203,7 +203,7 @@ def mapper_promotion(promo_edt):
             if code in p: return f"M2{code}"
     return p
 
-def trouver_matiere_promo(nom_ens_complet, df_edt):
+def trouver_matière_promo(nom_ens_complet, df_edt):
     nom_fam = extraire_nom_famille(nom_ens_complet)
     if not nom_fam or df_edt.empty:
         return pd.DataFrame()
@@ -318,8 +318,8 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
 
 
 def run_assiduite():
-    st.title("📊 Plateforme de gestion des emplois du temps et de Suivi d'Assiduité des Etudiants")
-    st.caption("Département d'Electrotechnique - Faculté de Génie Electrique - UDL-SBA - Année 2026-2027")
+    st.title("📊 Plateforme de Suivi d'Assiduite des Étudiants")
+    st.caption("Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA - Annee 2026-2027")
     
     # =============================================================================
     # CHARGEMENT DES DONNÉES (UNIFIÉ)
@@ -346,38 +346,38 @@ def run_assiduite():
             df_etu = lire_excel_robuste(up_etu)
             df_etu.columns = df_etu.columns.str.strip()
         except Exception as e:
-            st.error(f"❌ Erreur lecture étudiants : {e}")
+            st.error(f"❌ Erreur de lecture étudiants : {e}")
             return
         try:
             df_edt = lire_excel_robuste(up_edt)
             df_edt.columns = df_edt.columns.str.strip()
         except Exception as e:
-            st.error(f"❌ Erreur lecture EDT : {e}")
+            st.error(f"❌ Erreur de lecture EDT : {e}")
             return
         try:
             df_ens = lire_excel_robuste(up_ens, sheet_name=0)
             df_ens.columns = df_ens.columns.str.strip()
         except Exception as e:
-            st.error(f"❌ Erreur lecture enseignants : {e}")
+            st.error(f"❌ Erreur de lecture enseignants : {e}")
             return
     else:
         try:
             df_etu = lire_excel_robuste(FILE_ETUDIANTS)
             df_etu.columns = df_etu.columns.str.strip()
         except Exception as e:
-            st.error(f"❌ Erreur chargement étudiants : {e}")
+            st.error(f"❌ Erreur de chargement étudiants : {e}")
             return
         try:
             df_edt = lire_excel_robuste(FILE_EDT)
             df_edt.columns = df_edt.columns.str.strip()
         except Exception as e:
-            st.error(f"❌ Erreur chargement EDT : {e}")
+            st.error(f"❌ Erreur de chargement EDT : {e}")
             return
         try:
             df_ens = lire_excel_robuste(FILE_ENS, sheet_name=0)
             df_ens.columns = df_ens.columns.str.strip()
         except Exception as e:
-            st.error(f"❌ Erreur chargement enseignants : {e}")
+            st.error(f"❌ Erreur de chargement enseignants : {e}")
             return
 
     # Vérification finale
@@ -425,22 +425,22 @@ def run_assiduite():
         st.session_state.confirm_reset_abs = False
 
     # =============================================================================
-    if 'etudiant_auth' not in st.session_state:
-        st.session_state.etudiant_auth = None
-    if 'etudiant_otp' not in st.session_state:
-        st.session_state.etudiant_otp = None
-    if 'etudiant_otp_email' not in st.session_state:
-        st.session_state.etudiant_otp_email = None
+    if 'étudiant_auth' not in st.session_state:
+        st.session_state.étudiant_auth = None
+    if 'étudiant_otp' not in st.session_state:
+        st.session_state.étudiant_otp = None
+    if 'étudiant_otp_email' not in st.session_state:
+        st.session_state.étudiant_otp_email = None
 
     # FONCTIONS SUPABASE
     # =============================================================================
-    def charger_absences_supabase(matiere=None, promotion=None):
+    def charger_absences_supabase(matière=None, promotion=None):
         if not MODE_SUPABASE:
             return []
         try:
             query = supabase.table("suivi_assiduite_2026").select("*")
-            if matiere:
-                query = query.eq("matiere", matiere)
+            if matière:
+                query = query.eq("matière", matière)
             if promotion:
                 query = query.eq("promotion", promotion)
             res = query.execute()
@@ -459,21 +459,21 @@ def run_assiduite():
             st.error(f"Erreur Supabase (enregistrer) : {e}")
             return False
 
-    def supprimer_absences_supabase(matiere, promotion):
+    def supprimer_absences_supabase(matière, promotion):
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_assiduite_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
+            supabase.table("suivi_assiduite_2026").delete().eq("matière", matière).eq("promotion", promotion).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (supprimer) : {e}")
             return False
 
-    def rehabiliter_absences_etudiant_supabase(etudiant, matiere):
+    def rehabiliter_absences_étudiant_supabase(étudiant, matière):
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", etudiant).eq("matiere", matiere).execute()
+            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", étudiant).eq("matière", matière).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (rehabilitation) : {e}")
@@ -524,42 +524,42 @@ def run_assiduite():
             st.error(f"Erreur Supabase (reset) : {e}")
             return False
 
-    def get_absences_etudiant(nom_etudiant):
+    def get_absences_étudiant(nom_étudiant):
         if MODE_SUPABASE:
             try:
-                res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
+                res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_étudiant).execute()
                 return res.data if res.data else []
             except Exception as e:
-                st.error(f"Erreur chargement absences : {e}")
+                st.error(f"Erreur de chargement absences : {e}")
                 return []
         else:
-            return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]
+            return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_étudiant]
 
-    def trouver_requete_existante(nom_etudiant, matiere):
+    def trouver_requete_existante(nom_étudiant, matière):
         if MODE_SUPABASE:
             try:
                 res = supabase.table("requetes_absences").select("*")\
-                    .eq("nom_etudiant", nom_etudiant)\
-                    .eq("matiere", matiere)\
+                    .eq("nom_étudiant", nom_étudiant)\
+                    .eq("matière", matière)\
                     .eq("statut", "En attente").execute()
                 return res.data[0] if res.data else None
             except Exception as e:
                 st.error(f"Erreur recherche requête : {e}")
                 return None
         for r in st.session_state.requetes:
-            if (r.get("nom_etudiant") == nom_etudiant and 
-                r.get("matiere") == matiere and 
+            if (r.get("nom_étudiant") == nom_étudiant and 
+                r.get("matière") == matière and 
                 r.get("statut") == "En attente"):
                 return r
         return None
 
-    def supprimer_derniere_absence_supabase(etudiant, matiere, promotion):
+    def supprimer_derniere_absence_supabase(étudiant, matière, promotion):
         if not MODE_SUPABASE:
             return False
         try:
             res = supabase.table("suivi_assiduite_2026").select("*")\
-                .eq("etud_non_eligible", etudiant)\
-                .eq("matiere", matiere)\
+                .eq("etud_non_eligible", étudiant)\
+                .eq("matière", matière)\
                 .eq("promotion", promotion)\
                 .order("id", desc=True).limit(1).execute()
             if res.data:
@@ -571,11 +571,11 @@ def run_assiduite():
             st.error(f"Erreur Supabase (annulation) : {e}")
             return False
 
-    def supprimer_derniere_absence_locale(etudiant, matiere, promotion):
+    def supprimer_derniere_absence_locale(étudiant, matière, promotion):
         candidates = [
             (idx, a) for idx, a in enumerate(st.session_state.absences)
-            if a.get("etud_non_eligible") == etudiant
-            and a.get("matiere") == matiere
+            if a.get("etud_non_eligible") == étudiant
+            and a.get("matière") == matière
             and a.get("promotion") == promotion
         ]
         if candidates:
@@ -587,7 +587,7 @@ def run_assiduite():
 
     # =============================================================================
 
-    def envoyer_otp_etudiant(email_dest, nom_etud, code_otp):
+    def envoyer_otp_étudiant(email_dest, nom_etud, code_otp):
         try:
             import smtplib
             from email.mime.text import MIMEText
@@ -606,7 +606,7 @@ def run_assiduite():
             st.error(f"Erreur envoi email : {e}")
             return False
 
-    def envoyer_notification_absence_etudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause, absences_etudiant=None):
+    def envoyer_notification_absence_étudiant(email_dest, nom_etud, matière, enseignant, jour, horaire, date_abs, cause, absences_étudiant=None):
         try:
             import smtplib
             from email.mime.text import MIMEText
@@ -614,9 +614,9 @@ def run_assiduite():
 
             # ═══ RÉCAPITULATIF DES ABSENCES PAR MATIÈRE ═══
             recap_html = ""
-            if absences_etudiant:
-                matieres_abs = [a.get("matiere", "Inconnue") for a in absences_etudiant]
-                compteur = Counter(matieres_abs)
+            if absences_étudiant:
+                matières_abs = [a.get("matière", "Inconnue") for a in absences_étudiant]
+                compteur = Counter(matières_abs)
                 if compteur:
                     recap_rows = ""
                     for mat, count in sorted(compteur.items()):
@@ -638,7 +638,7 @@ def run_assiduite():
                     """
 
             msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"Signalement d'absence - {matiere}"
+            msg["Subject"] = f"Signalement d'absence - {matière}"
             msg["From"] = "chef.department.elt.fge@gmail.com"
             msg["To"] = str(email_dest).strip()
 
@@ -657,7 +657,7 @@ Vous avez été signalé(e) absent(e) lors d'une séance de cours.
 <p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_etud}</strong>,</p>
 <p style="color:#64748b;font-size:14px;">L'enseignant ci-dessous a enregistré votre absence. Voici les details de la séance :</p>
 <table style="width:100%;border-collapse:collapse;margin-top:15px;">
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Matiere</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{matiere}</td></tr>
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Matière</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{matière}</td></tr>
 <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Charge de cours</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{enseignant}</td></tr>
 <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Date</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{date_abs}</td></tr>
 <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Jour</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{jour}</td></tr>
@@ -692,11 +692,11 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             st.warning(f"Notification email non envoyee : {e}")
             return False
 
-    def trouver_email_etudiant(nom_etudiant, df_etudiants):
+    def trouver_email_étudiant(nom_étudiant, df_étudiants):
         # 1. Priorité : base de données Supabase (email saisi lors de connexion étudiant)
         if MODE_SUPABASE:
             try:
-                res = supabase.table("etudiants_emails").select("email").eq("nom_complet", str(nom_etudiant).strip()).execute()
+                res = supabase.table("étudiants_emails").select("email").eq("nom_complet", str(nom_étudiant).strip()).execute()
                 if res.data and len(res.data) > 0:
                     email_db = str(res.data[0]["email"]).strip()
                     if email_db and email_db.lower() not in ["nan", "none", ""]:
@@ -704,18 +704,18 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             except Exception:
                 pass
         # 2. Fallback : fichier Excel source (colonne Email / Mail / E-mail)
-        if df_etudiants is None or df_etudiants.empty:
+        if df_étudiants is None or df_étudiants.empty:
             return None
         col_email = None
-        for c in df_etudiants.columns:
+        for c in df_étudiants.columns:
             c_up = str(c).strip().upper()
             if c_up in ["EMAIL", "E-MAIL", "MAIL", "COURRIEL", "ADRESSE EMAIL"]:
                 col_email = c
                 break
         if not col_email:
             return None
-        mask = df_etudiants["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_etudiant).strip().upper()
-        match = df_etudiants[mask]
+        mask = df_étudiants["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_étudiant).strip().upper()
+        match = df_étudiants[mask]
         if not match.empty:
             val = str(match.iloc[0][col_email]).strip()
             if val and val.lower() not in ["nan", "none", ""]:
@@ -730,9 +730,9 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
     is_enseignant_connecte = user is not None and user.get("role") != "admin"
     is_admin_edt = user is not None and user.get("role") == "admin"
 
-    etudiant_connecte = st.session_state.get("etudiant_auth")
+    étudiant_connecte = st.session_state.get("étudiant_auth")
 
-    if not is_enseignant_connecte and not etudiant_connecte and not is_admin_edt:
+    if not is_enseignant_connecte and not étudiant_connecte and not is_admin_edt:
         st.markdown("<h3 style='text-align:center;color:#1E3A8A;'>🔐 Portail Étudiant</h3>", unsafe_allow_html=True)
         st.info("Accédez à votre espace pour consulter vos absences et déposer des justificatifs.")
 
@@ -769,39 +769,39 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                     if st.button("📧 Recevoir mon code d'accès", use_container_width=True, key="btn_otp"):
                         import random
                         otp_code = str(random.randint(100000, 999999))
-                        st.session_state.etudiant_otp = otp_code
-                        st.session_state.etudiant_otp_email = str(email_input).strip()
+                        st.session_state.étudiant_otp = otp_code
+                        st.session_state.étudiant_otp_email = str(email_input).strip()
 
-                        sent = envoyer_otp_etudiant(email_input, etud_nom, otp_code)
+                        sent = envoyer_otp_étudiant(email_input, etud_nom, otp_code)
                         if sent:
                             st.success(f"✅ Code envoyé à : `{email_input}` — Vérifiez votre boîte mail (et les spams).")
                         else:
                             st.warning(f"⚠️ Impossible d'envoyer l'email. Votre code (mode démo) : `{otp_code}`")
 
-                if st.session_state.get("etudiant_otp"):
+                if st.session_state.get("étudiant_otp"):
                     otp_input = st.text_input("🔑 Saisissez le code reçu par email :", type="password", key="otp_input_auth")
                     if st.button("✅ Valider mon accès", use_container_width=True, key="btn_valider_otp"):
-                        if otp_input == st.session_state.get("etudiant_otp"):
-                            st.session_state.etudiant_auth = {
+                        if otp_input == st.session_state.get("étudiant_otp"):
+                            st.session_state.étudiant_auth = {
                                 "mat_bac": mat_bac_clean,
                                 "nom": etud_nom,
-                                "email": st.session_state.etudiant_otp_email,
+                                "email": st.session_state.étudiant_otp_email,
                                 "promotion": etud_promo
                             }
                             # Stockage persistant de l'email dans Supabase pour notifications futures
                             if MODE_SUPABASE:
                                 try:
-                                    supabase.table("etudiants_emails").upsert({
+                                    supabase.table("étudiants_emails").upsert({
                                         "nom_complet": etud_nom,
                                         "mat_bac": mat_bac_clean,
-                                        "email": st.session_state.etudiant_otp_email,
+                                        "email": st.session_state.étudiant_otp_email,
                                         "promotion": etud_promo,
                                         "derniere_connexion": datetime.now().isoformat()
                                     }, on_conflict="nom_complet").execute()
                                 except Exception:
                                     pass
-                            st.session_state.etudiant_otp = None
-                            st.session_state.etudiant_otp_email = None
+                            st.session_state.étudiant_otp = None
+                            st.session_state.étudiant_otp_email = None
                             st.success(f"🎓 Bienvenue {etud_nom} ! Accès autorisé...")
                             time.sleep(0.8)
                             st.rerun()
@@ -823,7 +823,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
         sel_prof = ""
         sel_mat = ""
         promo_c = ""
-        df_matiere = pd.DataFrame()
+        df_matière = pd.DataFrame()
 
         if is_enseignant_connecte:
             sel_prof = user['nom_officiel']
@@ -841,24 +841,24 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             with c2:
                 st.markdown("*Supervision complète — Toutes les promotions*")
         else:
-            pwd = st.text_input("🔑 Code d'acces :", type="password", key="pwd_tab1")
+            pwd = st.text_input("🔑 Code d'accès :", type="password", key="pwd_tab1")
             if pwd == CODE_ADMIN:
                 c1, c2 = st.columns(2)
                 with c1:
-                    sel_prof = st.selectbox("👤 Selectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1")
+                    sel_prof = st.selectbox("👤 Sélectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1")
             elif pwd != "":
                 st.error("❌ Code incorrect.")
 
         # SUITE COMMUNE
         if sel_prof:
-            df_matiere = trouver_matiere_promo(sel_prof, df_edt)
-            if not df_matiere.empty:
-                liste_mats = sorted(df_matiere["Enseignements"].dropna().unique().tolist())
+            df_matière = trouver_matière_promo(sel_prof, df_edt)
+            if not df_matière.empty:
+                liste_mats = sorted(df_matière["Enseignements"].dropna().unique().tolist())
                 with c2:
-                    sel_mat = st.selectbox("📚 Selectionnez la Matiere :", [""] + liste_mats, key="mat_T1")
+                    sel_mat = st.selectbox("📚 Sélectionnez la Matière :", [""] + liste_mats, key="mat_T1")
                 
                 if sel_mat:
-                    info_rows = df_matiere[df_matiere["Enseignements"] == sel_mat]
+                    info_rows = df_matière[df_matière["Enseignements"] == sel_mat]
                     if not info_rows.empty:
                         # 1. Promotion brute dans l'EDT
                         promo_edt_brut = str(info_rows.iloc[0]["Promotion"]).strip()
@@ -886,14 +886,14 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
 
             if not df_p.empty:
                 noms_e = sorted(df_p["Nom_Complet"].tolist())
-                st.info(f"📍 Promotion detectee : **{promo_c}** | **{len(noms_e)}** étudiants")
+                st.info(f"📍 Promotion détectée : **{promo_c}** | **{len(noms_e)}** étudiants")
 
                 if MODE_SUPABASE:
                     absences_filtrees = charger_absences_supabase(sel_mat, promo_c)
                 else:
                     absences_filtrees = [
                         a for a in st.session_state.absences
-                        if a.get("matiere") == sel_mat and a.get("promotion") == promo_c
+                        if a.get("matière") == sel_mat and a.get("promotion") == promo_c
                     ]
                 df_db_full = pd.DataFrame(absences_filtrees)
 
@@ -905,10 +905,10 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         col_mat_bac = c
                         break
 
-                st.markdown("#### 📥 Enregistrement d'une Absence")
+                st.markdown("#### 📥 Enregistrement d'une absence")
                 cn1, cn2, cn3 = st.columns(3)
                 with cn1:
-                    etud_non = st.selectbox("👤 Etudiant :", [""] + noms_e, key="ne_et_t1")
+                    etud_non = st.selectbox("👤 Étudiant :", [""] + noms_e, key="ne_et_t1")
                     if etud_non and col_mat_bac:
                         mat_bac_val = df_p[df_p["Nom_Complet"] == etud_non][col_mat_bac]
                         if not mat_bac_val.empty:
@@ -930,11 +930,11 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                 # ─── COMPTEUR NUMÉRIQUE D'ABSENCES ───
                 if etud_non and status_assid == "Absent":
                     if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
-                        absences_etu_matiere = df_db_full[df_db_full["etud_non_eligible"] == etud_non]
-                        nb_abs_matiere = len(absences_etu_matiere)
-                        nb_abs_justif = len(absences_etu_matiere[absences_etu_matiere.get("justifie") == True]) if "justifie" in absences_etu_matiere.columns else 0
+                        absences_etu_matière = df_db_full[df_db_full["etud_non_eligible"] == etud_non]
+                        nb_abs_matière = len(absences_etu_matière)
+                        nb_abs_justif = len(absences_etu_matière[absences_etu_matière.get("justifie") == True]) if "justifie" in absences_etu_matière.columns else 0
                     else:
-                        nb_abs_matiere = 0
+                        nb_abs_matière = 0
                         nb_abs_justif = 0
 
                     if MODE_SUPABASE:
@@ -947,39 +947,39 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                     st.markdown("<div style='margin:10px 0;'>", unsafe_allow_html=True)
                     c1, c2, c3, c4 = st.columns(4)
                     with c1:
-                        color = "#ef4444" if nb_abs_matiere >= 5 else "#f59e0b" if nb_abs_matiere >= 3 else "#22c55e"
-                        st.markdown(f"<div style='background:{color}15;border:2px solid {color};border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:{color};'>{nb_abs_matiere}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>🔢 Absences matière</div></div>", unsafe_allow_html=True)
+                        color = "#ef4444" if nb_abs_matière >= 5 else "#f59e0b" if nb_abs_matière >= 3 else "#22c55e"
+                        st.markdown(f"<div style='background:{color}15;border:2px solid {color};border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:{color};'>{nb_abs_matière}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>🔢 Absences matière</div></div>", unsafe_allow_html=True)
                     with c2:
                         st.markdown(f"<div style='background:#22c55e15;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#22c55e;'>{nb_abs_justif}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>✅ Justifiées</div></div>", unsafe_allow_html=True)
                     with c3:
                         st.markdown(f"<div style='background:#3b82f615;border:2px solid #3b82f6;border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#3b82f6;'>{nb_abs_global}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>🌍 Total global</div></div>", unsafe_allow_html=True)
                     with c4:
-                        reste = max(0, 5 - nb_abs_matiere)
+                        reste = max(0, 5 - nb_abs_matière)
                         color_r = "#ef4444" if reste == 0 else "#f59e0b" if reste <= 2 else "#22c55e"
                         st.markdown(f"<div style='background:{color_r}15;border:2px solid {color_r};border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:{color_r};'>{reste}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>⏳ Avant exclusion</div></div>", unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
 
-                    if nb_abs_matiere >= 5:
+                    if nb_abs_matière >= 5:
                         st.error(f"🚫 **EXCLU de la matière {sel_mat}** — Seuil de 5 absences atteint.")
-                    elif nb_abs_matiere == 4:
+                    elif nb_abs_matière == 4:
                         st.warning(f"⚠️ Attention : 4 absences dans {sel_mat}. Une prochaine absence = exclusion.")
                     else:
-                        st.info(f"ℹ️ {nb_abs_matiere} absence(s) dans {sel_mat}. Seuil d'exclusion : 5.")
+                        st.info(f"ℹ️ {nb_abs_matière} absence(s) dans {sel_mat}. Seuil d'exclusion : 5.")
 
                 # ─── BOUTONS D'ACTION ───
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.button("💾 ENREGISTRER L'ABSENCE", use_container_width=True, type="primary"):
                         if not etud_non:
-                            st.error("❌ Veuillez selectionner un etudiant.")
+                            st.error("❌ Veuillez sélectionner un étudiant.")
                         elif status_assid != "Absent":
-                            st.warning("⚠️ L'enregistrement necessite le statut 'Absent'.")
+                            st.warning("⚠️ L'enregistrement nécessite le statut 'Absent'.")
                         else:
                             # ═══ VÉRIFICATION ANTI-DOUBLON ═══
                             absence_existante = False
                             if MODE_SUPABASE:
                                 try:
-                                    res = supabase.table("suivi_assiduite_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
+                                    res = supabase.table("suivi_assiduite_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matière", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
                                     if res.data:
                                         absence_existante = True
                                 except Exception:
@@ -987,7 +987,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                             else:
                                 for a in st.session_state.absences:
                                     if (a.get("etud_non_eligible") == etud_non and
-                                        a.get("matiere") == sel_mat and
+                                        a.get("matière") == sel_mat and
                                         a.get("jour_absence") == jour_abs and
                                         a.get("horaire_absence") == horaire_abs and
                                         a.get("date_absence") == str(date_abs)):
@@ -999,7 +999,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                             else:
                                 payload = {
                                     "enseignant": sel_prof,
-                                    "matiere": sel_mat,
+                                    "matière": sel_mat,
                                     "promotion": promo_c,
                                     "etud_non_eligible": etud_non,
                                     "cause_non_eligibilite": cause_s if cause_s else "Non justifie",
@@ -1011,37 +1011,37 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                 }
                                 if MODE_SUPABASE:
                                     if enregistrer_absence_supabase(payload):
-                                        # Envoi notification instantanee a l'etudiant
-                                        email_etu = trouver_email_etudiant(etud_non, df_etu)
+                                        # Envoi notification instantanee a l'étudiant
+                                        email_etu = trouver_email_étudiant(etud_non, df_etu)
                                         if email_etu:
-                                            envoyer_notification_absence_etudiant(
+                                            envoyer_notification_absence_étudiant(
                                                 email_etu, etud_non, sel_mat, sel_prof,
                                                 jour_abs, horaire_abs, str(date_abs),
                                                 cause_s if cause_s else "Non justifie",
-                                                get_absences_etudiant(etud_non)
+                                                get_absences_étudiant(etud_non)
                                             )
-                                            st.info(f"📧 Notification envoyee a {etud_non} ({email_etu})")
+                                            st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
                                         else:
-                                            st.caption(f"ℹ️ Email de {etud_non} non trouve dans la base etudiants.")
-                                        st.success(f"✅ Absence enregistree pour {etud_non} !")
+                                            st.caption(f"ℹ️ Email de {etud_non} non trouvé dans la base étudiants.")
+                                        st.success(f"✅ Absence enregistrée pour {etud_non} !")
                                         time.sleep(0.5)
                                         st.rerun()
                                 else:
                                     payload["id"] = len(st.session_state.absences) + 1
                                     st.session_state.absences.append(payload)
-                                    # Envoi notification instantanee a l'etudiant
-                                    email_etu = trouver_email_etudiant(etud_non, df_etu)
+                                    # Envoi notification instantanee a l'étudiant
+                                    email_etu = trouver_email_étudiant(etud_non, df_etu)
                                     if email_etu:
-                                        envoyer_notification_absence_etudiant(
+                                        envoyer_notification_absence_étudiant(
                                             email_etu, etud_non, sel_mat, sel_prof,
                                             jour_abs, horaire_abs, str(date_abs),
                                             cause_s if cause_s else "Non justifie",
-                                            get_absences_etudiant(etud_non)
+                                            get_absences_étudiant(etud_non)
                                         )
-                                        st.info(f"📧 Notification envoyee a {etud_non} ({email_etu})")
+                                        st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
                                     else:
-                                        st.caption(f"ℹ️ Email de {etud_non} non trouve dans la base etudiants.")
-                                    st.success(f"✅ Absence enregistree (mode local) pour {etud_non} !")
+                                        st.caption(f"ℹ️ Email de {etud_non} non trouvé dans la base étudiants.")
+                                    st.success(f"✅ Absence enregistrée (mode locale) pour {etud_non} !")
                                     time.sleep(0.5)
                                     st.rerun()
 
@@ -1063,33 +1063,33 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                 st.warning("⚠️ Aucune absence à annuler pour cet étudiant dans cette matière.")
                 # LISTE GLOBALE DES ABSENCES
                 st.divider()
-                st.subheader("📋 Liste Globale des Absences")
+                st.subheader("📋 Liste globale des absences")
 
                 if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
                     if "justifie" not in df_db_full.columns:
                         df_db_full["justifie"] = False
                     df_db_full["justifie"] = df_db_full["justifie"].fillna(False)
                     df_liste = df_db_full.copy()
-                    df_liste["Statut Justif"] = df_liste["justifie"].apply(lambda x: "✅ Justifiée" if x else "❌ Non justifiée")
-                    df_count_mat = df_liste.groupby(["etud_non_eligible", "matiere"]).size().reset_index(name="Abs Matiere")
-                    df_liste = df_liste.merge(df_count_mat, on=["etud_non_eligible", "matiere"], how="left")
-                    df_liste["Statut Exclusion"] = df_liste["Abs Matiere"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Eligible")
+                    df_liste["Statut justificatif"] = df_liste["justifie"].apply(lambda x: "✅ Justifiée" if x else "❌ Non justifiée")
+                    df_count_mat = df_liste.groupby(["etud_non_eligible", "matière"]).size().reset_index(name="Abs Matière")
+                    df_liste = df_liste.merge(df_count_mat, on=["etud_non_eligible", "matière"], how="left")
+                    df_liste["Statut exclusion"] = df_liste["Abs Matière"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Eligible")
 
                     affichage_cols = {
-                        "enseignant": "Charge de Cours",
-                        "matiere": "Matiere",
+                        "enseignant": "Chargé de cours",
+                        "matière": "Matière",
                         "promotion": "Promotion",
-                        "etud_non_eligible": "Etudiant",
+                        "etud_non_eligible": "Étudiant",
                         "jour_absence": "Jour",
                         "date_absence": "Date",
                         "horaire_absence": "Horaire",
                         "cause_non_eligibilite": "Motif",
-                        "Statut Justif": "Justification",
-                        "Abs Matiere": "🔢 Nb (cette matière)",
-                        "Statut Exclusion": "Statut"
+                        "Statut justificatif": "Justification",
+                        "Abs Matière": "🔢 Nb (cette matière)",
+                        "Statut exclusion": "Statut"
                     }
                     df_aff = df_liste[list(affichage_cols.keys())].rename(columns=affichage_cols)
-                    df_aff = df_aff.sort_values(by=["Etudiant", "Date"], ascending=[True, False])
+                    df_aff = df_aff.sort_values(by=["Étudiant", "Date"], ascending=[True, False])
                     st.dataframe(df_aff, use_container_width=True, hide_index=True)
 
                     if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary"):
@@ -1110,8 +1110,104 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                     st.info("ℹ️ Aucune absence enregistrée dans l'historique global.")
 
                 # RAPPORT OFFICIEL EXCEL
+                # ─── SUIVI DES ABSENCES SIGNALÉES PAR L'ENSEIGNANT ───
+                if is_enseignant_connecte and sel_mat and promo_c:
+                    st.divider()
+                    st.subheader("👁️ Suivi des absences que j'ai signalées")
+
+                    # Récupération des absences de cet enseignant pour cette matière
+                    if MODE_SUPABASE:
+                        abs_ens = charger_absences_supabase(sel_mat, promo_c)
+                        abs_ens = [a for a in abs_ens if a.get("enseignant") == sel_prof]
+                    else:
+                        abs_ens = [a for a in st.session_state.absences 
+                                   if a.get("enseignant") == sel_prof 
+                                   and a.get("matiere") == sel_mat 
+                                   and a.get("promotion") == promo_c]
+
+                    if abs_ens:
+                        # Grouper par étudiant
+                        suivi_etu = defaultdict(lambda: {"total": 0, "justifiees": 0, "requete": None})
+
+                        for a in abs_ens:
+                            nom_e = a.get("etud_non_eligible")
+                            suivi_etu[nom_e]["total"] += 1
+                            if a.get("justifie"):
+                                suivi_etu[nom_e]["justifiees"] += 1
+
+                        # Récupérer les requêtes pour ces étudiants et cette matière
+                        if MODE_SUPABASE:
+                            try:
+                                for nom_e in suivi_etu.keys():
+                                    res_req = supabase.table("requetes_absences").select("*")                                        .eq("nom_etudiant", nom_e)                                        .eq("matiere", sel_mat)                                        .order("id", desc=True).limit(1).execute()
+                                    if res_req.data:
+                                        suivi_etu[nom_e]["requete"] = res_req.data[0]
+                            except Exception:
+                                pass
+                        else:
+                            for r in st.session_state.requetes:
+                                if r.get("matiere") == sel_mat and r.get("nom_etudiant") in suivi_etu:
+                                    suivi_etu[r.get("nom_etudiant")]["requete"] = r
+
+                        # Préparer le DataFrame d'affichage
+                        data_suivi = []
+                        for nom_e, info in sorted(suivi_etu.items()):
+                            req = info["requete"]
+                            if req:
+                                statut_req = req.get("statut", "—")
+                                motif_req = req.get("motif", "—")
+                            else:
+                                statut_req = "Aucune demande"
+                                motif_req = "—"
+
+                            non_just = info["total"] - info["justifiees"]
+                            data_suivi.append({
+                                "Étudiant": nom_e,
+                                "Absences totales": info["total"],
+                                "Justifiées": info["justifiees"],
+                                "Non justifiées": non_just,
+                                "Statut justificatif": statut_req,
+                                "Motif déposé": motif_req
+                            })
+
+                        df_suivi = pd.DataFrame(data_suivi)
+                        st.dataframe(df_suivi, use_container_width=True, hide_index=True)
+
+                        # Vue détaillée par étudiant
+                        st.markdown("#### 🔍 Détail par étudiant")
+                        etu_suivi = st.selectbox("Sélectionner un étudiant :", [""] + list(suivi_etu.keys()), key="suivi_etu_select")
+                        if etu_suivi:
+                            details = [a for a in abs_ens if a.get("etud_non_eligible") == etu_suivi]
+                            df_detail = pd.DataFrame(details)
+                            if not df_detail.empty:
+                                cols_aff = ["date_absence", "jour_absence", "horaire_absence", "cause_non_eligibilite", "justifie"]
+                                df_aff = df_detail[cols_aff].rename(columns={
+                                    "date_absence": "Date",
+                                    "jour_absence": "Jour",
+                                    "horaire_absence": "Horaire",
+                                    "cause_non_eligibilite": "Motif initial",
+                                    "justifie": "Justifiée"
+                                })
+                                st.dataframe(df_aff, use_container_width=True, hide_index=True)
+
+                                # Info sur la dernière requête
+                                req_info = suivi_etu[etu_suivi]["requete"]
+                                if req_info:
+                                    st.markdown(f"""
+                                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:10px;">
+                                        <b>📋 Dernière demande de justification :</b><br>
+                                        <b>Statut :</b> <span style="color:{'#166534' if 'Favorable' in str(req_info.get('statut')) else '#991b1b' if 'Defavorable' in str(req_info.get('statut')) else '#92400e'};">{req_info.get('statut')}</span><br>
+                                        <b>Motif :</b> {req_info.get('motif', '—')}<br>
+                                        <b>Date de dépôt :</b> {req_info.get('date_demande', '—')}
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                else:
+                                    st.info("Aucune demande de justification déposée par cet étudiant.")
+                    else:
+                        st.info("Vous n'avez signalé aucune absence pour cette matière et cette promotion.")
+
                 st.divider()
-                st.subheader("📥 Rapport Officiel Excel — Liste d'Éligibilité")
+                st.subheader("📥 Rapport officiel Excel — Liste d'Éligibilité")
 
                 toutes_promos = sorted(df_etu["Promotion"].dropna().unique().tolist())
                 promo_rapport = st.selectbox(
@@ -1130,7 +1226,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         else:
                             absences_cours = [
                                 a for a in st.session_state.absences
-                                if a.get("matiere") == sel_mat and a.get("promotion") == promo_rapport
+                                if a.get("matière") == sel_mat and a.get("promotion") == promo_rapport
                             ]
                         df_abs_cours = pd.DataFrame(absences_cours)
 
@@ -1151,7 +1247,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         df_liste_finale["Statut"] = df_liste_finale["Nom_Complet"].apply(
                             lambda x: "❌ Non Eligible (Absent)" if x in absents_noms else "✅ Eligible"
                         )
-                        df_liste_finale["Motif du Retrait"] = df_liste_finale["Nom_Complet"].map(
+                        df_liste_finale["Motif du retrait"] = df_liste_finale["Nom_Complet"].map(
                             lambda x: absents_details.get(x, {}).get("motif", "")
                         )
                         df_liste_finale["Date Absence"] = df_liste_finale["Nom_Complet"].map(
@@ -1165,15 +1261,15 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         )
 
                         df_export = df_liste_finale[[
-                            "Nom_Complet", "Statut", "Motif du Retrait",
+                            "Nom_Complet", "Statut", "Motif du retrait",
                             "Date Absence", "Jour", "Horaire"
                         ]].rename(columns={
                             "Nom_Complet": "Nom et Prénom",
-                            "Motif du Retrait": "Motif Absence",
+                            "Motif du retrait": "Motif absence",
                             "Date Absence": "Date",
                             "Horaire": "Horaire"
                         })
-                        df_export["Matiere"] = sel_mat
+                        df_export["Matière"] = sel_mat
                         df_export["Charge"] = sel_prof
                         df_export["Promotion"] = promo_rapport
 
@@ -1201,7 +1297,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                             ws.merge_range('A1:I1', "UNIVERSITE DJILLALI LIABES - SIDI BEL ABBES", fmt_title)
                             ws.merge_range('A2:I2', "Faculte de Genie Electrique - Departement d'Electrotechnique", fmt_sub)
                             ws.merge_range('A3:I3', "LISTE D'ELIGIBILITE A L'EXAMEN", fmt_title)
-                            ws.write('A5', "Matiere :", fmt_bold); ws.write('B5', sel_mat)
+                            ws.write('A5', "Matière :", fmt_bold); ws.write('B5', sel_mat)
                             ws.write('A6', "Enseignant :", fmt_bold); ws.write('B6', sel_prof)
                             ws.write('D5', "Promotion :", fmt_bold); ws.write('E5', promo_rapport)
                             ws.write('D6', "Date export :", fmt_bold); ws.write('E6', datetime.now().strftime('%d/%m/%Y'))
@@ -1221,11 +1317,11 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
 
                             ws.freeze_panes(9, 0)
 
-                        nb_eligibles = len(df_export[df_export["Statut"].str.contains("✅")])
-                        nb_non_eligibles = len(df_export[df_export["Statut"].str.contains("❌")])
+                        nb_éligibles = len(df_export[df_export["Statut"].str.contains("✅")])
+                        nb_non_éligibles = len(df_export[df_export["Statut"].str.contains("❌")])
 
                         st.success(
-                            f"✅ Rapport généré pour **{promo_rapport}** : **{nb_eligibles}** éligible(s) | **{nb_non_eligibles}** signalé(s) comme absent(s)."
+                            f"✅ Rapport généré pour **{promo_rapport}** : **{nb_éligibles}** éligible(s) | **{nb_non_éligibles}** signalé(s) comme absent(s)."
                         )
                         st.download_button(
                             label="📥 TELECHARGER LE RAPPORT (XLSX)",
@@ -1247,35 +1343,35 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             st.header("📩 Système de Gestion des Justificatifs")
             st.caption("Dépôt étudiant et validation administration")
 
-            if etudiant_connecte:
+            if étudiant_connecte:
                 # Mode étudiant connecté : accès direct au dépôt
-                choix_vue = "Etudiant (Depot)"
-                st.success(f"👤 Connecté en tant qu'étudiant : **{etudiant_connecte['nom']}** — Mat. BAC: {etudiant_connecte['mat_bac']}")
+                choix_vue = "Étudiant (Dépôt)"
+                st.success(f"👤 Connecté en tant qu'étudiant : **{étudiant_connecte['nom']}** — Mat. BAC: {étudiant_connecte['mat_bac']}")
                 if st.button("🚪 Se déconnecter", use_container_width=True):
-                    st.session_state.etudiant_auth = None
+                    st.session_state.étudiant_auth = None
                     st.rerun()
                 st.divider()
             else:
-                choix_vue = st.radio("Profil :", ["Etudiant (Depot)", "Administration (Decision)"], horizontal=True)
+                choix_vue = st.radio("Profil :", ["Étudiant (Dépôt)", "Administration (Décision)"], horizontal=True)
                 st.divider()
 
-            if choix_vue == "Etudiant (Depot)":
+            if choix_vue == "Étudiant (Dépôt)":
                 st.subheader("📤 Soumettre une demande de réhabilitation")
 
                 col1, col2 = st.columns(2)
                 with col1:
-                    if etudiant_connecte:
-                        promo_sel = etudiant_connecte["promotion"]
+                    if étudiant_connecte:
+                        promo_sel = étudiant_connecte["promotion"]
                         st.markdown(f"**🎓 Promotion :** `{promo_sel}`")
                         df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
-                        etudiant_sel = etudiant_connecte["nom"]
-                        st.markdown(f"**👤 Nom :** `{etudiant_sel}`")
+                        étudiant_sel = étudiant_connecte["nom"]
+                        st.markdown(f"**👤 Nom :** `{étudiant_sel}`")
                     else:
                         promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
-                        promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_depot")
+                        promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_dépôt")
                         df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
                         noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
-                        etudiant_sel = st.selectbox("Votre Nom :", noms_dispo, key="etud_depot")
+                        étudiant_sel = st.selectbox("Votre nom :", noms_dispo, key="etud_dépôt")
                 with col2:
                     st.markdown("**ℹ️ Informations**")
                     st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
@@ -1283,13 +1379,13 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                 st.divider()
                 st.markdown("### 📋 Mes absences signalées")
 
-                absences_etu = get_absences_etudiant(etudiant_sel)
+                absences_etu = get_absences_étudiant(étudiant_sel)
 
                 if absences_etu:
                     data_display = []
                     for abs_item in absences_etu:
-                        mat = abs_item.get("matiere", "")
-                        req = trouver_requete_existante(etudiant_sel, mat)
+                        mat = abs_item.get("matière", "")
+                        req = trouver_requete_existante(étudiant_sel, mat)
                         is_justif = abs_item.get("justifie", False)
                         if is_justif:
                             statut_j = "🟢 Justifiée (acceptée)"
@@ -1315,13 +1411,13 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                     st.markdown("### 📎 Envoyer un justificatif pour une absence")
                     absences_sans_justif = [
                         a for a in absences_etu 
-                        if not trouver_requete_existante(etudiant_sel, a.get("matiere", ""))
+                        if not trouver_requete_existante(étudiant_sel, a.get("matière", ""))
                     ]
 
                     if absences_sans_justif:
-                        with st.form("form_depot_cible", clear_on_submit=True):
+                        with st.form("form_dépôt_cible", clear_on_submit=True):
                             options_abs = {
-                                f"{a['matiere']} — {a['date_absence']} ({a['jour_absence']} {a['horaire_absence']})": a 
+                                f"{a['matière']} — {a['date_absence']} ({a['jour_absence']} {a['horaire_absence']})": a 
                                 for a in absences_sans_justif
                             }
                             sel_abs = st.selectbox("Sélectionnez l'absence concernée :", list(options_abs.keys()))
@@ -1338,7 +1434,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                     pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
                                     abs_conc = options_abs[sel_abs]
 
-                                    req_ex = trouver_requete_existante(etudiant_sel, abs_conc["matiere"])
+                                    req_ex = trouver_requete_existante(étudiant_sel, abs_conc["matière"])
 
                                     if MODE_SUPABASE:
                                         if req_ex:
@@ -1347,19 +1443,19 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                                 "motif": motif_dep,
                                                 "date_demande": datetime.now().strftime("%d/%m/%Y")
                                             }).eq("id", req_ex["id"]).execute()
-                                            st.success(f"✅ Justificatif ajouté à la demande existante pour **{abs_conc['matiere']}** !")
+                                            st.success(f"✅ Justificatif ajouté à la demande existante pour **{abs_conc['matière']}** !")
                                         else:
                                             data_insert = {
                                                 "date_demande": datetime.now().strftime("%d/%m/%Y"),
-                                                "nom_etudiant": etudiant_sel,
-                                                "matiere": abs_conc["matiere"],
+                                                "nom_étudiant": étudiant_sel,
+                                                "matière": abs_conc["matière"],
                                                 "promotion": abs_conc.get("promotion", promo_sel),
                                                 "motif": motif_dep,
                                                 "justificatif_pdf": pdf_encoded,
                                                 "statut": "En attente"
                                             }
                                             enregistrer_requete_supabase(data_insert)
-                                            st.success(f"✅ Demande enregistrée pour **{etudiant_sel}** !")
+                                            st.success(f"✅ Demande enregistrée pour **{étudiant_sel}** !")
                                         st.balloons()
                                         time.sleep(0.5)
                                         st.rerun()
@@ -1368,12 +1464,12 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                             req_ex["justificatif_pdf"] = pdf_encoded
                                             req_ex["motif"] = motif_dep
                                             req_ex["date_demande"] = datetime.now().strftime("%d/%m/%Y")
-                                            st.success(f"✅ Justificatif mis à jour (mode local) pour **{abs_conc['matiere']}** !")
+                                            st.success(f"✅ Justificatif mis à jour (mode local) pour **{abs_conc['matière']}** !")
                                         else:
                                             data_insert = {
                                                 "date_demande": datetime.now().strftime("%d/%m/%Y"),
-                                                "nom_etudiant": etudiant_sel,
-                                                "matiere": abs_conc["matiere"],
+                                                "nom_étudiant": étudiant_sel,
+                                                "matière": abs_conc["matière"],
                                                 "promotion": abs_conc.get("promotion", promo_sel),
                                                 "motif": motif_dep,
                                                 "justificatif_pdf": pdf_encoded,
@@ -1381,7 +1477,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                                 "id": len(st.session_state.requetes) + 1
                                             }
                                             st.session_state.requetes.append(data_insert)
-                                            st.success(f"✅ Demande enregistrée (mode local) pour **{etudiant_sel}** !")
+                                            st.success(f"✅ Demande enregistrée (mode local) pour **{étudiant_sel}** !")
                                         st.balloons()
                                         time.sleep(0.5)
                                         st.rerun()
@@ -1408,16 +1504,16 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         st.info("📭 Aucun dossier en attente.")
                     else:
                         for req in resultats:
-                            with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']}"):
+                            with st.expander(f"📄 {req['nom_étudiant']} — {req['matière']}"):
                                 st.write(f"**Promotion :** {req['promotion']}")
                                 st.write(f"**Motif :** {req['motif']}")
                                 st.write(f"**Date :** {req['date_demande']}")
 
                                 pdf_decoded = base64.b64decode(req['justificatif_pdf'])
                                 st.download_button(
-                                    label="👁️ Telecharger le PDF",
+                                    label="👁️ Télécharger le PDF",
                                     data=pdf_decoded,
-                                    file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
+                                    file_name=f"Justif_{req['nom_étudiant']}_{req['matière']}.pdf",
                                     mime="application/pdf",
                                     key=f"dl_{req['id']}"
                                 )
@@ -1426,17 +1522,17 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                 if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
                                     if MODE_SUPABASE:
                                         mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
-                                        rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'])
+                                        rehabiliter_absences_étudiant_supabase(req['nom_étudiant'], req['matière'])
                                     else:
                                         for r in st.session_state.requetes:
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Favorable"
                                         for a in st.session_state.absences:
-                                            if (a.get("etud_non_eligible") == req['nom_etudiant']
-                                                    and a.get("matiere") == req['matiere']):
+                                            if (a.get("etud_non_eligible") == req['nom_étudiant']
+                                                    and a.get("matière") == req['matière']):
                                                 a["justifie"] = True
                                                 a["cause_non_eligibilite"] = "Justifiee - " + str(a.get("cause_non_eligibilite", ""))
-                                    st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
+                                    st.success(f"✔️ Justificatif de {req['nom_étudiant']} pour {req['matière']} accepté.")
                                     time.sleep(0.5)
                                     st.rerun()
 
@@ -1447,17 +1543,17 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                         for r in st.session_state.requetes:
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Defavorable"
-                                    st.warning(f"❌ Dossier de {req['nom_etudiant']} rejete.")
+                                    st.warning(f"❌ Dossier de {req['nom_étudiant']} rejeté.")
                                     time.sleep(0.5)
                                     st.rerun()
 
-                    with st.expander("🛠️ Zone Maintenance"):
-                        st.write("Effacer toutes les requetes de justificatifs.")
-                        if st.button("🔄 REINITIALISER", type="primary"):
+                    with st.expander("🛠️ Zone maintenance"):
+                        st.write("Effacer toutes les requêtes de justificatifs.")
+                        if st.button("🔄 RÉINITIALISER", type="primary"):
                             st.session_state.confirm_reset = True
 
                         if st.session_state.get("confirm_reset", False):
-                            st.error("⚠️ Cette action est IRREVERSIBLE !")
+                            st.error("⚠️ Cette action est IRRÉVERSIBLE !")
                             c_ok, c_cancel = st.columns(2)
                             if c_ok.button("🔥 CONFIRMER", type="primary"):
                                 if MODE_SUPABASE:
@@ -1465,12 +1561,12 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                 else:
                                     st.session_state.requetes = []
                                 st.session_state.confirm_reset = False
-                                st.success("✅ Base reinitialisee.")
+                                st.success("✅ Base réinitialisée.")
                                 time.sleep(0.5)
                                 st.rerun()
                             if c_cancel.button("❌ ANNULER"):
                                 st.session_state.confirm_reset = False
-                                st.info("Action annulee.")
+                                st.info("Action annulée.")
                                 time.sleep(0.5)
                                 st.rerun()
 
@@ -1482,7 +1578,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
     # =============================================================================
     if not is_enseignant_connecte:
         with tab3:
-            st.header("📊 Registres et Bilans Agreges")
+            st.header("📊 Registres et bilans agrégés")
 
             # Vérification code d'accès pour les bilans et exports
             if not is_enseignant_connecte and not is_admin_edt:
@@ -1507,19 +1603,19 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             if data_hist:
                 df_tab = pd.DataFrame(data_hist)
 
-                def trouver_enseignant_par_matiere(matiere):
-                    rows = df_edt[df_edt["Enseignements"] == matiere]
+                def trouver_enseignant_par_matière(matière):
+                    rows = df_edt[df_edt["Enseignements"] == matière]
                     if not rows.empty:
                         return str(rows.iloc[0]["Enseignants"])
                     return "Non assigne"
 
-                df_tab["Charge"] = df_tab["matiere"].apply(trouver_enseignant_par_matiere)
+                df_tab["Charge"] = df_tab["matière"].apply(trouver_enseignant_par_matière)
 
                 df_tab = df_tab[["date_demande", "promotion", "Charge",
-                                 "nom_etudiant", "matiere", "motif", "statut"]]
-                df_tab.columns = ["Date", "Promotion", "Charge", "Etudiant", "Matiere", "Motif", "Statut"]
+                                 "nom_étudiant", "matière", "motif", "statut"]]
+                df_tab.columns = ["Date", "Promotion", "Charge", "Étudiant", "Matière", "Motif", "Statut"]
 
-                st.subheader("📋 Registre General")
+                st.subheader("📋 Registre général")
                 st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
                 buf_xl = io.BytesIO()
@@ -1536,7 +1632,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         use_container_width=True
                     )
                 with c2:
-                    html_reg = generer_page_html(df_tab, "Registre General", df_tab.columns, df_tab.columns)
+                    html_reg = generer_page_html(df_tab, "Registre général", df_tab.columns, df_tab.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_reg,
@@ -1545,57 +1641,57 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         use_container_width=True
                     )
 
-                st.subheader("📚 Bilan par Etudiant et Matiere")
-                df_bilan_mat = df_tab.groupby(["Etudiant", "Matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
+                st.subheader("📚 Bilan par Étudiant et Matière")
+                df_bilan_mat = df_tab.groupby(["Étudiant", "Matière", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
                 buf_mat = io.BytesIO()
                 with pd.ExcelWriter(buf_mat, engine='xlsxwriter') as w:
-                    df_bilan_mat.to_excel(w, index=False, sheet_name='Absences_Matiere')
+                    df_bilan_mat.to_excel(w, index=False, sheet_name='Absences_Matière')
 
                 c3, c4 = st.columns(2)
                 with c3:
                     st.download_button(
                         "📥 EXCEL",
                         buf_mat.getvalue(),
-                        f"Bilan_Matiere_{promo_filtre}.xlsx",
+                        f"Bilan_Matière_{promo_filtre}.xlsx",
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
                 with c4:
-                    html_mat = generer_page_html(df_bilan_mat, "Bilan par Matiere", df_bilan_mat.columns, df_bilan_mat.columns)
+                    html_mat = generer_page_html(df_bilan_mat, "Bilan par Matière", df_bilan_mat.columns, df_bilan_mat.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_mat,
-                        f"Bilan_Matiere_{promo_filtre}.html",
+                        f"Bilan_Matière_{promo_filtre}.html",
                         "text/html",
                         use_container_width=True
                     )
 
-                st.subheader("👥 Total des Absences par Etudiant")
-                df_bilan_etud = df_tab.groupby(["Etudiant", "Promotion"]).size().reset_index(name="Total Absences")
+                st.subheader("👥 Total des Absences par Étudiant")
+                df_bilan_etud = df_tab.groupby(["Étudiant", "Promotion"]).size().reset_index(name="Total Absences")
                 df_bilan_etud = df_bilan_etud.sort_values(by="Total Absences", ascending=False)
                 st.dataframe(df_bilan_etud, use_container_width=True, hide_index=True)
 
                 buf_etud = io.BytesIO()
                 with pd.ExcelWriter(buf_etud, engine='xlsxwriter') as w:
-                    df_bilan_etud.to_excel(w, index=False, sheet_name='Total_Etudiant')
+                    df_bilan_etud.to_excel(w, index=False, sheet_name='Total_Étudiant')
 
                 c5, c6 = st.columns(2)
                 with c5:
                     st.download_button(
                         "📥 EXCEL",
                         buf_etud.getvalue(),
-                        f"Total_Etudiants_{promo_filtre}.xlsx",
+                        f"Total_Étudiants_{promo_filtre}.xlsx",
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
                 with c6:
-                    html_etud = generer_page_html(df_bilan_etud, "Total par Etudiant", df_bilan_etud.columns, df_bilan_etud.columns)
+                    html_etud = generer_page_html(df_bilan_etud, "Total par Étudiant", df_bilan_etud.columns, df_bilan_etud.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_etud,
-                        f"Total_Etudiants_{promo_filtre}.html",
+                        f"Total_Étudiants_{promo_filtre}.html",
                         "text/html",
                         use_container_width=True
                     )
@@ -1603,10 +1699,10 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                 st.info(f"ℹ️ Aucun historique pour {promo_filtre}.")
 
             st.divider()
-            st.subheader("📊 Bilan des Absences Directes (Onglet Suivi)")
+            st.subheader("📊 Bilan des absences directes (Onglet Suivi)")
 
             promo_abs = st.selectbox(
-                "Filtrer les absences par Promotion :",
+                "Filtrer les absences par promotion :",
                 sorted(df_etu["Promotion"].dropna().unique().tolist()),
                 key="promo_abs_bilan"
             )
@@ -1621,11 +1717,11 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                 if "justifie" not in df_abs.columns:
                     df_abs["justifie"] = False
 
-                df_abs_count = df_abs.groupby(["etud_non_eligible", "matiere"]).agg(
+                df_abs_count = df_abs.groupby(["etud_non_eligible", "matière"]).agg(
                     Nombre_Absences=("etud_non_eligible", "size"),
-                    Dont_Justifiees=("justifie", lambda x: (x == True).sum())
+                    Dont justifiées=("justifie", lambda x: (x == True).sum())
                 ).reset_index()
-                df_abs_count["Dont_Non_Justifiees"] = df_abs_count["Nombre_Absences"] - df_abs_count["Dont_Justifiees"]
+                df_abs_count["Dont non justifiées"] = df_abs_count["Nombre_Absences"] - df_abs_count["Dont justifiées"]
                 df_abs_count["Statut"] = df_abs_count["Nombre_Absences"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Sous seuil")
                 df_abs_count = df_abs_count.sort_values(by="Nombre_Absences", ascending=False)
 
@@ -1635,14 +1731,14 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                 with pd.ExcelWriter(buf_abs, engine='xlsxwriter') as w:
                     df_abs_count.to_excel(w, index=False, sheet_name='Absences_Directes')
                 st.download_button(
-                    "📥 EXPORTER ABSENCES DIRECTES (XLSX)",
+                    "📥 Exporter absences directes (XLSX)",
                     buf_abs.getvalue(),
                     f"Absences_Directes_{promo_abs}.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
             else:
-                st.info(f"ℹ️ Aucune absence directe enregistree pour {promo_abs}.")
+                st.info(f"ℹ️ Aucune absence directe enregistrée pour {promo_abs}.")
 
 # =============================================================================
 # MODULE 2 : GESTION DES EDTs & ADMINISTRATION
@@ -1731,7 +1827,7 @@ def run_edt():
             df['h_norm'] = df['Horaire'].apply(normalize)
             df['j_norm'] = df['Jours'].apply(normalize)
         except Exception as e:
-            st.error(f"Erreur chargement EDT : {e}")
+            st.error(f"Erreur de chargement EDT : {e}")
 
     if os.path.exists(NOM_FICHIER_CONTACTS):
         try:
@@ -1820,7 +1916,7 @@ def run_edt():
                     }
                     st.rerun()
                 else:
-                    st.error("Code admin incorrect.")
+                    st.error("Code administrateur incorrect.")
         
         st.warning("⚠️ Veuillez vous connecter ci-dessus pour accéder au Module 2.")
         return
@@ -4822,7 +4918,7 @@ if not st.session_state["user_data"]:
                 }
                 st.rerun()
             else:
-                st.error("Code admin incorrect.")
+                st.error("Code administrateur incorrect.")
 
 # --- GARDIEN DE SESSION ---
 user = st.session_state.get("user_data")
@@ -5040,7 +5136,7 @@ if not st.session_state["user_data"]:
                 }
                 st.rerun()
             else:
-                st.error("Code admin incorrect.")
+                st.error("Code administrateur incorrect.")
 # --- SOLUTIONS AUX ERREURS (Remplace le bloc supprimé) ---
 user = st.session_state.get("user_data")
 
@@ -5301,7 +5397,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                     salle_label = f"🏢 {row['Lieu']}"
                     prof_label = f"(Prof: {row['Enseignants']})"
                     promo_label = f"🎓 {row['Promotion']}"
-                    matiere_label = f"📚 {row['Enseignements']}"
+                    matière_label = f"📚 {row['Enseignements']}"
                     heure_label = f"🕒 {row['Horaire']}"
 
                     cell_html = (
@@ -5310,7 +5406,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                         f"<b>{salle_label}</b><br>"
                         f"{prof_label}<br>"
                         f"<b>{promo_label}</b><br>"
-                        f"{matiere_label}<br>"
+                        f"{matière_label}<br>"
                         f"{heure_label}"
                         f"</div>"
                     )
@@ -6144,11 +6240,11 @@ if df is not None:
             # --- NOUVEAU : BILAN GLOBAL DE LA PROMOTION (SANS DOUBLONS) ---
             # On retire les doublons basés sur le nom de l'enseignement et le code (type)
             # pour ne compter chaque matière qu'une seule fois pour toute la promo
-            df_unique_matieres = df_p.drop_duplicates(subset=['Enseignements', 'Code'])
+            df_unique_matières = df_p.drop_duplicates(subset=['Enseignements', 'Code'])
             
-            total_p_cours = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('COURS', case=False, na=False)])
-            total_p_td = len(df_unique_matieres[df_unique_matieres['Code'].str.contains('TD', case=False, na=False)])
-            total_p_tp = len(df_unique_matieres[~df_unique_matieres['Code'].str.contains('COURS|TD', case=False, na=False)])
+            total_p_cours = len(df_unique_matières[df_unique_matières['Code'].str.contains('COURS', case=False, na=False)])
+            total_p_td = len(df_unique_matières[df_unique_matières['Code'].str.contains('TD', case=False, na=False)])
+            total_p_tp = len(df_unique_matières[~df_unique_matières['Code'].str.contains('COURS|TD', case=False, na=False)])
                     # --- 8. BOUTONS DE TÉLÉCHARGEMENT ---
             st.markdown("---")
             cp1, cp2, cp3 = st.columns(3)
@@ -6319,11 +6415,11 @@ if df is not None:
                 df_ens = df_p[df_p["Enseignants"] == ens].copy()
                 
                 # 2. Organisation par type (Ordre : COURS > TD > TP) sans doublons pour l'affichage des badges
-                matieres_brutes = df_ens.drop_duplicates(subset=['Enseignements', 'Code'])
+                matières_brutes = df_ens.drop_duplicates(subset=['Enseignements', 'Code'])
                 
-                cours_list = matieres_brutes[matieres_brutes['Code'].str.contains('COURS', case=False, na=False)]['Enseignements'].unique()
-                td_list = matieres_brutes[matieres_brutes['Code'].str.contains('TD', case=False, na=False)]['Enseignements'].unique()
-                tp_list = matieres_brutes[~matieres_brutes['Code'].str.contains('COURS|TD', case=False, na=False)]['Enseignements'].unique()
+                cours_list = matières_brutes[matières_brutes['Code'].str.contains('COURS', case=False, na=False)]['Enseignements'].unique()
+                td_list = matières_brutes[matières_brutes['Code'].str.contains('TD', case=False, na=False)]['Enseignements'].unique()
+                tp_list = matières_brutes[~matières_brutes['Code'].str.contains('COURS|TD', case=False, na=False)]['Enseignements'].unique()
                 
                 # 3. Calcul du nombre de séances par enseignant (avec groupes)
                 n_cours = len(df_ens[df_ens['Code'].str.contains('COURS', case=False, na=False)])
@@ -6789,8 +6885,8 @@ if df is not None:
             p_groups = df[df["Enseignants"] != "Non défini"].groupby(['Jours', 'Horaire', 'Enseignants'])
             for (jour, horaire, prof), group in p_groups:
                 lieux_uniques = group['Lieu'].unique()
-                matieres_uniques = group['Enseignements'].unique()
-                if len(lieux_uniques) > 1 or len(matieres_uniques) > 1:
+                matières_uniques = group['Enseignements'].unique()
+                if len(lieux_uniques) > 1 or len(matières_uniques) > 1:
                     type_err = "❌ CONFLIT ENSEIGNANT"
                     style = "error"
                     detail = f"L'enseignant est affecté à plusieurs lieux ({', '.join(lieux_uniques)}) ou matières."
@@ -6800,7 +6896,7 @@ if df is not None:
                     errs_for_df.append({
                         "Type": type_err, "Enseignant": prof, "Jour": jour, "Horaire": horaire, 
                         "Détail": detail, "Lieu": ", ".join(lieux_uniques), 
-                        "Matières": ", ".join(matieres_uniques), "Promotions": ", ".join(group['Promotion'].unique())
+                        "Matières": ", ".join(matières_uniques), "Promotions": ", ".join(group['Promotion'].unique())
                     })
 
             # B. CONFLITS DE SALLES (Deux profs différents dans la même salle) -> RÉSOUT VOTRE PROBLÈME
@@ -6830,15 +6926,15 @@ if df is not None:
                 if len(group['Enseignements'].unique()) > 1:
                     type_err = "⚠️ CONFLIT PROMOTION"
                     style = "warning"
-                    matieres = group['Enseignements'].unique()
-                    detail = f"La promotion {promo} a plusieurs cours simultanés : {', '.join(matieres)}"
+                    matières = group['Enseignements'].unique()
+                    detail = f"La promotion {promo} a plusieurs cours simultanés : {', '.join(matières)}"
                     
                     msg = f"**{type_err}** : {promo} | {jour} {horaire}"
                     errs_text.append((style, msg))
                     errs_for_df.append({
                         "Type": type_err, "Enseignant": "Multi-enseignants", "Jour": jour, "Horaire": horaire, 
                         "Détail": detail, "Lieu": ", ".join(group['Lieu'].unique()), 
-                        "Matières": ", ".join(matieres), "Promotions": promo
+                        "Matières": ", ".join(matières), "Promotions": promo
                     })
 
             # --- 2. INTERFACE DE FILTRAGE ET BOUTON RESET ---
@@ -9131,7 +9227,7 @@ if is_admin:
                 st.info("📭 Aucun bordereau enregistré dans l'historique.")
         
         except Exception as e:
-            st.error(f"Erreur chargement historique : {e}")
+            st.error(f"Erreur de chargement historique : {e}")
 
     # ==========================================
     # INTERFACE UTILISATEUR STREAMLIT
