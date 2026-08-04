@@ -1719,9 +1719,9 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
 
                 df_abs_count = df_abs.groupby(["etud_non_eligible", "matière"]).agg(
                     Nombre_Absences=("etud_non_eligible", "size"),
-                    Dont justifiées=("justifie", lambda x: (x == True).sum())
+                    Dont_Justifiees=("justifie", lambda x: (x == True).sum())
                 ).reset_index()
-                df_abs_count["Dont non justifiées"] = df_abs_count["Nombre_Absences"] - df_abs_count["Dont justifiées"]
+                df_abs_count["Dont_Non_Justifiees"] = df_abs_count["Nombre_Absences"] - df_abs_count["Dont_Justifiees"]
                 df_abs_count["Statut"] = df_abs_count["Nombre_Absences"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Sous seuil")
                 df_abs_count = df_abs_count.sort_values(by="Nombre_Absences", ascending=False)
 
