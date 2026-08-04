@@ -481,7 +481,7 @@ def run_assiduite():
             supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", etudiant).eq("matiere", matiere).execute()
             return True
         except Exception as e:
-            st.error(f"Erreur Supabase (réhabilitation) : {e}")
+            st.error(f"Erreur Supabase (rehabilitation) : {e}")
             return False
 
     def charger_requetes_supabase(statut=None, promotion=None):
@@ -981,14 +981,14 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab2:
-            st.header("📩 Système de Gestion des Justificatifs")
-            st.caption("dépôt étudiant et validation administration")
+            st.header("📩 Systeme de Gestion des Justificatifs")
+            st.caption("Depot etudiant et validation administration")
 
-            choix_vue = st.radio("Profil :", ["Etudiant (dépôt)", "Administration (Décision)"], horizontal=True)
+            choix_vue = st.radio("Profil :", ["Etudiant (Depot)", "Administration (Decision)"], horizontal=True)
             st.divider()
 
-            if choix_vue == "Etudiant (dépôt)":
-                st.subheader("📤 Soumettre une demande de réhabilitation")
+            if choix_vue == "Etudiant (Depot)":
+                st.subheader("📤 Soumettre une demande de rehabilitation")
 
                 # ─── IDENTIFICATION PAR MATRICULE BAC ───
                 if not COL_MAT_BAC:
@@ -997,7 +997,7 @@ def run_assiduite():
 
                 col_mat, col_info = st.columns([1, 2])
                 with col_mat:
-                    mat_bac_input = st.text_input("🎓 N° Matricule du BAC", key="mat_bac_input_dépôt", placeholder="Ex: 12345678")
+                    mat_bac_input = st.text_input("🎓 N° Matricule du BAC", key="mat_bac_input_depot", placeholder="Ex: 12345678")
                 mat_bac_clean = str(mat_bac_input).strip().upper().replace(" ", "").replace("-", "").replace(".", "")
 
                 etudiant_sel = None
@@ -1026,7 +1026,7 @@ def run_assiduite():
                 key_activ = f"etu_activé_{mat_bac_clean}"
 
                 if not st.session_state.get(key_activ, False):
-                    email_etu = st.text_input("📧 Votre adresse Email", key="email_etu_dépôt", placeholder="ex: nom.prenom@email.dz")
+                    email_etu = st.text_input("📧 Votre adresse Email", key="email_etu_depot", placeholder="ex: nom.prenom@email.dz")
 
                     if email_etu and "@" in email_etu:
                         if st.button("📩 Recevoir mon code d'activation", use_container_width=True, type="primary", key="btn_code_activation"):
@@ -1110,7 +1110,7 @@ def run_assiduite():
                     # ─── SAISIE ET VÉRIFICATION DU CODE ───
                     st.divider()
                     st.markdown("### 🔑 Valider mon code d'activation")
-                    code_saisi = st.text_input("Entrez le code à 6 chiffres reçu par email", max_chars=6, key="code_saisi_dépôt")
+                    code_saisi = st.text_input("Entrez le code à 6 chiffres reçu par email", max_chars=6, key="code_saisi_depot")
 
                     if st.button("✅ Valider le code", use_container_width=True, key="btn_valider_code"):
                         stored = st.session_state.get("codes_activation_etu", {}).get(mat_bac_clean, {})
@@ -1166,7 +1166,7 @@ def run_assiduite():
                     ]
 
                     if absences_sans_justif:
-                        with st.form("form_dépôt_cible", clear_on_submit=True):
+                        with st.form("form_depot_cible", clear_on_submit=True):
                             options_abs = {
                                 f"{a['matiere']} — {a['date_absence']} ({a['jour_absence']} {a['horaire_absence']})": a 
                                 for a in absences_sans_justif
