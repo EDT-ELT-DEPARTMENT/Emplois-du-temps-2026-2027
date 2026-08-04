@@ -981,14 +981,14 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab2:
-            st.header("📩 Systeme de Gestion des Justificatifs")
-            st.caption("Depot etudiant et validation administration")
+            st.header("📩 Système de Gestion des Justificatifs")
+            st.caption("dépôt étudiant et validation administration")
 
-            choix_vue = st.radio("Profil :", ["Etudiant (Depot)", "Administration (Decision)"], horizontal=True)
+            choix_vue = st.radio("Profil :", ["Etudiant (dépôt)", "Administration (Décision)"], horizontal=True)
             st.divider()
 
-            if choix_vue == "Etudiant (Depot)":
-                st.subheader("📤 Soumettre une demande de rehabilitation")
+            if choix_vue == "Etudiant (dépôt)":
+                st.subheader("📤 Soumettre une demande de réhabilitation")
 
                 # ─── IDENTIFICATION PAR MATRICULE BAC ───
                 if not COL_MAT_BAC:
