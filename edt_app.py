@@ -981,8 +981,8 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab2:
-            st.header("📩 Systeme de Gestion des Justificatifs")
-            st.caption("dépôt etudiant et validation administration")
+            st.header("📩 Système de Gestion des Justificatifs")
+            st.caption("dépôt étudiant et validation administration")
 
             choix_vue = st.radio("Profil :", ["Etudiant (dépôt)", "Administration (Décision)"], horizontal=True)
             st.divider()
