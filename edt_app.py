@@ -1293,7 +1293,7 @@ def run_assiduite():
                         use_container_width=True
                     )
                 with c2:
-                    html_reg = generer_page_html(df_tab, "Registre General", df_tab.columns, df_tab.columns)
+                    html_reg = generer_page_html(df_tab, "Registre Général", df_tab.columns, df_tab.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_reg,
