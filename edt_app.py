@@ -602,7 +602,7 @@ def run_assiduite():
     if is_enseignant_connecte:
         tab1, = st.tabs(["📝 Suivi d'Assiduité"])
     else:
-        tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
+        tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports"])
 
     # =============================================================================
     # ONGLET 1 : SUIVI D'ASSIDUITE
@@ -1364,7 +1364,7 @@ def run_assiduite():
                                  "nom_etudiant", "matiere", "motif", "statut"]]
                 df_tab.columns = ["Date", "Promotion", "Charge", "Etudiant", "Matiere", "Motif", "Statut"]
 
-                st.subheader("📋 Registre General")
+                st.subheader("📋 Registre Général")
                 st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
                 buf_xl = io.BytesIO()
@@ -1390,7 +1390,7 @@ def run_assiduite():
                         use_container_width=True
                     )
 
-                st.subheader("📚 Bilan par Etudiant et Matiere")
+                st.subheader("📚 Bilan par Etudiant et Matière")
                 df_bilan_mat = df_tab.groupby(["Etudiant", "Matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
