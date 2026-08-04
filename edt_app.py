@@ -1,698 +1,3 @@
-# =============================================================================
-# MODULE 2 : GESTION DES EDTs & ADMINISTRATION
-# =============================================================================
-def run_edt():
-    st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
-    
-    # --- CONNEXION BASE DE DONNÉES ---
-    try:
-        URL = st.secrets["SUPABASE_URL"]
-        KEY = st.secrets["SUPABASE_KEY"]
-        supabase_edt = create_client(URL, KEY)
-    except Exception as e:
-        st.error(f"Erreur connexion Supabase : {e}")
-        supabase_edt = None
-
-    def hash_pw(password):
-        return hashlib.sha256(str.encode(password)).hexdigest()
-
-    # --- GESTION DU TEMPS ---
-    now = datetime.now()
-    date_str = now.strftime("%d/%m/%Y")
-    jours_semaine = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
-    nom_jour_fr = jours_semaine[now.weekday()]
-
-    # --- STYLE CSS ---
-    st.markdown("""
-        <style>
-        .main-title { 
-            color: #1E3A8A; 
-            text-align: center; 
-            font-family: 'serif'; 
-            font-weight: bold; 
-            border-bottom: 3px solid #D4AF37; 
-            padding-bottom: 15px; 
-            font-size: 18px; 
-            margin-top: 5px;
-        }
-        .portal-badge { 
-            background-color: #D4AF37; 
-            color: #1E3A8A; 
-            padding: 5px 15px; 
-            border-radius: 5px; 
-            font-weight: bold; 
-            text-align: center; 
-            margin-bottom: 20px; 
-        }
-        .date-badge { 
-            background-color: #1E3A8A; 
-            color: white; 
-            padding: 5px 15px; 
-            border-radius: 20px; 
-            font-size: 12px; 
-            float: right; 
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # --- CHARGEMENT DES DONNÉES ---
-    df = None
-    repertoire_qualites = {} 
-    repertoire_grades = {} 
-    repertoire_source = {}
-    repertoire_noms_complets = {}
-    repertoire_telephones = {}
-    df_contacts = None
-
-    def normalize(s):
-        if not s or s == "Non défini": 
-            return "vide"
-        s = str(s).strip().lower()
-        s = s.replace(" ", "").replace("-", "").replace("–", "")
-        s = s.replace(":00", "").replace("h00", "h")
-        return s
-
-    if os.path.exists(NOM_FICHIER_FIXE):
-        try:
-            df = pd.read_excel(NOM_FICHIER_FIXE)
-            df.columns = [str(c).strip() for c in df.columns]
-            colonnes_cles = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-            for col in colonnes_cles:
-                if col in df.columns: 
-                    df[col] = df[col].fillna("Non défini").astype(str).str.strip()
-                else:
-                    df[col] = "Non défini"
-            df['h_norm'] = df['Horaire'].apply(normalize)
-            df['j_norm'] = df['Jours'].apply(normalize)
-        except Exception as e:
-            st.error(f"Erreur chargement EDT : {e}")
-
-    if os.path.exists(NOM_FICHIER_CONTACTS):
-        try:
-            df_contacts = pd.read_excel(NOM_FICHIER_CONTACTS)
-            df_contacts.columns = [str(c).strip() for c in df_contacts.columns]
-            for _, row in df_contacts.iterrows():
-                nom_brut = str(row.get('NOM', '')).strip().upper()
-                prénom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
-                email_brut = str(row.get('Email', '')).strip()
-                qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
-                grade_brut = str(row.get('Grade', 'N/A')).strip()
-                tel_brut = str(row.get('N°/TEL', '')).strip()
-                tel_nettoye = ''.join([c for c in tel_brut if c.isdigit()])
-                if tel_nettoye and tel_nettoye.lower() != 'nan':
-                    repertoire_telephones[nom_brut] = tel_nettoye
-                if nom_brut:
-                    nom_complet = f"{nom_brut} {prénom_brut}".strip()
-                    if email_brut and email_brut.lower() != 'nan':
-                        repertoire_source[nom_brut] = email_brut
-                    repertoire_noms_complets[nom_brut] = nom_complet
-                    repertoire_qualites[nom_brut] = qualite_brute
-                    repertoire_grades[nom_brut] = grade_brut
-        except Exception as e:
-            st.warning(f"Fichier contacts : {e}")
-
-    # --- SYSTÈME D'AUTH ---
-    if "user_data" not in st.session_state:
-        st.session_state["user_data"] = None
-
-    if not st.session_state["user_data"]:
-        st.info("🔒 **Module 2 (Gestion des EDTs).** Connexion requise.")
-        t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
-
-        with t_conn:
-            email_input = st.text_input("Adresse Email", key="login_email")
-            pass_input = st.text_input("Mot de passe", type="password", key="login_pass")
-            if st.button("Se connecter au portail", use_container_width=True):
-                if supabase_edt:
-                    result = supabase_edt.table("enseignants_auth").select("*").eq("email", email_input).eq("password_hash", hash_pw(pass_input)).execute()
-                    if result.data:
-                        st.session_state["user_data"] = result.data[0]
-                        st.rerun()
-                    else:
-                        st.error("Email ou mot de passe incorrect.")
-                else:
-                    st.error("Base de données non disponible.")
-
-        with t_ins:
-            st.subheader("Créer un nouveau compte Enseignant")
-            if df is not None:
-                noms_possibles = sorted(df["Enseignants"].unique())
-            else:
-                noms_possibles = []
-            new_nom = st.selectbox("Sélectionnez votre nom", noms_possibles)
-            new_email = st.text_input("Votre adresse Email")
-            new_pass = st.text_input("Choisissez un mot de passe", type="password")
-            confirm_pass = st.text_input("Confirmez le mot de passe", type="password")
-            if st.button("Créer mon compte", use_container_width=True):
-                if not new_email or not new_pass:
-                    st.warning("Veuillez remplir tous les champs.")
-                elif new_pass != confirm_pass:
-                    st.error("Les mots de passe ne correspondent pas.")
-                elif supabase_edt:
-                    check = supabase_edt.table("enseignants_auth").select("email").eq("email", new_email).execute()
-                    if check.data:
-                        st.error("Cet email est déjà utilisé.")
-                    else:
-                        data_ins = {
-                            "nom_officiel": new_nom,
-                            "email": new_email,
-                            "password_hash": hash_pw(new_pass),
-                            "role": "enseignant"
-                        }
-                        supabase_edt.table("enseignants_auth").insert(data_ins).execute()
-                        st.success("✅ Compte créé avec succès !")
-                        st.balloons()
-
-        with t_adm:
-            code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code")
-            if st.button("Accès Administration", use_container_width=True):
-                if code_admin == CODE_ADMIN_EDT:
-                    st.session_state["user_data"] = {
-                        "nom_officiel": "ADMINISTRATEUR", 
-                        "role": "admin",
-                        "email": "admin@udl-sba.dz"
-                    }
-                    st.rerun()
-                else:
-                    st.error("Code admin incorrect.")
-        
-        st.warning("⚠️ Veuillez vous connecter ci-dessus pour accéder au Module 2.")
-        return
-
-    user = st.session_state.get("user_data")
-    is_admin = user.get("role") == "admin"
-
-    # --- INTERFACE PRINCIPALE APRÈS CONNEXION ---
-    st.markdown(f"<div class='portal-badge'>MODE ACTIF : {'ADMINISTRATEUR' if is_admin else 'ENSEIGNANT'}</div>", unsafe_allow_html=True)
-
-    # Barre latérale interne pour le module EDT
-    with st.sidebar:
-        st.markdown("---")
-        st.header(f"👤 {user.get('nom_officiel', 'Utilisateur')}")
-        
-        if is_admin:
-            options_portail = [
-                "📖 Emploi du Temps", 
-                "📅 Surveillances Examens", 
-                "🤖 Générateur Automatique", 
-                "👥 Portail Enseignants", 
-                "🎓 Portail mise à jour EDT", 
-                "📢 Gestion Administrative"
-            ]
-        else:
-            options_portail = [
-                "👤 Mon Espace Enseignant",
-                "📅 Surveillances Examens"
-            ]
-
-        portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
-        st.divider()
-        
-        mode_view = "Personnel"
-        poste_sup = False
-        
-        if portail == "📖 Emploi du Temps" and is_admin:
-            mode_view = st.radio("Vue Administration :", [
-                "Promotion", "Enseignant", "🏢 Planning Salles", 
-                "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
-            ])
-            poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
-        elif portail == "👤 Mon Espace Enseignant":
-            poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
-        
-        if st.button("🚪 Déconnexion", use_container_width=True):
-            st.session_state["user_data"] = None
-            st.rerun()
-
-    # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
-    
-    # Constantes locales pour EDT
-    horaires_list = [
-        "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
-        "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
-    ]
-    jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-    map_h = {normalize(h): h for h in horaires_list}
-    map_j = {normalize(j): j for j in jours_list}
-
-    # En-tête harmonisé
-    col_logo, col_titre, col_date = st.columns([1, 5, 1.2])
-    with col_logo:
-        try:
-            st.image(str(_BASE_DIR / "logo.PNG"), width=90)
-        except:
-            st.markdown("🏛️")
-    with col_titre:
-        st.markdown("<h3 style='color:#1E3A8A;margin:0;'>Plateforme de gestion des EDTs 2026-2027</h3>", unsafe_allow_html=True)
-        st.caption("Département d'Électrotechnique - Faculté de Génie Électrique - UDL-SBA")
-    with col_date:
-        st.markdown(f"<div style='background:#1E3A8A;color:white;padding:8px 12px;border-radius:8px;text-align:center;font-size:12px;'>📅 {nom_jour_fr}<br>{date_str}</div>", unsafe_allow_html=True)
-
-    st.markdown("<hr style='border:2px solid #D4AF37;margin:15px 0;'>", unsafe_allow_html=True)
-
-    if df is None or df.empty:
-        st.error("❌ Les données EDT ne sont pas disponibles. Vérifiez le fichier source.")
-        return
-
-    # ============================================================
-    # PORTAIL : EMPLOI DU TEMPS (ADMIN)
-    # ============================================================
-    if portail == "📖 Emploi du Temps" and is_admin:
-        if mode_view == "Enseignant":
-            cible = st.selectbox("Sélectionner l'Enseignant :", 
-                                sorted([e for e in df["Enseignants"].unique() if e and e != "Non défini"]))
-            
-            df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
-            df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
-            df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
-
-            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-            nb_td = len(df_u[df_u['Type'] == 'TD'])
-            nb_tp = len(df_u[df_u['Type'] == 'TP'])
-            seuil = 3.0 if poste_sup else 6.0
-            charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
-            delta = charge_eq - seuil
-            h_sup = delta * 1.5
-
-            st.markdown(f"### 📊 Charge Horaire : {cible}")
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("📘 Cours", nb_cours)
-            c2.metric("📗 TD", nb_td)
-            c3.metric("🔴 TP", nb_tp)
-            c4.metric("Charge Eq/h", f"{charge_eq:.1f}")
-
-            if h_sup > 0:
-                st.success(f"✅ Heures supplémentaires : +{h_sup:.1f}h")
-            elif h_sup < 0:
-                st.warning(f"⚠️ Déficit : {h_sup:.1f}h")
-            else:
-                st.info("⚖️ Seuil exact")
-
-            # Grille EDT
-            def format_case(rows):
-                items = []
-                for _, r in rows.iterrows():
-                    code_up = str(r['Code']).upper()
-                    if 'COURS' in code_up:
-                        nat = '📘'
-                    elif 'TD' in code_up:
-                        nat = '📗'
-                    else:
-                        nat = '🔴'
-                    items.append(f"<b>{nat} {r['Enseignements']}</b><br><small>{r['Lieu']} | {r['Promotion']}</small>")
-                return "<hr style='margin:4px 0;'>".join(items)
-
-            if not df_f.empty:
-                grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
-                grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
-                grid.index = [map_h.get(i, i) for i in grid.index]
-                grid.columns = [map_j.get(c, c) for c in grid.columns]
-                st.write(grid.to_html(escape=False), unsafe_allow_html=True)
-
-        elif mode_view == "Promotion":
-            p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
-            df_p = df[df["Promotion"] == p_sel].copy()
-            
-            st.markdown(f"### 📚 EDT Promotion : {p_sel}")
-            
-            def fmt_p(rows):
-                items = []
-                for _, r in rows.iterrows():
-                    code_up = str(r['Code']).upper()
-                    color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
-                    nat = '📘' if 'COURS' in code_up else ('📗' if 'TD' in code_up else '🔴')
-                    items.append(f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;'><b>{nat} {r['Enseignements']}</b><br><small>👤 {r['Enseignants']} | 📍 {r['Lieu']}</small></div>")
-                return "".join(items)
-
-            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
-            grid_p = grid_p.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
-            grid_p = grid_p[grid_p.any(axis=1)]
-            grid_p.index = [map_h.get(i, i) for i in grid_p.index]
-            grid_p.columns = [map_j.get(c, c) for c in grid_p.columns]
-            st.write(grid_p.to_html(escape=False), unsafe_allow_html=True)
-
-            # Export
-            c1, c2 = st.columns(2)
-            buf_p = io.BytesIO()
-            df_p[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']].to_excel(buf_p, index=False)
-            c1.download_button("📥 Excel", buf_p.getvalue(), f"EDT_{p_sel}.xlsx", 
-                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            c2.download_button("🌐 HTML", grid_p.to_html(escape=False), f"EDT_{p_sel}.html", "text/html")
-
-        elif mode_view == "🏢 Planning Salles":
-            s_sel = st.selectbox("Choisir Salle :", sorted([s for s in df["Lieu"].unique() if s and s != "Non défini"]))
-            df_s = df[df["Lieu"] == s_sel]
-            st.markdown(f"### 🏢 Planning : {s_sel}")
-            st.dataframe(df_s[['Jours', 'Horaire', 'Enseignements', 'Enseignants', 'Promotion']], use_container_width=True, hide_index=True)
-
-        elif mode_view == "🚩 Vérificateur de conflits":
-            st.subheader("🚩 Détection des Conflits")
-            
-            conflits = []
-            # Conflits salle
-            grp_salle = df[(df["Lieu"] != "Non défini")].groupby(['Jours', 'Horaire', 'Lieu'])
-            for (j, h, l), g in grp_salle:
-                if len(g) > 1:
-                    conflits.append({"Type": "Salle", "Jour": j, "Horaire": h, "Lieu": l, "Détail": f"{len(g)} cours simultanés"})
-            # Conflits prof
-            grp_prof = df[(df["Enseignants"] != "Non défini")].groupby(['Jours', 'Horaire', 'Enseignants'])
-            for (j, h, p), g in grp_prof:
-                if len(g) > 1:
-                    conflits.append({"Type": "Enseignant", "Jour": j, "Horaire": h, "Enseignant": p, "Détail": f"{len(g)} affectations"})
-
-            if conflits:
-                st.warning(f"⚠️ {len(conflits)} conflit(s) détecté(s)")
-                st.dataframe(pd.DataFrame(conflits), use_container_width=True, hide_index=True)
-            else:
-                st.success("✅ Aucun conflit détecté")
-                st.balloons()
-
-        elif mode_view == "✍️ Éditeur de données":
-            st.subheader("✍️ Éditeur de données EDT")
-            
-            cols_ed = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-            for c in cols_ed:
-                if c not in df.columns:
-                    df[c] = ""
-
-            if 'df_admin' not in st.session_state:
-                st.session_state.df_admin = df[cols_ed].copy()
-
-            search = st.text_input("🔍 Rechercher (Enseignant, Salle, Matière) :")
-            df_edit = st.session_state.df_admin.copy()
-            if search:
-                mask = df_edit.apply(lambda r: r.astype(str).str.contains(search, case=False).any(), axis=1)
-                df_edit = df_edit[mask]
-
-            edited = st.data_editor(df_edit, use_container_width=True, num_rows="dynamic", key="edt_editor")
-
-            c1, c2 = st.columns(2)
-            if c1.button("💾 Sauvegarder", use_container_width=True):
-                st.session_state.df_admin = edited
-                try:
-                    edited.to_excel(NOM_FICHIER_FIXE, index=False)
-                    st.success("✅ Sauvegardé !")
-                except Exception as e:
-                    st.error(f"Erreur sauvegarde : {e}")
-            if c2.button("🔄 Réinitialiser", use_container_width=True):
-                if 'df_admin' in st.session_state:
-                    del st.session_state.df_admin
-                st.rerun()
-
-    # ============================================================
-    # PORTAIL : MON ESPACE ENSEIGNANT
-    # ============================================================
-    elif portail == "👤 Mon Espace Enseignant":
-        cible = user['nom_officiel']
-        nom_aff = repertoire_noms_complets.get(cible.strip().upper(), cible)
-        
-        # ═══════════════════════════════════════════════════════
-        # EN-TÊTE IDENTITÉ + DÉCONNEXION
-        # ═══════════════════════════════════════════════════════
-        col_id, col_deco = st.columns([4, 1])
-        with col_id:
-            st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #1E3A8A, #3B82F6); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
-                    <h2 style="margin:0;">👤 {nom_aff}</h2>
-                    <p style="margin:5px 0 0 0; opacity:0.9;">Espace Personnel Enseignant - S1 2026-2027</p>
-                </div>
-            """, unsafe_allow_html=True)
-        with col_deco:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🚪 Déconnexion", use_container_width=True, type="primary", key="deco_ens_indiv_main"):
-                st.session_state["user_data"] = None
-                st.rerun()
-
-        df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
-        if df_f.empty:
-            st.warning("⚠️ Aucun cours programmé pour vous.")
-            return
-
-        df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
-        df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
-        
-        nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-        nb_td = len(df_u[df_u['Type'] == 'TD'])
-        nb_tp = len(df_u[df_u['Type'] == 'TP'])
-        seuil = 3.0 if poste_sup else 6.0
-        charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
-        delta = charge_eq - seuil
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("📘 Cours", nb_cours)
-        c2.metric("📗 TD", nb_td)
-        c3.metric("🔴 TP", nb_tp)
-        c4.metric("Équivalent", f"{charge_eq:.1f} eq/h")
-
-        if delta > 0:
-            st.success(f"✅ Heures supplémentaires : +{delta * 1.5:.1f}h")
-        elif delta < 0:
-            st.warning(f"⚠️ Déficit horaire : {delta * 1.5:.1f}h")
-        else:
-            st.info("⚖️ Seuil réglementaire atteint")
-
-        st.divider()
-        st.markdown("### 📅 Mon Emploi du Temps")
-        st.dataframe(df_f[['Jours', 'Horaire', 'Enseignements', 'Code', 'Lieu', 'Promotion']].sort_values(['Jours', 'Horaire']), 
-                    use_container_width=True, hide_index=True)
-
-        # Export perso
-        col_ex1, col_ex2 = st.columns(2)
-        buf_ex = io.BytesIO()
-        df_f[['Enseignements', 'Code', 'Horaire', 'Jours', 'Lieu', 'Promotion']].to_excel(buf_ex, index=False)
-        col_ex1.download_button("📊 Excel", buf_ex.getvalue(), f"Mon_EDT_{cible}.xlsx", 
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        col_ex2.download_button("🌐 HTML", df_f.to_html(index=False), f"Mon_EDT_{cible}.html", "text/html")
-
-    # ============================================================
-    # PORTAIL : SURVEILLANCES EXAMENS
-    # ============================================================
-    elif portail == "📅 Surveillances Examens":
-        FILE_S = str(_BASE_DIR / "surveillances_2027.xlsx")
-        if not os.path.exists(FILE_S):
-            st.error("❌ Fichier 'surveillances_2027.xlsx' introuvable.")
-            return
-
-        df_surv = pd.read_excel(FILE_S)
-        df_surv.columns = [str(c).strip() for c in df_surv.columns]
-        
-        c_prof = 'Surveillant(s)' if 'Surveillant(s)' in df_surv.columns else 'Enseignants'
-        u_nom = user['nom_officiel']
-        
-        if is_admin:
-            profs_surv = sorted([p for p in df_surv[c_prof].unique() if p and p != "Non défini"])
-            prof_sel = st.selectbox("🔍 Filtrer par enseignant :", profs_surv)
-        else:
-            prof_sel = u_nom
-            st.info(f"👤 Vos surveillances : **{u_nom}**")
-
-        df_u = df_surv[df_surv[c_prof].str.contains(prof_sel, case=False, na=False)]
-        st.markdown(f"### 📋 Planning de surveillance : {prof_sel}")
-        st.dataframe(df_u, use_container_width=True, hide_index=True)
-
-        if not df_u.empty:
-            buf_s = io.BytesIO()
-            df_u.to_excel(buf_s, index=False)
-            st.download_button("📥 Télécharger", buf_s.getvalue(), f"Surv_{prof_sel}.xlsx",
-                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    # ============================================================
-    # PORTAIL : GÉNÉRATEUR AUTOMATIQUE (ADMIN)
-    # ============================================================
-    elif portail == "🤖 Générateur Automatique":
-        if not is_admin:
-            st.error("🚫 Accès réservé à l'administration.")
-            return
-        
-        st.header("⚙️ Générateur de Surveillances")
-        st.info("Cet outil génère automatiquement les plannings de surveillance d'examens.")
-        
-        # Interface simplifiée
-        st.markdown("### 🎓 Promotions à traiter")
-        promos_dispo = sorted(df['Promotion'].unique().tolist())
-        promos_sel = st.multiselect("Sélectionner :", promos_dispo)
-        
-        if promos_sel and st.button("🚀 Générer le planning", use_container_width=True):
-            st.success(f"✅ Planning généré pour : {', '.join(promos_sel)}")
-            st.info("(Simulation - Intégrez votre algorithme de répartition ici)")
-            st.balloons()
-
-    # ============================================================
-    # PORTAIL : PORTAIL ENSEIGNANTS (ADMIN - ENVOI MAIL)
-    # ============================================================
-    elif portail == "👥 Portail Enseignants":
-        if not is_admin:
-            st.error("🚫 Accès réservé à l'administration.")
-            return
-
-        st.header("📧 Portail Enseignants - Envoi des EDT")
-        
-        # Liste des enseignants avec emails
-        donnees_envoi = []
-        for ens in sorted(df["Enseignants"].unique()):
-            if ens and ens != "Non défini":
-                email = repertoire_source.get(str(ens).strip().upper(), "Non communiqué")
-                donnees_envoi.append({"Enseignant": ens, "Email": email, "Statut": "✅ Prêt" if "@" in str(email) else "❌ Sans email"})
-
-        df_envoi = pd.DataFrame(donnees_envoi)
-        st.dataframe(df_envoi, use_container_width=True, hide_index=True)
-
-        # Filtre
-        filtre_statut = st.selectbox("Filtrer :", ["Tous", "✅ Prêt", "❌ Sans email"])
-        if filtre_statut != "Tous":
-            df_envoi = df_envoi[df_envoi["Statut"] == filtre_statut]
-
-        st.download_button("📥 Télécharger la liste", df_envoi.to_csv(index=False), "liste_enseignants.csv", "text/csv")
-
-        st.markdown("---")
-        st.info("💡 Pour l'envoi automatisé par email, configurez les identifiants SMTP dans les secrets Streamlit.")
-
-    # ============================================================
-    # PORTAIL : MISE À JOUR EDT (ADMIN)
-    # ============================================================
-    elif portail == "🎓 Portail mise à jour EDT":
-        st.subheader("📚 Mise à jour des Emplois du Temps")
-        
-        promo_vue = st.selectbox("Promotion à consulter :", sorted(df["Promotion"].unique()))
-        df_vue = df[df["Promotion"] == promo_vue][['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
-        
-        st.dataframe(df_vue.sort_values(['Jours', 'Horaire']), use_container_width=True, hide_index=True)
-        
-        c1, c2 = st.columns(2)
-        buf_v = io.BytesIO()
-        df_vue.to_excel(buf_v, index=False)
-        c1.download_button("📊 Excel", buf_v.getvalue(), f"EDT_{promo_vue}.xlsx", 
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        c2.download_button("🌐 HTML", df_vue.to_html(index=False), f"EDT_{promo_vue}.html", "text/html")
-
-        if is_admin:
-            st.divider()
-            st.markdown("### ✍️ Import / Mise à jour par fichier")
-            fichier_import = st.file_uploader("Importer un fichier Excel EDT", type=["xlsx"])
-            if fichier_import:
-                try:
-                    df_imp = pd.read_excel(fichier_import)
-                    st.success(f"✅ {len(df_imp)} lignes importées. Cliquez sur Sauvegarder pour fusionner.")
-                    if st.button("💾 Fusionner avec l'EDT actuel", use_container_width=True):
-                        df_new = pd.concat([df, df_imp], ignore_index=True)
-                        df_new.to_excel(NOM_FICHIER_FIXE, index=False)
-                        st.success("✅ Fichier maître mis à jour !")
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Erreur import : {e}")
-
-    # ============================================================
-    # PORTAIL : GESTION ADMINISTRATIVE (BORDEREAUX)
-    # ============================================================
-    elif portail == "📢 Gestion Administrative":
-        if not is_admin:
-            st.error("🚫 Accès réservé à l'administration.")
-            return
-
-        st.header("📋 Gestion Administrative - Bordereaux & Documents")
-        
-        tab_bord, tab_pv = st.tabs(["📨 Bordereau d'envoi", "📄 PV / Procès-verbal"])
-
-        with tab_bord:
-            st.subheader("Génération de Bordereau d'Envoi")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                destinataire = st.selectbox("Destinataire :", [
-                    "Le Doyen de la Faculté", 
-                    "Le Vice-Doyen", 
-                    "Le Chef de Département", 
-                    "La Scolarité", 
-                    "Autre"
-                ])
-                if destinataire == "Autre":
-                    destinataire = st.text_input("Préciser :")
-            with col2:
-                ref_num = st.text_input("N° Référence :", f"001/FGE/ELT/{datetime.now().year}")
-                date_bord = st.date_input("Date :", datetime.now())
-
-            st.markdown("### 📎 Pièces jointes")
-            pieces_df = st.data_editor(
-                pd.DataFrame([
-                    {"Désignation": "Emploi du temps S1", "Nombre": 1, "Observation": "Pour diffusion"},
-                    {"Désignation": "Liste des étudiants", "Nombre": 1, "Observation": "Pour contrôle"}
-                ]),
-                column_config={
-                    "Désignation": st.column_config.TextColumn("Désignation", required=True),
-                    "Nombre": st.column_config.NumberColumn("Nombre", min_value=1),
-                    "Observation": st.column_config.TextColumn("Observation")
-                },
-                num_rows="dynamic",
-                use_container_width=True,
-                key="pieces_bord"
-            )
-
-            if st.button("📄 Générer le Bordereau", use_container_width=True, type="primary"):
-                # Génération simple HTML (fallback si python-docx non dispo)
-                html_bord = f"""
-                <div style="border:2px solid #1E3A8A; padding:30px; max-width:800px; margin:auto; font-family:Arial;">
-                    <div style="text-align:center; border-bottom:2px solid #D4AF37; padding-bottom:15px; margin-bottom:20px;">
-                        <h2 style="color:#1E3A8A; margin:0;">UNIVERSITÉ DJILLALI LIABES</h2>
-                        <p style="margin:5px 0;">Faculté de Génie Électrique - Sidi Bel Abbès</p>
-                        <h3 style="color:#D4AF37; margin:10px 0 0 0;">BORDEREAU D'ENVOI</h3>
-                    </div>
-                    <p><b>N° Référence :</b> {ref_num}</p>
-                    <p><b>Date :</b> {date_bord.strftime('%d/%m/%Y')}</p>
-                    <p><b>Destinataire :</b> {destinataire}</p>
-                    <hr>
-                    <table style="width:100%; border-collapse:collapse; margin-top:20px;">
-                        <tr style="background:#1E3A8A; color:white;">
-                            <th style="padding:10px; border:1px solid #333;">Désignation des pièces</th>
-                            <th style="padding:10px; border:1px solid #333;">Nombre</th>
-                            <th style="padding:10px; border:1px solid #333;">Observations</th>
-                        </tr>
-                """
-                for _, row in pieces_df.iterrows():
-                    html_bord += f"""
-                        <tr>
-                            <td style="padding:8px; border:1px solid #333;">{row['Désignation']}</td>
-                            <td style="padding:8px; border:1px solid #333; text-align:center;">{row['Nombre']}</td>
-                            <td style="padding:8px; border:1px solid #333;">{row['Observation']}</td>
-                        </tr>
-                    """
-                html_bord += """
-                    </table>
-                    <div style="margin-top:40px; display:flex; justify-content:space-between;">
-                        <div><b>Signature du responsable</b><br><br>_________________</div>
-                        <div><b>Accusé de réception</b><br><br>_________________</div>
-                    </div>
-                </div>
-                """
-                st.success("✅ Bordereau généré")
-                st.download_button("📥 Télécharger (HTML)", html_bord, f"Bordereau_{ref_num.replace('/', '_')}.html", "text/html")
-
-        with tab_pv:
-            st.subheader("📄 Génération de PV")
-            st.info("Module de génération de Procès-verbaux de délibération")
-            st.text_area("Contenu du PV :", height=200, placeholder="Saisir le contenu du PV ici...")
-            if st.button("Générer le PV", use_container_width=True):
-                st.success("✅ PV généré (simulation)")
-                st.download_button("📥 Télécharger", "<html><body><h1>PV</h1></body></html>", "PV.html", "text/html")
-
-
-# =============================================================================
-# POINT D'ENTRÉE PRINCIPAL
-# =============================================================================
-if module_sel == "📊 Suivi d'Assiduité":
-    run_assiduite()
-else:
-    run_edt()
-"""
-================================================================================
-Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
-Département d'Electrotechnique - Faculté de Genie Electrique - UDL-SBA
-Année universitaire 2026-2027
-================================================================================
-"""
-
-# =============================================================================
-# IMPORTS UNIFIES
-# =============================================================================
 import streamlit as st
 import pandas as pd
 import base64
@@ -9775,4 +9080,699 @@ if is_admin:
     st.divider()
     with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
         afficher_historique_bordereaux()
+# =============================================================================
+# MODULE 2 : GESTION DES EDTs & ADMINISTRATION
+# =============================================================================
+def run_edt():
+    st.markdown("<h1 class='main-title'>🏛️ DÉPARTEMENT D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
+    
+    # --- CONNEXION BASE DE DONNÉES ---
+    try:
+        URL = st.secrets["SUPABASE_URL"]
+        KEY = st.secrets["SUPABASE_KEY"]
+        supabase_edt = create_client(URL, KEY)
+    except Exception as e:
+        st.error(f"Erreur connexion Supabase : {e}")
+        supabase_edt = None
+
+    def hash_pw(password):
+        return hashlib.sha256(str.encode(password)).hexdigest()
+
+    # --- GESTION DU TEMPS ---
+    now = datetime.now()
+    date_str = now.strftime("%d/%m/%Y")
+    jours_semaine = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+    nom_jour_fr = jours_semaine[now.weekday()]
+
+    # --- STYLE CSS ---
+    st.markdown("""
+        <style>
+        .main-title { 
+            color: #1E3A8A; 
+            text-align: center; 
+            font-family: 'serif'; 
+            font-weight: bold; 
+            border-bottom: 3px solid #D4AF37; 
+            padding-bottom: 15px; 
+            font-size: 18px; 
+            margin-top: 5px;
+        }
+        .portal-badge { 
+            background-color: #D4AF37; 
+            color: #1E3A8A; 
+            padding: 5px 15px; 
+            border-radius: 5px; 
+            font-weight: bold; 
+            text-align: center; 
+            margin-bottom: 20px; 
+        }
+        .date-badge { 
+            background-color: #1E3A8A; 
+            color: white; 
+            padding: 5px 15px; 
+            border-radius: 20px; 
+            font-size: 12px; 
+            float: right; 
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # --- CHARGEMENT DES DONNÉES ---
+    df = None
+    repertoire_qualites = {} 
+    repertoire_grades = {} 
+    repertoire_source = {}
+    repertoire_noms_complets = {}
+    repertoire_telephones = {}
+    df_contacts = None
+
+    def normalize(s):
+        if not s or s == "Non défini": 
+            return "vide"
+        s = str(s).strip().lower()
+        s = s.replace(" ", "").replace("-", "").replace("–", "")
+        s = s.replace(":00", "").replace("h00", "h")
+        return s
+
+    if os.path.exists(NOM_FICHIER_FIXE):
+        try:
+            df = pd.read_excel(NOM_FICHIER_FIXE)
+            df.columns = [str(c).strip() for c in df.columns]
+            colonnes_cles = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+            for col in colonnes_cles:
+                if col in df.columns: 
+                    df[col] = df[col].fillna("Non défini").astype(str).str.strip()
+                else:
+                    df[col] = "Non défini"
+            df['h_norm'] = df['Horaire'].apply(normalize)
+            df['j_norm'] = df['Jours'].apply(normalize)
+        except Exception as e:
+            st.error(f"Erreur chargement EDT : {e}")
+
+    if os.path.exists(NOM_FICHIER_CONTACTS):
+        try:
+            df_contacts = pd.read_excel(NOM_FICHIER_CONTACTS)
+            df_contacts.columns = [str(c).strip() for c in df_contacts.columns]
+            for _, row in df_contacts.iterrows():
+                nom_brut = str(row.get('NOM', '')).strip().upper()
+                prénom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
+                email_brut = str(row.get('Email', '')).strip()
+                qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
+                grade_brut = str(row.get('Grade', 'N/A')).strip()
+                tel_brut = str(row.get('N°/TEL', '')).strip()
+                tel_nettoye = ''.join([c for c in tel_brut if c.isdigit()])
+                if tel_nettoye and tel_nettoye.lower() != 'nan':
+                    repertoire_telephones[nom_brut] = tel_nettoye
+                if nom_brut:
+                    nom_complet = f"{nom_brut} {prénom_brut}".strip()
+                    if email_brut and email_brut.lower() != 'nan':
+                        repertoire_source[nom_brut] = email_brut
+                    repertoire_noms_complets[nom_brut] = nom_complet
+                    repertoire_qualites[nom_brut] = qualite_brute
+                    repertoire_grades[nom_brut] = grade_brut
+        except Exception as e:
+            st.warning(f"Fichier contacts : {e}")
+
+    # --- SYSTÈME D'AUTH ---
+    if "user_data" not in st.session_state:
+        st.session_state["user_data"] = None
+
+    if not st.session_state["user_data"]:
+        st.info("🔒 **Module 2 (Gestion des EDTs).** Connexion requise.")
+        t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
+
+        with t_conn:
+            email_input = st.text_input("Adresse Email", key="login_email")
+            pass_input = st.text_input("Mot de passe", type="password", key="login_pass")
+            if st.button("Se connecter au portail", use_container_width=True):
+                if supabase_edt:
+                    result = supabase_edt.table("enseignants_auth").select("*").eq("email", email_input).eq("password_hash", hash_pw(pass_input)).execute()
+                    if result.data:
+                        st.session_state["user_data"] = result.data[0]
+                        st.rerun()
+                    else:
+                        st.error("Email ou mot de passe incorrect.")
+                else:
+                    st.error("Base de données non disponible.")
+
+        with t_ins:
+            st.subheader("Créer un nouveau compte Enseignant")
+            if df is not None:
+                noms_possibles = sorted(df["Enseignants"].unique())
+            else:
+                noms_possibles = []
+            new_nom = st.selectbox("Sélectionnez votre nom", noms_possibles)
+            new_email = st.text_input("Votre adresse Email")
+            new_pass = st.text_input("Choisissez un mot de passe", type="password")
+            confirm_pass = st.text_input("Confirmez le mot de passe", type="password")
+            if st.button("Créer mon compte", use_container_width=True):
+                if not new_email or not new_pass:
+                    st.warning("Veuillez remplir tous les champs.")
+                elif new_pass != confirm_pass:
+                    st.error("Les mots de passe ne correspondent pas.")
+                elif supabase_edt:
+                    check = supabase_edt.table("enseignants_auth").select("email").eq("email", new_email).execute()
+                    if check.data:
+                        st.error("Cet email est déjà utilisé.")
+                    else:
+                        data_ins = {
+                            "nom_officiel": new_nom,
+                            "email": new_email,
+                            "password_hash": hash_pw(new_pass),
+                            "role": "enseignant"
+                        }
+                        supabase_edt.table("enseignants_auth").insert(data_ins).execute()
+                        st.success("✅ Compte créé avec succès !")
+                        st.balloons()
+
+        with t_adm:
+            code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code")
+            if st.button("Accès Administration", use_container_width=True):
+                if code_admin == CODE_ADMIN_EDT:
+                    st.session_state["user_data"] = {
+                        "nom_officiel": "ADMINISTRATEUR", 
+                        "role": "admin",
+                        "email": "admin@udl-sba.dz"
+                    }
+                    st.rerun()
+                else:
+                    st.error("Code admin incorrect.")
+        
+        st.warning("⚠️ Veuillez vous connecter ci-dessus pour accéder au Module 2.")
+        return
+
+    user = st.session_state.get("user_data")
+    is_admin = user.get("role") == "admin"
+
+    # --- INTERFACE PRINCIPALE APRÈS CONNEXION ---
+    st.markdown(f"<div class='portal-badge'>MODE ACTIF : {'ADMINISTRATEUR' if is_admin else 'ENSEIGNANT'}</div>", unsafe_allow_html=True)
+
+    # Barre latérale interne pour le module EDT
+    with st.sidebar:
+        st.markdown("---")
+        st.header(f"👤 {user.get('nom_officiel', 'Utilisateur')}")
+        
+        if is_admin:
+            options_portail = [
+                "📖 Emploi du Temps", 
+                "📅 Surveillances Examens", 
+                "🤖 Générateur Automatique", 
+                "👥 Portail Enseignants", 
+                "🎓 Portail mise à jour EDT", 
+                "📢 Gestion Administrative"
+            ]
+        else:
+            options_portail = [
+                "👤 Mon Espace Enseignant",
+                "📅 Surveillances Examens"
+            ]
+
+        portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
+        st.divider()
+        
+        mode_view = "Personnel"
+        poste_sup = False
+        
+        if portail == "📖 Emploi du Temps" and is_admin:
+            mode_view = st.radio("Vue Administration :", [
+                "Promotion", "Enseignant", "🏢 Planning Salles", 
+                "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
+            ])
+            poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
+        elif portail == "👤 Mon Espace Enseignant":
+            poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
+        
+        if st.button("🚪 Déconnexion", use_container_width=True):
+            st.session_state["user_data"] = None
+            st.rerun()
+
+    # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
+    
+    # Constantes locales pour EDT
+    horaires_list = [
+        "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
+        "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
+    ]
+    jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+    map_h = {normalize(h): h for h in horaires_list}
+    map_j = {normalize(j): j for j in jours_list}
+
+    # En-tête harmonisé
+    col_logo, col_titre, col_date = st.columns([1, 5, 1.2])
+    with col_logo:
+        try:
+            st.image(str(_BASE_DIR / "logo.PNG"), width=90)
+        except:
+            st.markdown("🏛️")
+    with col_titre:
+        st.markdown("<h3 style='color:#1E3A8A;margin:0;'>Plateforme de gestion des EDTs 2026-2027</h3>", unsafe_allow_html=True)
+        st.caption("Département d'Électrotechnique - Faculté de Génie Électrique - UDL-SBA")
+    with col_date:
+        st.markdown(f"<div style='background:#1E3A8A;color:white;padding:8px 12px;border-radius:8px;text-align:center;font-size:12px;'>📅 {nom_jour_fr}<br>{date_str}</div>", unsafe_allow_html=True)
+
+    st.markdown("<hr style='border:2px solid #D4AF37;margin:15px 0;'>", unsafe_allow_html=True)
+
+    if df is None or df.empty:
+        st.error("❌ Les données EDT ne sont pas disponibles. Vérifiez le fichier source.")
+        return
+
+    # ============================================================
+    # PORTAIL : EMPLOI DU TEMPS (ADMIN)
+    # ============================================================
+    if portail == "📖 Emploi du Temps" and is_admin:
+        if mode_view == "Enseignant":
+            cible = st.selectbox("Sélectionner l'Enseignant :", 
+                                sorted([e for e in df["Enseignants"].unique() if e and e != "Non défini"]))
+            
+            df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
+            df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
+            df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
+
+            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
+            nb_td = len(df_u[df_u['Type'] == 'TD'])
+            nb_tp = len(df_u[df_u['Type'] == 'TP'])
+            seuil = 3.0 if poste_sup else 6.0
+            charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
+            delta = charge_eq - seuil
+            h_sup = delta * 1.5
+
+            st.markdown(f"### 📊 Charge Horaire : {cible}")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("📘 Cours", nb_cours)
+            c2.metric("📗 TD", nb_td)
+            c3.metric("🔴 TP", nb_tp)
+            c4.metric("Charge Eq/h", f"{charge_eq:.1f}")
+
+            if h_sup > 0:
+                st.success(f"✅ Heures supplémentaires : +{h_sup:.1f}h")
+            elif h_sup < 0:
+                st.warning(f"⚠️ Déficit : {h_sup:.1f}h")
+            else:
+                st.info("⚖️ Seuil exact")
+
+            # Grille EDT
+            def format_case(rows):
+                items = []
+                for _, r in rows.iterrows():
+                    code_up = str(r['Code']).upper()
+                    if 'COURS' in code_up:
+                        nat = '📘'
+                    elif 'TD' in code_up:
+                        nat = '📗'
+                    else:
+                        nat = '🔴'
+                    items.append(f"<b>{nat} {r['Enseignements']}</b><br><small>{r['Lieu']} | {r['Promotion']}</small>")
+                return "<hr style='margin:4px 0;'>".join(items)
+
+            if not df_f.empty:
+                grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
+                grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
+                grid.index = [map_h.get(i, i) for i in grid.index]
+                grid.columns = [map_j.get(c, c) for c in grid.columns]
+                st.write(grid.to_html(escape=False), unsafe_allow_html=True)
+
+        elif mode_view == "Promotion":
+            p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
+            df_p = df[df["Promotion"] == p_sel].copy()
+            
+            st.markdown(f"### 📚 EDT Promotion : {p_sel}")
+            
+            def fmt_p(rows):
+                items = []
+                for _, r in rows.iterrows():
+                    code_up = str(r['Code']).upper()
+                    color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
+                    nat = '📘' if 'COURS' in code_up else ('📗' if 'TD' in code_up else '🔴')
+                    items.append(f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;'><b>{nat} {r['Enseignements']}</b><br><small>👤 {r['Enseignants']} | 📍 {r['Lieu']}</small></div>")
+                return "".join(items)
+
+            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+            grid_p = grid_p.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
+            grid_p = grid_p[grid_p.any(axis=1)]
+            grid_p.index = [map_h.get(i, i) for i in grid_p.index]
+            grid_p.columns = [map_j.get(c, c) for c in grid_p.columns]
+            st.write(grid_p.to_html(escape=False), unsafe_allow_html=True)
+
+            # Export
+            c1, c2 = st.columns(2)
+            buf_p = io.BytesIO()
+            df_p[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']].to_excel(buf_p, index=False)
+            c1.download_button("📥 Excel", buf_p.getvalue(), f"EDT_{p_sel}.xlsx", 
+                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            c2.download_button("🌐 HTML", grid_p.to_html(escape=False), f"EDT_{p_sel}.html", "text/html")
+
+        elif mode_view == "🏢 Planning Salles":
+            s_sel = st.selectbox("Choisir Salle :", sorted([s for s in df["Lieu"].unique() if s and s != "Non défini"]))
+            df_s = df[df["Lieu"] == s_sel]
+            st.markdown(f"### 🏢 Planning : {s_sel}")
+            st.dataframe(df_s[['Jours', 'Horaire', 'Enseignements', 'Enseignants', 'Promotion']], use_container_width=True, hide_index=True)
+
+        elif mode_view == "🚩 Vérificateur de conflits":
+            st.subheader("🚩 Détection des Conflits")
+            
+            conflits = []
+            # Conflits salle
+            grp_salle = df[(df["Lieu"] != "Non défini")].groupby(['Jours', 'Horaire', 'Lieu'])
+            for (j, h, l), g in grp_salle:
+                if len(g) > 1:
+                    conflits.append({"Type": "Salle", "Jour": j, "Horaire": h, "Lieu": l, "Détail": f"{len(g)} cours simultanés"})
+            # Conflits prof
+            grp_prof = df[(df["Enseignants"] != "Non défini")].groupby(['Jours', 'Horaire', 'Enseignants'])
+            for (j, h, p), g in grp_prof:
+                if len(g) > 1:
+                    conflits.append({"Type": "Enseignant", "Jour": j, "Horaire": h, "Enseignant": p, "Détail": f"{len(g)} affectations"})
+
+            if conflits:
+                st.warning(f"⚠️ {len(conflits)} conflit(s) détecté(s)")
+                st.dataframe(pd.DataFrame(conflits), use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ Aucun conflit détecté")
+                st.balloons()
+
+        elif mode_view == "✍️ Éditeur de données":
+            st.subheader("✍️ Éditeur de données EDT")
+            
+            cols_ed = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+            for c in cols_ed:
+                if c not in df.columns:
+                    df[c] = ""
+
+            if 'df_admin' not in st.session_state:
+                st.session_state.df_admin = df[cols_ed].copy()
+
+            search = st.text_input("🔍 Rechercher (Enseignant, Salle, Matière) :")
+            df_edit = st.session_state.df_admin.copy()
+            if search:
+                mask = df_edit.apply(lambda r: r.astype(str).str.contains(search, case=False).any(), axis=1)
+                df_edit = df_edit[mask]
+
+            edited = st.data_editor(df_edit, use_container_width=True, num_rows="dynamic", key="edt_editor")
+
+            c1, c2 = st.columns(2)
+            if c1.button("💾 Sauvegarder", use_container_width=True):
+                st.session_state.df_admin = edited
+                try:
+                    edited.to_excel(NOM_FICHIER_FIXE, index=False)
+                    st.success("✅ Sauvegardé !")
+                except Exception as e:
+                    st.error(f"Erreur sauvegarde : {e}")
+            if c2.button("🔄 Réinitialiser", use_container_width=True):
+                if 'df_admin' in st.session_state:
+                    del st.session_state.df_admin
+                st.rerun()
+
+    # ============================================================
+    # PORTAIL : MON ESPACE ENSEIGNANT
+    # ============================================================
+    elif portail == "👤 Mon Espace Enseignant":
+        cible = user['nom_officiel']
+        nom_aff = repertoire_noms_complets.get(cible.strip().upper(), cible)
+        
+        # ═══════════════════════════════════════════════════════
+        # EN-TÊTE IDENTITÉ + DÉCONNEXION
+        # ═══════════════════════════════════════════════════════
+        col_id, col_deco = st.columns([4, 1])
+        with col_id:
+            st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #1E3A8A, #3B82F6); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+                    <h2 style="margin:0;">👤 {nom_aff}</h2>
+                    <p style="margin:5px 0 0 0; opacity:0.9;">Espace Personnel Enseignant - S1 2026-2027</p>
+                </div>
+            """, unsafe_allow_html=True)
+        with col_deco:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🚪 Déconnexion", use_container_width=True, type="primary", key="deco_ens_indiv_main"):
+                st.session_state["user_data"] = None
+                st.rerun()
+
+        df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
+        if df_f.empty:
+            st.warning("⚠️ Aucun cours programmé pour vous.")
+            return
+
+        df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
+        df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
+        
+        nb_cours = len(df_u[df_u['Type'] == 'COURS'])
+        nb_td = len(df_u[df_u['Type'] == 'TD'])
+        nb_tp = len(df_u[df_u['Type'] == 'TP'])
+        seuil = 3.0 if poste_sup else 6.0
+        charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
+        delta = charge_eq - seuil
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("📘 Cours", nb_cours)
+        c2.metric("📗 TD", nb_td)
+        c3.metric("🔴 TP", nb_tp)
+        c4.metric("Équivalent", f"{charge_eq:.1f} eq/h")
+
+        if delta > 0:
+            st.success(f"✅ Heures supplémentaires : +{delta * 1.5:.1f}h")
+        elif delta < 0:
+            st.warning(f"⚠️ Déficit horaire : {delta * 1.5:.1f}h")
+        else:
+            st.info("⚖️ Seuil réglementaire atteint")
+
+        st.divider()
+        st.markdown("### 📅 Mon Emploi du Temps")
+        st.dataframe(df_f[['Jours', 'Horaire', 'Enseignements', 'Code', 'Lieu', 'Promotion']].sort_values(['Jours', 'Horaire']), 
+                    use_container_width=True, hide_index=True)
+
+        # Export perso
+        col_ex1, col_ex2 = st.columns(2)
+        buf_ex = io.BytesIO()
+        df_f[['Enseignements', 'Code', 'Horaire', 'Jours', 'Lieu', 'Promotion']].to_excel(buf_ex, index=False)
+        col_ex1.download_button("📊 Excel", buf_ex.getvalue(), f"Mon_EDT_{cible}.xlsx", 
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        col_ex2.download_button("🌐 HTML", df_f.to_html(index=False), f"Mon_EDT_{cible}.html", "text/html")
+
+    # ============================================================
+    # PORTAIL : SURVEILLANCES EXAMENS
+    # ============================================================
+    elif portail == "📅 Surveillances Examens":
+        FILE_S = str(_BASE_DIR / "surveillances_2027.xlsx")
+        if not os.path.exists(FILE_S):
+            st.error("❌ Fichier 'surveillances_2027.xlsx' introuvable.")
+            return
+
+        df_surv = pd.read_excel(FILE_S)
+        df_surv.columns = [str(c).strip() for c in df_surv.columns]
+        
+        c_prof = 'Surveillant(s)' if 'Surveillant(s)' in df_surv.columns else 'Enseignants'
+        u_nom = user['nom_officiel']
+        
+        if is_admin:
+            profs_surv = sorted([p for p in df_surv[c_prof].unique() if p and p != "Non défini"])
+            prof_sel = st.selectbox("🔍 Filtrer par enseignant :", profs_surv)
+        else:
+            prof_sel = u_nom
+            st.info(f"👤 Vos surveillances : **{u_nom}**")
+
+        df_u = df_surv[df_surv[c_prof].str.contains(prof_sel, case=False, na=False)]
+        st.markdown(f"### 📋 Planning de surveillance : {prof_sel}")
+        st.dataframe(df_u, use_container_width=True, hide_index=True)
+
+        if not df_u.empty:
+            buf_s = io.BytesIO()
+            df_u.to_excel(buf_s, index=False)
+            st.download_button("📥 Télécharger", buf_s.getvalue(), f"Surv_{prof_sel}.xlsx",
+                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    # ============================================================
+    # PORTAIL : GÉNÉRATEUR AUTOMATIQUE (ADMIN)
+    # ============================================================
+    elif portail == "🤖 Générateur Automatique":
+        if not is_admin:
+            st.error("🚫 Accès réservé à l'administration.")
+            return
+        
+        st.header("⚙️ Générateur de Surveillances")
+        st.info("Cet outil génère automatiquement les plannings de surveillance d'examens.")
+        
+        # Interface simplifiée
+        st.markdown("### 🎓 Promotions à traiter")
+        promos_dispo = sorted(df['Promotion'].unique().tolist())
+        promos_sel = st.multiselect("Sélectionner :", promos_dispo)
+        
+        if promos_sel and st.button("🚀 Générer le planning", use_container_width=True):
+            st.success(f"✅ Planning généré pour : {', '.join(promos_sel)}")
+            st.info("(Simulation - Intégrez votre algorithme de répartition ici)")
+            st.balloons()
+
+    # ============================================================
+    # PORTAIL : PORTAIL ENSEIGNANTS (ADMIN - ENVOI MAIL)
+    # ============================================================
+    elif portail == "👥 Portail Enseignants":
+        if not is_admin:
+            st.error("🚫 Accès réservé à l'administration.")
+            return
+
+        st.header("📧 Portail Enseignants - Envoi des EDT")
+        
+        # Liste des enseignants avec emails
+        donnees_envoi = []
+        for ens in sorted(df["Enseignants"].unique()):
+            if ens and ens != "Non défini":
+                email = repertoire_source.get(str(ens).strip().upper(), "Non communiqué")
+                donnees_envoi.append({"Enseignant": ens, "Email": email, "Statut": "✅ Prêt" if "@" in str(email) else "❌ Sans email"})
+
+        df_envoi = pd.DataFrame(donnees_envoi)
+        st.dataframe(df_envoi, use_container_width=True, hide_index=True)
+
+        # Filtre
+        filtre_statut = st.selectbox("Filtrer :", ["Tous", "✅ Prêt", "❌ Sans email"])
+        if filtre_statut != "Tous":
+            df_envoi = df_envoi[df_envoi["Statut"] == filtre_statut]
+
+        st.download_button("📥 Télécharger la liste", df_envoi.to_csv(index=False), "liste_enseignants.csv", "text/csv")
+
+        st.markdown("---")
+        st.info("💡 Pour l'envoi automatisé par email, configurez les identifiants SMTP dans les secrets Streamlit.")
+
+    # ============================================================
+    # PORTAIL : MISE À JOUR EDT (ADMIN)
+    # ============================================================
+    elif portail == "🎓 Portail mise à jour EDT":
+        st.subheader("📚 Mise à jour des Emplois du Temps")
+        
+        promo_vue = st.selectbox("Promotion à consulter :", sorted(df["Promotion"].unique()))
+        df_vue = df[df["Promotion"] == promo_vue][['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
+        
+        st.dataframe(df_vue.sort_values(['Jours', 'Horaire']), use_container_width=True, hide_index=True)
+        
+        c1, c2 = st.columns(2)
+        buf_v = io.BytesIO()
+        df_vue.to_excel(buf_v, index=False)
+        c1.download_button("📊 Excel", buf_v.getvalue(), f"EDT_{promo_vue}.xlsx", 
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        c2.download_button("🌐 HTML", df_vue.to_html(index=False), f"EDT_{promo_vue}.html", "text/html")
+
+        if is_admin:
+            st.divider()
+            st.markdown("### ✍️ Import / Mise à jour par fichier")
+            fichier_import = st.file_uploader("Importer un fichier Excel EDT", type=["xlsx"])
+            if fichier_import:
+                try:
+                    df_imp = pd.read_excel(fichier_import)
+                    st.success(f"✅ {len(df_imp)} lignes importées. Cliquez sur Sauvegarder pour fusionner.")
+                    if st.button("💾 Fusionner avec l'EDT actuel", use_container_width=True):
+                        df_new = pd.concat([df, df_imp], ignore_index=True)
+                        df_new.to_excel(NOM_FICHIER_FIXE, index=False)
+                        st.success("✅ Fichier maître mis à jour !")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur import : {e}")
+
+    # ============================================================
+    # PORTAIL : GESTION ADMINISTRATIVE (BORDEREAUX)
+    # ============================================================
+    elif portail == "📢 Gestion Administrative":
+        if not is_admin:
+            st.error("🚫 Accès réservé à l'administration.")
+            return
+
+        st.header("📋 Gestion Administrative - Bordereaux & Documents")
+        
+        tab_bord, tab_pv = st.tabs(["📨 Bordereau d'envoi", "📄 PV / Procès-verbal"])
+
+        with tab_bord:
+            st.subheader("Génération de Bordereau d'Envoi")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                destinataire = st.selectbox("Destinataire :", [
+                    "Le Doyen de la Faculté", 
+                    "Le Vice-Doyen", 
+                    "Le Chef de Département", 
+                    "La Scolarité", 
+                    "Autre"
+                ])
+                if destinataire == "Autre":
+                    destinataire = st.text_input("Préciser :")
+            with col2:
+                ref_num = st.text_input("N° Référence :", f"001/FGE/ELT/{datetime.now().year}")
+                date_bord = st.date_input("Date :", datetime.now())
+
+            st.markdown("### 📎 Pièces jointes")
+            pieces_df = st.data_editor(
+                pd.DataFrame([
+                    {"Désignation": "Emploi du temps S1", "Nombre": 1, "Observation": "Pour diffusion"},
+                    {"Désignation": "Liste des étudiants", "Nombre": 1, "Observation": "Pour contrôle"}
+                ]),
+                column_config={
+                    "Désignation": st.column_config.TextColumn("Désignation", required=True),
+                    "Nombre": st.column_config.NumberColumn("Nombre", min_value=1),
+                    "Observation": st.column_config.TextColumn("Observation")
+                },
+                num_rows="dynamic",
+                use_container_width=True,
+                key="pieces_bord"
+            )
+
+            if st.button("📄 Générer le Bordereau", use_container_width=True, type="primary"):
+                # Génération simple HTML (fallback si python-docx non dispo)
+                html_bord = f"""
+                <div style="border:2px solid #1E3A8A; padding:30px; max-width:800px; margin:auto; font-family:Arial;">
+                    <div style="text-align:center; border-bottom:2px solid #D4AF37; padding-bottom:15px; margin-bottom:20px;">
+                        <h2 style="color:#1E3A8A; margin:0;">UNIVERSITÉ DJILLALI LIABES</h2>
+                        <p style="margin:5px 0;">Faculté de Génie Électrique - Sidi Bel Abbès</p>
+                        <h3 style="color:#D4AF37; margin:10px 0 0 0;">BORDEREAU D'ENVOI</h3>
+                    </div>
+                    <p><b>N° Référence :</b> {ref_num}</p>
+                    <p><b>Date :</b> {date_bord.strftime('%d/%m/%Y')}</p>
+                    <p><b>Destinataire :</b> {destinataire}</p>
+                    <hr>
+                    <table style="width:100%; border-collapse:collapse; margin-top:20px;">
+                        <tr style="background:#1E3A8A; color:white;">
+                            <th style="padding:10px; border:1px solid #333;">Désignation des pièces</th>
+                            <th style="padding:10px; border:1px solid #333;">Nombre</th>
+                            <th style="padding:10px; border:1px solid #333;">Observations</th>
+                        </tr>
+                """
+                for _, row in pieces_df.iterrows():
+                    html_bord += f"""
+                        <tr>
+                            <td style="padding:8px; border:1px solid #333;">{row['Désignation']}</td>
+                            <td style="padding:8px; border:1px solid #333; text-align:center;">{row['Nombre']}</td>
+                            <td style="padding:8px; border:1px solid #333;">{row['Observation']}</td>
+                        </tr>
+                    """
+                html_bord += """
+                    </table>
+                    <div style="margin-top:40px; display:flex; justify-content:space-between;">
+                        <div><b>Signature du responsable</b><br><br>_________________</div>
+                        <div><b>Accusé de réception</b><br><br>_________________</div>
+                    </div>
+                </div>
+                """
+                st.success("✅ Bordereau généré")
+                st.download_button("📥 Télécharger (HTML)", html_bord, f"Bordereau_{ref_num.replace('/', '_')}.html", "text/html")
+
+        with tab_pv:
+            st.subheader("📄 Génération de PV")
+            st.info("Module de génération de Procès-verbaux de délibération")
+            st.text_area("Contenu du PV :", height=200, placeholder="Saisir le contenu du PV ici...")
+            if st.button("Générer le PV", use_container_width=True):
+                st.success("✅ PV généré (simulation)")
+                st.download_button("📥 Télécharger", "<html><body><h1>PV</h1></body></html>", "PV.html", "text/html")
+
+
+# =============================================================================
+# POINT D'ENTRÉE PRINCIPAL
+# =============================================================================
+if module_sel == "📊 Suivi d'Assiduité":
+    run_assiduite()
+else:
+    run_edt()
+"""
+================================================================================
+Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
+Département d'Electrotechnique - Faculté de Genie Electrique - UDL-SBA
+Année universitaire 2026-2027
+================================================================================
+"""
+
+# =============================================================================
+# IMPORTS UNIFIES
+# =============================================================================
 
