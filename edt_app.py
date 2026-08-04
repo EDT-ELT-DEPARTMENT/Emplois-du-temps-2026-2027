@@ -620,15 +620,15 @@ def run_assiduite():
 <body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
 <div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
 <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-<h1 style="margin:0;font-size:20px;">Departement d'Electrotechnique - FGE/UDL-SBA</h1>
-<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduite - Annee 2026-2027</p>
+<h1 style="margin:0;font-size:20px;">Département d'Electrotechnique - FGE/UDL-SBA</h1>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - Année 2026-2027</p>
 </div>
 <div style="background:#fef2f2;border-left:5px solid #ef4444;padding:15px;margin:20px;color:#991b1b;font-weight:600;">
-Vous avez ete signale(e) absent(e) lors d'une seance de cours.
+Vous avez été signalé(e) absent(e) lors d'une séance de cours.
 </div>
 <div style="padding:20px 30px;">
-<p style="color:#334155;margin-bottom:20px;">Bonjour <strong>{nom_etud}</strong>,</p>
-<p style="color:#64748b;font-size:14px;">L'enseignant ci-dessous a enregistre votre absence. Voici les details de la seance :</p>
+<p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_etud}</strong>,</p>
+<p style="color:#64748b;font-size:14px;">L'enseignant ci-dessous a enregistré votre absence. Voici les details de la séance :</p>
 <table style="width:100%;border-collapse:collapse;margin-top:15px;">
 <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Matiere</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{matiere}</td></tr>
 <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Charge de cours</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{enseignant}</td></tr>
