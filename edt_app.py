@@ -1248,7 +1248,7 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab3:
-            st.header("📊 Registres et Bilans Agreges")
+            st.header("📊 Registres et Bilans")
 
             promo_filtre = st.selectbox(
                 "Filtrer par Promotion :",
@@ -1276,7 +1276,7 @@ def run_assiduite():
                                  "nom_etudiant", "matiere", "motif", "statut"]]
                 df_tab.columns = ["Date", "Promotion", "Charge", "Etudiant", "Matiere", "Motif", "Statut"]
 
-                st.subheader("📋 Registre General")
+                st.subheader("📋 Registre Général")
                 st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
                 buf_xl = io.BytesIO()
