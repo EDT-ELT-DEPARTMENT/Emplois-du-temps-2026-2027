@@ -318,8 +318,8 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
 
 
 def run_assiduite():
-    st.title("📊 Plateforme de Suivi d'Assiduite des Etudiants")
-    st.caption("Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA - Annee 2026-2027")
+    st.title("📊 Plateforme de Suivi d'Assiduité des Etudiants")
+    st.caption("Département d'Electrotechnique - Faculté de Génie Electrique - UDL-SBA - Année 2026-2027")
     
     # =============================================================================
     # CHARGEMENT DES DONNÉES (UNIFIÉ)
@@ -600,7 +600,7 @@ def run_assiduite():
     # ONGLETS
     # =============================================================================
     if is_enseignant_connecte:
-        tab1, = st.tabs(["📝 Suivi d'Assiduite"])
+        tab1, = st.tabs(["📝 Suivi d'Assiduité"])
     else:
         tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
 
@@ -608,7 +608,7 @@ def run_assiduite():
     # ONGLET 1 : SUIVI D'ASSIDUITE
     # =============================================================================
     with tab1:
-        st.header("📝 Suivi de l'Assiduite et Compteur d'Absences")
+        st.header("📝 Suivi de l'Assiduité et Compteur d'Absences")
 
         sel_prof = ""
         sel_mat = ""
@@ -1329,7 +1329,7 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab3:
-            st.header("📊 Registres et Bilans Agreges")
+            st.header("📊 Registres et Bilans")
 
             pwd_admin_bilan = st.text_input("🔑 Code d'acces :", type="password", key="pwd_bilan_tab3")
             if pwd_admin_bilan != CODE_ADMIN:
