@@ -988,7 +988,7 @@ def run_assiduite():
             st.divider()
 
             if choix_vue == "Etudiant (dépôt)":
-                st.subheader("📤 Soumettre une demande de rehabilitation")
+                st.subheader("📤 Soumettre une demande de réhabilitation")
 
                 # ─── IDENTIFICATION PAR MATRICULE BAC ───
                 if not COL_MAT_BAC:
