@@ -524,22 +524,22 @@ def run_assiduite():
             st.error(f"Erreur Supabase (reset) : {e}")
             return False
 
-    def get_absences_étudiant(nom_étudiant):
+    def get_absences_étudiant(nom_etudiant):
         if MODE_SUPABASE:
             try:
-                res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_étudiant).execute()
+                res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
                 return res.data if res.data else []
             except Exception as e:
                 st.error(f"Erreur de chargement absences : {e}")
                 return []
         else:
-            return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_étudiant]
+            return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]
 
     def trouver_requete_existante(nom_etudiant, matiere):
         if MODE_SUPABASE:
             try:
                 res = supabase.table("requetes_absences").select("*")\
-                    .eq("nom_étudiant", nom_étudiant)\
+                    .eq("nom_etudiant", nom_etudiant)\
                     .eq("matiere", matière)\
                     .eq("statut", "En attente").execute()
                 return res.data[0] if res.data else None
@@ -547,7 +547,7 @@ def run_assiduite():
                 st.error(f"Erreur recherche requête : {e}")
                 return None
         for r in st.session_state.requetes:
-            if (r.get("nom_étudiant") == nom_étudiant and 
+            if (r.get("nom_etudiant") == nom_etudiant and 
                 r.get("matiere") == matière and 
                 r.get("statut") == "En attente"):
                 return r
@@ -692,11 +692,11 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             st.warning(f"Notification email non envoyee : {e}")
             return False
 
-    def trouver_email_étudiant(nom_étudiant, df_étudiants):
+    def trouver_email_étudiant(nom_etudiant, df_étudiants):
         # 1. Priorité : base de données Supabase (email saisi lors de connexion étudiant)
         if MODE_SUPABASE:
             try:
-                res = supabase.table("étudiants_emails").select("email").eq("nom_complet", str(nom_étudiant).strip()).execute()
+                res = supabase.table("étudiants_emails").select("email").eq("nom_complet", str(nom_etudiant).strip()).execute()
                 if res.data and len(res.data) > 0:
                     email_db = str(res.data[0]["email"]).strip()
                     if email_db and email_db.lower() not in ["nan", "none", ""]:
@@ -714,7 +714,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                 break
         if not col_email:
             return None
-        mask = df_étudiants["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_étudiant).strip().upper()
+        mask = df_étudiants["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_etudiant).strip().upper()
         match = df_étudiants[mask]
         if not match.empty:
             val = str(match.iloc[0][col_email]).strip()
@@ -1498,7 +1498,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                         else:
                                             data_insert = {
                                                 "date_demande": datetime.now().strftime("%d/%m/%Y"),
-                                                "nom_étudiant": étudiant_sel,
+                                                "nom_etudiant": étudiant_sel,
                                                 "matiere": abs_conc["matiere"],
                                                 "promotion": abs_conc.get("promotion", promo_sel),
                                                 "motif": motif_dep,
@@ -1519,7 +1519,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                         else:
                                             data_insert = {
                                                 "date_demande": datetime.now().strftime("%d/%m/%Y"),
-                                                "nom_étudiant": étudiant_sel,
+                                                "nom_etudiant": étudiant_sel,
                                                 "matiere": abs_conc["matiere"],
                                                 "promotion": abs_conc.get("promotion", promo_sel),
                                                 "motif": motif_dep,
@@ -1663,7 +1663,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                 df_tab["Charge"] = df_tab["matiere"].apply(trouver_enseignant_par_matière)
 
                 df_tab = df_tab[["date_demande", "promotion", "Charge",
-                                 "nom_étudiant", "matiere", "motif", "statut"]]
+                                 "nom_etudiant", "matiere", "motif", "statut"]]
                 df_tab.columns = ["Date", "Promotion", "Charge", "Étudiant", "Matière", "Motif", "Statut"]
 
                 st.subheader("📋 Registre général")
