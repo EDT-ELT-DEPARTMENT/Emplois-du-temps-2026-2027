@@ -23,7 +23,7 @@ import smtplib
 import secrets
 import mimetypes
 from datetime import datetime, timedelta
-from collections import defaultdict
+from collections import defaultdict, Counter
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -606,15 +606,42 @@ def run_assiduite():
             st.error(f"Erreur envoi email : {e}")
             return False
 
-    def envoyer_notification_absence_etudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause):
+    def envoyer_notification_absence_etudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause, absences_etudiant=None):
         try:
             import smtplib
             from email.mime.text import MIMEText
             from email.mime.multipart import MIMEMultipart
+
+            # ═══ RÉCAPITULATIF DES ABSENCES PAR MATIÈRE ═══
+            recap_html = ""
+            if absences_etudiant:
+                matieres_abs = [a.get("matiere", "Inconnue") for a in absences_etudiant]
+                compteur = Counter(matieres_abs)
+                if compteur:
+                    recap_rows = ""
+                    for mat, count in sorted(compteur.items()):
+                        couleur = "#b91c1c" if count >= 5 else "#d97706" if count >= 3 else "#1e293b"
+                        alerte = " 🚨 EXCLU" if count >= 5 else (" ⚠️ Attention" if count >= 3 else "")
+                        recap_rows += f"<tr><td style='padding:8px;border-bottom:1px solid #e2e8f0;'>{mat}</td><td style='padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:bold;color:{couleur};'>{count}{alerte}</td></tr>"
+
+                    recap_html = f"""
+                    <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:15px;margin:20px 0;">
+                        <h3 style="margin:0 0 10px 0;color:#9a3412;font-size:15px;">📊 Récapitulatif de vos absences</h3>
+                        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                            <thead><tr style="background:#ffedd5;">
+                                <th style="padding:8px;text-align:left;border-bottom:2px solid #fdba74;">Matière</th>
+                                <th style="padding:8px;text-align:center;border-bottom:2px solid #fdba74;">Nombre d'absences</th>
+                            </tr></thead>
+                            <tbody>{recap_rows}</tbody>
+                        </table>
+                    </div>
+                    """
+
             msg = MIMEMultipart("alternative")
             msg["Subject"] = f"Signalement d'absence - {matiere}"
             msg["From"] = "chef.department.elt.fge@gmail.com"
             msg["To"] = str(email_dest).strip()
+
             html_body = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
@@ -637,7 +664,15 @@ Vous avez été signalé(e) absent(e) lors d'une séance de cours.
 <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Horaire</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{horaire}</td></tr>
 <tr><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Motif enregistre</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{cause}</td></tr>
 </table>
-<p style="color:#64748b;font-size:13px;margin-top:20px;">Vous pouvez deposer un justificatif via l'onglet <strong>Justificatifs</strong> de la plateforme.</p>
+
+{recap_html}
+
+<div style="background:#fee2e2;border:1px solid #ef4444;border-radius:8px;padding:15px;margin:20px 0;color:#991b1b;font-size:13px;">
+    <strong>⏰ Délais de justification :</strong><br>
+    Vous disposez d'un délai de <strong>48 heures</strong> à compter de la date d'absence pour déposer un justificatif via l'onglet <strong>Justificatifs</strong> de la plateforme. Passé ce délai, l'absence sera considérée comme <strong>définitivement non justifiée</strong>.
+</div>
+
+<p style="color:#64748b;font-size:13px;margin-top:20px;">Accédez à la plateforme pour déposer votre justificatif : onglet <strong>Justificatifs</strong>.</p>
 </div>
 <div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
 Faculté de Genie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
@@ -960,7 +995,8 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                         envoyer_notification_absence_etudiant(
                                             email_etu, etud_non, sel_mat, sel_prof,
                                             jour_abs, horaire_abs, str(date_abs),
-                                            cause_s if cause_s else "Non justifie"
+                                            cause_s if cause_s else "Non justifie",
+                                            get_absences_etudiant(etud_non)
                                         )
                                         st.info(f"📧 Notification envoyee a {etud_non} ({email_etu})")
                                     else:
@@ -977,7 +1013,8 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                     envoyer_notification_absence_etudiant(
                                         email_etu, etud_non, sel_mat, sel_prof,
                                         jour_abs, horaire_abs, str(date_abs),
-                                        cause_s if cause_s else "Non justifie"
+                                        cause_s if cause_s else "Non justifie",
+                                        get_absences_etudiant(etud_non)
                                     )
                                     st.info(f"📧 Notification envoyee a {etud_non} ({email_etu})")
                                 else:
