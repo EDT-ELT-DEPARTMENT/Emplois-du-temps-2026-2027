@@ -463,7 +463,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_assiduite_2026").delete().eq("matière", matière).eq("promotion", promotion).execute()
+            supabase.table("suivi_assiduite_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (supprimer) : {e}")
@@ -473,7 +473,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", étudiant).eq("matière", matière).execute()
+            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", étudiant).eq("matiere", matiere).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (rehabilitation) : {e}")
@@ -559,7 +559,7 @@ def run_assiduite():
         try:
             res = supabase.table("suivi_assiduite_2026").select("*")\
                 .eq("etud_non_eligible", étudiant)\
-                .eq("matière", matière)\
+                .eq("matiere", matiere)\
                 .eq("promotion", promotion)\
                 .order("id", desc=True).limit(1).execute()
             if res.data:
