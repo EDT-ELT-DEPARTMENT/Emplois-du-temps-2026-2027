@@ -1310,6 +1310,15 @@ def run_assiduite():
         with tab3:
             st.header("📊 Registres et Bilans Agreges")
 
+            # Vérification code d'accès pour les bilans et exports
+            if not is_enseignant_connecte and not is_admin_edt:
+                pwd_tab3 = st.text_input("🔑 Code d'accès Admin :", type="password", key="pwd_tab3")
+                if pwd_tab3 != CODE_ADMIN:
+                    if pwd_tab3 != "":
+                        st.error("❌ Code incorrect.")
+                    st.info("ℹ️ Veuillez saisir le code administrateur pour accéder aux bilans et exports.")
+                    st.stop()
+
             promo_filtre = st.selectbox(
                 "Filtrer par Promotion :",
                 sorted(df_etu["Promotion"].dropna().unique().tolist()),
