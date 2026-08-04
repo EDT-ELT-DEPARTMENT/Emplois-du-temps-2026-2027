@@ -637,10 +637,10 @@ Vous avez été signalé(e) absent(e) lors d'une séance de cours.
 <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Horaire</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{horaire}</td></tr>
 <tr><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Motif enregistre</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{cause}</td></tr>
 </table>
-<p style="color:#64748b;font-size:13px;margin-top:20px;">Si vous estimez que cette absence est injustifiee, vous pouvez deposer un justificatif via l'onglet <strong>Justificatifs</strong> de la plateforme.</p>
+<p style="color:#64748b;font-size:13px;margin-top:20px;">Vous pouvez deposer un justificatif via l'onglet <strong>Justificatifs</strong> de la plateforme.</p>
 </div>
 <div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
-Faculte de Genie Electrique - Universite Djillali Liabes - Sidi Bel Abbes<br>
+Faculté de Genie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
 Cet email est genere automatiquement - merci de ne pas y repondre.
 </div>
 </div>
