@@ -1113,7 +1113,13 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                 # ─── SUIVI DES ABSENCES SIGNALÉES PAR L'ENSEIGNANT ───
                 if is_enseignant_connecte and sel_mat and promo_c:
                     st.divider()
-                    st.subheader("👁️ Suivi des absences que j'ai signalées")
+                    col_titre, col_deco = st.columns([4, 1])
+                    with col_titre:
+                        st.subheader("👁️ Suivi des absences que j'ai signalées")
+                    with col_deco:
+                        if st.button("🚪 Déconnexion", use_container_width=True, type="primary", key="deco_suivi_ens"):
+                            st.session_state["user_data"] = None
+                            st.rerun()
 
                     # Récupération des absences de cet enseignant pour cette matiere
                     if MODE_SUPABASE:
