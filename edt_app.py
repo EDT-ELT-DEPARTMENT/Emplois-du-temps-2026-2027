@@ -816,7 +816,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
     # ONGLETS
     # =============================================================================
     # Création des onglets (toujours 3 pour éviter UnboundLocalError)
-    tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
+    tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports"])
     with tab1:
         st.header("📝 Suivi de l'Assiduite et Compteur d'Absences")
 
@@ -1629,7 +1629,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
     # =============================================================================
     if not is_enseignant_connecte:
         with tab3:
-            st.header("📊 Registres et bilans agrégés")
+            st.header("📊 Registres et bilans")
 
             # Vérification code d'accès pour les bilans et exports
             if not is_enseignant_connecte and not is_admin_edt:
@@ -5446,7 +5446,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                 if idx_h in horaires_ordre and col_j in jours_ordre:
                     # Formatage selon votre exemple
                     salle_label = f"🏢 {row['Lieu']}"
-                    prof_label = f"(Prof: {row['Enseignants']})"
+                    prof_label = f"({row['Enseignants']})"
                     promo_label = f"🎓 {row['Promotion']}"
                     matiere_label = f"📚 {row['Enseignements']}"
                     heure_label = f"🕒 {row['Horaire']}"
