@@ -1191,6 +1191,33 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         df_suivi = pd.DataFrame(data_suivi)
                         st.dataframe(df_suivi, use_container_width=True, hide_index=True)
 
+                        # ─── EXPORT EXCEL DU SUIVI ───
+                        buf_suivi = io.BytesIO()
+                        with pd.ExcelWriter(buf_suivi, engine='xlsxwriter') as writer:
+                            df_suivi.to_excel(writer, index=False, sheet_name='Suivi_Absences')
+                            wb = writer.book
+                            ws = writer.sheets['Suivi_Absences']
+                            header_fmt = wb.add_format({
+                                'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
+                                'border': 1, 'align': 'center', 'valign': 'vcenter'
+                            })
+                            for col_num, val in enumerate(df_suivi.columns.values):
+                                ws.write(0, col_num, val, header_fmt)
+                            ws.set_column(0, 0, 28)
+                            ws.set_column(1, 1, 14)
+                            ws.set_column(2, 2, 14)
+                            ws.set_column(3, 7, 16)
+                            ws.freeze_panes(1, 0)
+
+                        st.download_button(
+                            label="📊 Télécharger le suivi (Excel)",
+                            data=buf_suivi.getvalue(),
+                            file_name=f"Suivi_Absences_{sel_mat.replace(' ', '_')}_{promo_c}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key=f"dl_suivi_{sel_mat}_{promo_c}"
+                        )
+
                         # Vue détaillée par étudiant
                         st.markdown("#### 🔍 Détail par étudiant")
                         etu_suivi = st.selectbox("Sélectionner un étudiant :", [""] + list(suivi_etu.keys()), key="suivi_etu_select")
