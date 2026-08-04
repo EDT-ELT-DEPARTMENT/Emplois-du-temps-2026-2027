@@ -981,14 +981,14 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab2:
-            st.header("📩 Système de Gestion des Justificatifs")
-            st.caption("dépôt étudiant et validation administration")
+            st.header("📩 Systeme de Gestion des Justificatifs")
+            st.caption("Depot etudiant et validation administration")
 
-            choix_vue = st.radio("Profil :", ["Etudiant (dépôt)", "Administration (Décision)"], horizontal=True)
+            choix_vue = st.radio("Profil :", ["Etudiant (Depot)", "Administration (Decision)"], horizontal=True)
             st.divider()
 
-            if choix_vue == "Etudiant (dépôt)":
-                st.subheader("📤 Soumettre une demande de réhabilitation")
+            if choix_vue == "Etudiant (Depot)":
+                st.subheader("📤 Soumettre une demande de rehabilitation")
 
                 # ─── IDENTIFICATION PAR MATRICULE BAC ───
                 if not COL_MAT_BAC:
@@ -1018,7 +1018,7 @@ def run_assiduite():
                     st.info("👆 Saisissez votre matricule du BAC pour commencer.")
                     st.stop()
 
-                # ─── CODE D'ACTIVATION PAR EMAIL ───
+                # ─── CODE D'ACTIVATION PAR EMAIL (ENVOI SMTP RÉEL) ───
                 st.divider()
                 st.markdown("### 🔐 Activation du compte")
                 email_etu = st.text_input("📧 Votre adresse Email", key="email_etu_depot", placeholder="ex: nom.prenom@email.dz")
@@ -1026,6 +1026,10 @@ def run_assiduite():
                 if email_etu and "@" in email_etu:
                     if st.button("📩 Recevoir mon code d'activation", use_container_width=True, type="primary", key="btn_code_activation"):
                         import secrets
+                        import smtplib
+                        from email.mime.text import MIMEText
+                        from email.mime.multipart import MIMEMultipart
+
                         code_activation = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
 
                         if "codes_activation_etu" not in st.session_state:
@@ -1039,10 +1043,62 @@ def run_assiduite():
                             "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M")
                         }
 
-                        st.success(f"✅ Code d'activation généré et envoyé à `{email_etu}` !")
-                        st.info(f"🔑 Votre code d'activation : **{code_activation}**")
-                        st.caption("💡 En production, ce code serait envoyé automatiquement par email SMTP.")
-                        st.balloons()
+                        # ─── ENVOI SMTP RÉEL ───
+                        try:
+                            SMTP_SERVER = "smtp.gmail.com"
+                            SMTP_PORT = 587
+                            SMTP_USER = "chef.department.elt.fge@gmail.com"
+                            SMTP_PASS = "gkzs pdza yodb icvd"
+
+                            msg = MIMEMultipart()
+                            msg['Subject'] = "🔐 Votre code d'activation - Plateforme Suivi d'Assiduité ELT"
+                            msg['From'] = f"Département d'Électrotechnique <{SMTP_USER}>"
+                            msg['To'] = email_etu
+
+                            body_html = f"""
+                            <html>
+                            <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+                                <div style="max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+                                    <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); padding: 20px; color: white; text-align: center;">
+                                        <h2 style="margin: 0;">Département d'Électrotechnique - UDL SBA</h2>
+                                        <p style="margin: 5px 0 0 0; opacity: 0.9;">Plateforme de Suivi d'Assiduité</p>
+                                    </div>
+                                    <div style="padding: 25px; background: #fff;">
+                                        <p>Bonjour <b>{etudiant_sel}</b>,</p>
+                                        <p>Vous avez demandé un code d'activation pour accéder à l'espace <b>Dépôt de justificatifs</b>.</p>
+
+                                        <div style="background: #f0f9ff; border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
+                                            <div style="font-size: 14px; color: #64748b; margin-bottom: 8px;">Votre code d'activation</div>
+                                            <div style="font-size: 36px; font-weight: bold; color: #1E3A8A; letter-spacing: 8px;">{code_activation}</div>
+                                        </div>
+
+                                        <p style="color: #b91c1c; font-weight: bold;">⏳ Ce code est valable 24 heures.</p>
+                                        <p>Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer cet email.</p>
+                                        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                                        <p style="font-size: 12px; color: #94a3b8;">
+                                            Faculté de Génie Électrique - Département d'Électrotechnique<br>
+                                            Université Djillali Liabes - Sidi Bel Abbès
+                                        </p>
+                                    </div>
+                                </div>
+                            </body>
+                            </html>
+                            """
+                            msg.attach(MIMEText(body_html, 'html'))
+
+                            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                            server.starttls()
+                            server.login(SMTP_USER, SMTP_PASS)
+                            server.send_message(msg)
+                            server.quit()
+
+                            st.success(f"✅ Code d'activation envoyé avec succès à `{email_etu}` !")
+                            st.info("📩 Veuillez consulter votre boîte mail (et vos spams) pour récupérer le code.")
+                            st.balloons()
+
+                        except Exception as e:
+                            st.error(f"❌ Erreur lors de l'envoi de l'email : {e}")
+                            st.warning("Le code a été généré mais n'a pas pu être envoyé. Veuillez réessayer ou contacter l'administrateur.")
                 elif email_etu:
                     st.warning("⚠️ Veuillez saisir une adresse email valide.")
 
@@ -1248,7 +1304,7 @@ def run_assiduite():
     # =============================================================================
     if not is_enseignant_connecte:
         with tab3:
-            st.header("📊 Registres et Bilans")
+            st.header("📊 Registres et Bilans Agreges")
 
             promo_filtre = st.selectbox(
                 "Filtrer par Promotion :",
@@ -1276,7 +1332,7 @@ def run_assiduite():
                                  "nom_etudiant", "matiere", "motif", "statut"]]
                 df_tab.columns = ["Date", "Promotion", "Charge", "Etudiant", "Matiere", "Motif", "Statut"]
 
-                st.subheader("📋 Registre général")
+                st.subheader("📋 Registre General")
                 st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
                 buf_xl = io.BytesIO()
@@ -1293,7 +1349,7 @@ def run_assiduite():
                         use_container_width=True
                     )
                 with c2:
-                    html_reg = generer_page_html(df_tab, "Registre général", df_tab.columns, df_tab.columns)
+                    html_reg = generer_page_html(df_tab, "Registre General", df_tab.columns, df_tab.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_reg,
@@ -1302,7 +1358,7 @@ def run_assiduite():
                         use_container_width=True
                     )
 
-                st.subheader("📚 Bilan par Etudiant et Matière")
+                st.subheader("📚 Bilan par Etudiant et Matiere")
                 df_bilan_mat = df_tab.groupby(["Etudiant", "Matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
