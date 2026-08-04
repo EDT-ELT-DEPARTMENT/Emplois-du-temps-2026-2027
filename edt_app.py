@@ -975,20 +975,60 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         elif status_assid != "Absent":
                             st.warning("⚠️ L'enregistrement necessite le statut 'Absent'.")
                         else:
-                            payload = {
-                                "enseignant": sel_prof,
-                                "matiere": sel_mat,
-                                "promotion": promo_c,
-                                "etud_non_eligible": etud_non,
-                                "cause_non_eligibilite": cause_s if cause_s else "Non justifie",
-                                "date_absence": str(date_abs),
-                                "jour_absence": jour_abs,
-                                "horaire_absence": horaire_abs,
-                                "date_saisie": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                                "justifie": False
-                            }
+                            # ═══ VÉRIFICATION ANTI-DOUBLON ═══
+                            absence_existante = False
                             if MODE_SUPABASE:
-                                if enregistrer_absence_supabase(payload):
+                                try:
+                                    res = supabase.table("suivi_assiduite_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
+                                    if res.data:
+                                        absence_existante = True
+                                except Exception:
+                                    pass
+                            else:
+                                for a in st.session_state.absences:
+                                    if (a.get("etud_non_eligible") == etud_non and
+                                        a.get("matiere") == sel_mat and
+                                        a.get("jour_absence") == jour_abs and
+                                        a.get("horaire_absence") == horaire_abs and
+                                        a.get("date_absence") == str(date_abs)):
+                                        absence_existante = True
+                                        break
+
+                            if absence_existante:
+                                st.error(f"❌ L'absence de **{etud_non}** pour **{sel_mat}** ({jour_abs} — {horaire_abs}, {date_abs}) est déjà enregistrée. Vous ne pouvez pas signaler deux fois la même séance.")
+                            else:
+                                payload = {
+                                    "enseignant": sel_prof,
+                                    "matiere": sel_mat,
+                                    "promotion": promo_c,
+                                    "etud_non_eligible": etud_non,
+                                    "cause_non_eligibilite": cause_s if cause_s else "Non justifie",
+                                    "date_absence": str(date_abs),
+                                    "jour_absence": jour_abs,
+                                    "horaire_absence": horaire_abs,
+                                    "date_saisie": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                    "justifie": False
+                                }
+                                if MODE_SUPABASE:
+                                    if enregistrer_absence_supabase(payload):
+                                        # Envoi notification instantanee a l'etudiant
+                                        email_etu = trouver_email_etudiant(etud_non, df_etu)
+                                        if email_etu:
+                                            envoyer_notification_absence_etudiant(
+                                                email_etu, etud_non, sel_mat, sel_prof,
+                                                jour_abs, horaire_abs, str(date_abs),
+                                                cause_s if cause_s else "Non justifie",
+                                                get_absences_etudiant(etud_non)
+                                            )
+                                            st.info(f"📧 Notification envoyee a {etud_non} ({email_etu})")
+                                        else:
+                                            st.caption(f"ℹ️ Email de {etud_non} non trouve dans la base etudiants.")
+                                        st.success(f"✅ Absence enregistree pour {etud_non} !")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                else:
+                                    payload["id"] = len(st.session_state.absences) + 1
+                                    st.session_state.absences.append(payload)
                                     # Envoi notification instantanee a l'etudiant
                                     email_etu = trouver_email_etudiant(etud_non, df_etu)
                                     if email_etu:
@@ -1001,27 +1041,9 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                         st.info(f"📧 Notification envoyee a {etud_non} ({email_etu})")
                                     else:
                                         st.caption(f"ℹ️ Email de {etud_non} non trouve dans la base etudiants.")
-                                    st.success(f"✅ Absence enregistree pour {etud_non} !")
+                                    st.success(f"✅ Absence enregistree (mode local) pour {etud_non} !")
                                     time.sleep(0.5)
                                     st.rerun()
-                            else:
-                                payload["id"] = len(st.session_state.absences) + 1
-                                st.session_state.absences.append(payload)
-                                # Envoi notification instantanee a l'etudiant
-                                email_etu = trouver_email_etudiant(etud_non, df_etu)
-                                if email_etu:
-                                    envoyer_notification_absence_etudiant(
-                                        email_etu, etud_non, sel_mat, sel_prof,
-                                        jour_abs, horaire_abs, str(date_abs),
-                                        cause_s if cause_s else "Non justifie",
-                                        get_absences_etudiant(etud_non)
-                                    )
-                                    st.info(f"📧 Notification envoyee a {etud_non} ({email_etu})")
-                                else:
-                                    st.caption(f"ℹ️ Email de {etud_non} non trouve dans la base etudiants.")
-                                st.success(f"✅ Absence enregistree (mode local) pour {etud_non} !")
-                                time.sleep(0.5)
-                                st.rerun()
 
                 with col_btn2:
                     if etud_non and st.button("🔄 ANNULER LA DERNIERE ABSENCE", use_container_width=True):
