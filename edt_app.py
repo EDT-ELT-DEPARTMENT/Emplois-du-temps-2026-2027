@@ -318,8 +318,8 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
 
 
 def run_assiduite():
-    st.title("📊 Plateforme de getion des emplois du temps et de Suivi d'Assiduité des Etudiants")
-    st.caption("Département d'Electrotechnique - Faculté de Genie Electrique - UDL-SBA - Année 2026-2027")
+    st.title("📊 Plateforme de gestion des emplois du temps et de Suivi d'Assiduité des Etudiants")
+    st.caption("Département d'Electrotechnique - Faculté de Génie Electrique - UDL-SBA - Année 2026-2027")
     
     # =============================================================================
     # CHARGEMENT DES DONNÉES (UNIFIÉ)
