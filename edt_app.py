@@ -319,7 +319,7 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
 
 def run_Assiduité():
     st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
-    st.caption("Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - Annee 2026-2027")
+    st.caption("Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - Année 2026-2027")
     
     # =============================================================================
     # CHARGEMENT DES DONNÉES (UNIFIÉ)
@@ -8813,10 +8813,10 @@ if is_admin:
     # ==========================================
     # GÉNÉRATEUR DE BORDEREAU ISO STRICT
     # ==========================================
-    def construire_reference(numero, annee=None):
+    def construire_reference(numero, Année=None):
         """Construit la référence complète du bordereau."""
-        if annee is None:
-            annee = datetime.now().year
+        if Année is None:
+            Année = datetime.now().year
         num_str = str(numero).split('/')[0] if '/' in str(numero) else str(numero)
         return f"{num_str}/F.G.E/Département-ELT/{annee}"
 
@@ -8846,7 +8846,7 @@ if is_admin:
             footer_pPr.append(tabs)
             
             footer_p.add_run("\t")
-            annee_doc = donnees.get('annee_reference', datetime.now().year)
+            Année_doc = donnees.get('annee_reference', datetime.now().year)
             r_ref_fixe = footer_p.add_run(f"Réf : UDL-GEL-ER-004-{annee_doc}")
             r_ref_fixe.font.name = 'Calibri'
             r_ref_fixe.font.size = Pt(11)
@@ -9036,14 +9036,14 @@ if is_admin:
         """Enregistre un bordereau généré dans l'historique Supabase."""
         try:
             ref_pur = donnees.get('num_reference_pur', 1)
-            annee_ref = donnees.get('annee_reference', datetime.now().year)
+            Année_ref = donnees.get('annee_reference', datetime.now().year)
             
             data_histo = {
                 "generated_by": user_email,
                 "Département": Département,
                 "destinataire": donnees.get('destinataire', ''),
                 "num_reference": str(ref_pur),
-                "annee_reference": annee_ref,
+                "annee_reference": Année_ref,
                 "expediteur_qualite": donnees.get('expediteur_qualite', 'Chef de département'),
                 "date_creation": donnees.get('date_creation', datetime.now()).isoformat(),
                 "nombre_pieces": len(donnees.get('liste_pieces', [])),
@@ -9303,9 +9303,9 @@ if is_admin:
         col_ref, col_date, col_exp = st.columns(3)
         
         with col_ref:
-            annee_courante = datetime.now().year
+            Année_courante = datetime.now().year
             prochaine_ref_num = get_prochaine_reference()
-            ref_auto = construire_reference(prochaine_ref_num, annee_courante)
+            ref_auto = construire_reference(prochaine_ref_num, Année_courante)
             
             donnees_doc['num_reference'] = st.text_input(
                 "Référence séquentielle", 
@@ -9316,7 +9316,7 @@ if is_admin:
                 donnees_doc['num_reference_pur'] = int(str(donnees_doc['num_reference']).split('/')[0])
             except ValueError:
                 donnees_doc['num_reference_pur'] = prochaine_ref_num
-            donnees_doc['annee_reference'] = annee_courante
+            donnees_doc['annee_reference'] = Année_courante
         with col_date:
             donnees_doc['date_creation'] = st.date_input("Date d'édition", datetime.now())
         with col_exp:
