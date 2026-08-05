@@ -1,7 +1,7 @@
 """
 ================================================================================
 Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
-Département d'Electrotechnique - Faculté de Genie Electrique - UDL-SBA
+Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA
 Année universitaire 2026-2027
 ================================================================================
 """
@@ -248,7 +248,7 @@ def generer_page_html(df_data, titre_bilan, colonnes, entetes):
 <body>
     <div class="header">
         <h1>📊 {titre_bilan}</h1>
-        <p>Suivi d'Assiduite - Departement d'Electrotechnique - UDL-SBA</p>
+        <p>Suivi d'Assiduite - Département d'Electrotechnique - UDL-SBA</p>
     </div>
     <div class="content">
         <p>Genere le : {datetime.now().strftime('%d/%m/%Y a %H:%M')}</p>
@@ -274,7 +274,7 @@ def generer_page_html(df_data, titre_bilan, colonnes, entetes):
                 html_doc += f"<td>{val}</td>"
         html_doc += "</tr>"
     html_doc += """</tbody></table></div>
-    <div class="footer">&copy; 2026 Departement d'Electrotechnique - UDL-SBA</div>
+    <div class="footer">&copy; 2026 Département d'Electrotechnique - UDL-SBA</div>
 </body>
 </html>"""
     return html_doc
@@ -318,8 +318,8 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
 
 
 def run_assiduite():
-    st.title("📊 Plateforme de Suivi d'Assiduite des Étudiants")
-    st.caption("Departement d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA - Annee 2026-2027")
+    st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
+    st.caption("Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - Annee 2026-2027")
     
     # =============================================================================
     # CHARGEMENT DES DONNÉES (UNIFIÉ)
@@ -675,7 +675,7 @@ Vous avez été signalé(e) absent(e) lors d'une séance de cours.
 <p style="color:#64748b;font-size:13px;margin-top:20px;">Accédez à la plateforme pour déposer votre justificatif : onglet <strong>Justificatifs</strong>.</p>
 </div>
 <div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
-Faculté de Genie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
+Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
 Cet email est genere automatiquement - merci de ne pas y repondre.
 </div>
 </div>
@@ -1346,7 +1346,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                             ws = writer.sheets['Liste_Eligibilite']
 
                             ws.merge_range('A1:I1', "UNIVERSITE DJILLALI LIABES - SIDI BEL ABBES", fmt_title)
-                            ws.merge_range('A2:I2', "Faculte de Genie Electrique - Departement d'Electrotechnique", fmt_sub)
+                            ws.merge_range('A2:I2', "Faculté de génie Electrique - Département d'Electrotechnique", fmt_sub)
                             ws.merge_range('A3:I3', "LISTE D'ELIGIBILITE A L'EXAMEN", fmt_title)
                             ws.write('A5', "matiere :", fmt_bold); ws.write('B5', sel_mat)
                             ws.write('A6', "Enseignant :", fmt_bold); ws.write('B6', sel_prof)
@@ -2655,7 +2655,7 @@ def generate_pro_html(df_source, title, subtitle=""):
             {table_html}
         </div>
         <div class="footer">
-            Plateforme de gestion des EDTs - Département d'Electrotechnique - Faculte de Genie Electrique - UDL-SBA
+            Plateforme de gestion des EDTs - Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA
         </div>
     </div>
 </body>
@@ -3097,7 +3097,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
             pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS - {str(ens).upper()}"), 0, 1, "C")
             pdf.set_font("Arial", "I", 8)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
             pdf.ln(2)
 
         def draw_table_header(pdf, grid, col_jour_w, col_h_w):
@@ -3643,7 +3643,7 @@ def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
             pdf.cell(0, 8, sanitize_for_pdf(f"PLANNING - {str(lieu).upper()}"), 0, 1, "C")
             pdf.set_font("Arial", "I", 8)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
             pdf.ln(2)
         
         def draw_table_header(pdf, grid, col_jour_w, col_h_w):
@@ -3924,7 +3924,7 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
     pdf.cell(0, 8, sanitize_for_pdf(f"PLANNING - {nom_lieu.upper()}"), 0, 1, "C")
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - Département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
     pdf.ln(3)
     
     if grid.empty or (grid.shape == (1,1) and grid.iloc[0,0] == "Aucun cours"):
@@ -4158,7 +4158,7 @@ def render_download_hub(df_global, user_data, is_admin):
                                   use_container_width=True, key="dp_down_promo")
         
         # HTML et Excel (toujours disponibles)
-        html_data = generate_pro_html(df_filtre, f"EDT {sel_promo}", "Faculte de Genie Electrique - UDL-SBA")
+        html_data = generate_pro_html(df_filtre, f"EDT {sel_promo}", "Faculté de génie Electrique - UDL-SBA")
         c2.download_button("🌐 HTML", html_data, f"EDT_{sel_promo}_2027.html", "text/html", use_container_width=True, key="dh_promo")
         xlsx_data = generate_pro_excel(df_filtre, f"EDT {sel_promo}")
         c3.download_button("📊 Excel", xlsx_data, f"EDT_{sel_promo}_2027.xlsx", 
@@ -4286,7 +4286,7 @@ def render_download_hub(df_global, user_data, is_admin):
                                   use_container_width=True, key="dp_down")
         
         # HTML et Excel (toujours disponibles)
-        html_data_p = generate_pro_html(df_filtre_p, f"EDT {sel_prof}", "Faculte de Genie Electrique - UDL-SBA")
+        html_data_p = generate_pro_html(df_filtre_p, f"EDT {sel_prof}", "Faculté de génie Electrique - UDL-SBA")
         if html_data_p:
             c2.download_button("🌐 HTML", html_data_p, f"EDT_{sel_prof}_2027.html", 
                               "text/html", use_container_width=True, key="dh")
@@ -4342,7 +4342,7 @@ def render_download_hub(df_global, user_data, is_admin):
                                   use_container_width=True, key="dp_down_lieu")
         
         # HTML et Excel (toujours disponibles)
-        html_data_s = generate_pro_html(df_filtre_s, f"Planning {sel_salle}", "Faculte de Genie Electrique - UDL-SBA")
+        html_data_s = generate_pro_html(df_filtre_s, f"Planning {sel_salle}", "Faculté de génie Electrique - UDL-SBA")
         c2.download_button("🌐 HTML", html_data_s, f"Planning_{sel_salle}_2027.html", "text/html", use_container_width=True, key="sh")
         xlsx_data_s = generate_pro_excel(df_filtre_s, f"Planning {sel_salle}")
         c3.download_button("📊 Excel", xlsx_data_s, f"Planning_{sel_salle}_2027.xlsx", 
@@ -8752,7 +8752,7 @@ if is_admin:
     # ==========================================
     TITRE_PLATEFORME = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 
-    DEPARTEMENTS = [
+    DépartementS = [
         "Département d'Électrotechnique",
         "Département d'Électronique",
         "Département d'Automatique",
@@ -8764,7 +8764,7 @@ if is_admin:
     ]
 
     OPTIONS_DESTINATAIRES = [
-        "Le Doyen de la faculté",
+        "Le Doyen de la Faculté",
         "Le vice Doyen de la Post graduation",
         "Le vice Doyen de la graduation",
         "Le chef de département",
@@ -9032,7 +9032,7 @@ if is_admin:
     # ==========================================
     # HISTORIQUE DES BORDEREAUX (SUPABASE)
     # ==========================================
-    def enregistrer_historique_bordereau(donnees, departement, user_email):
+    def enregistrer_historique_bordereau(donnees, Département, user_email):
         """Enregistre un bordereau généré dans l'historique Supabase."""
         try:
             ref_pur = donnees.get('num_reference_pur', 1)
@@ -9040,7 +9040,7 @@ if is_admin:
             
             data_histo = {
                 "generated_by": user_email,
-                "departement": departement,
+                "Département": Département,
                 "destinataire": donnees.get('destinataire', ''),
                 "num_reference": str(ref_pur),
                 "annee_reference": annee_ref,
@@ -9048,7 +9048,7 @@ if is_admin:
                 "date_creation": donnees.get('date_creation', datetime.now()).isoformat(),
                 "nombre_pieces": len(donnees.get('liste_pieces', [])),
                 "pieces_details": donnees.get('liste_pieces', []),
-                "fichier_nom": f"Bordereau_{departement.replace(' ', '_')}.docx"
+                "fichier_nom": f"Bordereau_{Département.replace(' ', '_')}.docx"
             }
             supabase.table("bordereaux_historique").insert(data_histo).execute()
         except Exception as e:
@@ -9136,7 +9136,7 @@ if is_admin:
                         'Date': date_str,
                         'Généré par': row.get('generated_by', '—'),
                         'Expéditeur': row.get('expediteur_qualite', '—'),
-                        'Département': row.get('departement', '—'),
+                        'Département': row.get('Département', '—'),
                         'Destinataire': row.get('destinataire', '—'),
                         'N° Référence': row.get('num_reference', '—'),
                         'Nb pièces': row.get('nombre_pieces', 0),
@@ -9154,7 +9154,7 @@ if is_admin:
                                 'Date génération': date_str,
                                 'Généré par': row.get('generated_by', '—'),
                                 'Expéditeur': row.get('expediteur_qualite', '—'),
-                                'Département': row.get('departement', '—'),
+                                'Département': row.get('Département', '—'),
                                 'Destinataire': row.get('destinataire', '—'),
                                 'N° Référence': ref_full,
                                 'Désignation des pièces': p.get('Désignation des pièces', ''),
@@ -9167,7 +9167,7 @@ if is_admin:
                             'Date génération': date_str,
                             'Généré par': row.get('generated_by', '—'),
                             'Expéditeur': row.get('expediteur_qualite', '—'),
-                            'Département': row.get('departement', '—'),
+                            'Département': row.get('Département', '—'),
                             'Destinataire': row.get('destinataire', '—'),
                             'N° Référence': ref_full,
                             'Désignation des pièces': '—',
@@ -9251,7 +9251,7 @@ if is_admin:
                     ):
                         c1, c2, c3, c4, c5 = st.columns(5)
                         c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '—')}")
-                        c2.markdown(f"**🏛️ Département**\n{row.get('departement', '—')}")
+                        c2.markdown(f"**🏛️ Département**\n{row.get('Département', '—')}")
                         c3.markdown(f"**📤 Expéditeur**\n{row.get('expediteur_qualite', '—')}")
                         c4.markdown(f"**📅 Date**\n{date_str}")
                         c5.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '—')}")
@@ -9288,7 +9288,7 @@ if is_admin:
 
     col_dept, col_doc = st.columns(2)
     with col_dept:
-        dept_choisi = st.selectbox("Département émetteur :", DEPARTEMENTS)
+        dept_choisi = st.selectbox("Département émetteur :", DépartementS)
     with col_doc:
         doc_choisi = st.selectbox("Nature du document à générer :", TYPES_DOCUMENTS)
 
