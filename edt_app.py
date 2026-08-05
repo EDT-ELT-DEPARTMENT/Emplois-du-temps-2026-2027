@@ -1692,7 +1692,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         use_container_width=True
                     )
 
-                st.subheader("📚 Bilan par Étudiant et matiere")
+                st.subheader("📚 Bilan par Étudiant et matière")
                 df_bilan_mat = df_tab.groupby(["Étudiant", "matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
@@ -4068,7 +4068,7 @@ def render_download_hub(df_global, user_data, is_admin):
 
     st.markdown("""
         <div class="dl-hub">
-            <h3>📥 Centre de Telechargement Rapide</h3>
+            <h3>📥 Centre de Télechargement Rapide</h3>
             <p>Exportez vos emplois du temps dans le format de votre choix (PDF, HTML, Excel)</p>
         </div>
     """, unsafe_allow_html=True)
