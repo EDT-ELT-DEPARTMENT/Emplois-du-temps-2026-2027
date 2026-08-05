@@ -438,7 +438,7 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return []
         try:
-            query = supabase.table("suivi_Assiduité_2026").select("*")
+            query = supabase.table("suivi_Assiduite_2026").select("*")
             if matiere:
                 query = query.eq("matiere", matiere)
             if promotion:
@@ -453,7 +453,7 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_Assiduité_2026").insert(payload).execute()
+            supabase.table("suivi_Assiduite_2026").insert(payload).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (enregistrer) : {e}")
@@ -463,7 +463,7 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_Assiduité_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
+            supabase.table("suivi_Assiduite_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (supprimer) : {e}")
@@ -473,7 +473,7 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_Assiduité_2026").update({"justifie": True}).eq("etud_non_eligible", étudiant).eq("matiere", matiere).execute()
+            supabase.table("suivi_Assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", étudiant).eq("matiere", matiere).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (rehabilitation) : {e}")
@@ -527,7 +527,7 @@ def run_Assiduité():
     def get_absences_étudiant(nom_etudiant):
         if MODE_SUPABASE:
             try:
-                res = supabase.table("suivi_Assiduité_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
+                res = supabase.table("suivi_Assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
                 return res.data if res.data else []
             except Exception as e:
                 st.error(f"Erreur de chargement absences : {e}")
@@ -557,14 +557,14 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return False
         try:
-            res = supabase.table("suivi_Assiduité_2026").select("*")\
+            res = supabase.table("suivi_Assiduite_2026").select("*")\
                 .eq("etud_non_eligible", étudiant)\
                 .eq("matiere", matiere)\
                 .eq("promotion", promotion)\
                 .order("id", desc=True).limit(1).execute()
             if res.data:
                 last_id = res.data[0]["id"]
-                supabase.table("suivi_Assiduité_2026").delete().eq("id", last_id).execute()
+                supabase.table("suivi_Assiduite_2026").delete().eq("id", last_id).execute()
                 return True
             return False
         except Exception as e:
@@ -979,7 +979,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                             absence_existante = False
                             if MODE_SUPABASE:
                                 try:
-                                    res = supabase.table("suivi_Assiduité_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
+                                    res = supabase.table("suivi_Assiduite_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
                                     if res.data:
                                         absence_existante = True
                                 except Exception:
@@ -1095,7 +1095,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                     if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary"):
                         if MODE_SUPABASE:
                             try:
-                                supabase.table("suivi_Assiduité_2026").delete().neq("id", -1).execute()
+                                supabase.table("suivi_Assiduite_2026").delete().neq("id", -1).execute()
                                 st.success("✅ Historique Supabase effacé !")
                                 time.sleep(0.5)
                                 st.rerun()
