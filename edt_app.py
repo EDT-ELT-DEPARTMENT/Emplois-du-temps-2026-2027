@@ -248,7 +248,7 @@ def generer_page_html(df_data, titre_bilan, colonnes, entetes):
 <body>
     <div class="header">
         <h1>📊 {titre_bilan}</h1>
-        <p>Suivi d'Assiduite - Département d'Electrotechnique - UDL-SBA</p>
+        <p>Suivi d'Assiduité - Département d'Electrotechnique - UDL-SBA</p>
     </div>
     <div class="content">
         <p>Genere le : {datetime.now().strftime('%d/%m/%Y a %H:%M')}</p>
@@ -280,7 +280,7 @@ def generer_page_html(df_data, titre_bilan, colonnes, entetes):
     return html_doc
 
 # =============================================================================
-# MODULE 1 : SUIVI ASSIDUITE DES ETUDIANTS
+# MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
 # FONCTION DE LECTURE EXCEL ROBUSTE
     # =============================================================================
@@ -317,7 +317,7 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
     raise ValueError(f"❌ Format non reconnu. Utilisez un fichier Excel valide (.xlsx, .xls, .xlsb). Erreur : {last_err}")
 
 
-def run_assiduite():
+def run_Assiduité():
     st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
     st.caption("Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - Annee 2026-2027")
     
@@ -438,7 +438,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return []
         try:
-            query = supabase.table("suivi_assiduite_2026").select("*")
+            query = supabase.table("suivi_Assiduité_2026").select("*")
             if matiere:
                 query = query.eq("matiere", matiere)
             if promotion:
@@ -453,7 +453,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_assiduite_2026").insert(payload).execute()
+            supabase.table("suivi_Assiduité_2026").insert(payload).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (enregistrer) : {e}")
@@ -463,7 +463,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_assiduite_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
+            supabase.table("suivi_Assiduité_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (supprimer) : {e}")
@@ -473,7 +473,7 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", étudiant).eq("matiere", matiere).execute()
+            supabase.table("suivi_Assiduité_2026").update({"justifie": True}).eq("etud_non_eligible", étudiant).eq("matiere", matiere).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (rehabilitation) : {e}")
@@ -527,7 +527,7 @@ def run_assiduite():
     def get_absences_étudiant(nom_etudiant):
         if MODE_SUPABASE:
             try:
-                res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
+                res = supabase.table("suivi_Assiduité_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
                 return res.data if res.data else []
             except Exception as e:
                 st.error(f"Erreur de chargement absences : {e}")
@@ -557,14 +557,14 @@ def run_assiduite():
         if not MODE_SUPABASE:
             return False
         try:
-            res = supabase.table("suivi_assiduite_2026").select("*")\
+            res = supabase.table("suivi_Assiduité_2026").select("*")\
                 .eq("etud_non_eligible", étudiant)\
                 .eq("matiere", matiere)\
                 .eq("promotion", promotion)\
                 .order("id", desc=True).limit(1).execute()
             if res.data:
                 last_id = res.data[0]["id"]
-                supabase.table("suivi_assiduite_2026").delete().eq("id", last_id).execute()
+                supabase.table("suivi_Assiduité_2026").delete().eq("id", last_id).execute()
                 return True
             return False
         except Exception as e:
@@ -816,9 +816,9 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
     # ONGLETS
     # =============================================================================
     # Création des onglets (toujours 3 pour éviter UnboundLocalError)
-    tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduite", "📩 Justificatifs", "📊 Bilans & Exports"])
+    tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports"])
     with tab1:
-        st.header("📝 Suivi de l'Assiduite et Compteur d'Absences")
+        st.header("📝 Suivi de l'Assiduité et Compteur d'Absences")
 
         sel_prof = ""
         sel_mat = ""
@@ -834,7 +834,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             with c2:
                 st.markdown("*Accès direct — Aucun code requis*")
         elif is_admin_edt:
-            st.success(f"👤 Mode Administrateur — Accès complet au suivi d'assiduité")
+            st.success(f"👤 Mode Administrateur — Accès complet au suivi d'Assiduité")
             c1, c2 = st.columns(2)
             with c1:
                 sel_prof = st.selectbox("👤 Sélectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1_admin")
@@ -979,7 +979,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                             absence_existante = False
                             if MODE_SUPABASE:
                                 try:
-                                    res = supabase.table("suivi_assiduite_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
+                                    res = supabase.table("suivi_Assiduité_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
                                     if res.data:
                                         absence_existante = True
                                 except Exception:
@@ -1095,7 +1095,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                     if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary"):
                         if MODE_SUPABASE:
                             try:
-                                supabase.table("suivi_assiduite_2026").delete().neq("id", -1).execute()
+                                supabase.table("suivi_Assiduité_2026").delete().neq("id", -1).execute()
                                 st.success("✅ Historique Supabase effacé !")
                                 time.sleep(0.5)
                                 st.rerun()
@@ -2474,7 +2474,7 @@ def run_edt():
 # POINT D'ENTRÉE PRINCIPAL
 # =============================================================================
 if module_sel == "📊 Suivi d'Assiduité":
-    run_assiduite()
+    run_Assiduité()
 else:
     run_edt() 
 
