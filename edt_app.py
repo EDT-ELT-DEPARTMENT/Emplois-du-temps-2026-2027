@@ -2,7 +2,7 @@
 ================================================================================
 Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
 Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA
-Année universitaire 2026-2027
+annee universitaire 2026-2027
 ================================================================================
 """
 
@@ -134,7 +134,7 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.caption("Année universitaire 2026-2027")
+    st.caption("annee universitaire 2026-2027")
 
 # =============================================================================
 # FONCTIONS UTILITAIRES COMMUNES
@@ -319,7 +319,7 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
 
 def run_Assiduité():
     st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
-    st.caption("Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - Année 2026-2027")
+    st.caption("Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - annee 2026-2027")
     
     # =============================================================================
     # CHARGEMENT DES DONNÉES (UNIFIÉ)
@@ -438,7 +438,7 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return []
         try:
-            query = supabase.table("suivi_Assiduite_2026").select("*")
+            query = supabase.table("suivi_assiduite_2026").select("*")
             if matiere:
                 query = query.eq("matiere", matiere)
             if promotion:
@@ -453,7 +453,7 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_Assiduite_2026").insert(payload).execute()
+            supabase.table("suivi_assiduite_2026").insert(payload).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (enregistrer) : {e}")
@@ -463,7 +463,7 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_Assiduite_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
+            supabase.table("suivi_assiduite_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (supprimer) : {e}")
@@ -473,7 +473,7 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_Assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", étudiant).eq("matiere", matiere).execute()
+            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", étudiant).eq("matiere", matiere).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (rehabilitation) : {e}")
@@ -527,7 +527,7 @@ def run_Assiduité():
     def get_absences_étudiant(nom_etudiant):
         if MODE_SUPABASE:
             try:
-                res = supabase.table("suivi_Assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
+                res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
                 return res.data if res.data else []
             except Exception as e:
                 st.error(f"Erreur de chargement absences : {e}")
@@ -557,14 +557,14 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return False
         try:
-            res = supabase.table("suivi_Assiduite_2026").select("*")\
+            res = supabase.table("suivi_assiduite_2026").select("*")\
                 .eq("etud_non_eligible", étudiant)\
                 .eq("matiere", matiere)\
                 .eq("promotion", promotion)\
                 .order("id", desc=True).limit(1).execute()
             if res.data:
                 last_id = res.data[0]["id"]
-                supabase.table("suivi_Assiduite_2026").delete().eq("id", last_id).execute()
+                supabase.table("suivi_assiduite_2026").delete().eq("id", last_id).execute()
                 return True
             return False
         except Exception as e:
@@ -648,7 +648,7 @@ def run_Assiduité():
 <div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
 <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
 <h1 style="margin:0;font-size:20px;">Département d'Electrotechnique - FGE/UDL-SBA</h1>
-<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - Année 2026-2027</p>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - annee 2026-2027</p>
 </div>
 <div style="background:#fef2f2;border-left:5px solid #ef4444;padding:15px;margin:20px;color:#991b1b;font-weight:600;">
 Vous avez été signalé(e) absent(e) lors d'une séance de cours.
@@ -979,7 +979,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                             absence_existante = False
                             if MODE_SUPABASE:
                                 try:
-                                    res = supabase.table("suivi_Assiduite_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
+                                    res = supabase.table("suivi_assiduite_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
                                     if res.data:
                                         absence_existante = True
                                 except Exception:
@@ -1095,7 +1095,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                     if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary"):
                         if MODE_SUPABASE:
                             try:
-                                supabase.table("suivi_Assiduite_2026").delete().neq("id", -1).execute()
+                                supabase.table("suivi_assiduite_2026").delete().neq("id", -1).execute()
                                 st.success("✅ Historique Supabase effacé !")
                                 time.sleep(0.5)
                                 st.rerun()
@@ -8813,10 +8813,10 @@ if is_admin:
     # ==========================================
     # GÉNÉRATEUR DE BORDEREAU ISO STRICT
     # ==========================================
-    def construire_reference(numero, Année=None):
+    def construire_reference(numero, annee=None):
         """Construit la référence complète du bordereau."""
-        if Année is None:
-            Année = datetime.now().year
+        if annee is None:
+            annee = datetime.now().year
         num_str = str(numero).split('/')[0] if '/' in str(numero) else str(numero)
         return f"{num_str}/F.G.E/Département-ELT/{annee}"
 
@@ -8846,7 +8846,7 @@ if is_admin:
             footer_pPr.append(tabs)
             
             footer_p.add_run("\t")
-            Année_doc = donnees.get('annee_reference', datetime.now().year)
+            annee_doc = donnees.get('annee_reference', datetime.now().year)
             r_ref_fixe = footer_p.add_run(f"Réf : UDL-GEL-ER-004-{annee_doc}")
             r_ref_fixe.font.name = 'Calibri'
             r_ref_fixe.font.size = Pt(11)
@@ -9036,14 +9036,14 @@ if is_admin:
         """Enregistre un bordereau généré dans l'historique Supabase."""
         try:
             ref_pur = donnees.get('num_reference_pur', 1)
-            Année_ref = donnees.get('annee_reference', datetime.now().year)
+            annee_ref = donnees.get('annee_reference', datetime.now().year)
             
             data_histo = {
                 "generated_by": user_email,
                 "Département": Département,
                 "destinataire": donnees.get('destinataire', ''),
                 "num_reference": str(ref_pur),
-                "annee_reference": Année_ref,
+                "annee_reference": annee_ref,
                 "expediteur_qualite": donnees.get('expediteur_qualite', 'Chef de département'),
                 "date_creation": donnees.get('date_creation', datetime.now()).isoformat(),
                 "nombre_pieces": len(donnees.get('liste_pieces', [])),
@@ -9303,9 +9303,9 @@ if is_admin:
         col_ref, col_date, col_exp = st.columns(3)
         
         with col_ref:
-            Année_courante = datetime.now().year
+            annee_courante = datetime.now().year
             prochaine_ref_num = get_prochaine_reference()
-            ref_auto = construire_reference(prochaine_ref_num, Année_courante)
+            ref_auto = construire_reference(prochaine_ref_num, annee_courante)
             
             donnees_doc['num_reference'] = st.text_input(
                 "Référence séquentielle", 
@@ -9316,7 +9316,7 @@ if is_admin:
                 donnees_doc['num_reference_pur'] = int(str(donnees_doc['num_reference']).split('/')[0])
             except ValueError:
                 donnees_doc['num_reference_pur'] = prochaine_ref_num
-            donnees_doc['annee_reference'] = Année_courante
+            donnees_doc['annee_reference'] = annee_courante
         with col_date:
             donnees_doc['date_creation'] = st.date_input("Date d'édition", datetime.now())
         with col_exp:
