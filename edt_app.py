@@ -1864,28 +1864,23 @@ def run_edt():
         """Retourne le nom complet avec Pr. (Professeur) ou Dr. (MCA/MCB)."""
         if not nom_brut or str(nom_brut).strip().upper() in ["NON DEFINI", "NAN", "NONE", "", "NON DÉFINI"]:
             return "Non défini"
-
         nom_key = str(nom_brut).strip().upper()
         grade = repertoire_grades.get(nom_key, "")
         nom_complet = repertoire_noms_complets.get(nom_key, "")
-
-        # Fallback par nom de famille si la clé exacte ne marche pas
+        # Fallback par nom de famille
         if not grade and not nom_complet:
             nom_fam = extraire_nom_famille(nom_brut)
             if nom_fam:
                 grade = repertoire_grades.get(nom_fam, "")
                 nom_complet = repertoire_noms_complets.get(nom_fam, nom_brut)
-
         if not nom_complet:
             nom_complet = nom_brut
-
         prefixe = ""
         grade_upper = str(grade).upper().strip()
         if "PR" in grade_upper and "PROF" in grade_upper:
             prefixe = "Pr. "
         elif grade_upper in ["MCA", "MCB"]:
             prefixe = "Dr. "
-
         return f"{prefixe}{nom_complet}"
 
     df_contacts = None
@@ -2157,7 +2152,7 @@ def run_edt():
                     items.append(f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;'><b>{nat} {r['Enseignements']}</b><br><small>👤 {r['Enseignants']} | 📍 {r['Lieu']}</small></div>")
                 return "".join(items)
 
-            grid_p = df_p_display.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
             grid_p = grid_p.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
             grid_p = grid_p[grid_p.any(axis=1)]
             grid_p.index = [map_h.get(i, i) for i in grid_p.index]
@@ -2438,7 +2433,6 @@ def run_edt():
         poste_sup_global = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_global")
         seuil_global = 3.0 if poste_sup_global else 6.0
 
-        # Récupération de tous les enseignants uniques présents dans l'EDT
         tous_enseignants = sorted([e for e in df['Enseignants'].unique() 
                                    if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
 
@@ -2447,37 +2441,28 @@ def run_edt():
             return
 
         bilan_data = []
-
         for ens in tous_enseignants:
             df_ens = df[df["Enseignants"].str.contains(ens, case=False, na=False)].copy()
             if df_ens.empty:
                 continue
-
-            # Déduplication sur Jour+Horaire pour compter les séances uniques
             df_ens['Type'] = df_ens['Code'].apply(
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
             df_u = df_ens.drop_duplicates(subset=['j_norm', 'h_norm'])
-
             nb_cours = len(df_u[df_u['Type'] == 'COURS'])
             nb_td    = len(df_u[df_u['Type'] == 'TD'])
             nb_tp    = len(df_u[df_u['Type'] == 'TP'])
-
             charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
             delta     = charge_eq - seuil_global
             h_sup     = delta * 1.5
-
-            # Récupération Grade & Qualité depuis le fichier source
             nom_key = str(ens).strip().upper()
             grade   = repertoire_grades.get(nom_key, "")
             qualite = repertoire_qualites.get(nom_key, "")
-
             if not grade and not qualite:
                 nom_fam = extraire_nom_famille(ens)
                 if nom_fam:
                     grade   = repertoire_grades.get(nom_fam, "N/A")
                     qualite = repertoire_qualites.get(nom_fam, "N/A")
-
             bilan_data.append({
                 "Enseignant": format_nom_enseignant(ens),
                 "Grade": grade if grade else "N/A",
@@ -2492,58 +2477,43 @@ def run_edt():
             })
 
         df_bilan = pd.DataFrame(bilan_data)
-
         if not df_bilan.empty:
-            # Coloration conditionnelle Delta
             def color_delta(val):
                 color = '#22c55e' if val >= 0 else '#ef4444'
                 return f'color: {color}; font-weight: bold;'
-
             st.dataframe(
                 df_bilan.style.applymap(color_delta, subset=['Heures Sup/Déficit']),
-                use_container_width=True,
-                hide_index=True
+                use_container_width=True, hide_index=True
             )
-
-            # Métriques rapides
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Total Enseignants", len(df_bilan))
             c2.metric("En surcharge", len(df_bilan[df_bilan['Heures Sup/Déficit'] > 0]))
             c3.metric("En déficit", len(df_bilan[df_bilan['Heures Sup/Déficit'] < 0]))
             c4.metric("Seuil exact", len(df_bilan[df_bilan['Heures Sup/Déficit'] == 0]))
-
-            # Export Excel professionnel
             buf_bilan = io.BytesIO()
             with pd.ExcelWriter(buf_bilan, engine='xlsxwriter') as writer:
                 df_bilan.to_excel(writer, index=False, sheet_name='Bilan_Heures_Sup')
-
                 wb = writer.book
                 ws = writer.sheets['Bilan_Heures_Sup']
-
                 header_fmt = wb.add_format({
                     'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
                     'border': 1, 'align': 'center', 'valign': 'vcenter'
                 })
                 for col_num, val in enumerate(df_bilan.columns.values):
                     ws.write(0, col_num, val, header_fmt)
-
-                # Format conditionnel sur la dernière colonne
                 last_col = len(df_bilan.columns) - 1
                 green_fmt = wb.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
                 red_fmt   = wb.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-
                 ws.conditional_format(1, last_col, len(df_bilan), last_col, {
                     'type': 'cell', 'criteria': '>=', 'value': 0, 'format': green_fmt
                 })
                 ws.conditional_format(1, last_col, len(df_bilan), last_col, {
                     'type': 'cell', 'criteria': '<', 'value': 0, 'format': red_fmt
                 })
-
                 ws.freeze_panes(1, 0)
-                ws.set_column(0, 0, 32)   # Enseignant
-                ws.set_column(1, 2, 16)   # Grade, Qualité
+                ws.set_column(0, 0, 32)
+                ws.set_column(1, 2, 16)
                 ws.set_column(3, last_col, 14)
-
             st.download_button(
                 label="📥 Télécharger le Bilan Global (Excel)",
                 data=buf_bilan.getvalue(),
@@ -3468,7 +3438,8 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
             else:
                 nat = '[TP]'
             
-            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nSalle: {r.get('Lieu', '')}"
+            nom_ens_formate = format_nom_enseignant(r.get('Enseignants', ''))
+                    txt = f"{nat} {r.get('Enseignements', '')}\nProf: {nom_ens_formate}\nSalle: {r.get('Lieu', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -3740,7 +3711,8 @@ def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
                 nat = '[TD]'
             else:
                 nat = '[TP]'
-            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
+            nom_ens_formate = format_nom_enseignant(r.get('Enseignants', ''))
+                    txt = f"{nat} {r.get('Enseignements', '')}\nProf: {nom_ens_formate}\nPromo: {r.get('Promotion', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -4012,7 +3984,8 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
                 nat = '[TD]'
             else:
                 nat = '[TP]'
-            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
+            nom_ens_formate = format_nom_enseignant(r.get('Enseignants', ''))
+                    txt = f"{nat} {r.get('Enseignements', '')}\nProf: {nom_ens_formate}\nPromo: {r.get('Promotion', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -6394,7 +6367,7 @@ if df is not None:
 
             # --- 4. CONSTRUCTION ET FILTRAGE DE LA GRILLE ---
             # Groupement des données par horaire et par jour
-            grid_p = df_p_display.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
             
             # Réindexation sur tous les créneaux et jours définis globalement
             idx_h = [normalize(h) for h in horaires_list]
@@ -6841,7 +6814,7 @@ if df is not None:
                             df_p = df[df["Promotion"] == p_name].copy()
                             
                             # Reconstruction de la grille
-                            grid_p = df_p_display.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+                            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
                             grid_p = grid_p.reindex(index=idx_h, columns=cols_j).fillna("")
                             grid_p = grid_p[grid_p.any(axis=1)]
                             
@@ -6925,7 +6898,7 @@ if df is not None:
                         
                         # Préparation des données de la promotion
                         df_p = df[df["Promotion"] == p_name].copy()
-                        grid_p = df_p_display.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+                        grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
                         grid_p = grid_p.reindex(index=idx_h, columns=cols_j).fillna("")
                         grid_p = grid_p[grid_p.any(axis=1)] # Ne garde que les créneaux avec des cours
                         
