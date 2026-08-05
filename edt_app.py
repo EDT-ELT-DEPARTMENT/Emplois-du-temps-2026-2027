@@ -4140,7 +4140,7 @@ def render_download_hub(df_global, user_data, is_admin):
                 c1.button("📄 PDF", disabled=True, use_container_width=True, key="dp_promo_single")
         else:
             # Toutes les promotions → generation au clic avec progression
-            if c1.button("📄 Générer PDF Global promotion", use_container_width=True, key="btn_gen_all_pdf_promo"):
+            if c1.button("📄 Générer PDF Global promotions", use_container_width=True, key="btn_gen_all_pdf_promo"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
                     pdf_data_all, err_all = generate_edt_toutes_promotions_pdf(df_propre, progress_bar=prog)
