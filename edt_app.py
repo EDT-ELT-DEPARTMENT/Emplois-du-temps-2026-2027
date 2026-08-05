@@ -2474,7 +2474,7 @@ def run_edt():
 # POINT D'ENTRÉE PRINCIPAL
 # =============================================================================
 if module_sel == "📊 Suivi d'Assiduite":
-    run_Assiduite()
+    run_Assiduité()
 else:
     run_edt() 
 
