@@ -1092,20 +1092,33 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                     df_aff = df_aff.sort_values(by=["Étudiant", "Date"], ascending=[True, False])
                     st.dataframe(df_aff, use_container_width=True, hide_index=True)
 
-                    if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary"):
-                        if MODE_SUPABASE:
-                            try:
-                                supabase.table("suivi_assiduite_2026").delete().neq("id", -1).execute()
-                                st.success("✅ Historique Supabase effacé !")
+                    
+                    if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary", key="btn_reset_all_abs"):
+                        st.session_state.confirm_reset_abs = True
+
+                    if st.session_state.get("confirm_reset_abs", False):
+                        st.error("⚠️ Cette action est IRRÉVERSIBLE ! Toutes les absences seront définitivement supprimées.")
+                        c_yes, c_no = st.columns(2)
+                        with c_yes:
+                            if st.button("✅ Oui, effacer tout", type="primary", use_container_width=True, key="confirm_yes_abs"):
+                                if MODE_SUPABASE:
+                                    try:
+                                        supabase.table("suivi_assiduite_2026").delete().neq("id", -1).execute()
+                                        st.success("✅ Historique Supabase effacé !")
+                                    except Exception as e:
+                                        st.error(f"Erreur : {e}")
+                                else:
+                                    st.session_state.absences = []
+                                    st.success("✅ Historique local effacé !")
+                                st.session_state.confirm_reset_abs = False
                                 time.sleep(0.5)
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Erreur : {e}")
-                        else:
-                            st.session_state.absences = []
-                            st.success("✅ Historique local effacé !")
-                            time.sleep(0.5)
-                            st.rerun()
+                        with c_no:
+                            if st.button("❌ Non, annuler", use_container_width=True, key="confirm_no_abs"):
+                                st.session_state.confirm_reset_abs = False
+                                st.info("Action annulée.")
+                                time.sleep(0.5)
+                                st.rerun()
                 else:
                     st.info("ℹ️ Aucune absence enregistrée dans l'historique global.")
 
