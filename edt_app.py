@@ -827,7 +827,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
 
         if is_enseignant_connecte:
             sel_prof = user['nom_officiel']
-            st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduite")
+            st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduité")
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown(f"**Enseignant :** `{sel_prof}`")
