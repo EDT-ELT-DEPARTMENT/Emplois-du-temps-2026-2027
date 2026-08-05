@@ -4281,7 +4281,7 @@ def render_download_hub(df_global, user_data, is_admin):
                         st.error(f"❌ Erreur : {err_all}")
             
             if st.session_state.get('pdf_all_ready') and 'pdf_all_data' in st.session_state:
-                c1.download_button("⬇️ Télecharger PDF Global enseignats", st.session_state['pdf_all_data'],
+                c1.download_button("⬇️ Télecharger PDF Global enseignants", st.session_state['pdf_all_data'],
                                   "EDT_Tous_Enseignants_2027.pdf", "application/pdf",
                                   use_container_width=True, key="dp_down")
         
@@ -4337,7 +4337,7 @@ def render_download_hub(df_global, user_data, is_admin):
                         st.error(f"❌ Erreur : {err_all}")
             
             if st.session_state.get('pdf_all_lieu_ready') and 'pdf_all_lieu_data' in st.session_state:
-                c1.download_button("⬇️ Télecharger PDF Global", st.session_state['pdf_all_lieu_data'],
+                c1.download_button("⬇️ Télecharger PDF Global lieu", st.session_state['pdf_all_lieu_data'],
                                   "Planning_Tous_Lieux_2027.pdf", "application/pdf",
                                   use_container_width=True, key="dp_down_lieu")
         
