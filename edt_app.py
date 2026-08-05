@@ -128,7 +128,7 @@ with st.sidebar:
     
     module_sel = st.radio(
         "📂 Choix du module :",
-        ["📊 Suivi d'Assiduité", "📅 Gestion des EDTs & Admin"],
+        ["📊 Suivi d'Assiduite", "📅 Gestion des EDTs & Admin"],
         index=0,
         key="module_selector"
     )
@@ -248,7 +248,7 @@ def Génerer_page_html(df_data, titre_bilan, colonnes, entetes):
 <body>
     <div class="header">
         <h1>📊 {titre_bilan}</h1>
-        <p>Suivi d'Assiduité - Département d'Electrotechnique - UDL-SBA</p>
+        <p>Suivi d'Assiduite - Département d'Electrotechnique - UDL-SBA</p>
     </div>
     <div class="content">
         <p>Genere le : {datetime.now().strftime('%d/%m/%Y a %H:%M')}</p>
@@ -827,14 +827,14 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
 
         if is_enseignant_connecte:
             sel_prof = user['nom_officiel']
-            st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduité")
+            st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduite")
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown(f"**Enseignant :** `{sel_prof}`")
             with c2:
                 st.markdown("*Accès direct — Aucun code requis*")
         elif is_admin_edt:
-            st.success(f"👤 Mode Administrateur — Accès complet au suivi d'Assiduité")
+            st.success(f"👤 Mode Administrateur — Accès complet au suivi d'Assiduite")
             c1, c2 = st.columns(2)
             with c1:
                 sel_prof = st.selectbox("👤 Sélectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1_admin")
@@ -2473,8 +2473,8 @@ def run_edt():
 # =============================================================================
 # POINT D'ENTRÉE PRINCIPAL
 # =============================================================================
-if module_sel == "📊 Suivi d'Assiduité":
-    run_Assiduité()
+if module_sel == "📊 Suivi d'Assiduite":
+    run_Assiduite()
 else:
     run_edt() 
 
