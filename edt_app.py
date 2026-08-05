@@ -3439,7 +3439,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                 nat = '[TP]'
             
             nom_ens_formate = format_nom_enseignant(r.get('Enseignants', ''))
-                    txt = f"{nat} {r.get('Enseignements', '')}\nProf: {nom_ens_formate}\nSalle: {r.get('Lieu', '')}"
+            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {nom_ens_formate}\nSalle: {r.get('Lieu', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -3712,7 +3712,7 @@ def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
             else:
                 nat = '[TP]'
             nom_ens_formate = format_nom_enseignant(r.get('Enseignants', ''))
-                    txt = f"{nat} {r.get('Enseignements', '')}\nProf: {nom_ens_formate}\nPromo: {r.get('Promotion', '')}"
+            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {nom_ens_formate}\nPromo: {r.get('Promotion', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -3985,7 +3985,7 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
             else:
                 nat = '[TP]'
             nom_ens_formate = format_nom_enseignant(r.get('Enseignants', ''))
-                    txt = f"{nat} {r.get('Enseignements', '')}\nProf: {nom_ens_formate}\nPromo: {r.get('Promotion', '')}"
+            txt = f"{nat} {r.get('Enseignements', '')}\nProf: {nom_ens_formate}\nPromo: {r.get('Promotion', '')}"
             items.append(txt)
         return "\n".join(items)
     
