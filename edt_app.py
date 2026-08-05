@@ -217,7 +217,7 @@ def trouver_matiere_promo(nom_ens_complet, df_edt):
     df_filtre = df_filtre[df_filtre["Enseignants"].astype(str).str.strip().str.lower() != "non defini"]
     return df_filtre
 
-def generer_page_html(df_data, titre_bilan, colonnes, entetes):
+def Génerer_page_html(df_data, titre_bilan, colonnes, entetes):
     html_doc = f"""<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1375,7 +1375,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                             f"✅ Rapport généré pour **{promo_rapport}** : **{nb_éligibles}** éligible(s) | **{nb_non_éligibles}** signalé(s) comme absent(s)."
                         )
                         st.download_button(
-                            label="📥 TELECHARGER LE RAPPORT (XLSX)",
+                            label="📥 Télecharger LE RAPPORT (XLSX)",
                             data=output.getvalue(),
                             file_name=f"Rapport_{sel_mat.replace(' ', '_')}_{promo_rapport}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1683,7 +1683,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         use_container_width=True
                     )
                 with c2:
-                    html_reg = generer_page_html(df_tab, "Registre général", df_tab.columns, df_tab.columns)
+                    html_reg = Génerer_page_html(df_tab, "Registre général", df_tab.columns, df_tab.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_reg,
@@ -1710,7 +1710,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         use_container_width=True
                     )
                 with c4:
-                    html_mat = generer_page_html(df_bilan_mat, "Bilan par matiere", df_bilan_mat.columns, df_bilan_mat.columns)
+                    html_mat = Génerer_page_html(df_bilan_mat, "Bilan par matiere", df_bilan_mat.columns, df_bilan_mat.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_mat,
@@ -1738,7 +1738,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         use_container_width=True
                     )
                 with c6:
-                    html_etud = generer_page_html(df_bilan_etud, "Total par Étudiant", df_bilan_etud.columns, df_bilan_etud.columns)
+                    html_etud = Génerer_page_html(df_bilan_etud, "Total par Étudiant", df_bilan_etud.columns, df_bilan_etud.columns)
                     st.download_button(
                         "🌐 HTML",
                         html_etud,
@@ -4140,7 +4140,7 @@ def render_download_hub(df_global, user_data, is_admin):
                 c1.button("📄 PDF", disabled=True, use_container_width=True, key="dp_promo_single")
         else:
             # Toutes les promotions → generation au clic avec progression
-            if c1.button("📄 Générer PDF Global", use_container_width=True, key="btn_gen_all_pdf_promo"):
+            if c1.button("📄 Générer PDF Global promotion", use_container_width=True, key="btn_gen_all_pdf_promo"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
                     pdf_data_all, err_all = generate_edt_toutes_promotions_pdf(df_propre, progress_bar=prog)
@@ -4153,7 +4153,7 @@ def render_download_hub(df_global, user_data, is_admin):
                         st.error(f"❌ Erreur : {err_all}")
             
             if st.session_state.get('pdf_all_promo_ready') and 'pdf_all_promo_data' in st.session_state:
-                c1.download_button("⬇️ Telecharger PDF Global", st.session_state['pdf_all_promo_data'],
+                c1.download_button("⬇️ Télecharger PDF Global promotion", st.session_state['pdf_all_promo_data'],
                                   "EDT_Toutes_Promotions_2027.pdf", "application/pdf",
                                   use_container_width=True, key="dp_down_promo")
         
@@ -4281,7 +4281,7 @@ def render_download_hub(df_global, user_data, is_admin):
                         st.error(f"❌ Erreur : {err_all}")
             
             if st.session_state.get('pdf_all_ready') and 'pdf_all_data' in st.session_state:
-                c1.download_button("⬇️ Telecharger PDF Global", st.session_state['pdf_all_data'],
+                c1.download_button("⬇️ Télecharger PDF Global enseignats", st.session_state['pdf_all_data'],
                                   "EDT_Tous_Enseignants_2027.pdf", "application/pdf",
                                   use_container_width=True, key="dp_down")
         
@@ -4324,7 +4324,7 @@ def render_download_hub(df_global, user_data, is_admin):
                 c1.button("📄 PDF", disabled=True, use_container_width=True, key="sp")
         else:
             # Tous les lieux → generation au clic avec progression
-            if c1.button("📄 Generer PDF Global", use_container_width=True, key="btn_gen_all_pdf_lieu"):
+            if c1.button("📄 Génerer PDF Global", use_container_width=True, key="btn_gen_all_pdf_lieu"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
                     pdf_data_all, err_all = generate_edt_tous_lieux_pdf(df_propre, progress_bar=prog)
@@ -4337,7 +4337,7 @@ def render_download_hub(df_global, user_data, is_admin):
                         st.error(f"❌ Erreur : {err_all}")
             
             if st.session_state.get('pdf_all_lieu_ready') and 'pdf_all_lieu_data' in st.session_state:
-                c1.download_button("⬇️ Telecharger PDF Global", st.session_state['pdf_all_lieu_data'],
+                c1.download_button("⬇️ Télecharger PDF Global", st.session_state['pdf_all_lieu_data'],
                                   "Planning_Tous_Lieux_2027.pdf", "application/pdf",
                                   use_container_width=True, key="dp_down_lieu")
         
