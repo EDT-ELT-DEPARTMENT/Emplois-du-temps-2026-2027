@@ -2,7 +2,7 @@
 ================================================================================
 Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
 Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA
-annee universitaire 2026-2027
+année universitaire 2026-2027
 ================================================================================
 """
 
@@ -319,7 +319,7 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
 
 def run_Assiduité():
     st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
-    st.caption("Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - annee 2026-2027")
+    st.caption("Département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - année 2026-2027")
     
     # =============================================================================
     # CHARGEMENT DES DONNÉES (UNIFIÉ)
@@ -648,7 +648,7 @@ def run_Assiduité():
 <div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
 <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
 <h1 style="margin:0;font-size:20px;">Département d'Electrotechnique - FGE/UDL-SBA</h1>
-<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - annee 2026-2027</p>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
 </div>
 <div style="background:#fef2f2;border-left:5px solid #ef4444;padding:15px;margin:20px;color:#991b1b;font-weight:600;">
 Vous avez été signalé(e) absent(e) lors d'une séance de cours.
