@@ -573,13 +573,13 @@ def run_Assiduité():
             return r
         return None        
     for r in st.session_state.requetes:
-            if (r.get("nom_etudiant") == nom_etudiant and 
+        if (r.get("nom_etudiant") == nom_etudiant and 
                 r.get("matiere") == matiere and 
                 r.get("statut") == "En attente"):
                 if date_abs and r.get("date_absence") != date_abs: continue
                 if jour_abs and r.get("jour_absence") != jour_abs: continue
                 if horaire_abs and r.get("horaire_absence") != horaire_abs: continue
-                return r
+                return r    
         return None
 
     
