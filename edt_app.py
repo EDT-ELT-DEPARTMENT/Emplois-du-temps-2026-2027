@@ -536,7 +536,26 @@ def run_Assiduité():
             return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]
 
     def trouver_requete_existante(nom_etudiant, matiere):
-        """Retourne la derniere requete de justification pour cet etudiant et cette matiere (tous statuts confondus)."""
+        """Retourne une requete EN ATTENTE existante pour empecher les doublons de depot."""
+        if MODE_SUPABASE:
+            try:
+                res = supabase.table("requetes_absences").select("*")\
+                    .eq("nom_etudiant", nom_etudiant)\
+                    .eq("matiere", matiere)\
+                    .eq("statut", "En attente").execute()
+                return res.data[0] if res.data else None
+            except Exception as e:
+                st.error(f"Erreur recherche requete : {e}")
+                return None
+        for r in st.session_state.requetes:
+            if (r.get("nom_etudiant") == nom_etudiant and 
+                r.get("matiere") == matiere and 
+                r.get("statut") == "En attente"):
+                return r
+        return None
+
+    def trouver_derniere_requete(nom_etudiant, matiere):
+        """Retourne la DERNIERE requete (tous statuts) pour affichage du statut final."""
         if MODE_SUPABASE:
             try:
                 res = supabase.table("requetes_absences").select("*")\
@@ -547,7 +566,6 @@ def run_Assiduité():
             except Exception as e:
                 st.error(f"Erreur recherche requete : {e}")
                 return None
-        # Mode local : chercher la derniere requete (peu importe le statut)
         candidates = [r for r in st.session_state.requetes
                       if r.get("nom_etudiant") == nom_etudiant 
                       and r.get("matiere") == matiere]
@@ -1550,15 +1568,19 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     data_display = []
                     for abs_item in absences_etu:
                         mat = abs_item.get("matiere", "")
-                        req = trouver_requete_existante(étudiant_sel, mat)
+                        # Pour l'affichage : chercher la DERNIERE requete (tous statuts)
+                        req_affichage = trouver_derniere_requete(étudiant_sel, mat)
+                        req_en_attente = trouver_requete_existante(étudiant_sel, mat)
                         is_justif = abs_item.get("justifie", False)
+
                         if is_justif:
                             statut_j = "🟢 Justifiée (acceptée)"
-                        elif req:
-                            statut_j = "🟡 " + req.get("statut", "En attente")
+                        elif req_affichage:
+                            statut_j = "🟡 " + req_affichage.get("statut", "En attente")
                         else:
                             statut_j = "🔴 Non déposé"
-                        date_dep = req.get("date_demande", "-") if req else "-"
+
+                        date_dep = req_affichage.get("date_demande", "-") if req_affichage else "-"
 
                         data_display.append({
                             "matiere": mat,
