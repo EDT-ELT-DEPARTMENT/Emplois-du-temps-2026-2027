@@ -1611,94 +1611,116 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     df_disp = pd.DataFrame(data_display)
                     st.dataframe(df_disp, use_container_width=True, hide_index=True)
 
-                    st.markdown("### 📎 Envoyer un justificatif pour une absence")
-                    absences_sans_justif = [
-                        a for a in absences_etu 
-                        if not a.get("justifie", False)
-                        and not trouver_requete_existante(
-                            étudiant_sel, 
-                            a.get("matiere", ""), 
-                            a.get("date_absence"), 
-                            a.get("jour_absence"), 
+                    
+                    st.markdown("### 📎 Justifier vos absences (un justificatif par absence)")
+
+                    # 1. FILTRAGE : absences sans justificatif ET sans demande déjà en attente
+                    absences_sans_justif = []
+                    for a in absences_etu:
+                        if a.get("justifie", False):
+                            continue
+                        existe = trouver_requete_existante(
+                            étudiant_sel,
+                            a.get("matiere", ""),
+                            a.get("date_absence"),
+                            a.get("jour_absence"),
                             a.get("horaire_absence")
                         )
-                    ]
-                    
+                        if not existe:
+                            absences_sans_justif.append(a)
+    
                     if absences_sans_justif:
-                        with st.form("form_dépôt_cible", clear_on_submit=True):
-                            options_abs = {
-                                f"{a['matiere']} — {a['date_absence']} ({a['jour_absence']} {a['horaire_absence']})": a 
-                                for a in absences_sans_justif
-                            }
-                            sel_abs = st.selectbox("Sélectionnez l'absence concernée :", list(options_abs.keys()))
-                            motif_dep = st.selectbox("Motif du justificatif :", CAUSES_ABSENCES, key="motif_dep_cible")
-                            fichier_pdf_cible = st.file_uploader("Joindre le justificatif (PDF)", type=["pdf"], key="pdf_cible")
-                            submit_cible = st.form_submit_button("🚀 ENVOYER LE JUSTIFICATIF")
-
-                        if submit_cible:
-                            if not fichier_pdf_cible:
-                                st.error("❌ Vous devez joindre un fichier PDF.")
-                            else:
-                                try:
-                                    pdf_bytes = fichier_pdf_cible.read()
-                                    pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
-                                    abs_conc = options_abs[sel_abs]
-
-                                    req_ex = trouver_requete_existante(étudiant_sel, abs_conc["matiere"])
-
-                                    if MODE_SUPABASE:
-                                        if req_ex:
-                                            supabase.table("requetes_absences").update({
-                                                "justificatif_pdf": pdf_encoded,
-                                                "motif": motif_dep,
-                                                "date_demande": datetime.now().strftime("%d/%m/%Y")
-                                            }).eq("id", req_ex["id"]).execute()
-                                            st.success(f"✅ Justificatif ajouté à la demande existante pour **{abs_conc['matiere']}** ({abs_conc.get('date_absence','')}) !")
+                        st.info("Remplissez les champs ci-dessous pour chaque absence que vous souhaitez justifier, puis validez l'envoi global.")
+                        
+                        uploads = {}  # Stocke les absences prêtes à être envoyées
+    
+                        # 2. AFFICHAGE : une carte par absence avec son propre PDF et motif
+                        for i, abs_item in enumerate(absences_sans_justif):
+                            with st.container(border=True):
+                                c1, c2, c3 = st.columns([2.5, 2, 3])
+                                
+                                with c1:
+                                    st.markdown(f"**📚 {abs_item['matiere']}**")
+                                    st.caption(f"📅 {abs_item.get('date_absence','')} | 🗓️ {abs_item.get('jour_absence','')} | 🕒 {abs_item.get('horaire_absence','')}")
+                                
+                                with c2:
+                                    motif_val = st.selectbox(
+                                        "Motif :", 
+                                        CAUSES_ABSENCES, 
+                                        key=f"motif_unique_{i}"
+                                    )
+                                
+                                with c3:
+                                    pdf_file = st.file_uploader(
+                                        "Joindre le justificatif (PDF)", 
+                                        type=["pdf"], 
+                                        key=f"pdf_unique_{i}"
+                                    )
+                                
+                                # Si l'étudiant a déposé un PDF pour cette ligne, on la mémorise
+                                if pdf_file is not None:
+                                    uploads[i] = {
+                                        "absence": abs_item,
+                                        "motif": motif_val,
+                                        "pdf": pdf_file
+                                    }
+    
+                        st.divider()
+    
+                        # 3. ENVOI GLOBAL
+                        if uploads:
+                            st.success(f"📎 **{len(uploads)}** justificatif(s) prêt(s) à être envoyé(s).")
+                            
+                            if st.button("🚀 ENVOYER TOUTES LES JUSTIFICATIONS", type="primary", use_container_width=True):
+                                succes_count = 0
+                                erreurs_list = []
+                                
+                                for idx, data in uploads.items():
+                                    abs_conc = data["absence"]
+                                    
+                                    try:
+                                        # Lecture du PDF spécifique à CETTE absence
+                                        pdf_bytes = data["pdf"].read()
+                                        pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
+                                        
+                                        payload = {
+                                            "date_demande": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                            "nom_etudiant": étudiant_sel,
+                                            "matiere": abs_conc["matiere"],
+                                            "promotion": abs_conc.get("promotion", promo_sel),
+                                            "motif": data["motif"],
+                                            "justificatif_pdf": pdf_encoded,
+                                            "statut": "En attente",
+                                            "date_absence": abs_conc.get("date_absence", ""),
+                                            "jour_absence": abs_conc.get("jour_absence", ""),
+                                            "horaire_absence": abs_conc.get("horaire_absence", "")
+                                        }
+                                        
+                                        if MODE_SUPABASE:
+                                            if enregistrer_requete_supabase(payload):
+                                                succes_count += 1
+                                            else:
+                                                erreurs_list.append(f"❌ {abs_conc['matiere']} ({abs_conc.get('date_absence','')}) : échec d'enregistrement")
                                         else:
-                                            data_insert = {
-                                                "date_demande": datetime.now().strftime("%d/%m/%Y"),
-                                                "nom_etudiant": étudiant_sel,
-                                                "matiere": abs_conc["matiere"],
-                                                "promotion": abs_conc.get("promotion", promo_sel),
-                                                "motif": motif_dep,
-                                                "justificatif_pdf": pdf_encoded,
-                                                "statut": "En attente",
-                                                "date_absence": abs_conc.get("date_absence", ""),
-                                                "jour_absence": abs_conc.get("jour_absence", ""),
-                                                "horaire_absence": abs_conc.get("horaire_absence", "")
-                                            }
-                                            enregistrer_requete_supabase(data_insert)
-                                            st.success(f"✅ Demande enregistrée pour **{étudiant_sel}** — Séance du {abs_conc.get('date_absence','')} ({abs_conc.get('jour_absence','')} {abs_conc.get('horaire_absence','')}) !")
-                                        st.balloons()
-                                        time.sleep(0.5)
-                                        st.rerun()
-                                    else:
-                                        if req_ex:
-                                            req_ex["justificatif_pdf"] = pdf_encoded
-                                            req_ex["motif"] = motif_dep
-                                            req_ex["date_demande"] = datetime.now().strftime("%d/%m/%Y")
-                                            st.success(f"✅ Justificatif mis à jour (mode local) pour **{abs_conc['matiere']}** ({abs_conc.get('date_absence','')}) !")
-                                        else:
-                                            data_insert = {
-                                                "date_demande": datetime.now().strftime("%d/%m/%Y"),
-                                                "nom_etudiant": étudiant_sel,
-                                                "matiere": abs_conc["matiere"],
-                                                "promotion": abs_conc.get("promotion", promo_sel),
-                                                "motif": motif_dep,
-                                                "justificatif_pdf": pdf_encoded,
-                                                "statut": "En attente",
-                                                "id": len(st.session_state.requetes) + 1,
-                                                "date_absence": abs_conc.get("date_absence", ""),
-                                                "jour_absence": abs_conc.get("jour_absence", ""),
-                                                "horaire_absence": abs_conc.get("horaire_absence", "")
-                                            }
-                                            st.session_state.requetes.append(data_insert)
-                                            st.success(f"✅ Demande enregistrée (mode local) pour **{étudiant_sel}** — Séance du {abs_conc.get('date_absence','')} ({abs_conc.get('jour_absence','')} {abs_conc.get('horaire_absence','')}) !")
-                                        st.balloons()
-                                        time.sleep(0.5)
-                                        st.rerun()
-                                except Exception as e:
-                                    st.error(f"❌ Erreur : {e}")
+                                            payload["id"] = len(st.session_state.requetes) + 1
+                                            st.session_state.requetes.append(payload)
+                                            succes_count += 1
+                                            
+                                    except Exception as e:
+                                        erreurs_list.append(f"❌ {abs_conc['matiere']} : {e}")
+                                
+                                # Bilan
+                                if succes_count > 0:
+                                    st.success(f"✅ **{succes_count}** demande(s) envoyée(s) avec succès ! Toutes sont maintenant **En attente** de validation.")
+                                    st.balloons()
+                                if erreurs_list:
+                                    for err in erreurs_list:
+                                        st.error(err)
+                                
+                                time.sleep(1.5)
+                                st.rerun()
+                        else:
+                            st.warning("⚠️ Aucun justificatif PDF n'a été joint. Veuillez déposer au moins un fichier.")
                     else:
                         st.info("✅ Toutes vos absences ont déjà un justificatif déposé ou une demande en cours de traitement.")
                 else:
