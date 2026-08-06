@@ -2077,22 +2077,31 @@ def run_edt():
             nb_cours = len(df_u[df_u['Type'] == 'COURS'])
             nb_td = len(df_u[df_u['Type'] == 'TD'])
             nb_tp = len(df_u[df_u['Type'] == 'TP'])
-            seuil = 3.0 if poste_sup else 6.0
-            charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
-            delta = charge_eq - seuil
-            h_sup = delta * 1.5
+
+            # ─── LOGIQUE DE CALCUL UNIFIÉE ───
+            seuil_obligatoire = 3.0 if poste_sup else 6.0
+            charge_totale_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
+            delta_eq = charge_totale_eq - seuil_obligatoire
+            h_sup = delta_eq * 1.5
+            charge_effective = (nb_cours + nb_td + nb_tp) * 1.5
+
+            abs_h_sup = abs(h_sup)
+            heures_entieres = int(abs_h_sup)
+            minutes_restantes = int((abs_h_sup - heures_entieres) * 60)
+            signe_str = "+" if h_sup >= 0 else "-"
+            h_sup_formattee = f"{signe_str}{heures_entieres}h{minutes_restantes:02d}"
 
             st.markdown(f"### 📊 Charge Horaire : {cible}")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("📘 Cours", nb_cours)
             c2.metric("📗 TD", nb_td)
             c3.metric("🔴 TP", nb_tp)
-            c4.metric("Charge Eq/h", f"{charge_eq:.1f}")
+            c4.metric("Charge Effective", f"{charge_effective:.1f} h")
 
             if h_sup > 0:
-                st.success(f"✅ Heures supplémentaires : +{h_sup:.1f}h")
+                st.success(f"✅ Heures supplémentaires : {h_sup_formattee}")
             elif h_sup < 0:
-                st.warning(f"⚠️ Déficit : {h_sup:.1f}h")
+                st.warning(f"⚠️ Déficit horaire : {h_sup_formattee}")
             else:
                 st.info("⚖️ Seuil exact")
 
@@ -4197,31 +4206,34 @@ def render_download_hub(df_global, user_data, is_admin):
             nb_td    = len(df_u[df_u['Type'] == 'TD'])
             nb_tp    = len(df_u[df_u['Type'] == 'TP'])
 
-            # Calcul de la charge équivalente
-            # 1h Cours = 1.5 eq/h  |  1h TD/TP = 1.0 eq/h
-            charge_eq = round((nb_cours * 1.5) + (nb_td * 1.0) + (nb_tp * 1.0), 2)
-            SEUIL_REGLEMENTAIRE = 6.0  # 6 heures équivalent/semaine
+            # ─── LOGIQUE DE CALCUL UNIFIÉE ───
+            seuil_obligatoire = 3.0 if poste_sup else 6.0
+            charge_totale_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
+            delta_eq = charge_totale_eq - seuil_obligatoire
+            h_sup = delta_eq * 1.5
+            charge_effective = (nb_cours + nb_td + nb_tp) * 1.5
 
-            delta = round(charge_eq - SEUIL_REGLEMENTAIRE, 2)
+            abs_h_sup = abs(h_sup)
+            heures_entieres = int(abs_h_sup)
+            minutes_restantes = int((abs_h_sup - heures_entieres) * 60)
+            signe_str = "+" if h_sup >= 0 else "-"
+            h_sup_formattee = f"{signe_str}{heures_entieres}h{minutes_restantes:02d}"
 
             # Style conditionnel
-            if delta > 0:
+            if h_sup > 0:
                 statut_label = "Heures Supplémentaires"
-                statut_color = "#22c55e"  # vert
+                statut_color = "#22c55e"
                 statut_bg = "#f0fdf4"
-                delta_str = f"+{delta} eq/h"
                 emoji = "✅"
-            elif delta < 0:
+            elif h_sup < 0:
                 statut_label = "Déficit Horaire"
-                statut_color = "#ef4444"  # rouge
+                statut_color = "#ef4444"
                 statut_bg = "#fef2f2"
-                delta_str = f"{delta} eq/h"
                 emoji = "⚠️"
             else:
                 statut_label = "Charge Exacte"
-                statut_color = "#3b82f6"  # bleu
+                statut_color = "#3b82f6"
                 statut_bg = "#eff6ff"
-                delta_str = "0 eq/h"
                 emoji = "⚖️"
 
             st.markdown(f"""
@@ -4246,11 +4258,11 @@ def render_download_hub(df_global, user_data, is_admin):
                     </div>
                     <div style="border-left: 1px solid rgba(255,255,255,0.3); height: 40px; align-self: center;"></div>
                     <div style="text-align: center; min-width: 100px;">
-                        <div style="font-size: 28px; font-weight: bold;">{charge_eq}</div>
-                        <div style="font-size: 11px; opacity: 0.8;">Charge Eq/h</div>
+                        <div style="font-size: 28px; font-weight: bold;">{round(charge_effective, 2)}h</div>
+                        <div style="font-size: 11px; opacity: 0.8;">Charge Effective</div>
                     </div>
                     <div style="text-align: center; min-width: 100px;">
-                        <div style="font-size: 28px; font-weight: bold;">{SEUIL_REGLEMENTAIRE}</div>
+                        <div style="font-size: 28px; font-weight: bold;">{seuil_obligatoire}</div>
                         <div style="font-size: 11px; opacity: 0.8;">Seuil Réglem.</div>
                     </div>
                 </div>
@@ -4258,10 +4270,10 @@ def render_download_hub(df_global, user_data, is_admin):
             <div style="background-color: {statut_bg}; border-left: 5px solid {statut_color}; 
                         padding: 12px 16px; border-radius: 8px; margin-top: 8px;">
                 <div style="font-size: 18px; font-weight: bold; color: {statut_color};">
-                    {emoji} {statut_label} : {delta_str}
+                    {emoji} {statut_label} : {h_sup_formattee}
                 </div>
                 <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
-                    Règle : 1h Cours = 1.5 eq/h | 1h TD/TP = 1.0 eq/h | Seuil = 6.0 eq/h/semaine
+                    Règle : 1h Cours = 1.5 eq/h | 1h TD/TP = 1.0 eq/h | Seuil = {seuil_obligatoire} eq/h/semaine
                 </div>
             </div>
             """, unsafe_allow_html=True)
