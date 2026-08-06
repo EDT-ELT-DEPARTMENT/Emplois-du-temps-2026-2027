@@ -827,7 +827,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
 
         if is_enseignant_connecte:
             sel_prof = user['nom_officiel']
-            st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduité")
+            st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduite")
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown(f"**Enseignant :** `{sel_prof}`")
@@ -1092,7 +1092,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                     df_aff = df_aff.sort_values(by=["Étudiant", "Date"], ascending=[True, False])
                     st.dataframe(df_aff, use_container_width=True, hide_index=True)
 
-                    
+                    # ─── EFFACEMENT AVEC CONFIRMATION CONDITIONNELLE ───
                     if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary", key="btn_reset_all_abs"):
                         st.session_state.confirm_reset_abs = True
 
@@ -5216,6 +5216,187 @@ is_admin = user.get("role") == "admin"
 if is_admin:
     st.markdown("---")
     render_download_hub(df, user, is_admin)
+
+    # =============================================================================
+    # >>> BILAN GLOBAL HEURES SUPPLÉMENTAIRES (ADMIN UNIQUEMENT) <<<
+    # =============================================================================
+    if df is not None and not df.empty:
+        st.divider()
+        st.markdown("""
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
+                        padding: 16px; border-radius: 12px; color: white; margin-bottom: 15px;">
+                <h3 style="margin:0;">📊 Bilan Global des Heures Supplémentaires</h3>
+                <p style="margin:6px 0 0 0; opacity:0.9; font-size:13px;">
+                    Export administratif : Charge horaire, seuils, heures sup/déficit, grade et qualité
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Option poste supérieur pour le calcul du seuil
+        poste_sup_bilan = st.checkbox("🎖️ Poste Supérieur (Décharge 3h / Seuil 3.0 eq/h)", 
+                                      value=False, key="poste_sup_bilan_global")
+
+        if st.button("📊 Générer le Bilan Excel Complet", use_container_width=True, type="primary"):
+            import io
+            from collections import defaultdict
+
+            seuil = 3.0 if poste_sup_bilan else 6.0
+            enseignants_liste = sorted([e for e in df['Enseignants'].unique() 
+                                       if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+
+            bilan_data = []
+            for ens in enseignants_liste:
+                df_ens = df[df['Enseignants'] == ens].copy()
+                if df_ens.empty:
+                    continue
+
+                # Typage et déduplication (séances uniques uniquement)
+                df_ens['Type'] = df_ens['Code'].apply(
+                    lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
+                )
+                df_u = df_ens.drop_duplicates(subset=['Horaire', 'Jours'])
+
+                nb_cours = len(df_u[df_u['Type'] == 'COURS'])
+                nb_td = len(df_u[df_u['Type'] == 'TD'])
+                nb_tp = len(df_u[df_u['Type'] == 'TP'])
+
+                charge_eq = round((nb_cours * 1.5) + (nb_td * 1.0) + (nb_tp * 1.0), 2)
+                delta_eq = round(charge_eq - seuil, 2)
+                heures_sup = round(delta_eq * 1.5, 2)
+
+                # Infos répertoire
+                nom_key = str(ens).strip().upper()
+                nom_complet = repertoire_noms_complets.get(nom_key, ens)
+                grade = repertoire_grades.get(nom_key, "N/A")
+                qualite = repertoire_qualites.get(nom_key, "N/A")
+                email = repertoire_source.get(nom_key, "Non communiqué")
+                telephone = repertoire_telephones.get(nom_key, "N/A")
+
+                bilan_data.append({
+                    "Nom Complet": nom_complet,
+                    "Grade": grade,
+                    "Qualité": qualite,
+                    "Email": email,
+                    "Téléphone": telephone,
+                    "Cours": nb_cours,
+                    "TD": nb_td,
+                    "TP": nb_tp,
+                    "Charge Eq/h": charge_eq,
+                    "Seuil Réglem.": seuil,
+                    "Delta Eq/h": delta_eq,
+                    "Heures Sup/Déficit (h)": heures_sup,
+                    "Situation": "✅ Heures Sup" if heures_sup > 0 else ("⚠️ Déficit" if heures_sup < 0 else "⚖️ Seuil exact")
+                })
+
+            if bilan_data:
+                df_bilan = pd.DataFrame(bilan_data)
+                df_bilan = df_bilan.sort_values(by="Heures Sup/Déficit (h)", ascending=False)
+
+                # ─── GÉNÉRATION EXCEL PROFESSIONNEL ───
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df_bilan.to_excel(writer, index=False, sheet_name='Bilan_Heures_Sup')
+
+                    wb = writer.book
+                    ws = writer.sheets['Bilan_Heures_Sup']
+
+                    # Formats
+                    header_fmt = wb.add_format({
+                        'bold': True, 'font_size': 11, 'font_color': 'white',
+                        'bg_color': '#1E3A8A', 'border': 1, 'align': 'center', 'valign': 'vcenter'
+                    })
+                    cell_fmt = wb.add_format({
+                        'font_size': 10, 'border': 1, 'valign': 'vcenter', 'text_wrap': True
+                    })
+                    alt_fmt = wb.add_format({
+                        'font_size': 10, 'border': 1, 'valign': 'vcenter', 'text_wrap': True, 'bg_color': '#F8FAFC'
+                    })
+                    sup_fmt = wb.add_format({
+                        'font_size': 10, 'border': 1, 'valign': 'vcenter', 
+                        'bg_color': '#DCFCE7', 'font_color': '#166534', 'bold': True
+                    })
+                    def_fmt = wb.add_format({
+                        'font_size': 10, 'border': 1, 'valign': 'vcenter', 
+                        'bg_color': '#FEE2E2', 'font_color': '#991B1B', 'bold': True
+                    })
+                    neutre_fmt = wb.add_format({
+                        'font_size': 10, 'border': 1, 'valign': 'vcenter', 
+                        'bg_color': '#EFF6FF', 'font_color': '#1E40AF', 'bold': True
+                    })
+                    title_fmt = wb.add_format({
+                        'bold': True, 'font_size': 14, 'font_color': '#1E3A8A', 
+                        'bottom': 2, 'bottom_color': '#D4AF37', 'align': 'center'
+                    })
+
+                    # Titre fusionné
+                    ws.merge_range(0, 0, 0, len(df_bilan.columns)-1, 
+                                  "BILAN GLOBAL DES HEURES SUPPLÉMENTAIRES — S1 2026-2027", title_fmt)
+                    ws.merge_range(1, 0, 1, len(df_bilan.columns)-1, 
+                                  f"Département d'Électrotechnique — Seuil appliqué : {seuil} eq/h", 
+                                  wb.add_format({'italic': True, 'align': 'center', 'font_size': 10}))
+
+                    # En-têtes (ligne 2)
+                    for col_num, col_name in enumerate(df_bilan.columns):
+                        ws.write(2, col_num, col_name, header_fmt)
+                        max_len = max(df_bilan[col_name].astype(str).map(len).max(), len(str(col_name))) + 3
+                        ws.set_column(col_num, col_num, min(max_len, 40))
+
+                    # Données avec formatage conditionnel
+                    for row_num, (_, row) in enumerate(df_bilan.iterrows(), start=3):
+                        base_fmt = alt_fmt if row_num % 2 == 0 else cell_fmt
+                        val_sup = row['Heures Sup/Déficit (h)']
+
+                        if val_sup > 0:
+                            row_fmt = sup_fmt
+                        elif val_sup < 0:
+                            row_fmt = def_fmt
+                        else:
+                            row_fmt = neutre_fmt
+
+                        for col_num, val in enumerate(row):
+                            ws.write(row_num, col_num, val, row_fmt)
+
+                    ws.freeze_panes(3, 0)
+
+                    # ─── Onglet Récapitulatif ───
+                    recap = pd.DataFrame({
+                        'Métrique': [
+                            'Total enseignants', 
+                            'Avec heures supplémentaires', 
+                            'Avec déficit horaire', 
+                            'Seuil exact atteint',
+                            'Total heures sup à payer',
+                            'Date de génération'
+                        ],
+                        'Valeur': [
+                            len(df_bilan),
+                            len(df_bilan[df_bilan['Heures Sup/Déficit (h)'] > 0]),
+                            len(df_bilan[df_bilan['Heures Sup/Déficit (h)'] < 0]),
+                            len(df_bilan[df_bilan['Heures Sup/Déficit (h)'] == 0]),
+                            round(df_bilan[df_bilan['Heures Sup/Déficit (h)'] > 0]['Heures Sup/Déficit (h)'].sum(), 2),
+                            datetime.now().strftime('%d/%m/%Y à %H:%M')
+                        ]
+                    })
+                    recap.to_excel(writer, index=False, sheet_name='Récap_Global')
+                    ws_recap = writer.sheets['Récap_Global']
+                    ws_recap.set_column(0, 0, 35)
+                    ws_recap.set_column(1, 1, 25)
+
+                st.success(f"✅ Bilan généré : **{len(bilan_data)}** enseignants analysés (Seuil : {seuil} eq/h)")
+                st.download_button(
+                    label="📥 Télécharger le Bilan Heures Sup (Excel)",
+                    data=buffer.getvalue(),
+                    file_name=f"Bilan_Heures_Sup_S1_2027_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_bilan_heures_sup"
+                )
+
+                # Aperçu rapide
+                st.markdown("#### 👁️ Aperçu du bilan")
+                st.dataframe(df_bilan, use_container_width=True, hide_index=True)
+            else:
+                st.warning("⚠️ Aucun enseignant trouvé dans les données EDT.")
 
 
 # 1. Définition précise de votre nouvelle liste d'horaires (14 créneaux)
