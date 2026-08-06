@@ -5227,6 +5227,8 @@ is_admin = user.get("role") == "admin"
 # =============================================================================
 # >>>>> HUB DE TELECHARGEMENT RAPIDE (CENTRE DE TELECHARGEMENT) <<<<<
 # =============================================================================
+mode_view = "Personnel"
+    poste_sup = False  # ← AJOUTER CETTE LIGNE SI ELLE MANQUE
 if is_admin:
     st.markdown("---")
     render_download_hub(df, user, is_admin, poste_sup)
