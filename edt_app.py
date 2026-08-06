@@ -529,34 +529,49 @@ def run_Assiduité():
             st.error(f"Erreur Supabase (reset) : {e}")
             return False
 
+    
     def get_absences_étudiant(nom_etudiant):
         if MODE_SUPABASE:
             try:
-                res = supabase.table("suivi_assiduite_2026").select("*").eq("etud_non_eligible", nom_etudiant).execute()
+                res = supabase.table("suivi_assiduite_2026")\
+                    .select("id,etud_non_eligible,matiere,promotion,date_absence,jour_absence,horaire_absence,cause_non_eligibilite,justifie")\
+                    .eq("etud_non_eligible", nom_etudiant)\
+                    .order("id", desc=True)\
+                    .limit(50)\
+                    .execute()
                 return res.data if res.data else []
             except Exception as e:
                 st.error(f"Erreur de chargement absences : {e}")
                 return []
         else:
-            return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]
-
+            return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]    
+        
+    
     def trouver_requete_existante(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
         """Retourne une requete EN ATTENTE existante pour empecher les doublons de depot."""
         if MODE_SUPABASE:
             try:
-                query = supabase.table("requetes_absences").select("*")\
+                query = supabase.table("requetes_absences").select("id,statut")\
                     .eq("nom_etudiant", nom_etudiant)\
                     .eq("matiere", matiere)\
                     .eq("statut", "En attente")
                 if date_abs: query = query.eq("date_absence", date_abs)
                 if jour_abs: query = query.eq("jour_absence", jour_abs)
                 if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
-                res = query.execute()
+                res = query.limit(1).execute()
                 return res.data[0] if res.data else None
             except Exception as e:
-                st.error(f"Erreur recherche requete : {e}")
+                st.warning(f"⚠️ Vérification justificatif lente, réessayez : {e}")
                 return None
-        for r in st.session_state.requetes:
+    for r in st.session_state.requetes:
+        if (r.get("nom_etudiant") == nom_etudiant and 
+            r.get("matiere") == matiere and 
+            r.get("statut") == "En attente"):
+            if date_abs and r.get("date_absence") != date_abs: continue
+            if jour_abs and r.get("jour_absence") != jour_abs: continue
+            if horaire_abs and r.get("horaire_absence") != horaire_abs: continue
+            return r
+    return None        for r in st.session_state.requetes:
             if (r.get("nom_etudiant") == nom_etudiant and 
                 r.get("matiere") == matiere and 
                 r.get("statut") == "En attente"):
@@ -566,11 +581,12 @@ def run_Assiduité():
                 return r
         return None
 
+    
     def trouver_derniere_requete(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
         """Retourne la DERNIERE requete (tous statuts) pour affichage du statut final."""
         if MODE_SUPABASE:
             try:
-                query = supabase.table("requetes_absences").select("*")\
+                query = supabase.table("requetes_absences").select("id,statut,motif,date_demande")\
                     .eq("nom_etudiant", nom_etudiant)\
                     .eq("matiere", matiere)
                 if date_abs: query = query.eq("date_absence", date_abs)
@@ -579,7 +595,7 @@ def run_Assiduité():
                 res = query.order("id", desc=True).limit(1).execute()
                 return res.data[0] if res.data else None
             except Exception as e:
-                st.error(f"Erreur recherche requete : {e}")
+                st.warning(f"⚠️ Chargement statut justificatif lent : {e}")
                 return None
         candidates = [r for r in st.session_state.requetes
                       if r.get("nom_etudiant") == nom_etudiant 
@@ -591,7 +607,6 @@ def run_Assiduité():
             if horaire_abs and r.get("horaire_absence") != horaire_abs: continue
             filtered.append(r)
         return filtered[-1] if filtered else None
-
     def supprimer_derniere_absence_supabase(etudiant, matiere, promotion):
         if not MODE_SUPABASE:
             return False
