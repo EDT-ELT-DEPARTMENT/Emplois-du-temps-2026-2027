@@ -1715,15 +1715,15 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     if not ens_rows.empty:
                                         nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
                                         if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                            email_ens = repertoire_source.get(extraire_nom_famille(nom_ens), None)
-                                            if not email_ens:
-                                                # Fallback : chercher dans df_ens
-                                                for _, row_ens in df_ens.iterrows():
-                                                    nom_fam_ens = extraire_nom_famille(str(row_ens.get("Nom", row_ens.get("NOM", ""))))
-                                                    if nom_fam_ens == extraire_nom_famille(nom_ens):
-                                                        email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                        if email_ens and "@" in email_ens:
-                                                            break
+                                            # Recherche email dans df_ens directement
+                                            email_ens = None
+                                            nom_fam_cible = extraire_nom_famille(nom_ens)
+                                            for _, row_ens in df_ens.iterrows():
+                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
+                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
+                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
+                                                    if email_ens and "@" in email_ens:
+                                                        break
                                             if email_ens and "@" in str(email_ens):
                                                 envoyer_notification_decision_enseignant(
                                                     email_ens, nom_ens, req['nom_etudiant'],
@@ -1762,14 +1762,15 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     if not ens_rows.empty:
                                         nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
                                         if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                            email_ens = repertoire_source.get(extraire_nom_famille(nom_ens), None)
-                                            if not email_ens:
-                                                for _, row_ens in df_ens.iterrows():
-                                                    nom_fam_ens = extraire_nom_famille(str(row_ens.get("Nom", row_ens.get("NOM", ""))))
-                                                    if nom_fam_ens == extraire_nom_famille(nom_ens):
-                                                        email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                        if email_ens and "@" in email_ens:
-                                                            break
+                                            # Recherche email dans df_ens directement
+                                            email_ens = None
+                                            nom_fam_cible = extraire_nom_famille(nom_ens)
+                                            for _, row_ens in df_ens.iterrows():
+                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
+                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
+                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
+                                                    if email_ens and "@" in email_ens:
+                                                        break
                                             if email_ens and "@" in str(email_ens):
                                                 envoyer_notification_decision_enseignant(
                                                     email_ens, nom_ens, req['nom_etudiant'],
