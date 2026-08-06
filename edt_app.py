@@ -1642,7 +1642,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
     # =============================================================================
     if not is_enseignant_connecte:
         with tab3:
-            st.header("📊 Registres et bilans agrégés")
+            st.header("📊 bilans d'assiduité")
 
             # Vérification code d'accès pour les bilans et exports
             if not is_enseignant_connecte and not is_admin_edt:
@@ -1679,7 +1679,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                  "nom_etudiant", "matiere", "motif", "statut"]]
                 df_tab.columns = ["Date", "Promotion", "Charge", "Étudiant", "matiere", "Motif", "Statut"]
 
-                st.subheader("📋 Registre général")
+                st.subheader("📋 Avis admimistratif d'assiduité")
                 st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
                 buf_xl = io.BytesIO()
@@ -1705,7 +1705,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                         use_container_width=True
                     )
 
-                st.subheader("📚 Bilan par Étudiant et matière")
+                st.subheader("📚 Compteur d'assuiduité par matière")
                 df_bilan_mat = df_tab.groupby(["Étudiant", "matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
                 st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
 
@@ -1763,7 +1763,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                 st.info(f"ℹ️ Aucun historique pour {promo_filtre}.")
 
             st.divider()
-            st.subheader("📊 Bilan des absences directes (Onglet Suivi)")
+            st.subheader("📊 Bilan des absences par promotion")
 
             promo_abs = st.selectbox(
                 "Filtrer les absences par promotion :",
