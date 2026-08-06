@@ -469,11 +469,16 @@ def run_Assiduité():
             st.error(f"Erreur Supabase (supprimer) : {e}")
             return False
 
-    def rehabiliter_absences_etudiant_supabase(etudiant, matiere):
+    def rehabiliter_absences_etudiant_supabase(etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", etudiant).eq("matiere", matiere).execute()
+            query = supabase.table("suivi_assiduite_2026").update({"justifie": True})\
+                .eq("etud_non_eligible", etudiant).eq("matiere", matiere)
+            if date_abs: query = query.eq("date_absence", date_abs)
+            if jour_abs: query = query.eq("jour_absence", jour_abs)
+            if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
+            query.execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (rehabilitation) : {e}")
@@ -535,14 +540,18 @@ def run_Assiduité():
         else:
             return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]
 
-    def trouver_requete_existante(nom_etudiant, matiere):
+    def trouver_requete_existante(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
         """Retourne une requete EN ATTENTE existante pour empecher les doublons de depot."""
         if MODE_SUPABASE:
             try:
-                res = supabase.table("requetes_absences").select("*")\
+                query = supabase.table("requetes_absences").select("*")\
                     .eq("nom_etudiant", nom_etudiant)\
                     .eq("matiere", matiere)\
-                    .eq("statut", "En attente").execute()
+                    .eq("statut", "En attente")
+                if date_abs: query = query.eq("date_absence", date_abs)
+                if jour_abs: query = query.eq("jour_absence", jour_abs)
+                if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
+                res = query.execute()
                 return res.data[0] if res.data else None
             except Exception as e:
                 st.error(f"Erreur recherche requete : {e}")
@@ -551,17 +560,23 @@ def run_Assiduité():
             if (r.get("nom_etudiant") == nom_etudiant and 
                 r.get("matiere") == matiere and 
                 r.get("statut") == "En attente"):
+                if date_abs and r.get("date_absence") != date_abs: continue
+                if jour_abs and r.get("jour_absence") != jour_abs: continue
+                if horaire_abs and r.get("horaire_absence") != horaire_abs: continue
                 return r
         return None
 
-    def trouver_derniere_requete(nom_etudiant, matiere):
+    def trouver_derniere_requete(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
         """Retourne la DERNIERE requete (tous statuts) pour affichage du statut final."""
         if MODE_SUPABASE:
             try:
-                res = supabase.table("requetes_absences").select("*")\
+                query = supabase.table("requetes_absences").select("*")\
                     .eq("nom_etudiant", nom_etudiant)\
-                    .eq("matiere", matiere)\
-                    .order("id", desc=True).limit(1).execute()
+                    .eq("matiere", matiere)
+                if date_abs: query = query.eq("date_absence", date_abs)
+                if jour_abs: query = query.eq("jour_absence", jour_abs)
+                if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
+                res = query.order("id", desc=True).limit(1).execute()
                 return res.data[0] if res.data else None
             except Exception as e:
                 st.error(f"Erreur recherche requete : {e}")
@@ -569,7 +584,13 @@ def run_Assiduité():
         candidates = [r for r in st.session_state.requetes
                       if r.get("nom_etudiant") == nom_etudiant 
                       and r.get("matiere") == matiere]
-        return candidates[-1] if candidates else None
+        filtered = []
+        for r in candidates:
+            if date_abs and r.get("date_absence") != date_abs: continue
+            if jour_abs and r.get("jour_absence") != jour_abs: continue
+            if horaire_abs and r.get("horaire_absence") != horaire_abs: continue
+            filtered.append(r)
+        return filtered[-1] if filtered else None
 
     def supprimer_derniere_absence_supabase(etudiant, matiere, promotion):
         if not MODE_SUPABASE:
@@ -1264,30 +1285,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                    and a.get("promotion") == promo_c]
 
                     if abs_ens:
-                        # Grouper par étudiant
-                        suivi_etu = defaultdict(lambda: {"total": 0, "justifiees": 0, "requete": None, "promotion": "", "mat_bac": ""})
-
-                        for a in abs_ens:
-                            nom_e = a.get("etud_non_eligible")
-                            suivi_etu[nom_e]["total"] += 1
-                            suivi_etu[nom_e]["promotion"] = a.get("promotion", "")
-                            if a.get("justifie"):
-                                suivi_etu[nom_e]["justifiees"] += 1
-
-                        # Récupérer les requêtes pour ces étudiants et cette matiere
-                        if MODE_SUPABASE:
-                            try:
-                                for nom_e in suivi_etu.keys():
-                                    res_req = supabase.table("requetes_absences").select("*")                                        .eq("nom_etudiant", nom_e)                                        .eq("matiere", sel_mat)                                        .order("id", desc=True).limit(1).execute()
-                                    if res_req.data:
-                                        suivi_etu[nom_e]["requete"] = res_req.data[0]
-                            except Exception:
-                                pass
-                        else:
-                            for r in st.session_state.requetes:
-                                if r.get("matiere") == sel_mat and r.get("nom_etudiant") in suivi_etu:
-                                    suivi_etu[r.get("nom_etudiant")]["requete"] = r
-
                         # Récupérer Mat. BAC depuis df_etu
                         col_mat_bac = None
                         for c in df_etu.columns:
@@ -1296,17 +1293,18 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 col_mat_bac = c
                                 break
 
-                        for nom_e in suivi_etu.keys():
-                            match_etu = df_etu[df_etu["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_e).strip().upper()]
-                            if not match_etu.empty:
-                                suivi_etu[nom_e]["promotion"] = str(match_etu.iloc[0].get("Promotion", "")).strip()
-                                if col_mat_bac:
-                                    suivi_etu[nom_e]["mat_bac"] = str(match_etu.iloc[0].get(col_mat_bac, "")).strip()
-
-                        # Préparer le DataFrame d'affichage
+                        # Préparer le DataFrame d'affichage par ABSENCE INDIVIDUELLE
                         data_suivi = []
-                        for nom_e, info in sorted(suivi_etu.items()):
-                            req = info["requete"]
+                        for a in sorted(abs_ens, key=lambda x: (x.get("etud_non_eligible",""), x.get("date_absence",""))):
+                            nom_e = a.get("etud_non_eligible", "")
+                            d_abs = a.get("date_absence", "")
+                            j_abs = a.get("jour_absence", "")
+                            h_abs = a.get("horaire_absence", "")
+                            is_justif = a.get("justifie", False)
+
+                            # Recherche de la requête liée à CETTE séance spécifique
+                            req = trouver_derniere_requete(nom_e, sel_mat, d_abs, j_abs, h_abs)
+
                             if req:
                                 statut_req = req.get("statut", "—")
                                 motif_req = req.get("motif", "—")
@@ -1314,14 +1312,20 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 statut_req = "Aucune demande"
                                 motif_req = "—"
 
-                            non_just = info["total"] - info["justifiees"]
+                            # Mat. BAC
+                            mat_bac = ""
+                            match_etu = df_etu[df_etu["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_e).strip().upper()]
+                            if not match_etu.empty and col_mat_bac:
+                                mat_bac = str(match_etu.iloc[0].get(col_mat_bac, "")).strip()
+
                             data_suivi.append({
                                 "Étudiant": nom_e,
-                                "Mat. BAC": info["mat_bac"],
-                                "Promotion": info["promotion"],
-                                "Absences totales": info["total"],
-                                "Justifiées": info["justifiees"],
-                                "Non justifiées": non_just,
+                                "Mat. BAC": mat_bac,
+                                "Date absence": d_abs,
+                                "Jour": j_abs,
+                                "Horaire": h_abs,
+                                "Motif initial": a.get("cause_non_eligibilite", ""),
+                                "Justifiée": "✅ Oui" if is_justif else "❌ Non",
                                 "Statut justificatif": statut_req,
                                 "Motif déposé": motif_req
                             })
@@ -1343,8 +1347,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 ws.write(0, col_num, val, header_fmt)
                             ws.set_column(0, 0, 28)
                             ws.set_column(1, 1, 14)
-                            ws.set_column(2, 2, 14)
-                            ws.set_column(3, 7, 16)
+                            ws.set_column(2, 4, 16)
+                            ws.set_column(5, 8, 20)
                             ws.freeze_panes(1, 0)
 
                         st.download_button(
@@ -1356,36 +1360,29 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             key=f"dl_suivi_{sel_mat}_{promo_c}"
                         )
 
-                        # Vue détaillée par étudiant
-                        st.markdown("#### 🔍 Détail par étudiant")
-                        etu_suivi = st.selectbox("Sélectionner un étudiant :", [""] + list(suivi_etu.keys()), key="suivi_etu_select")
-                        if etu_suivi:
-                            details = [a for a in abs_ens if a.get("etud_non_eligible") == etu_suivi]
-                            df_detail = pd.DataFrame(details)
-                            if not df_detail.empty:
-                                cols_aff = ["date_absence", "jour_absence", "horaire_absence", "cause_non_eligibilite", "justifie"]
-                                df_aff = df_detail[cols_aff].rename(columns={
-                                    "date_absence": "Date",
-                                    "jour_absence": "Jour",
-                                    "horaire_absence": "Horaire",
-                                    "cause_non_eligibilite": "Motif initial",
-                                    "justifie": "Justifiée"
-                                })
-                                st.dataframe(df_aff, use_container_width=True, hide_index=True)
+                        # Récapitulatif par étudiant (compteurs agrégés)
+                        st.markdown("#### 📊 Récapitulatif par étudiant")
+                        recap = {}
+                        for row in data_suivi:
+                            nom = row["Étudiant"]
+                            if nom not in recap:
+                                recap[nom] = {"Mat. BAC": row["Mat. BAC"], "Total": 0, "Justifiées": 0, "En attente": 0, "Rejetées": 0}
+                            recap[nom]["Total"] += 1
+                            if row["Justifiée"] == "✅ Oui":
+                                recap[nom]["Justifiées"] += 1
+                            elif "Favorable" in row["Statut justificatif"]:
+                                recap[nom]["Justifiées"] += 1
+                            elif "Defavorable" in row["Statut justificatif"]:
+                                recap[nom]["Rejetées"] += 1
+                            elif "En attente" in row["Statut justificatif"]:
+                                recap[nom]["En attente"] += 1
 
-                                # Info sur la dernière requête
-                                req_info = suivi_etu[etu_suivi]["requete"]
-                                if req_info:
-                                    st.markdown(f"""
-                                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:10px;">
-                                        <b>📋 Dernière demande de justification :</b><br>
-                                        <b>Statut :</b> <span style="color:{'#166534' if 'Favorable' in str(req_info.get('statut')) else '#991b1b' if 'Defavorable' in str(req_info.get('statut')) else '#92400e'};">{req_info.get('statut')}</span><br>
-                                        <b>Motif :</b> {req_info.get('motif', '—')}<br>
-                                        <b>Date de dépôt :</b> {req_info.get('date_demande', '—')}
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                else:
-                                    st.info("Aucune demande de justification déposée par cet étudiant.")
+                        df_recap = pd.DataFrame([
+                            {"Étudiant": k, "Mat. BAC": v["Mat. BAC"], "Total absences": v["Total"], 
+                             "Justifiées": v["Justifiées"], "En attente": v["En attente"], "Rejetées": v["Rejetées"]}
+                            for k, v in sorted(recap.items())
+                        ])
+                        st.dataframe(df_recap, use_container_width=True, hide_index=True)
                     else:
                         st.info("Vous n'avez signalé aucune absence pour cette matiere et cette promotion.")
 
@@ -1568,9 +1565,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     data_display = []
                     for abs_item in absences_etu:
                         mat = abs_item.get("matiere", "")
-                        # Pour l'affichage : chercher la DERNIERE requete (tous statuts)
-                        req_affichage = trouver_derniere_requete(étudiant_sel, mat)
-                        req_en_attente = trouver_requete_existante(étudiant_sel, mat)
+                        d_abs = abs_item.get("date_absence", "")
+                        j_abs = abs_item.get("jour_absence", "")
+                        h_abs = abs_item.get("horaire_absence", "")
+                        # Pour l'affichage : chercher la DERNIERE requete (tous statuts) pour CETTE séance
+                        req_affichage = trouver_derniere_requete(étudiant_sel, mat, d_abs, j_abs, h_abs)
+                        req_en_attente = trouver_requete_existante(étudiant_sel, mat, d_abs, j_abs, h_abs)
                         is_justif = abs_item.get("justifie", False)
 
                         if is_justif:
@@ -1630,28 +1630,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                                 "motif": motif_dep,
                                                 "date_demande": datetime.now().strftime("%d/%m/%Y")
                                             }).eq("id", req_ex["id"]).execute()
-                                            st.success(f"✅ Justificatif ajouté à la demande existante pour **{abs_conc['matiere']}** !")
-                                        else:
-                                            data_insert = {
-                                                "date_demande": datetime.now().strftime("%d/%m/%Y"),
-                                                "nom_etudiant": étudiant_sel,
-                                                "matiere": abs_conc["matiere"],
-                                                "promotion": abs_conc.get("promotion", promo_sel),
-                                                "motif": motif_dep,
-                                                "justificatif_pdf": pdf_encoded,
-                                                "statut": "En attente"
-                                            }
-                                            enregistrer_requete_supabase(data_insert)
-                                            st.success(f"✅ Demande enregistrée pour **{étudiant_sel}** !")
-                                        st.balloons()
-                                        time.sleep(0.5)
-                                        st.rerun()
-                                    else:
-                                        if req_ex:
-                                            req_ex["justificatif_pdf"] = pdf_encoded
-                                            req_ex["motif"] = motif_dep
-                                            req_ex["date_demande"] = datetime.now().strftime("%d/%m/%Y")
-                                            st.success(f"✅ Justificatif mis à jour (mode local) pour **{abs_conc['matiere']}** !")
+                                            st.success(f"✅ Justificatif ajouté à la demande existante pour **{abs_conc['matiere']}** ({abs_conc.get('date_absence','')}) !")
                                         else:
                                             data_insert = {
                                                 "date_demande": datetime.now().strftime("%d/%m/%Y"),
@@ -1661,10 +1640,37 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                                 "motif": motif_dep,
                                                 "justificatif_pdf": pdf_encoded,
                                                 "statut": "En attente",
-                                                "id": len(st.session_state.requetes) + 1
+                                                "date_absence": abs_conc.get("date_absence", ""),
+                                                "jour_absence": abs_conc.get("jour_absence", ""),
+                                                "horaire_absence": abs_conc.get("horaire_absence", "")
+                                            }
+                                            enregistrer_requete_supabase(data_insert)
+                                            st.success(f"✅ Demande enregistrée pour **{étudiant_sel}** — Séance du {abs_conc.get('date_absence','')} ({abs_conc.get('jour_absence','')} {abs_conc.get('horaire_absence','')}) !")
+                                        st.balloons()
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                    else:
+                                        if req_ex:
+                                            req_ex["justificatif_pdf"] = pdf_encoded
+                                            req_ex["motif"] = motif_dep
+                                            req_ex["date_demande"] = datetime.now().strftime("%d/%m/%Y")
+                                            st.success(f"✅ Justificatif mis à jour (mode local) pour **{abs_conc['matiere']}** ({abs_conc.get('date_absence','')}) !")
+                                        else:
+                                            data_insert = {
+                                                "date_demande": datetime.now().strftime("%d/%m/%Y"),
+                                                "nom_etudiant": étudiant_sel,
+                                                "matiere": abs_conc["matiere"],
+                                                "promotion": abs_conc.get("promotion", promo_sel),
+                                                "motif": motif_dep,
+                                                "justificatif_pdf": pdf_encoded,
+                                                "statut": "En attente",
+                                                "id": len(st.session_state.requetes) + 1,
+                                                "date_absence": abs_conc.get("date_absence", ""),
+                                                "jour_absence": abs_conc.get("jour_absence", ""),
+                                                "horaire_absence": abs_conc.get("horaire_absence", "")
                                             }
                                             st.session_state.requetes.append(data_insert)
-                                            st.success(f"✅ Demande enregistrée (mode local) pour **{étudiant_sel}** !")
+                                            st.success(f"✅ Demande enregistrée (mode local) pour **{étudiant_sel}** — Séance du {abs_conc.get('date_absence','')} ({abs_conc.get('jour_absence','')} {abs_conc.get('horaire_absence','')}) !")
                                         st.balloons()
                                         time.sleep(0.5)
                                         st.rerun()
@@ -1691,10 +1697,11 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         st.info("📭 Aucun dossier en attente.")
                     else:
                         for req in resultats:
-                            with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']}"):
+                            with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']} ({req.get('date_absence','')} | {req.get('jour_absence','')} {req.get('horaire_absence','')})"):
                                 st.write(f"**Promotion :** {req['promotion']}")
+                                st.write(f"**Séance concernée :** {req.get('jour_absence','')} {req.get('horaire_absence','')} — {req.get('date_absence','')}")
                                 st.write(f"**Motif :** {req['motif']}")
-                                st.write(f"**Date :** {req['date_demande']}")
+                                st.write(f"**Date de dépôt :** {req['date_demande']}")
 
                                 pdf_decoded = base64.b64decode(req['justificatif_pdf'])
                                 st.download_button(
@@ -1707,9 +1714,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                                 col_acc, col_rej = st.columns(2)
                                 if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
+                                    d_abs = req.get("date_absence")
+                                    j_abs = req.get("jour_absence")
+                                    h_abs = req.get("horaire_absence")
                                     if MODE_SUPABASE:
                                         mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
-                                        rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'])
+                                        rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'], d_abs, j_abs, h_abs)
                                     else:
                                         for r in st.session_state.requetes:
                                             if r["id"] == req["id"]:
@@ -1717,6 +1727,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                         for a in st.session_state.absences:
                                             if (a.get("etud_non_eligible") == req['nom_etudiant']
                                                     and a.get("matiere") == req['matiere']):
+                                                if d_abs and a.get("date_absence") != d_abs: continue
+                                                if j_abs and a.get("jour_absence") != j_abs: continue
+                                                if h_abs and a.get("horaire_absence") != h_abs: continue
                                                 a["justifie"] = True
                                                 a["cause_non_eligibilite"] = "Justifiee - " + str(a.get("cause_non_eligibilite", ""))
 
