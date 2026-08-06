@@ -473,7 +473,7 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", étudiant).eq("matiere", matiere).execute()
+            supabase.table("suivi_assiduite_2026").update({"justifie": True}).eq("etud_non_eligible", etudiant).eq("matiere", matiere).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (rehabilitation) : {e}")
@@ -536,29 +536,29 @@ def run_Assiduité():
             return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]
 
     def trouver_requete_existante(nom_etudiant, matiere):
+        """Retourne la derniere requete de justification pour cet etudiant et cette matiere (tous statuts confondus)."""
         if MODE_SUPABASE:
             try:
                 res = supabase.table("requetes_absences").select("*")\
                     .eq("nom_etudiant", nom_etudiant)\
                     .eq("matiere", matiere)\
-                    .eq("statut", "En attente").execute()
+                    .order("id", desc=True).limit(1).execute()
                 return res.data[0] if res.data else None
             except Exception as e:
-                st.error(f"Erreur recherche requête : {e}")
+                st.error(f"Erreur recherche requete : {e}")
                 return None
-        for r in st.session_state.requetes:
-            if (r.get("nom_etudiant") == nom_etudiant and 
-                r.get("matiere") == matiere and 
-                r.get("statut") == "En attente"):
-                return r
-        return None
+        # Mode local : chercher la derniere requete (peu importe le statut)
+        candidates = [r for r in st.session_state.requetes
+                      if r.get("nom_etudiant") == nom_etudiant 
+                      and r.get("matiere") == matiere]
+        return candidates[-1] if candidates else None
 
     def supprimer_derniere_absence_supabase(etudiant, matiere, promotion):
         if not MODE_SUPABASE:
             return False
         try:
             res = supabase.table("suivi_assiduite_2026").select("*")\
-                .eq("etud_non_eligible", étudiant)\
+                .eq("etud_non_eligible", etudiant)\
                 .eq("matiere", matiere)\
                 .eq("promotion", promotion)\
                 .order("id", desc=True).limit(1).execute()
@@ -574,7 +574,7 @@ def run_Assiduité():
     def supprimer_derniere_absence_locale(etudiant, matiere, promotion):
         candidates = [
             (idx, a) for idx, a in enumerate(st.session_state.absences)
-            if a.get("etud_non_eligible") == étudiant
+            if a.get("etud_non_eligible") == etudiant
             and a.get("matiere") == matiere
             and a.get("promotion") == promotion
         ]
