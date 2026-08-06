@@ -692,6 +692,107 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             st.warning(f"Notification email non envoyee : {e}")
             return False
 
+    def envoyer_notification_decision_etudiant(email_dest, nom_etud, matiere, statut, motif=""):
+        """Envoie une notification à l'étudiant après décision admin (Favorable/Défavorable)."""
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            couleur = "#166534" if "Favorable" in statut else "#991b1b"
+            icone = "✅" if "Favorable" in statut else "❌"
+            titre = "Justificatif ACCEPTÉ" if "Favorable" in statut else "Justificatif REJETÉ"
+            msg_body = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
+<h1 style="margin:0;font-size:20px;">Département d'Electrotechnique - FGE/UDL-SBA</h1>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
+</div>
+<div style="padding:30px;">
+<p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_etud}</strong>,</p>
+<div style="background:{'#dcfce7' if 'Favorable' in statut else '#fee2e2'};border-left:5px solid {couleur};padding:15px;margin:20px 0;color:{couleur};font-weight:600;border-radius:0 8px 8px 0;">
+    {icone} <strong>{titre}</strong><br>
+    matiere concernée : <strong>{matiere}</strong>
+</div>
+<p style="color:#64748b;font-size:14px;"><strong>Motif du justificatif :</strong> {motif if motif else "Non précisé"}</p>
+{"<p style='color:#166534;font-size:14px;font-weight:600;'>🎓 Votre absence est désormais justifiée. Vous conservez votre éligibilité à l'examen et vous avez le droit à un <strong>examen de remplacement (rattrapage)</strong> si nécessaire.</p>" if "Favorable" in statut else "<p style='color:#991b1b;font-size:14px;'>Votre demande de justification a été rejetée. L'absence reste non justifiée et les sanctions réglementaires s'appliquent.</p>"}
+</div>
+<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
+Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
+Cet email est généré automatiquement - merci de ne pas y répondre.
+</div>
+</div>
+</body>
+</html>"""
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"{titre} - {matiere}"
+            msg["From"] = "chef.department.elt.fge@gmail.com"
+            msg["To"] = str(email_dest).strip()
+            msg.attach(MIMEText(msg_body, "html"))
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+            server.send_message(msg)
+            server.quit()
+            return True
+        except Exception as e:
+            st.warning(f"Notification décision étudiant non envoyée : {e}")
+            return False
+
+    def envoyer_notification_decision_enseignant(email_dest, nom_ens, nom_etud, matiere, statut, promotion=""):
+        """Envoie une notification à l'enseignant après décision admin sur une justification."""
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            couleur = "#166534" if "Favorable" in statut else "#991b1b"
+            icone = "✅" if "Favorable" in statut else "❌"
+            titre = "Justificatif ACCEPTÉ" if "Favorable" in statut else "Justificatif REJETÉ"
+
+            msg_body = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
+<h1 style="margin:0;font-size:20px;">Département d'Electrotechnique - FGE/UDL-SBA</h1>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
+</div>
+<div style="padding:30px;">
+<p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_ens}</strong>,</p>
+<p style="color:#64748b;font-size:14px;">L'administration a rendu son avis sur une demande de justification d'absence concernant un étudiant de votre enseignement.</p>
+<div style="background:{'#dcfce7' if 'Favorable' in statut else '#fee2e2'};border-left:5px solid {couleur};padding:15px;margin:20px 0;color:{couleur};font-weight:600;border-radius:0 8px 8px 0;">
+    {icone} <strong>{titre}</strong><br>
+    <strong>Étudiant :</strong> {nom_etud}<br>
+    <strong>matiere :</strong> {matiere}<br>
+    <strong>Promotion :</strong> {promotion}
+</div>
+{"<div style='background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:15px;margin:20px 0;color:#1e40af;font-size:13px;'><strong>📋 Information importante :</strong><br>Cet étudiant a obtenu un avis <strong>favorable</strong> pour la justification de son absence. Il est désormais réhabilité et <strong>a le droit à un examen de remplacement (rattrapage)</strong> s'il le souhaite, conformément au règlement intérieur.</div>" if "Favorable" in statut else "<div style='background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:15px;margin:20px 0;color:#9a3412;font-size:13px;'><strong>📋 Information :</strong><br>La demande de justification a été <strong>rejetée</strong>. L'absence reste enregistrée comme non justifiée et l'étudiant reste sous le seuil d'exclusion si applicable.</div>"}
+</div>
+<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
+Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
+Cet email est généré automatiquement - merci de ne pas y répondre.
+</div>
+</div>
+</body>
+</html>"""
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"[{titre}] {nom_etud} - {matiere}"
+            msg["From"] = "chef.department.elt.fge@gmail.com"
+            msg["To"] = str(email_dest).strip()
+            msg.attach(MIMEText(msg_body, "html"))
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+            server.send_message(msg)
+            server.quit()
+            return True
+        except Exception as e:
+            st.warning(f"Notification décision enseignant non envoyée : {e}")
+            return False
+
     def trouver_email_étudiant(nom_etudiant, df_étudiants):
         # 1. Priorité : base de données Supabase (email saisi lors de connexion étudiant)
         if MODE_SUPABASE:
@@ -1596,6 +1697,42 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                                     and a.get("matiere") == req['matiere']):
                                                 a["justifie"] = True
                                                 a["cause_non_eligibilite"] = "Justifiee - " + str(a.get("cause_non_eligibilite", ""))
+
+                                    # ═══ NOTIFICATIONS EMAIL ═══
+                                    # 1. Notification à l'étudiant
+                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
+                                    if email_etu:
+                                        envoyer_notification_decision_etudiant(
+                                            email_etu, req['nom_etudiant'], req['matiere'],
+                                            "Favorable", req.get('motif', '')
+                                        )
+                                        st.info(f"📧 Notification envoyée à l'étudiant {req['nom_etudiant']}")
+
+                                    # 2. Notification à l'enseignant responsable
+                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
+                                    if ens_rows.empty:
+                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
+                                    if not ens_rows.empty:
+                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
+                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
+                                            email_ens = repertoire_source.get(extraire_nom_famille(nom_ens), None)
+                                            if not email_ens:
+                                                # Fallback : chercher dans df_ens
+                                                for _, row_ens in df_ens.iterrows():
+                                                    nom_fam_ens = extraire_nom_famille(str(row_ens.get("Nom", row_ens.get("NOM", ""))))
+                                                    if nom_fam_ens == extraire_nom_famille(nom_ens):
+                                                        email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
+                                                        if email_ens and "@" in email_ens:
+                                                            break
+                                            if email_ens and "@" in str(email_ens):
+                                                envoyer_notification_decision_enseignant(
+                                                    email_ens, nom_ens, req['nom_etudiant'],
+                                                    req['matiere'], "Favorable", req.get('promotion', '')
+                                                )
+                                                st.info(f"📧 Notification envoyée à l'enseignant {nom_ens}")
+                                            else:
+                                                st.caption(f"ℹ️ Email de l'enseignant {nom_ens} non trouvé dans le répertoire.")
+
                                     st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
                                     time.sleep(0.5)
                                     st.rerun()
@@ -1607,6 +1744,39 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
                                         for r in st.session_state.requetes:
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Defavorable"
+
+                                    # ═══ NOTIFICATIONS EMAIL (REJET) ═══
+                                    # 1. Notification à l'étudiant
+                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
+                                    if email_etu:
+                                        envoyer_notification_decision_etudiant(
+                                            email_etu, req['nom_etudiant'], req['matiere'],
+                                            "Defavorable", req.get('motif', '')
+                                        )
+                                        st.info(f"📧 Notification de rejet envoyée à l'étudiant {req['nom_etudiant']}")
+
+                                    # 2. Notification à l'enseignant responsable
+                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
+                                    if ens_rows.empty:
+                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
+                                    if not ens_rows.empty:
+                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
+                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
+                                            email_ens = repertoire_source.get(extraire_nom_famille(nom_ens), None)
+                                            if not email_ens:
+                                                for _, row_ens in df_ens.iterrows():
+                                                    nom_fam_ens = extraire_nom_famille(str(row_ens.get("Nom", row_ens.get("NOM", ""))))
+                                                    if nom_fam_ens == extraire_nom_famille(nom_ens):
+                                                        email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
+                                                        if email_ens and "@" in email_ens:
+                                                            break
+                                            if email_ens and "@" in str(email_ens):
+                                                envoyer_notification_decision_enseignant(
+                                                    email_ens, nom_ens, req['nom_etudiant'],
+                                                    req['matiere'], "Defavorable", req.get('promotion', '')
+                                                )
+                                                st.info(f"📧 Notification de rejet envoyée à l'enseignant {nom_ens}")
+
                                     st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
                                     time.sleep(0.5)
                                     st.rerun()
