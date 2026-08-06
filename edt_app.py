@@ -1598,9 +1598,16 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     st.markdown("### 📎 Envoyer un justificatif pour une absence")
                     absences_sans_justif = [
                         a for a in absences_etu 
-                        if not trouver_requete_existante(étudiant_sel, a.get("matiere", ""))
+                        if not a.get("justifie", False)
+                        and not trouver_requete_existante(
+                            étudiant_sel, 
+                            a.get("matiere", ""), 
+                            a.get("date_absence"), 
+                            a.get("jour_absence"), 
+                            a.get("horaire_absence")
+                        )
                     ]
-
+                    
                     if absences_sans_justif:
                         with st.form("form_dépôt_cible", clear_on_submit=True):
                             options_abs = {
