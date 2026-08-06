@@ -2065,6 +2065,8 @@ def run_edt():
     # ============================================================
     # PORTAIL : EMPLOI DU TEMPS (ADMIN)
     # ============================================================
+    mode_view = "Personnel"
+    poste_sup = False  # ← AJOUTER CETTE LIGNE SI ELLE MANQUE
     if portail == "📖 Emploi du Temps" and is_admin:
         if mode_view == "Enseignant":
             cible = st.selectbox("Sélectionner l'Enseignant :", 
