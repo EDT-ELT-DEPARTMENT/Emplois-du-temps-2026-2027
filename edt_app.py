@@ -4077,7 +4077,7 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
         progress_bar.empty()
     
     return bytes(pdf_final.output()), None
-def render_download_hub(df_global, user_data, is_admin):
+def render_download_hub(df_global, user_data, is_admin, poste_sup=False):
     """Affiche un hub de telechargement rapide en haut de page."""
     st.markdown("""
         <style>
@@ -5227,7 +5227,7 @@ is_admin = user.get("role") == "admin"
 # =============================================================================
 if is_admin:
     st.markdown("---")
-    render_download_hub(df, user, is_admin)
+    render_download_hub(df, user, is_admin, poste_sup)
 
     # =============================================================================
     # >>> BILAN GLOBAL HEURES SUPPLÉMENTAIRES (ADMIN UNIQUEMENT) <<<
