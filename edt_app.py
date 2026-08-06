@@ -827,14 +827,14 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
 
         if is_enseignant_connecte:
             sel_prof = user['nom_officiel']
-            st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduite")
+            st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduité")
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown(f"**Enseignant :** `{sel_prof}`")
             with c2:
                 st.markdown("*Accès direct — Aucun code requis*")
         elif is_admin_edt:
-            st.success(f"👤 Mode Administrateur — Accès complet au suivi d'Assiduite")
+            st.success(f"👤 Mode Administrateur — Accès complet au suivi d'Assiduité")
             c1, c2 = st.columns(2)
             with c1:
                 sel_prof = st.selectbox("👤 Sélectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1_admin")
