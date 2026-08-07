@@ -123,7 +123,7 @@ CODE_ADMIN_EDT = "doctorat2026"
 # =============================================================================
 with st.sidebar:
     st.markdown("<h2 style='text-align:center;color:#1E3A8A;'>🏛️ UDL-SBA</h2>", unsafe_allow_html=True)
-    st.caption("departement d'Électrotechnique - FGE")
+    st.caption("département d'Électrotechnique - FGE")
     st.markdown("---")
     
     module_sel = st.radio(
@@ -248,7 +248,7 @@ def Génerer_page_html(df_data, titre_bilan, colonnes, entetes):
 <body>
     <div class="header">
         <h1>📊 {titre_bilan}</h1>
-        <p>Suivi d'Assiduite - departement d'Electrotechnique - UDL-SBA</p>
+        <p>Suivi d'Assiduite - département d'Electrotechnique - UDL-SBA</p>
     </div>
     <div class="content">
         <p>Genere le : {datetime.now().strftime('%d/%m/%Y a %H:%M')}</p>
@@ -274,7 +274,7 @@ def Génerer_page_html(df_data, titre_bilan, colonnes, entetes):
                 html_doc += f"<td>{val}</td>"
         html_doc += "</tr>"
     html_doc += """</tbody></table></div>
-    <div class="footer">&copy; 2026 departement d'Electrotechnique - UDL-SBA</div>
+    <div class="footer">&copy; 2026 département d'Electrotechnique - UDL-SBA</div>
 </body>
 </html>"""
     return html_doc
@@ -319,7 +319,7 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
 
 def run_Assiduité():
     st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
-    st.caption("departement d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - année 2026-2027")
+    st.caption("département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - année 2026-2027")
     
     # =============================================================================
     # CHARGEMENT DES DONNÉES (UNIFIÉ)
@@ -646,7 +646,7 @@ def run_Assiduité():
         try:
             import smtplib
             from email.mime.text import MIMEText
-            body = f"Bonjour {nom_etud},\n\nVotre code d'accès à la Plateforme de Suivi d'Assiduité est : {code_otp}\n\nCe code est valable 10 minutes.\n\ndepartement d'Électrotechnique - FGE/UDL-SBA"
+            body = f"Bonjour {nom_etud},\n\nVotre code d'accès à la Plateforme de Suivi d'Assiduité est : {code_otp}\n\nCe code est valable 10 minutes.\n\ndépartement d'Électrotechnique - FGE/UDL-SBA"
             msg = MIMEText(body)
             msg["Subject"] = "Code d'accès - Plateforme Assiduité"
             msg["From"] = "chef.department.elt.fge@gmail.com"
@@ -702,7 +702,7 @@ def run_Assiduité():
 <body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
 <div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
 <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-<h1 style="margin:0;font-size:20px;">departement d'Electrotechnique - FGE/UDL-SBA</h1>
+<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
 <p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
 </div>
 <div style="background:#fef2f2;border-left:5px solid #ef4444;padding:15px;margin:20px;color:#991b1b;font-weight:600;">
@@ -762,7 +762,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
 <body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
 <div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
 <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-<h1 style="margin:0;font-size:20px;">departement d'Electrotechnique - FGE/UDL-SBA</h1>
+<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
 <p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
 </div>
 <div style="padding:30px;">
@@ -812,7 +812,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 <body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
 <div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
 <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-<h1 style="margin:0;font-size:20px;">departement d'Electrotechnique - FGE/UDL-SBA</h1>
+<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
 <p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
 </div>
 <div style="padding:30px;">
@@ -1542,7 +1542,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             ws = writer.sheets['Liste_Eligibilite']
 
                             ws.merge_range('A1:I1', "UNIVERSITE DJILLALI LIABES - SIDI BEL ABBES", fmt_title)
-                            ws.merge_range('A2:I2', "Faculté de génie Electrique - departement d'Electrotechnique", fmt_sub)
+                            ws.merge_range('A2:I2', "Faculté de génie Electrique - département d'Electrotechnique", fmt_sub)
                             ws.merge_range('A3:I3', "LISTE D'ELIGIBILITE A L'EXAMEN", fmt_title)
                             ws.write('A5', "matiere :", fmt_bold); ws.write('B5', sel_mat)
                             ws.write('A6', "Enseignant :", fmt_bold); ws.write('B6', sel_prof)
@@ -2139,7 +2139,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 # MODULE 2 : GESTION DES EDTs & ADMINISTRATION
 # =============================================================================
 def run_edt():
-    st.markdown("<h1 class='main-title'>🏛️ departement D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🏛️ département D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
     
     # --- CONNEXION BASE DE DONNÉES ---
     try:
@@ -2383,7 +2383,7 @@ def run_edt():
             st.markdown("🏛️")
     with col_titre:
         st.markdown("<h3 style='color:#1E3A8A;margin:0;'>Plateforme de gestion des EDTs 2026-2027</h3>", unsafe_allow_html=True)
-        st.caption("departement d'Électrotechnique - Faculté de Génie Électrique - UDL-SBA")
+        st.caption("département d'Électrotechnique - Faculté de Génie Électrique - UDL-SBA")
     with col_date:
         st.markdown(f"<div style='background:#1E3A8A;color:white;padding:8px 12px;border-radius:8px;text-align:center;font-size:12px;'>📅 {nom_jour_fr}<br>{date_str}</div>", unsafe_allow_html=True)
 
@@ -2740,7 +2740,7 @@ def run_edt():
                 destinataire = st.selectbox("Destinataire :", [
                     "Le Doyen de la Faculté", 
                     "Le Vice-Doyen", 
-                    "Le Chef de departement", 
+                    "Le Chef de département", 
                     "La Scolarité", 
                     "Autre"
                 ])
@@ -2879,7 +2879,7 @@ def generate_pro_pdf(df_source, title, subtitle="", orientation="L"):
         def header(self):
             self.set_font('Arial', 'B', 9)
             self.set_text_color(30, 58, 138)
-            header_text = sanitize_for_pdf("Plateforme de gestion des EDTs-Semestre 01_2026-2027 - departement d'Electrotechnique - FGE/UDL-SBA")
+            header_text = sanitize_for_pdf("Plateforme de gestion des EDTs-Semestre 01_2026-2027 - département d'Electrotechnique - FGE/UDL-SBA")
             self.cell(0, 6, header_text, 0, 1, 'C')
             self.set_draw_color(212, 175, 55)
             self.line(10, self.get_y(), self.w - 10, self.get_y())
@@ -2989,7 +2989,7 @@ def generate_pro_html(df_source, title, subtitle=""):
         <div class="header">
             <h1>{title}</h1>
             <p>{subtitle}</p>
-            <span class="badge">EDT Semestre 01_2026-2027 - departement d'électrotechnuqe-FGE/UDL-SBA</span>
+            <span class="badge">EDT Semestre 01_2026-2027 - département d'électrotechnuqe-FGE/UDL-SBA</span>
         </div>
         <div class="content">
             <div class="meta">
@@ -2999,7 +2999,7 @@ def generate_pro_html(df_source, title, subtitle=""):
             {table_html}
         </div>
         <div class="footer">
-            Plateforme de gestion des EDTs - departement d'Electrotechnique - Faculté de génie Electrique - UDL-SBA
+            Plateforme de gestion des EDTs - département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA
         </div>
     </div>
 </body>
@@ -3194,7 +3194,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
     pdf.ln(3)
         
     if grid.empty:
@@ -3441,7 +3441,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
             pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS - {str(ens).upper()}"), 0, 1, "C")
             pdf.set_font("Arial", "I", 8)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
             pdf.ln(2)
 
         def draw_table_header(pdf, grid, col_jour_w, col_h_w):
@@ -3715,7 +3715,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
             pdf.cell(0, 8, sanitize_for_pdf(f"PROMOTION {str(promo).upper()}"), 0, 1, "C")
             pdf.set_font("Arial", "I", 8)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
             pdf.ln(2)
         
         def draw_table_header(pdf, grid, col_jour_w, col_h_w):
@@ -3987,7 +3987,7 @@ def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
             pdf.cell(0, 8, sanitize_for_pdf(f"PLANNING - {str(lieu).upper()}"), 0, 1, "C")
             pdf.set_font("Arial", "I", 8)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
             pdf.ln(2)
         
         def draw_table_header(pdf, grid, col_jour_w, col_h_w):
@@ -4268,7 +4268,7 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
     pdf.cell(0, 8, sanitize_for_pdf(f"PLANNING - {nom_lieu.upper()}"), 0, 1, "C")
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+    pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
     pdf.ln(3)
     
     if grid.empty or (grid.shape == (1,1) and grid.iloc[0,0] == "Aucun cours"):
@@ -4696,10 +4696,10 @@ def render_download_hub(df_global, user_data, is_admin):
         st.divider()
         st.markdown("**🌍 Export Global (Admin)**")
         cg1, cg2, cg3, cg4 = st.columns(4)
-        pdf_g, _ = generate_pro_pdf(df_propre, "EDT GLOBAL S1-2027", "departement d'Electrotechnique - Toutes promotions")
+        pdf_g, _ = generate_pro_pdf(df_propre, "EDT GLOBAL S1-2027", "département d'Electrotechnique - Toutes promotions")
         if pdf_g is not None:
             cg1.download_button("📄 PDF Global", pdf_g, "EDT_GLOBAL_S1_2027.pdf", "application/pdf", use_container_width=True)
-        html_g = generate_pro_html(df_propre, "EDT Global S1-2027", "departement d'Electrotechnique - FGE/UDL-SBA")
+        html_g = generate_pro_html(df_propre, "EDT Global S1-2027", "département d'Electrotechnique - FGE/UDL-SBA")
         cg2.download_button("🌐 HTML Global", html_g, "EDT_GLOBAL_S1_2027.html", "text/html", use_container_width=True)
         xlsx_g = generate_pro_excel(df_propre, "EDT Global S1-2027", "EDT_Global")
         cg3.download_button("📊 Excel Global", xlsx_g, "EDT_GLOBAL_S1_2027.xlsx",
@@ -5010,7 +5010,7 @@ if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
 
 if not st.session_state["user_data"]:
-    st.markdown("<h1 class='main-title'>🏛️ departement D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🏛️ département D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
     
     with t_conn:
@@ -5096,7 +5096,7 @@ if not st.session_state["user_data"]:
         # ÉTAPE 1 : AUTHENTIFICATION PAR EMAIL (Filtrage de l'identité)
         # ═══════════════════════════════════════════════════════════════
         email_verif = st.text_input(
-            "📧 Saisissez votre email (celui envoyé au service d'enseignement du departement)",
+            "📧 Saisissez votre email (celui envoyé au service d'enseignement du département)",
             key="verif_email_insc",
             placeholder="ex: nom.prenom@univ-sba.dz"
         )
@@ -5118,7 +5118,7 @@ if not st.session_state["user_data"]:
                     st.success("✅ Identité confirmée. Vos coordonnées ont été récupérées.")
                 else:
                     st.session_state.contact_match = None
-                    st.error("❌ Cet email n'est pas reconnu dans le répertoire officiel du departement. Veuillez contacter l'administrateur.")
+                    st.error("❌ Cet email n'est pas reconnu dans le répertoire officiel du département. Veuillez contacter l'administrateur.")
             else:
                 st.error("⚠️ Le fichier répertoire des contacts est introuvable ou corrompu.")
 
@@ -5252,7 +5252,7 @@ if not st.session_state["user_data"]:
                             lien_activation = f"{BASE_URL}/?activation_token={token}"
                             
                             msg = MIMEMultipart()
-                            msg['Subject'] = "Activation de votre compte EDT - departement ELT"
+                            msg['Subject'] = "Activation de votre compte EDT - département ELT"
                             msg['From'] = "chef.department.elt.fge@gmail.com"
                             msg['To'] = email_brut
                             
@@ -5261,11 +5261,11 @@ if not st.session_state["user_data"]:
                             <body style="font-family:Arial,sans-serif;color:#333;">
                                 <div style="max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
                                     <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);padding:20px;color:white;text-align:center;">
-                                        <h2 style="margin:0;">departement d'Électrotechnique - UDL SBA</h2>
+                                        <h2 style="margin:0;">département d'Électrotechnique - UDL SBA</h2>
                                     </div>
                                     <div style="padding:25px;background:#fff;">
                                         <p>Sallem Aleykoum <b>{nom_complet}</b>,</p>
-                                        <p>Votre demande d'inscription a été enregistrée dans la <b>Plateforme de gestion des EDTs du departement d'électrotechnique</b>.</p>
+                                        <p>Votre demande d'inscription a été enregistrée dans la <b>Plateforme de gestion des EDTs du département d'électrotechnique</b>.</p>
                                         <p><b>Qualité détectée :</b> {qualite_brute}<br>
                                         <b>Téléphone :</b> {phone_clean}</p>
                                         <p>Cliquez sur le bouton ci-dessous pour définir votre mot de passe :</p>
@@ -5474,7 +5474,7 @@ if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
 
 if not st.session_state["user_data"]:
-    st.markdown("<h1 class='main-title'>🏛️ departement D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🏛️ département D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
     
     with t_conn:
@@ -5663,7 +5663,7 @@ if is_admin:
                     ws.merge_range(0, 0, 0, len(df_bilan.columns)-1, 
                                   "BILAN GLOBAL DES HEURES SUPPLÉMENTAIRES — S1 2026-2027", title_fmt)
                     ws.merge_range(1, 0, 1, len(df_bilan.columns)-1, 
-                                  f"departement d'Électrotechnique — Seuil appliqué : {seuil} eq/h", 
+                                  f"département d'Électrotechnique — Seuil appliqué : {seuil} eq/h", 
                                   wb.add_format({'italic': True, 'align': 'center', 'font_size': 10}))
 
                     # En-têtes (ligne 2)
@@ -5788,7 +5788,7 @@ with st.sidebar:
 # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
 if is_admin and mode_view == "✍️ Éditeur de données":
     st.divider()
-    st.subheader("✍️ Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+    st.subheader("✍️ Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
 
     # 1. VÉRIFICATION DE L'EXISTENCE DE df
     if 'df' not in locals() and 'df' not in globals():
@@ -6110,7 +6110,7 @@ with col_logo:
         st.markdown("🏛️") # Secours si le fichier est manquant
 
 with col_titre:
-    st.markdown("<h1 class='main-title' style='border-bottom: none; margin-top: 0;'>Plateforme de gestion des emplois du temps 2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title' style='border-bottom: none; margin-top: 0;'>Plateforme de gestion des emplois du temps 2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h1>", unsafe_allow_html=True)
 
 with col_date:
     st.markdown(f"<div class='date-badge' style='float: right;'>📅 {nom_jour_fr}<br>{date_str}</div>", unsafe_allow_html=True)
@@ -6440,7 +6440,7 @@ if df is not None:
                         class INDIV_PDF(FPDF):
                             def header(self):
                                 self.set_font('Arial', 'B', 10)
-                                t = "Plateforme de gestion des EDTs-Semeste 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+                                t = "Plateforme de gestion des EDTs-Semeste 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
                                 self.cell(0, 8, t.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
                                 self.ln(2)
                             
@@ -6684,7 +6684,7 @@ if df is not None:
                         <a href="#" class="btn-print" onclick="window.print();return false;">🖨️ Imprimer la page (A4 Paysage)</a>
 
                         <div class="header-box">
-                            <div class="main-title">Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA</div>
+                            <div class="main-title">Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</div>
                             <div class="prof-name">Enseignant (e) : {nom_affiche}</div>
                         </div>
 
@@ -6861,7 +6861,7 @@ if df is not None:
                 class EDT_PDF(FPDF):
                     def header(self):
                         self.set_font('Arial', 'B', 10)
-                        title = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+                        title = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
                         self.cell(0, 8, title.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
                         self.ln(2)
 
@@ -7068,7 +7068,7 @@ if df is not None:
                     def header(self):
                         self.set_font('Arial', 'B', 10)
                         # Rappel du titre officiel
-                        self.cell(0, 8, "Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA", 0, 1, 'C')
+                        self.cell(0, 8, "Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA", 0, 1, 'C')
                         self.ln(2)
                     def footer(self): pass
 
@@ -7951,7 +7951,7 @@ if df is not None:
             # HTML
             with col_dl2:
                 html_content = generate_pro_html(df_export, f"EDT - {nom_affichage_complet}", 
-                                                 "departement d'Électrotechnique - FGE/UDL-SBA")
+                                                 "département d'Électrotechnique - FGE/UDL-SBA")
                 st.download_button("🌐 HTML", html_content, f"EDT_{cible}_2027.html", "text/html",
                                   use_container_width=True)
         
@@ -8111,7 +8111,7 @@ if df is not None:
             st.image("logo.PNG", width=80)
         with col_t:
             st.header("🏢 Répertoire et Envoi Automatisé")
-            st.write("Plateforme de gestion des emplois du temps 2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+            st.write("Plateforme de gestion des emplois du temps 2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
 
         # 1. RÉCUPÉRATION DES DONNÉES (Supabase + Répertoire Source Excel)
         res_auth = supabase.table("enseignants_auth").select("nom_officiel, email, last_sent").execute()
@@ -8170,7 +8170,7 @@ if df is not None:
                     # --- CONFIGURATION EXPÉDITEUR ---
                     expediteur_email = "chef.department.elt.fge@gmail.com"
                     mot_de_passe = "gkzs pdza yodb icvd"
-                    nom_affichage = "departement d'Électrotechnique UDL-SBA"
+                    nom_affichage = "département d'Électrotechnique UDL-SBA"
                     
                     server.login(expediteur_email, mot_de_passe)
                     
@@ -8196,7 +8196,7 @@ if df is not None:
                             <html>
                             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                                 <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                    Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA
+                                    Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
                                 </h2>
                                 
                                 <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
@@ -8243,7 +8243,7 @@ if df is not None:
                                 <hr>
                                 <p style="color: #555;">
                                     <b>Service d'enseignement</b><br>
-                                    departement d'Électrotechnique<br>
+                                    département d'Électrotechnique<br>
                                     Faculté de Génie Électrique (FGE)
                                 </p>
                             </body>
@@ -8355,7 +8355,7 @@ if is_admin:
     
                 msg = MIMEMultipart()
                 msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {nom_ens}"
-                msg['From'] = f"departement d'Électrotechnique <{EMAIL_EXPEDITEUR}>"
+                msg['From'] = f"département d'Électrotechnique <{EMAIL_EXPEDITEUR}>"
                 msg['To'] = email_ens
                 
                 table_html = df_mail.to_html(index=False, border=1, justify='center')
@@ -8364,7 +8364,7 @@ if is_admin:
                 <html>
                 <body style="font-family: Arial, sans-serif;">
                     <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; border: 1px solid #1E3A8A;">
-                        <h2 style="color: #1E3A8A; text-align: center;">Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h2>
+                        <h2 style="color: #1E3A8A; text-align: center;">Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h2>
                         <p>Sallem M./Mme <b>{nom_ens}</b>,</p>
                         <p><b>Récapitulatif de votre charge :</b> {nb_cours} Cours, {nb_td} TD, {nb_tp} TP.</p>
                         <p style="font-weight: bold; color: #b91c1c;">Objet : Urgent : Vérification de l’emploi du temps – Semestre 2</p>
@@ -8521,7 +8521,7 @@ if is_admin:
                                 <html>
                                 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                                     <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                        Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA
+                                        Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
                                     </h2>
                                     
                                     <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
@@ -8568,7 +8568,7 @@ if is_admin:
                                     <hr>
                                     <p style="color: #555;">
                                         <b>Service d'enseignement</b><br>
-                                        departement d'Électrotechnique<br>
+                                        département d'Électrotechnique<br>
                                         Faculté de Génie Électrique (FGE)
                                     </p>
                                 </body>
@@ -8638,7 +8638,7 @@ if is_admin:
                                 # --- CONFIGURATION EXPÉDITEUR ---
                                 exp_mail = "chef.department.elt.fge@gmail.com"
                                 exp_pass = "gkzs pdza yodb icvd"
-                                nom_aff = "departement d'Électrotechnique UDL-SBA"
+                                nom_aff = "département d'Électrotechnique UDL-SBA"
                                 
                                 server.login(exp_mail, exp_pass)
                                 
@@ -8658,7 +8658,7 @@ if is_admin:
                                 <html>
                                 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                                     <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                        Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA
+                                        Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
                                     </h2>
                                     
                                     <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
