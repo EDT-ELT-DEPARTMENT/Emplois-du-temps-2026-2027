@@ -1011,7 +1011,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             if not df_matiere.empty:
                 liste_mats = sorted(df_matiere["Enseignements"].dropna().unique().tolist())
                 with c2:
-                    sel_mat = st.selectbox("📚 Sélectionnez la matiere :", [""] + liste_mats, key="mat_T1")
+                    sel_mat = st.selectbox("📚 Sélectionnez la matière :", [""] + liste_mats, key="mat_T1")
                 
                 if sel_mat:
                     info_rows = df_matiere[df_matiere["Enseignements"] == sel_mat]
