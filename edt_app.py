@@ -2813,10 +2813,15 @@ def run_edt():
             if st.button("Générer le PV", use_container_width=True):
                 st.success("✅ PV généré (simulation)")
                 st.download_button("📥 Télécharger", "<html><body><h1>PV</h1></body></html>", "PV.html", "text/html")
+    
+
+# =============================================================================
+# POINT D'ENTRÉE PRINCIPAL
+# =============================================================================
+# ============================================================
+# PORTAIL : ÉDITEUR GRILLE EDT INTELLIGENT
     # ============================================================
-    # PORTAIL : ÉDITEUR GRILLE EDT INTELLIGENT
-    # ============================================================
-    elif portail == "🧩 Éditeur Grille EDT":
+elif portail == "🧩 Éditeur Grille EDT":
         if not is_admin:
             st.error("🚫 Accès réservé à l'administration.")
             return
@@ -3059,11 +3064,7 @@ def run_edt():
                     except Exception as e:
                         st.error(f"❌ Erreur : {e}")
                 else:
-                    st.warning("📭 Ce créneau est déjà vide.")
-
-# =============================================================================
-# POINT D'ENTRÉE PRINCIPAL
-# =============================================================================
+                    st.warning("📭 Ce créneau est déjà vide.")    
 if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
 else:
