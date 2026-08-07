@@ -2824,7 +2824,23 @@ if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
 else:
     run_edt() 
+# cleanup.py
+input_file = "votre_fichier.py"   # Remplacez par le nom réel
+output_file = "app_corrigee.py"
 
+with open(input_file, 'r', encoding='utf-8') as f:
+    lines = f.readlines()
+
+# Garde uniquement la Version A (lignes 1 à 2830)
+# Tout le reste sont des duplications et du code tronqué
+lignes_propres = lines[:2830]
+
+with open(output_file, 'w', encoding='utf-8') as f:
+    f.writelines(lignes_propres)
+
+print(f"✅ Fichier corrigé généré : {output_file}")
+print(f"   Lignes supprimées : {len(lines) - 2830} (duplications + code tronqué)")
+print(f"   Lignes conservées : 2830 (version fonctionnelle complète)")
 
 
                      
