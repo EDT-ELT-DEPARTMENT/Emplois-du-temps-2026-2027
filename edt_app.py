@@ -107,7 +107,7 @@ JOURS_SEMAINE = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
 CAUSES_ABSENCES = [
     "Non justifie",
-    "Deces dans l'ascendance, la descendance ou la parente",
+    "Deces dans l'ascendanceeeeeeeeeee, la descendance ou la parente",
     "Mariage de l'interesse(e)",
     "Conge de paternite ou de maternite de l'interesse(e)",
     "Mission ou convocation officielle",
