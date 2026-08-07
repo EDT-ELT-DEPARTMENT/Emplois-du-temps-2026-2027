@@ -2341,7 +2341,8 @@ def run_edt():
             "🤖 Générateur Automatique", 
             "👥 Portail Enseignants", 
             "🎓 Portail mise à jour EDT", 
-            "📢 Gestion Administrative"
+            "📢 Gestion Administrative",
+            "🧩 Éditeur Grille EDT"
         ]
     else:
         options_portail = [
@@ -2812,7 +2813,253 @@ def run_edt():
             if st.button("Générer le PV", use_container_width=True):
                 st.success("✅ PV généré (simulation)")
                 st.download_button("📥 Télécharger", "<html><body><h1>PV</h1></body></html>", "PV.html", "text/html")
+    # ============================================================
+    # PORTAIL : ÉDITEUR GRILLE EDT INTELLIGENT
+    # ============================================================
+    elif portail == "🧩 Éditeur Grille EDT":
+        if not is_admin:
+            st.error("🚫 Accès réservé à l'administration.")
+            return
 
+        st.header("🧩 Éditeur Grille EDT Interactif")
+        st.caption("Grille Jours × Horaires — Cliquez sur un créneau pour l'éditer")
+
+        # --- CONSTANTES LOCALES ---
+        JOURS_EDT = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+        HORAIRES_EDT = [
+            "08h00 - 09h30", "09h30 - 11h00", "11h00 - 12h30",
+            "12h30 - 14h00", "14h00 - 15h30", "15h30 - 17h00"
+        ]
+
+        def norm_edt(x):
+            if not x: return ""
+            return str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "").replace("h00", "h").replace(":00", "")
+
+        map_j_edt = {norm_edt(j): j for j in JOURS_EDT}
+        map_h_edt = {norm_edt(h): h for h in HORAIRES_EDT}
+
+        # --- 1. CHARGEMENT DES DONNÉES ---
+        if df is None or df.empty:
+            st.error("❌ Données EDT non disponibles.")
+            return
+
+        # Listes sources pour les dropdowns
+        all_matieres = sorted([m for m in df["Enseignements"].unique() if m and str(m).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+        all_profs = sorted([p for p in df["Enseignants"].unique() if p and str(p).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+        all_lieux = sorted([l for l in df["Lieu"].unique() if l and str(l).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+        all_promos = sorted([p for p in df["Promotion"].unique() if p and str(p).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+
+        # --- 2. SÉLECTION DE LA PROMOTION ---
+        promo_sel = st.selectbox("🎓 Choisir la promotion à éditer :", all_promos, key="edt_grille_promo")
+        
+        # Filtrage
+        df_edt = df[df["Promotion"] == promo_sel].copy()
+        df_edt["j_norm"] = df_edt["Jours"].apply(norm_edt)
+        df_edt["h_norm"] = df_edt["Horaire"].apply(norm_edt)
+
+        # --- 3. AFFICHAGE DE LA GRILLE VISUELLE ---
+        st.markdown("### 📅 Grille actuelle")
+
+        def format_cell_editeur(rows):
+            if rows.empty:
+                return ""
+            items = []
+            for _, r in rows.iterrows():
+                code_up = str(r.get('Code', '')).upper()
+                if 'COURS' in code_up:
+                    color, badge = "#1e40af", "📘 COURS"
+                elif 'TD' in code_up:
+                    color, badge = "#166534", "📗 TD"
+                else:
+                    color, badge = "#991b1b", "🔴 TP"
+                items.append(
+                    f"<div style='margin:2px 0;padding:4px 6px;border-left:3px solid {color};"
+                    f"background:{color}10;border-radius:4px;font-size:11px;line-height:1.3;'>"
+                    f"<b style='color:{color};'>{badge}</b><br>"
+                    f"{r.get('Enseignements','')}<br>"
+                    f"<span style='opacity:0.8;'>👤 {r.get('Enseignants','')}</span><br>"
+                    f"<span style='opacity:0.7;'>📍 {r.get('Lieu','')}</span>"
+                    f"</div>"
+                )
+            return "".join(items)
+
+        # Construction de la grille pivot
+        grid_grp = df_edt.groupby(['j_norm', 'h_norm']).apply(format_cell_editeur, include_groups=False)
+        if not grid_grp.empty:
+            grid_final = grid_grp.unstack(fill_value="")
+        else:
+            grid_final = pd.DataFrame(index=[norm_edt(j) for j in JOURS_EDT], columns=[norm_edt(h) for h in HORAIRES_EDT]).fillna("")
+
+        # Réindexation propre
+        jours_present = [norm_edt(j) for j in JOURS_EDT if norm_edt(j) in grid_final.index or norm_edt(j) in df_edt["j_norm"].values]
+        horaires_present = [norm_edt(h) for h in HORAIRES_EDT if norm_edt(h) in grid_final.columns or norm_edt(h) in df_edt["h_norm"].values]
+
+        if not jours_present:
+            jours_present = [norm_edt(j) for j in JOURS_EDT]
+        if not horaires_present:
+            horaires_present = [norm_edt(h) for h in HORAIRES_EDT]
+
+        grid_final = grid_final.reindex(index=jours_present, columns=horaires_present, fill_value="")
+        grid_final.index = [map_j_edt.get(i, i) for i in grid_final.index]
+        grid_final.columns = [map_h_edt.get(c, c) for c in grid_final.columns]
+
+        # Rendu HTML de la grille
+        html_grille = "<table style='width:100%;border-collapse:collapse;border:2px solid #1E3A8A;'>"
+        html_grille += "<thead><tr style='background:#1E3A8A;color:white;'><th style='padding:10px;border:1px solid #1E3A8A;'>JOUR \\ HORAIRE</th>"
+        for h in grid_final.columns:
+            html_grille += f"<th style='padding:10px;border:1px solid #1E3A8A;font-size:12px;'>{h}</th>"
+        html_grille += "</tr></thead><tbody>"
+
+        for jour in grid_final.index:
+            html_grille += f"<tr><td style='background:#f1f5f9;font-weight:bold;padding:10px;border:1px solid #cbd5e1;text-align:center;'>{jour}</td>"
+            for h in grid_final.columns:
+                cell = grid_final.loc[jour, h]
+                bg = "#ffffff" if not cell else "#f8fafc"
+                html_grille += f"<td style='padding:6px;border:1px solid #cbd5e1;vertical-align:top;background:{bg};min-width:140px;'>{cell}</td>"
+            html_grille += "</tr>"
+        html_grille += "</tbody></table>"
+
+        st.write(html_grille, unsafe_allow_html=True)
+
+        st.divider()
+
+        # --- 4. ÉDITEUR DE CELLULE ---
+        st.markdown("### ✏️ Éditer / Ajouter un créneau")
+
+        # Initialisation session state pour mémoriser la sélection
+        if "edt_cell_jour" not in st.session_state:
+            st.session_state.edt_cell_jour = JOURS_EDT[0]
+        if "edt_cell_horaire" not in st.session_state:
+            st.session_state.edt_cell_horaire = HORAIRES_EDT[0]
+
+        col_sel, col_form = st.columns([1, 2])
+
+        with col_sel:
+            st.markdown("**1. Choisir le créneau**")
+            sel_jour = st.selectbox("📅 Jour :", JOURS_EDT, key="edt_sel_jour")
+            sel_horaire = st.selectbox("🕒 Horaire :", HORAIRES_EDT, key="edt_sel_horaire")
+
+            # Détection du contenu actuel de cette cellule
+            mask_cell = (df_edt["j_norm"] == norm_edt(sel_jour)) & (df_edt["h_norm"] == norm_edt(sel_horaire))
+            cell_rows = df_edt[mask_cell]
+
+            if not cell_rows.empty:
+                st.info(f"📌 {len(cell_rows)} cours existant(s) à ce créneau.")
+                for _, r in cell_rows.iterrows():
+                    st.caption(f"• {r['Enseignements']} — {r['Enseignants']} — {r['Lieu']}")
+            else:
+                st.warning("📭 Créneau vide.")
+
+        with col_form:
+            st.markdown("**2. Remplir / Modifier la cellule**")
+
+            # Valeurs actuelles (on prend la première ligne si elle existe, sinon vide)
+            if not cell_rows.empty:
+                row0 = cell_rows.iloc[0]
+                val_matiere = str(row0.get("Enseignements", "")).strip()
+                val_prof = str(row0.get("Enseignants", "")).strip()
+                val_lieu = str(row0.get("Lieu", "")).strip()
+                val_code = str(row0.get("Code", "")).strip()
+                val_horaire = str(row0.get("Horaire", sel_horaire)).strip()
+            else:
+                val_matiere = ""
+                val_prof = ""
+                val_lieu = ""
+                val_code = ""
+                val_horaire = sel_horaire
+
+            with st.form("form_edt_cell", clear_on_submit=False):
+                # Détection des index pour pré-sélection
+                idx_matiere = (["(Vide)"] + all_matieres).index(val_matiere) if val_matiere in all_matieres else 0
+                idx_prof = (["(Vide)"] + all_profs).index(val_prof) if val_prof in all_profs else 0
+                idx_lieu = (["(Vide)"] + all_lieux).index(val_lieu) if val_lieu in all_lieux else 0
+                idx_horaire = HORAIRES_EDT.index(val_horaire) if val_horaire in HORAIRES_EDT else HORAIRES_EDT.index(sel_horaire)
+
+                new_matiere = st.selectbox("📚 Matière :", ["(Vide)"] + all_matieres, index=idx_matiere)
+                new_prof = st.selectbox("👤 Enseignant :", ["(Vide)"] + all_profs, index=idx_prof)
+                new_lieu = st.selectbox("🏢 Lieu :", ["(Vide)"] + all_lieux, index=idx_lieu)
+                new_horaire = st.selectbox("🕒 Horaire :", HORAIRES_EDT, index=idx_horaire)
+                
+                # Code automatique selon la matière (détection simple)
+                if new_matiere != "(Vide)":
+                    # Cherche si cette matière existe déjà dans l'EDT pour détecter son type
+                    ref = df[df["Enseignements"] == new_matiere]
+                    if not ref.empty:
+                        auto_code = str(ref.iloc[0].get("Code", "COURS")).strip()
+                    else:
+                        auto_code = "COURS"
+                else:
+                    auto_code = ""
+
+                new_code = st.text_input("🔑 Code (auto-détecté, modifiable) :", value=auto_code)
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    submit_save = st.form_submit_button("💾 Enregistrer", use_container_width=True)
+                with c2:
+                    submit_del = st.form_submit_button("🗑️ Vider le créneau", use_container_width=True)
+
+            if submit_save:
+                if new_matiere == "(Vide)" or new_prof == "(Vide)" or new_lieu == "(Vide)":
+                    st.error("❌ Veuillez sélectionner une matière, un enseignant et un lieu.")
+                else:
+                    # Préparation de la nouvelle ligne
+                    new_row = {
+                        "Enseignements": new_matiere,
+                        "Code": new_code if new_code else "COURS",
+                        "Enseignants": new_prof,
+                        "Horaire": new_horaire,
+                        "Jours": sel_jour,
+                        "Lieu": new_lieu,
+                        "Promotion": promo_sel,
+                        "j_norm": norm_edt(sel_jour),
+                        "h_norm": norm_edt(new_horaire)
+                    }
+
+                    # Logique : si on change d'horaire ou si c'est une nouvelle cellule
+                    # On supprime l'ancienne entrée à l'ancien horaire si elle existait et que l'horaire a changé
+                    if not cell_rows.empty:
+                        # Mise à jour : on supprime les anciennes lignes de cette cellule (jour/horaire origine)
+                        old_h_norm = norm_edt(sel_horaire)
+                        old_j_norm = norm_edt(sel_jour)
+                        
+                        # Suppression des lignes correspondant exactement à ce jour+horaire dans cette promotion
+                        mask_old = (df["Promotion"] == promo_sel) & (df["j_norm"] == old_j_norm) & (df["h_norm"] == old_h_norm)
+                        # On garde les autres promotions et les autres créneaux de cette promotion
+                        df = df[~mask_old].copy()
+                        
+                        # Si l'horaire a changé, il faut aussi supprimer à la nouvelle position si elle existe déjà
+                        # (pour éviter les doublons)
+                        new_h_norm = norm_edt(new_horaire)
+                        mask_new_pos = (df["Promotion"] == promo_sel) & (df["j_norm"] == old_j_norm) & (df["h_norm"] == new_h_norm)
+                        df = df[~mask_new_pos].copy()
+
+                    # Ajout de la nouvelle ligne
+                    df_new = pd.DataFrame([new_row])
+                    df = pd.concat([df, df_new], ignore_index=True)
+                    
+                    # Sauvegarde
+                    try:
+                        df.drop(columns=['j_norm', 'h_norm'], errors='ignore').to_excel(NOM_FICHIER_FIXE, index=False)
+                        st.success(f"✅ Créneau enregistré : {new_matiere} — {new_prof} — {new_lieu} ({sel_jour}, {new_horaire})")
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Erreur de sauvegarde : {e}")
+
+            if submit_del:
+                if not cell_rows.empty:
+                    mask_del = (df["Promotion"] == promo_sel) & (df["j_norm"] == norm_edt(sel_jour)) & (df["h_norm"] == norm_edt(sel_horaire))
+                    df = df[~mask_del].copy()
+                    try:
+                        df.drop(columns=['j_norm', 'h_norm'], errors='ignore').to_excel(NOM_FICHIER_FIXE, index=False)
+                        st.success("✅ Créneau vidé.")
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Erreur : {e}")
+                else:
+                    st.warning("📭 Ce créneau est déjà vide.")
 
 # =============================================================================
 # POINT D'ENTRÉE PRINCIPAL
