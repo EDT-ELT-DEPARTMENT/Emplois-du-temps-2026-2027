@@ -1613,28 +1613,60 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                     
                     st.markdown("### 📎 Justifier vos absences (un justificatif par absence)")
-
-                    # 1. FILTRAGE : absences sans justificatif ET sans demande déjà en attente
-                    absences_sans_justif = []
+                    # 1. FILTRAGE : seules les absences vraiment justifiables
+                    absences_sans_justif = []   # Celles que l'étudiant PEUT justifier (Non déposé)
+                    absences_bloquees = []      # Celles qu'il NE PEUT PLUS justifier (Rejetées)
+    
                     for a in absences_etu:
+                        mat = a.get("matiere", "")
+                        d_abs = a.get("date_absence")
+                        j_abs = a.get("jour_absence")
+                        h_abs = a.get("horaire_absence")
+    
+                        # A. Déjà justifiée dans la table absences → on saute
                         if a.get("justifie", False):
                             continue
-                        existe = trouver_requete_existante(
-                            étudiant_sel,
-                            a.get("matiere", ""),
-                            a.get("date_absence"),
-                            a.get("jour_absence"),
-                            a.get("horaire_absence")
-                        )
-                        if not existe:
-                            absences_sans_justif.append(a)
     
+                        # B. Requête EN ATTENTE existante → on saute (déjà traité)
+                        existe_attente = trouver_requete_existante(
+                            étudiant_sel, mat, d_abs, j_abs, h_abs
+                        )
+                        if existe_attente:
+                            continue
+    
+                        # C. Dernière requête DEFAVORABLE → BLOQUÉ, on met de côté
+                        derniere_req = trouver_derniere_requete(
+                            étudiant_sel, mat, d_abs, j_abs, h_abs
+                        )
+                        if derniere_req and derniere_req.get("statut") == "Defavorable":
+                            absences_bloquees.append({
+                                "absence": a,
+                                "motif_rejet": derniere_req.get("motif", "Non précisé")
+                            })
+                            continue
+    
+                        # D. Sinon, c'est justifiable
+                        absences_sans_justif.append(a)
+    
+                    # 2. AFFICHAGE DES ABSENCES BLOQUÉES (Rejetées définitivement)
+                    if absences_bloquees:
+                        st.error("🔒 Les absences ci-dessous ont été **rejetées par l'administration** et ne peuvent plus être justifiées.")
+                        for item in absences_bloquees:
+                            a = item["absence"]
+                            st.markdown(
+                                f"<div style='padding:10px;border-left:4px solid #dc2626;background:#fef2f2;border-radius:6px;margin-bottom:8px;'>"
+                                f"<b>❌ {a['matiere']}</b> — {a.get('date_absence','')} ({a.get('jour_absence','')} {a.get('horaire_absence','')})<br>"
+                                f"<span style='font-size:12px;color:#991b1b;'>Décision défavorable | Motif du justificatif rejeté : {item['motif_rejet']}</span>"
+                                f"</div>",
+                                unsafe_allow_html=True
+                            )
+    
+                    # 3. FORMULAIRE DE DÉPÔT (uniquement pour les absences justifiables)
                     if absences_sans_justif:
                         st.info("Remplissez les champs ci-dessous pour chaque absence que vous souhaitez justifier, puis validez l'envoi global.")
                         
-                        uploads = {}  # Stocke les absences prêtes à être envoyées
+                        uploads = {}
     
-                        # 2. AFFICHAGE : une carte par absence avec son propre PDF et motif
                         for i, abs_item in enumerate(absences_sans_justif):
                             with st.container(border=True):
                                 c1, c2, c3 = st.columns([2.5, 2, 3])
@@ -1657,7 +1689,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                         key=f"pdf_unique_{i}"
                                     )
                                 
-                                # Si l'étudiant a déposé un PDF pour cette ligne, on la mémorise
                                 if pdf_file is not None:
                                     uploads[i] = {
                                         "absence": abs_item,
@@ -1667,7 +1698,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     
                         st.divider()
     
-                        # 3. ENVOI GLOBAL
                         if uploads:
                             st.success(f"📎 **{len(uploads)}** justificatif(s) prêt(s) à être envoyé(s).")
                             
@@ -1679,7 +1709,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     abs_conc = data["absence"]
                                     
                                     try:
-                                        # Lecture du PDF spécifique à CETTE absence
                                         pdf_bytes = data["pdf"].read()
                                         pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
                                         
@@ -1709,7 +1738,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     except Exception as e:
                                         erreurs_list.append(f"❌ {abs_conc['matiere']} : {e}")
                                 
-                                # Bilan
                                 if succes_count > 0:
                                     st.success(f"✅ **{succes_count}** demande(s) envoyée(s) avec succès ! Toutes sont maintenant **En attente** de validation.")
                                     st.balloons()
@@ -1722,7 +1750,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         else:
                             st.warning("⚠️ Aucun justificatif PDF n'a été joint. Veuillez déposer au moins un fichier.")
                     else:
-                        st.info("✅ Toutes vos absences ont déjà un justificatif déposé ou une demande en cours de traitement.")
+                        if not absences_bloquees:
+                            st.info("✅ Toutes vos absences ont déjà un justificatif déposé ou une demande en cours de traitement.")
                 else:
                     st.info("ℹ️ Aucune absence signalée pour vous actuellement.")
                     st.caption("Si vous pensez qu'il s'agit d'une erreur, contactez l'enseignant de la matiere concernée.")
