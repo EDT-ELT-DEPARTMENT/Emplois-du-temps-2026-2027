@@ -9679,7 +9679,7 @@ if is_admin:
                                 'Date génération': date_str,
                                 'Généré par': row.get('generated_by', '—'),
                                 'Expéditeur': row.get('expediteur_qualite', '—'),
-                                'Département': row.get('Département', '—'),
+                                'Département': row.get('Departement', '—'),
                                 'Destinataire': row.get('destinataire', '—'),
                                 'N° Référence': ref_full,
                                 'Désignation des pièces': p.get('Désignation des pièces', ''),
