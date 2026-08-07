@@ -108,8 +108,8 @@ JOURS_SEMAINE = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 CAUSES_ABSENCES = [
     "Non justifiée",
     "Décès dans l'ascendance, la déscendance ou la parenté",
-    "Mariage de l'interesse(e)",
-    "Congé de paternité ou de maternite de l'interessé(e)",
+    "Mariage de l'interessé(e)",
+    "Congé de paternité ou de maternité de l'interessé(e)",
     "Mission ou convocation officielle",
     "Maladie de l'interessé(e)",
     "Autres"
