@@ -1123,7 +1123,38 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         st.info(f"ℹ️ {nb_abs_matiere} absence(s) dans {sel_mat}. Seuil d'exclusion : 5.")
 
                 # ─── BOUTONS D'ACTION ───
-                col_btn1, col_btn2 = st.columns(2)
+                # ─── SÉLECTION POUR ANNULATION CIBLÉE ───
+                options_annulation = {}
+                sel_abs_a_annuler = ""
+                
+                if etud_non:
+                    if MODE_SUPABASE:
+                        abs_etudiant_cible = [
+                            a for a in charger_absences_supabase(sel_mat, promo_c)
+                            if a.get("etud_non_eligible") == etud_non
+                        ]
+                    else:
+                        abs_etudiant_cible = [
+                            a for a in st.session_state.absences
+                            if a.get("etud_non_eligible") == etud_non
+                            and a.get("matiere") == sel_mat
+                            and a.get("promotion") == promo_c
+                        ]
+                    
+                    if abs_etudiant_cible:
+                        for a in abs_etudiant_cible:
+                            label = f"{a.get('date_absence','')} | {a.get('jour_absence','')} {a.get('horaire_absence','')} — {a.get('cause_non_eligibilite','Non justifie')}"
+                            options_annulation[label] = a
+                        
+                        sel_abs_a_annuler = st.selectbox(
+                            "🗑️ Choisir une absence à annuler :",
+                            options=[""] + list(options_annulation.keys()),
+                            key="sel_abs_annuler"
+                        )
+
+                # ─── BOUTONS D'ACTION ───
+                col_btn1, col_btn2, col_btn3 = st.columns(3)
+                
                 with col_btn1:
                     if st.button("💾 ENREGISTRER L'ABSENCE", use_container_width=True, type="primary"):
                         if not etud_non:
@@ -1217,6 +1248,26 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Aucune absence à annuler pour cet étudiant dans cette matiere.")
+
+                with col_btn3:
+                    if sel_abs_a_annuler and st.button("❌ ANNULER L'ABSENCE CHOISIE", use_container_width=True):
+                        abs_cible = options_annulation[sel_abs_a_annuler]
+                        if MODE_SUPABASE:
+                            try:
+                                supabase.table("suivi_assiduite_2026").delete().eq("id", abs_cible["id"]).execute()
+                                st.success(f"✅ Absence du {abs_cible.get('date_absence','')} ({abs_cible.get('jour_absence','')} {abs_cible.get('horaire_absence','')}) annulée pour {etud_non} !")
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur lors de la suppression : {e}")
+                        else:
+                            try:
+                                st.session_state.absences.remove(abs_cible)
+                                st.success(f"✅ Absence du {abs_cible.get('date_absence','')} ({abs_cible.get('jour_absence','')} {abs_cible.get('horaire_absence','')}) annulée (mode local) pour {etud_non} !")
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur lors de la suppression : {e}")
                 # LISTE GLOBALE DES ABSENCES
                 st.divider()
                 st.subheader("📋 Liste globale des absences")
