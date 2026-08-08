@@ -1,7 +1,7 @@
 """
 ================================================================================
 Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
-departement d'Electrotechnique - Faculté de génie Electrique - UDL-SBA
+département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA
 année universitaire 2026-2027
 ================================================================================
 """
@@ -278,6 +278,24 @@ def Génerer_page_html(df_data, titre_bilan, colonnes, entetes):
 </body>
 </html>"""
     return html_doc
+
+
+def detecter_colonnes_etudiant(df):
+    """Détecte automatiquement les colonnes étudiantes selon différentes orthographes possibles."""
+    cols = {c.strip().upper(): c for c in df.columns}
+    mapping = {}
+    mapping['nom'] = next((cols[c] for c in cols if c == 'NOM'), None)
+    mapping['prenom'] = next((cols[c] for c in cols if c in ['PRÉNOM', 'PRENOM']), None)
+    mapping['email'] = next((cols[c] for c in cols if c in ['EMAIL', 'E-MAIL', 'MAIL', 'COURRIEL']), None)
+    mapping['promotion'] = next((cols[c] for c in cols if c == 'PROMOTION'), None)
+    mapping['mat_bac'] = next((cols[c] for c in cols if 'MAT' in c and 'BAC' in c), None)
+    mapping['mat_etud'] = next((cols[c] for c in cols if c in ['MATRICULE', 'MAT. ETUDIANT', 'MAT ETUDIANT', 'N° ETUDIANT', 'N°ETUDIANT', 'NUM ETUDIANT', 'MAT ETUD']), None)
+    mapping['groupe'] = next((cols[c] for c in cols if c in ['GROUPE', 'GRP']), None)
+    mapping['sous_groupe'] = next((cols[c] for c in cols if c in ['SOUS GROUPE', 'SOUS-GROUPE', 'SOUSGROUPE', 'SG', 'SOUS_GRP']), None)
+    mapping['date_naiss'] = next((cols[c] for c in cols if c in ['DATE DE NAISSANCE', 'DATE NAISS.', 'DATE NAISSANCE', 'NAISSANCE']), None)
+    mapping['lieu_naiss'] = next((cols[c] for c in cols if c in ['LIEU DE NAISSANCE', 'LIEU NAISS.', 'LIEU NAISSANCE']), None)
+    return mapping
+
 
 # =============================================================================
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
@@ -971,8 +989,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # =============================================================================
     # ONGLETS
     # =============================================================================
-    # Création des onglets (toujours 3 pour éviter UnboundLocalError)
-    tab1, tab2, tab3 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports"])
+    # Création des onglets (toujours 4 pour éviter UnboundLocalError)
+    tab1, tab2, tab3, tab4 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports", "👤 Infos Étudiant"])
     with tab1:
         st.header("📝 Suivi de l'Assiduité et Compteur d'Absences")
 
