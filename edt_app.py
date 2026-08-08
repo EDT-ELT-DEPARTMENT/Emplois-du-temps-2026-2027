@@ -2139,7 +2139,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 # MODULE 2 : GESTION DES EDTs & ADMINISTRATION
 # =============================================================================
 def run_edt():
-    st.markdown("<h1 class='main-title'>🏛️ Espace enseignant et Administration</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🏛️ Espace enseignant & Administration</h1>", unsafe_allow_html=True)
     
     # --- CONNEXION BASE DE DONNÉES ---
     try:
@@ -5010,7 +5010,7 @@ if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
 
 if not st.session_state["user_data"]:
-    st.markdown("<h1 class='main-title'>🏛️ département D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🏛️ Espace enseignant & Administration</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
     
     with t_conn:
