@@ -2333,7 +2333,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if df_edt.empty:
                     st.error("❌ Les données EDT ne sont pas disponibles.")
                 else:
-                    # --- Recherche de la promotion dans l'EDT (mapping tolérant) ---
+                    # --- Recherche de la promotion dans l'EDT ---
                     df_edt["Promotion_Mappee"] = df_edt["Promotion"].apply(mapper_promotion)
                     promo_mapped = mapper_promotion(promo_etu)
     
@@ -2344,11 +2344,47 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         df_edt_etu = df_edt[
                             df_edt["Promotion"].astype(str).str.strip().str.upper() == promo_etu.upper()
                         ].copy()
+
+                    # ═══════════════════════════════════════════════════════
+                    # NOUVEAUTÉ : FILTRAGE PAR GROUPE / SOUS-GROUPE
+                    # ═══════════════════════════════════════════════════════
+                    
+                    # 1. Récupération du groupe de l'étudiant dans le fichier étudiants
+                    cols_map = detecter_colonnes_etudiant(df_etu)
+                    row_etu = df_etu[df_etu["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_etu).strip().upper()]
+                    
+                    groupe_etu = ""
+                    sous_groupe_etu = ""
+                    if not row_etu.empty:
+                        groupe_etu = str(row_etu.iloc[0].get(cols_map.get('groupe', ''), '')).strip().upper()
+                        sous_groupe_etu = str(row_etu.iloc[0].get(cols_map.get('sous_groupe', ''), '')).strip().upper()
+                    
+                    # 2. Extraction des groupes G1, G2... depuis Code et Lieu
+                    def extraire_groupe_edt(val):
+                        if pd.isna(val):
+                            return None
+                        match = re.search(r'G(\d+)', str(val).upper())
+                        return f"G{match.group(1)}" if match else None
+                    
+                    df_edt_etu["Groupe_Code"] = df_edt_etu["Code"].apply(extraire_groupe_edt)
+                    df_edt_etu["Groupe_Lieu"] = df_edt_etu["Lieu"].apply(extraire_groupe_edt)
+                    # Priorité : Code, puis Lieu (si Code n'a pas le groupe)
+                    df_edt_etu["Groupe_EDT"] = df_edt_etu["Groupe_Code"].fillna(df_edt_etu["Groupe_Lieu"])
+                    
+                    # 3. Filtrage : cours communs (pas de groupe) OU cours de mon groupe
+                    if groupe_etu:
+                        mask_commun = df_edt_etu["Groupe_EDT"].isna()      # Cours magistraux, etc.
+                        mask_mon_groupe = df_edt_etu["Groupe_EDT"] == groupe_etu
+                        df_edt_etu = df_edt_etu[mask_commun | mask_mon_groupe].copy()
+                        
+                        st.info(f"🔍 Filtrage appliqué : **{groupe_etu}** | Sous-groupe : **{sous_groupe_etu or 'N/A'}**")
+                    else:
+                        st.warning("⚠️ Groupe non détecté dans votre fiche étudiant. Affichage de tous les cours de la promotion.")
     
                     if df_edt_etu.empty:
-                        st.warning(f"⚠️ Aucun cours trouvé pour votre promotion (**{promo_etu}**) dans l'EDT.")
+                        st.warning(f"⚠️ Aucun cours trouvé pour votre promotion (**{promo_etu}**) et votre groupe (**{groupe_etu or 'Non détecté'}**).")
                     else:
-                        st.success(f"🎓 Promotion détectée : **{promo_etu}** — {len(df_edt_etu)} séance(s) programmée(s).")
+                        st.success(f"🎓 Promotion : **{promo_etu}** — {len(df_edt_etu)} séance(s) programmée(s) pour vous.")
     
                         # --- Normalisation pour la grille ---
                         def _norm(x):
@@ -2390,9 +2426,21 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     nat, color, bg = "📗", "#166534", "#dcfce7"
                                 else:
                                     nat, color, bg = "🔴", "#991b1b", "#fee2e2"
+                                
+                                # Affichage du groupe extrait (G1, G2...)
+                                badge_groupe = ""
+                                if pd.notna(r.get("Groupe_EDT")):
+                                    badge_groupe = (
+                                        f"<div style='display:inline-block;background:#7c3aed;"
+                                        f"color:white;padding:1px 6px;border-radius:4px;"
+                                        f"font-size:10px;font-weight:700;margin-bottom:4px;'>"
+                                        f"👥 {r['Groupe_EDT']}</div><br>"
+                                    )
+                                
                                 items.append(
                                     f"<div style='margin-bottom:6px;padding:8px;border-left:4px solid {color};"
                                     f"background-color:{bg};border-radius:6px;text-align:left;'>"
+                                    f"{badge_groupe}"
                                     f"<b style='color:{color};font-size:13px;'>{nat} {r['Enseignements']}</b><br>"
                                     f"<span style='font-size:12px;color:#334155;'>👤 {r['Enseignants']}</span><br>"
                                     f"<span style='font-size:11px;color:#64748b;'>📍 {r['Lieu']}</span>"
@@ -2400,7 +2448,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 )
                             return "".join(items)
     
-                        # Construction de la grille : Jours en lignes, Horaires en colonnes
+                        # Construction de la grille
                         grouped = df_edt_etu.groupby(["j_norm", "h_norm"]).apply(_fmt_cell, include_groups=False)
                         grid = grouped.unstack("j_norm") if not grouped.empty else pd.DataFrame()
     
@@ -2408,17 +2456,17 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         h_present     = [h for h in horaires_ref if h in grid.index]
     
                         if not jours_present or not h_present:
-                            st.info("ℹ️ Impossible de construire la grille EDT (données incomplètes).")
+                            st.info("ℹ️ Impossible de construire la grille EDT (données incomplètes après filtrage groupe).")
                         else:
                             grid = grid.reindex(index=h_present, columns=jours_present).fillna("")
                             grid.index   = [map_h_labels.get(i, i) for i in grid.index]
                             grid.columns = [map_j_labels.get(c, c) for c in grid.columns]
     
-                            # Affichage à l'écran
-                            st.markdown("### 📋 Vue hebdomadaire")
+                            # Affichage
+                            st.markdown("### 📋 Votre emploi du temps hebdomadaire")
                             st.write(grid.to_html(escape=False), unsafe_allow_html=True)
     
-                            # --- EXPORT HTML PROFESSIONNEL ---
+                            # --- EXPORT HTML ---
                             html_doc = f"""<!DOCTYPE html>
     <html lang="fr">
     <head>
@@ -2445,7 +2493,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         <div class="container">
             <div class="header">
                 <h1>📅 Emploi du Temps Individuel</h1>
-                <p>{nom_etu} — Promotion {promo_etu}</p>
+                <p>{nom_etu} — Promotion {promo_etu} {f'({groupe_etu})' if groupe_etu else ''}</p>
                 <span class="badge">Semestre 01 — 2026-2027</span>
             </div>
             <div class="content">
@@ -2462,11 +2510,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             st.download_button(
                                 label="🌐 Télécharger mon EDT (HTML)",
                                 data=html_doc,
-                                file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}.html",
+                                file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{f'_{groupe_etu}' if groupe_etu else ''}.html",
                                 mime="text/html",
                                 use_container_width=True,
                                 key="dl_edt_etudiant"
-                            )
+                            )        
+        
 def run_edt():
     st.markdown("<h1 class='main-title'>🏛️ Espace enseignant & Administration</h1>", unsafe_allow_html=True)
     
