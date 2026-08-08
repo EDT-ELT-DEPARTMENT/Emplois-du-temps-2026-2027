@@ -2153,9 +2153,86 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             else:
                 st.info(f"ℹ️ Aucune absence directe enregistrée pour {promo_abs}.")
 
+
 # =============================================================================
 # MODULE 2 : GESTION DES EDTs & ADMINISTRATION
 # =============================================================================
+    # =============================================================================
+    # ONGLET 4 : INFORMATIONS ÉTUDIANT (ENSEIGNANT & ADMIN)
+    # =============================================================================
+        with tab4:
+            st.header("👤 Informations détaillées d'un étudiant")
+            
+            # Accès réservé
+            if not (is_enseignant_connecte or is_admin_edt):
+                st.info("ℹ️ Cet onglet est réservé aux enseignants et administrateurs.")
+            else:
+                if df_etu.empty:
+                    st.error("❌ Données étudiants non disponibles.")
+                else:
+                    # Préparation : s'assurer que Nom_Complet existe
+                    if "Nom_Complet" not in df_etu.columns:
+                        col_n = next((c for c in df_etu.columns if c.strip().upper() == "NOM"), None)
+                        col_p = next((c for c in df_etu.columns if c.strip().upper() in ["PRÉNOM", "PRENOM"]), None)
+                        if col_n and col_p:
+                            df_etu["Nom_Complet"] = df_etu[col_n].astype(str).str.strip().str.upper() + " " + df_etu[col_p].astype(str).str.strip().str.title()
+                    
+                    liste_etudiants = sorted(df_etu["Nom_Complet"].dropna().unique())
+                    
+                    c1, c2 = st.columns([3, 1])
+                    with c1:
+                        sel_etud = st.selectbox("🔍 Sélectionner un étudiant :", [""] + liste_etudiants, key="sel_etud_tab4")
+                    with c2:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        st.caption(f"Total : {len(liste_etudiants)} étudiants")
+                    
+                    if sel_etud:
+                        cols_map = detecter_colonnes_etudiant(df_etu)
+                        row = df_etu[df_etu["Nom_Complet"] == sel_etud].iloc[0]
+                        
+                        # Carte d'identité stylisée
+                        st.markdown(f"""
+                            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
+                                        padding: 20px; border-radius: 14px; color: white; margin-bottom: 20px;">
+                                <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
+                                    Fiche Étudiant — Année 2026-2027
+                                </div>
+                                <div style="font-size: 26px; font-weight: bold; margin-top: 8px;">
+                                    {sel_etud}
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Affichage en 3 colonnes
+                        col_a, col_b, col_c = st.columns(3)
+                        
+                        with col_a:
+                            st.markdown("#### 🎓 Scolarité")
+                            st.markdown(f"**Promotion :** `{row.get(cols_map['promotion'], 'N/A')}`")
+                            st.markdown(f"**Mat. BAC :** `{row.get(cols_map['mat_bac'], 'N/A')}`")
+                            st.markdown(f"**Mat. Étudiant :** `{row.get(cols_map['mat_etud'], 'N/A')}`")
+                        
+                        with col_b:
+                            st.markdown("#### 👥 Groupement")
+                            st.markdown(f"**Groupe :** `{row.get(cols_map['groupe'], 'N/A')}`")
+                            st.markdown(f"**Sous groupe :** `{row.get(cols_map['sous_groupe'], 'N/A')}`")
+                        
+                        with col_c:
+                            st.markdown("#### 📋 État civil")
+                            naiss = row.get(cols_map['date_naiss'], 'N/A')
+                            lieu = row.get(cols_map['lieu_naiss'], 'N/A')
+                            if hasattr(naiss, 'strftime'):
+                                naiss = naiss.strftime('%d/%m/%Y')
+                            st.markdown(f"**Date de naiss. :** `{naiss}`")
+                            st.markdown(f"**Lieu de naissance :** `{lieu}`")
+                        
+                        st.divider()
+                        email_val = row.get(cols_map['email'], '')
+                        if email_val and str(email_val).lower() not in ['nan', 'none', '']:
+                            st.markdown(f"📧 **Email :** `{email_val}`")
+                        else:
+                            st.markdown(f"📧 **Email :** *Non renseigné*")
+
 def run_edt():
     st.markdown("<h1 class='main-title'>🏛️ Espace enseignant & Administration</h1>", unsafe_allow_html=True)
     
@@ -2239,6 +2316,17 @@ def run_edt():
                     df[col] = "Non défini"
             df['h_norm'] = df['Horaire'].apply(normalize)
             df['j_norm'] = df['Jours'].apply(normalize)
+            df_etu_edt = pd.DataFrame()
+            if os.path.exists(FILE_ETUDIANTS):
+                try:
+                    df_etu_edt = lire_excel_robuste(FILE_ETUDIANTS)
+                    df_etu_edt.columns = df_etu_edt.columns.str.strip()
+                    col_n = next((c for c in df_etu_edt.columns if c.strip().upper() == "NOM"), None)
+                    col_p = next((c for c in df_etu_edt.columns if c.strip().upper() in ["PRÉNOM", "PRENOM"]), None)
+                    if col_n and col_p:
+                        df_etu_edt["Nom_Complet"] = df_etu_edt[col_n].astype(str).str.strip().str.upper() + " " + df_etu_edt[col_p].astype(str).str.strip().str.title()
+                except Exception as e:
+                    st.warning(f"⚠️ Chargement étudiants indisponible : {e}")
         except Exception as e:
             st.error(f"Erreur de chargement EDT : {e}")
 
@@ -2359,14 +2447,16 @@ def run_edt():
             "🤖 Générateur Automatique", 
             "👥 Portail Enseignants", 
             "🎓 Portail mise à jour EDT", 
-            "📢 Gestion Administrative"
+            "📢 Gestion Administrative",
+            "🎓 Recherche Étudiant"
         ]
     else:
         options_portail = [
             "👤 Mon Espace Enseignant",
-            "📅 Surveillances Examens"
+            "📅 Surveillances Examens",
+            "🎓 Recherche Étudiant"
         ]
-
+    
     portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
     
     mode_view = "Personnel"
@@ -2737,7 +2827,70 @@ def run_edt():
                         st.rerun()
                 except Exception as e:
                     st.error(f"Erreur import : {e}")
-
+        # ============================================================
+    # PORTAIL : RECHERCHE ÉTUDIANT
+    # ============================================================
+    elif portail == "🎓 Recherche Étudiant":
+        st.markdown("<h1 class='main-title'>🎓 Recherche d'Informations Étudiant</h1>", unsafe_allow_html=True)
+        
+        if df_etu_edt.empty:
+            st.error("❌ Le fichier des étudiants n'est pas disponible. Vérifiez le chemin : " + FILE_ETUDIANTS)
+        else:
+            liste_etudiants = sorted(df_etu_edt["Nom_Complet"].dropna().unique())
+            
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                sel_etud = st.selectbox("🔍 Sélectionner un étudiant :", [""] + liste_etudiants, key="sel_etud_edt")
+            with c2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.metric("Total inscrits", len(liste_etudiants))
+            
+            if sel_etud:
+                cols_map = detecter_colonnes_etudiant(df_etu_edt)
+                row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
+                
+                st.markdown(f"""
+                    <div style="background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); 
+                                padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+                        <div style="font-size: 12px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px;">
+                            Fiche Étudiant — département d'Électrotechnique
+                        </div>
+                        <div style="font-size: 24px; font-weight: bold; margin-top: 6px;">
+                            {sel_etud}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                ca, cb, cc = st.columns(3)
+                with ca:
+                    with st.container(border=True):
+                        st.markdown("**🎓 Scolarité**")
+                        st.write(f"**Promotion :** {row.get(cols_map['promotion'], 'N/A')}")
+                        st.write(f"**Mat. BAC :** {row.get(cols_map['mat_bac'], 'N/A')}")
+                        st.write(f"**Mat. Étudiant :** {row.get(cols_map['mat_etud'], 'N/A')}")
+                
+                with cb:
+                    with st.container(border=True):
+                        st.markdown("**👥 Groupement**")
+                        st.write(f"**Groupe :** {row.get(cols_map['groupe'], 'N/A')}")
+                        st.write(f"**Sous groupe :** {row.get(cols_map['sous_groupe'], 'N/A')}")
+                
+                with cc:
+                    with st.container(border=True):
+                        st.markdown("**📋 État civil**")
+                        naiss = row.get(cols_map['date_naiss'], 'N/A')
+                        lieu = row.get(cols_map['lieu_naiss'], 'N/A')
+                        if hasattr(naiss, 'strftime'):
+                            naiss = naiss.strftime('%d/%m/%Y')
+                        st.write(f"**Date de naiss. :** {naiss}")
+                        st.write(f"**Lieu de naissance :** {lieu}")
+                
+                st.divider()
+                email_val = row.get(cols_map['email'], '')
+                if email_val and str(email_val).lower() not in ['nan', 'none', '']:
+                    st.info(f"📧 **Email :** `{email_val}`")
+                else:
+                    st.caption("📧 Email non renseigné dans le fichier source")
     # ============================================================
     # PORTAIL : GESTION ADMINISTRATIVE (BORDEREAUX)
     # ============================================================
