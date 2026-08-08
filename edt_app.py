@@ -2504,9 +2504,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 key="dl_edt_etudiant"
                             )
                 
-        
-def run_edt():
-    st.markdown("<h1 class='main-title'>🏛️ Espace enseignant & Administration</h1>", unsafe_allow_html=True)
+
     
     # --- CONNEXION BASE DE DONNÉES ---
     try:
