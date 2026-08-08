@@ -2080,7 +2080,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     if pwd_tab3 != "":
                         st.error("❌ Code incorrect.")
                     st.info("ℹ️ Veuillez saisir le code administrateur pour accéder aux bilans et exports.")
-                    st.stop()
+                    
 
             promo_filtre = st.selectbox(
                 "Filtrer par Promotion :",
