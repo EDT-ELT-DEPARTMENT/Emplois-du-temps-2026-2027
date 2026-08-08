@@ -2317,12 +2317,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         # ONGLET 5 : MON EDT (ÉTUDIANT CONNECTÉ UNIQUEMENT)
         # =============================================================================
         with tab5:
-            st.header("📅 Mon Emploi du Temps")
+            st.header("📅 Mon Emploi du Temps individuel-Etudiant")
             st.caption("Consultation et téléchargement de votre EDT hebdomadaire")
     
-            if not étudiant_connecte:
-                st.info("ℹ️ Cet onglet est réservé aux étudiants connectés. Retournez à l'onglet 📝 Suivi d'Assiduité pour vous authentifier.")
-            else:
                 # ─── INFOS ÉTUDIANT ───
                 promo_etu = str(étudiant_connecte.get("promotion", "")).strip()
                 nom_etu   = str(étudiant_connecte.get("nom", "Étudiant")).strip()
