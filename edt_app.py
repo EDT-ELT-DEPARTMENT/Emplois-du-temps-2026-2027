@@ -2713,11 +2713,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     if is_admin:
         options_portail = [
             "📖 Emploi du Temps", 
-            "📅 Surveillances Examens", 
-            "🤖 Générateur Automatique", 
-            "👥 Portail Enseignants", 
-            "🎓 Portail mise à jour EDT", 
-            "📢 Gestion Administrative",
             "🎓 Recherche Étudiant"
         ]
     else:
