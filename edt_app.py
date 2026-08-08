@@ -769,7 +769,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
 <p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_etud}</strong>,</p>
 <div style="background:{'#dcfce7' if 'Favorable' in statut else '#fee2e2'};border-left:5px solid {couleur};padding:15px;margin:20px 0;color:{couleur};font-weight:600;border-radius:0 8px 8px 0;">
     {icone} <strong>{titre}</strong><br>
-    matiere concernée : <strong>{matiere}</strong>
+    matière concernée : <strong>{matiere}</strong>
 </div>
 <p style="color:#64748b;font-size:14px;"><strong>Motif du justificatif :</strong> {motif if motif else "Non précisé"}</p>
 {"<p style='color:#166534;font-size:14px;font-weight:600;'>🎓 Votre absence est désormais justifiée. Vous conservez votre éligibilité à l'examen et vous avez le droit à un <strong>examen de remplacement (rattrapage)</strong> si nécessaire.</p>" if "Favorable" in statut else "<p style='color:#991b1b;font-size:14px;'>Votre demande de justification a été rejetée. L'absence reste non justifiée et les sanctions réglementaires s'appliquent.</p>"}
