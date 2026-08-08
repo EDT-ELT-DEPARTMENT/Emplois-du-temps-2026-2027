@@ -2850,13 +2850,38 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             grid_p.index = [map_h.get(i, i) for i in grid_p.index]
             grid_p.columns = [map_j.get(c, c) for c in grid_p.columns]
         
-            # ─── Centrage jours & contenu ───
+            # ─── Style : quadrillage + centrage + horaire sur une ligne ───
             styled = (
                 grid_p.style
-                .set_properties(**{'text-align': 'center', 'vertical-align': 'middle'})
+                .set_properties(**{
+                    'text-align': 'center',
+                    'vertical-align': 'middle',
+                    'border': '1px solid #cbd5e1'
+                })
                 .set_table_styles([
-                    {'selector': 'th', 'props': [('text-align', 'center'), ('vertical-align', 'middle')]},
-                    {'selector': 'td', 'props': [('text-align', 'center'), ('vertical-align', 'middle')]}
+                    # En-têtes (jours)
+                    {'selector': 'th',
+                     'props': [
+                         ('text-align', 'center'),
+                         ('vertical-align', 'middle'),
+                         ('border', '1px solid #94a3b8'),
+                         ('background-color', '#f1f5f9'),
+                         ('font-weight', '600')
+                     ]},
+                    # Cellules d'index (horaires) : pas de retour à la ligne
+                    {'selector': 'th.row_heading, th.index_name',
+                     'props': [
+                         ('white-space', 'nowrap'),
+                         ('border', '1px solid #94a3b8'),
+                         ('background-color', '#f8fafc')
+                     ]},
+                    # Toutes les cellules de données
+                    {'selector': 'td',
+                     'props': [
+                         ('text-align', 'center'),
+                         ('vertical-align', 'middle'),
+                         ('border', '1px solid #cbd5e1')
+                     ]}
                 ])
             )
             html_table = styled.to_html(escape=False)
@@ -2874,7 +2899,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             c2.download_button(
                 "🌐 HTML", html_table, f"EDT_{p_sel}.html", "text/html"
             )
-        
+                
         elif mode_view == "🏢 Planning Salles":
             s_sel = st.selectbox("Choisir Salle :", sorted([s for s in df["Lieu"].unique() if s and s != "Non défini"]))
             df_s = df[df["Lieu"] == s_sel]
