@@ -2313,13 +2313,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             st.markdown(f"📧 **Email :** `{email_val}`")
                         else:
                             st.markdown(f"📧 **Email :** *Non renseigné*")
-    # =============================================================================
+    
         # ONGLET 5 : MON EDT (ÉTUDIANT CONNECTÉ UNIQUEMENT)
         # =============================================================================
-        st.write("DEBUG — Promo étudiant brute :", promo_etu)
-        st.write("DEBUG — Promo mappée :", promo_mapped)
-        st.write("DEBUG — Promos disponibles dans EDT :", df_edt["Promotion"].unique())
-        st.write("DEBUG — Nb lignes EDT filtrées :", len(df_edt_etu))
         with tab5:
             st.header("📅 Mon Emploi du Temps")
             st.caption("Consultation et téléchargement de votre EDT hebdomadaire")
@@ -2327,66 +2323,67 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             if not étudiant_connecte:
                 st.info("ℹ️ Cet onglet est réservé aux étudiants connectés. Retournez à l'onglet 📝 Suivi d'Assiduité pour vous authentifier.")
             else:
+                # ─── INFOS ÉTUDIANT ───
                 promo_etu = str(étudiant_connecte.get("promotion", "")).strip()
-                nom_etu   = étudiant_connecte.get("nom", "Étudiant")
+                nom_etu   = str(étudiant_connecte.get("nom", "Étudiant")).strip()
     
                 if df_edt.empty:
                     st.error("❌ Les données EDT ne sont pas disponibles.")
                 else:
-                    # --- Recherche de la promotion dans l'EDT ---
+                    # ─── MAPPING PROMOTION ───
                     df_edt["Promotion_Mappee"] = df_edt["Promotion"].apply(mapper_promotion)
                     promo_mapped = mapper_promotion(promo_etu)
     
                     df_edt_etu = df_edt[df_edt["Promotion_Mappee"] == promo_mapped].copy()
     
-                    # Fallback : correspondance directe si le mapping échoue
+                    # Fallback si le mapping échoue
                     if df_edt_etu.empty:
                         df_edt_etu = df_edt[
                             df_edt["Promotion"].astype(str).str.strip().str.upper() == promo_etu.upper()
                         ].copy()
-
+    
                     # ═══════════════════════════════════════════════════════
-                    # NOUVEAUTÉ : FILTRAGE PAR GROUPE / SOUS-GROUPE
+                    # FILTRAGE PAR GROUPE / SOUS-GROUPE (G1, G2…)
                     # ═══════════════════════════════════════════════════════
-                    
-                    # 1. Récupération du groupe de l'étudiant dans le fichier étudiants
-                    cols_map = detecter_colonnes_etudiant(df_etu)
-                    row_etu = df_etu[df_etu["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_etu).strip().upper()]
-                    
                     groupe_etu = ""
                     sous_groupe_etu = ""
-                    if not row_etu.empty:
-                        groupe_etu = str(row_etu.iloc[0].get(cols_map.get('groupe', ''), '')).strip().upper()
-                        sous_groupe_etu = str(row_etu.iloc[0].get(cols_map.get('sous_groupe', ''), '')).strip().upper()
-                    
-                    # 2. Extraction des groupes G1, G2... depuis Code et Lieu
+                    try:
+                        cols_map = detecter_colonnes_etudiant(df_etu)
+                        row_etu = df_etu[
+                            df_etu["Nom_Complet"].astype(str).str.strip().str.upper() == nom_etu.upper()
+                        ]
+                        if not row_etu.empty:
+                            groupe_etu = str(row_etu.iloc[0].get(cols_map.get('groupe', ''), '')).strip().upper()
+                            sous_groupe_etu = str(row_etu.iloc[0].get(cols_map.get('sous_groupe', ''), '')).strip().upper()
+                    except Exception:
+                        pass
+    
+                    # Extraction G1, G2… depuis Code et Lieu
                     def extraire_groupe_edt(val):
                         if pd.isna(val):
                             return None
-                        match = re.search(r'G(\d+)', str(val).upper())
-                        return f"G{match.group(1)}" if match else None
-                    
+                        m = re.search(r'G(\d+)', str(val).upper())
+                        return f"G{m.group(1)}" if m else None
+    
                     df_edt_etu["Groupe_Code"] = df_edt_etu["Code"].apply(extraire_groupe_edt)
                     df_edt_etu["Groupe_Lieu"] = df_edt_etu["Lieu"].apply(extraire_groupe_edt)
-                    # Priorité : Code, puis Lieu (si Code n'a pas le groupe)
                     df_edt_etu["Groupe_EDT"] = df_edt_etu["Groupe_Code"].fillna(df_edt_etu["Groupe_Lieu"])
-                    
-                    # 3. Filtrage : cours communs (pas de groupe) OU cours de mon groupe
+    
+                    # Filtre : cours communs (pas de groupe) OU mon groupe
                     if groupe_etu:
-                        mask_commun = df_edt_etu["Groupe_EDT"].isna()      # Cours magistraux, etc.
+                        mask_commun = df_edt_etu["Groupe_EDT"].isna()
                         mask_mon_groupe = df_edt_etu["Groupe_EDT"] == groupe_etu
                         df_edt_etu = df_edt_etu[mask_commun | mask_mon_groupe].copy()
-                        
                         st.info(f"🔍 Filtrage appliqué : **{groupe_etu}** | Sous-groupe : **{sous_groupe_etu or 'N/A'}**")
                     else:
-                        st.warning("⚠️ Groupe non détecté dans votre fiche étudiant. Affichage de tous les cours de la promotion.")
+                        st.warning("⚠️ Groupe non détecté dans votre fiche étudiant. Affichage de tous les cours.")
     
                     if df_edt_etu.empty:
-                        st.warning(f"⚠️ Aucun cours trouvé pour votre promotion (**{promo_etu}**) et votre groupe (**{groupe_etu or 'Non détecté'}**).")
+                        st.warning(f"⚠️ Aucun cours trouvé pour **{promo_etu}** / **{groupe_etu or 'tous groupes'}**.")
                     else:
-                        st.success(f"🎓 Promotion : **{promo_etu}** — {len(df_edt_etu)} séance(s) programmée(s) pour vous.")
+                        st.success(f"🎓 {len(df_edt_etu)} séance(s) trouvée(s) pour vous.")
     
-                        # --- Normalisation pour la grille ---
+                        # ─── GRILLE EDT ───
                         def _norm(x):
                             if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
                                 return "vide"
@@ -2396,7 +2393,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         df_edt_etu["h_norm"] = df_edt_etu["Horaire"].apply(_norm)
                         df_edt_etu["j_norm"] = df_edt_etu["Jours"].apply(_norm)
     
-                        # Référentiels
                         horaires_ref = [
                             "08h00-09h30", "09h30-11h00", "11h00-12h30",
                             "12h30-14h00", "14h00-15h30", "15h30-17h00"
@@ -2426,21 +2422,18 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     nat, color, bg = "📗", "#166534", "#dcfce7"
                                 else:
                                     nat, color, bg = "🔴", "#991b1b", "#fee2e2"
-                                
-                                # Affichage du groupe extrait (G1, G2...)
-                                badge_groupe = ""
+    
+                                badge = ""
                                 if pd.notna(r.get("Groupe_EDT")):
-                                    badge_groupe = (
-                                        f"<div style='display:inline-block;background:#7c3aed;"
-                                        f"color:white;padding:1px 6px;border-radius:4px;"
-                                        f"font-size:10px;font-weight:700;margin-bottom:4px;'>"
-                                        f"👥 {r['Groupe_EDT']}</div><br>"
-                                    )
-                                
+                                    badge = (f"<div style='display:inline-block;background:#7c3aed;"
+                                             f"color:white;padding:1px 6px;border-radius:4px;"
+                                             f"font-size:10px;font-weight:700;margin-bottom:4px;'>"
+                                             f"👥 {r['Groupe_EDT']}</div><br>")
+    
                                 items.append(
                                     f"<div style='margin-bottom:6px;padding:8px;border-left:4px solid {color};"
                                     f"background-color:{bg};border-radius:6px;text-align:left;'>"
-                                    f"{badge_groupe}"
+                                    f"{badge}"
                                     f"<b style='color:{color};font-size:13px;'>{nat} {r['Enseignements']}</b><br>"
                                     f"<span style='font-size:12px;color:#334155;'>👤 {r['Enseignants']}</span><br>"
                                     f"<span style='font-size:11px;color:#64748b;'>📍 {r['Lieu']}</span>"
@@ -2448,73 +2441,69 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 )
                             return "".join(items)
     
-                        # Construction de la grille
                         grouped = df_edt_etu.groupby(["j_norm", "h_norm"]).apply(_fmt_cell, include_groups=False)
                         grid = grouped.unstack("j_norm") if not grouped.empty else pd.DataFrame()
     
                         jours_present = [j for j in jours_ref if j in grid.columns]
-                        h_present     = [h for h in horaires_ref if h in grid.index]
+                        h_present = [h for h in horaires_ref if h in grid.index]
     
                         if not jours_present or not h_present:
-                            st.info("ℹ️ Impossible de construire la grille EDT (données incomplètes après filtrage groupe).")
+                            st.info("ℹ️ Impossible de construire la grille (données incomplètes après filtrage).")
                         else:
                             grid = grid.reindex(index=h_present, columns=jours_present).fillna("")
-                            grid.index   = [map_h_labels.get(i, i) for i in grid.index]
+                            grid.index = [map_h_labels.get(i, i) for i in grid.index]
                             grid.columns = [map_j_labels.get(c, c) for c in grid.columns]
     
-                            # Affichage
                             st.markdown("### 📋 Votre emploi du temps hebdomadaire")
                             st.write(grid.to_html(escape=False), unsafe_allow_html=True)
     
-                            # --- EXPORT HTML ---
+                            # ─── EXPORT HTML ───
+                            groupe_suffix = f"_{groupe_etu}" if groupe_etu else ""
                             html_doc = f"""<!DOCTYPE html>
     <html lang="fr">
     <head>
-        <meta charset="UTF-8">
-        <title>EDT — {nom_etu}</title>
-        <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-            body {{ font-family: 'Inter', 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); margin: 0; padding: 30px; color: #1e293b; }}
-            .container {{ max-width: 1200px; margin: auto; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow: hidden; }}
-            .header {{ background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); color: white; padding: 30px; text-align: center; }}
-            .header h1 {{ margin: 0; font-size: 22px; }}
-            .header p {{ margin: 8px 0 0 0; opacity: 0.9; font-size: 14px; }}
-            .badge {{ display: inline-block; background: #D4AF37; color: #1E3A8A; padding: 4px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; margin-top: 10px; }}
-            .content {{ padding: 30px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
-            th {{ background-color: #0f172a; color: white; padding: 14px; text-align: center; font-size: 13px; border: 1px solid #e2e8f0; position: sticky; top: 0; }}
-            td {{ padding: 14px; border: 1px solid #e2e8f0; vertical-align: top; font-size: 12px; }}
-            tr:nth-child(even) {{ background-color: #f8fafc; }}
-            .footer {{ text-align: center; padding: 20px; color: #94a3b8; font-size: 12px; border-top: 1px solid #f1f5f9; }}
-            @media print {{ body {{ background: white; padding: 0; }} .container {{ box-shadow: none; border-radius: 0; }} }}
-        </style>
+    <meta charset="UTF-8">
+    <title>EDT — {nom_etu}</title>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    body{{font-family:'Inter','Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#f1f5f9 0%,#e2e8f0 100%);margin:0;padding:30px;color:#1e293b;}}
+    .container{{max-width:1200px;margin:auto;background:white;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,0.08);overflow:hidden;}}
+    .header{{background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:30px;text-align:center;}}
+    .header h1{{margin:0;font-size:22px;}}.header p{{margin:8px 0 0 0;opacity:0.9;font-size:14px;}}
+    .badge{{display:inline-block;background:#D4AF37;color:#1E3A8A;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px;}}
+    .content{{padding:30px;}}table{{width:100%;border-collapse:collapse;margin-top:15px;}}
+    th{{background-color:#0f172a;color:white;padding:14px;text-align:center;font-size:13px;border:1px solid #e2e8f0;position:sticky;top:0;}}
+    td{{padding:14px;border:1px solid #e2e8f0;vertical-align:top;font-size:12px;}}
+    tr:nth-child(even){{background-color:#f8fafc;}}
+    .footer{{text-align:center;padding:20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;}}
+    @media print{{body{{background:white;padding:0;}}.container{{box-shadow:none;border-radius:0;}}}}
+    </style>
     </head>
     <body>
-        <div class="container">
-            <div class="header">
-                <h1>📅 Emploi du Temps Individuel</h1>
-                <p>{nom_etu} — Promotion {promo_etu} {f'({groupe_etu})' if groupe_etu else ''}</p>
-                <span class="badge">Semestre 01 — 2026-2027</span>
-            </div>
-            <div class="content">
-                <p style="color:#64748b;font-size:13px;">Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
-                {grid.to_html(escape=False)}
-            </div>
-            <div class="footer">
-                département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA
-            </div>
-        </div>
+    <div class="container">
+    <div class="header">
+    <h1>📅 Emploi du Temps Individuel</h1>
+    <p>{nom_etu} — Promotion {promo_etu}{f' ({groupe_etu})' if groupe_etu else ''}</p>
+    <span class="badge">Semestre 01 — 2026-2027</span>
+    </div>
+    <div class="content">
+    <p style="color:#64748b;font-size:13px;">Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
+    {grid.to_html(escape=False)}
+    </div>
+    <div class="footer">département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA</div>
+    </div>
     </body>
     </html>"""
     
                             st.download_button(
                                 label="🌐 Télécharger mon EDT (HTML)",
                                 data=html_doc,
-                                file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{f'_{groupe_etu}' if groupe_etu else ''}.html",
+                                file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{groupe_suffix}.html",
                                 mime="text/html",
                                 use_container_width=True,
                                 key="dl_edt_etudiant"
-                            )        
+                            )
+                
         
 def run_edt():
     st.markdown("<h1 class='main-title'>🏛️ Espace enseignant & Administration</h1>", unsafe_allow_html=True)
