@@ -2712,8 +2712,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     
     if is_admin:
         options_portail = [
-            "📖 Emploi du Temps", 
-            "🎓 Recherche Étudiant"
+            "📖 Emploi du Temps"
         ]
     else:
         options_portail = [
