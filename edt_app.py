@@ -2316,6 +2316,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # =============================================================================
         # ONGLET 5 : MON EDT (ÉTUDIANT CONNECTÉ UNIQUEMENT)
         # =============================================================================
+        st.write("DEBUG — Promo étudiant brute :", promo_etu)
+        st.write("DEBUG — Promo mappée :", promo_mapped)
+        st.write("DEBUG — Promos disponibles dans EDT :", df_edt["Promotion"].unique())
+        st.write("DEBUG — Nb lignes EDT filtrées :", len(df_edt_etu))
         with tab5:
             st.header("📅 Mon Emploi du Temps")
             st.caption("Consultation et téléchargement de votre EDT hebdomadaire")
