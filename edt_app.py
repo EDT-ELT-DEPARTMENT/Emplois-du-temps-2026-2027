@@ -2713,11 +2713,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     if is_admin:
         options_portail = [
             "📖 Emploi du Temps", 
-            "📅 Surveillances Examens", 
-            "🤖 Générateur Automatique", 
-            "👥 Portail Enseignants", 
-            "🎓 Portail mise à jour EDT", 
-            "📢 Gestion Administrative",
             "🎓 Recherche Étudiant"
         ]
     else:
@@ -2735,7 +2730,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     if portail == "📖 Emploi du Temps" and is_admin:
         mode_view = st.radio("Vue Administration :", [
             "Promotion", "Enseignant", "🏢 Planning Salles", 
-            "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
+            "🚩 Vérificateur de conflits"
         ], horizontal=True)
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
     elif portail == "👤 Mon Espace Enseignant":
@@ -3013,91 +3008,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             st.download_button("📥 Télécharger", buf_s.getvalue(), f"Surv_{prof_sel}.xlsx",
                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+     
     # ============================================================
-    # PORTAIL : GÉNÉRATEUR AUTOMATIQUE (ADMIN)
-    # ============================================================
-    elif portail == "🤖 Générateur Automatique":
-        if not is_admin:
-            st.error("🚫 Accès réservé à l'administration.")
-            return
-        
-        st.header("⚙️ Générateur de Surveillances")
-        st.info("Cet outil génère automatiquement les plannings de surveillance d'examens.")
-        
-        # Interface simplifiée
-        st.markdown("### 🎓 Promotions à traiter")
-        promos_dispo = sorted(df['Promotion'].unique().tolist())
-        promos_sel = st.multiselect("Sélectionner :", promos_dispo)
-        
-        if promos_sel and st.button("🚀 Générer le planning", use_container_width=True):
-            st.success(f"✅ Planning généré pour : {', '.join(promos_sel)}")
-            st.info("(Simulation - Intégrez votre algorithme de répartition ici)")
-            st.balloons()
-
-    # ============================================================
-    # PORTAIL : PORTAIL ENSEIGNANTS (ADMIN - ENVOI MAIL)
-    # ============================================================
-    elif portail == "👥 Portail Enseignants":
-        if not is_admin:
-            st.error("🚫 Accès réservé à l'administration.")
-            return
-
-        st.header("📧 Portail Enseignants - Envoi des EDT")
-        
-        # Liste des enseignants avec emails
-        donnees_envoi = []
-        for ens in sorted(df["Enseignants"].unique()):
-            if ens and ens != "Non défini":
-                email = repertoire_source.get(str(ens).strip().upper(), "Non communiqué")
-                donnees_envoi.append({"Enseignant": ens, "Email": email, "Statut": "✅ Prêt" if "@" in str(email) else "❌ Sans email"})
-
-        df_envoi = pd.DataFrame(donnees_envoi)
-        st.dataframe(df_envoi, use_container_width=True, hide_index=True)
-
-        # Filtre
-        filtre_statut = st.selectbox("Filtrer :", ["Tous", "✅ Prêt", "❌ Sans email"])
-        if filtre_statut != "Tous":
-            df_envoi = df_envoi[df_envoi["Statut"] == filtre_statut]
-
-        st.download_button("📥 Télécharger la liste", df_envoi.to_csv(index=False), "liste_enseignants.csv", "text/csv")
-
-        st.markdown("---")
-        st.info("💡 Pour l'envoi automatisé par email, configurez les identifiants SMTP dans les secrets Streamlit.")
-
-    # ============================================================
-    # PORTAIL : MISE À JOUR EDT (ADMIN)
-    # ============================================================
-    elif portail == "🎓 Portail mise à jour EDT":
-        st.subheader("📚 Mise à jour des Emplois du Temps")
-        
-        promo_vue = st.selectbox("Promotion à consulter :", sorted(df["Promotion"].unique()))
-        df_vue = df[df["Promotion"] == promo_vue][['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
-        
-        st.dataframe(df_vue.sort_values(['Jours', 'Horaire']), use_container_width=True, hide_index=True)
-        
-        c1, c2 = st.columns(2)
-        buf_v = io.BytesIO()
-        df_vue.to_excel(buf_v, index=False)
-        c1.download_button("📊 Excel", buf_v.getvalue(), f"EDT_{promo_vue}.xlsx", 
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        c2.download_button("🌐 HTML", df_vue.to_html(index=False), f"EDT_{promo_vue}.html", "text/html")
-
-        if is_admin:
-            st.divider()
-            st.markdown("### ✍️ Import / Mise à jour par fichier")
-            fichier_import = st.file_uploader("Importer un fichier Excel EDT", type=["xlsx"])
-            if fichier_import:
-                try:
-                    df_imp = pd.read_excel(fichier_import)
-                    st.success(f"✅ {len(df_imp)} lignes importées. Cliquez sur Sauvegarder pour fusionner.")
-                    if st.button("💾 Fusionner avec l'EDT actuel", use_container_width=True):
-                        df_new = pd.concat([df, df_imp], ignore_index=True)
-                        df_new.to_excel(NOM_FICHIER_FIXE, index=False)
-                        st.success("✅ Fichier maître mis à jour !")
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Erreur import : {e}")
-        # ============================================================
     # PORTAIL : RECHERCHE ÉTUDIANT
     # ============================================================
     # ============================================================
@@ -3164,100 +3076,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if email_val and str(email_val).lower() not in ['nan', 'none', '']:
                     st.info(f"📧 **Email :** `{email_val}`")
                 else:
-                    st.caption("📧 Email non renseigné dans le fichier source")
-    
-    # ============================================================
-    # PORTAIL : GESTION ADMINISTRATIVE (BORDEREAUX)
-    # ============================================================
-    elif portail == "📢 Gestion Administrative":
-        if not is_admin:
-            st.error("🚫 Accès réservé à l'administration.")
-            return
-
-        st.header("📋 Gestion Administrative - Bordereaux & Documents")
-        
-        tab_bord, tab_pv = st.tabs(["📨 Bordereau d'envoi", "📄 PV / Procès-verbal"])
-
-        with tab_bord:
-            st.subheader("Génération de Bordereau d'Envoi")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                destinataire = st.selectbox("Destinataire :", [
-                    "Le Doyen de la Faculté", 
-                    "Le Vice-Doyen", 
-                    "Le Chef de département", 
-                    "La Scolarité", 
-                    "Autre"
-                ])
-                if destinataire == "Autre":
-                    destinataire = st.text_input("Préciser :")
-            with col2:
-                ref_num = st.text_input("N° Référence :", f"001/FGE/ELT/{datetime.now().year}")
-                date_bord = st.date_input("Date :", datetime.now())
-
-            st.markdown("### 📎 Pièces jointes")
-            pieces_df = st.data_editor(
-                pd.DataFrame([
-                    {"Désignation": "Emploi du temps S1", "Nombre": 1, "Observation": "Pour diffusion"},
-                    {"Désignation": "Liste des étudiants", "Nombre": 1, "Observation": "Pour contrôle"}
-                ]),
-                column_config={
-                    "Désignation": st.column_config.TextColumn("Désignation", required=True),
-                    "Nombre": st.column_config.NumberColumn("Nombre", min_value=1),
-                    "Observation": st.column_config.TextColumn("Observation")
-                },
-                num_rows="dynamic",
-                use_container_width=True,
-                key="pieces_bord"
-            )
-
-            if st.button("📄 Générer le Bordereau", use_container_width=True, type="primary"):
-                # Génération simple HTML (fallback si python-docx non dispo)
-                html_bord = f"""
-                <div style="border:2px solid #1E3A8A; padding:30px; max-width:800px; margin:auto; font-family:Arial;">
-                    <div style="text-align:center; border-bottom:2px solid #D4AF37; padding-bottom:15px; margin-bottom:20px;">
-                        <h2 style="color:#1E3A8A; margin:0;">UNIVERSITÉ DJILLALI LIABES</h2>
-                        <p style="margin:5px 0;">Faculté de Génie Électrique - Sidi Bel Abbès</p>
-                        <h3 style="color:#D4AF37; margin:10px 0 0 0;">BORDEREAU D'ENVOI</h3>
-                    </div>
-                    <p><b>N° Référence :</b> {ref_num}</p>
-                    <p><b>Date :</b> {date_bord.strftime('%d/%m/%Y')}</p>
-                    <p><b>Destinataire :</b> {destinataire}</p>
-                    <hr>
-                    <table style="width:100%; border-collapse:collapse; margin-top:20px;">
-                        <tr style="background:#1E3A8A; color:white;">
-                            <th style="padding:10px; border:1px solid #333;">Désignation des pièces</th>
-                            <th style="padding:10px; border:1px solid #333;">Nombre</th>
-                            <th style="padding:10px; border:1px solid #333;">Observations</th>
-                        </tr>
-                """
-                for _, row in pieces_df.iterrows():
-                    html_bord += f"""
-                        <tr>
-                            <td style="padding:8px; border:1px solid #333;">{row['Désignation']}</td>
-                            <td style="padding:8px; border:1px solid #333; text-align:center;">{row['Nombre']}</td>
-                            <td style="padding:8px; border:1px solid #333;">{row['Observation']}</td>
-                        </tr>
-                    """
-                html_bord += """
-                    </table>
-                    <div style="margin-top:40px; display:flex; justify-content:space-between;">
-                        <div><b>Signature du responsable</b><br><br>_________________</div>
-                        <div><b>Accusé de réception</b><br><br>_________________</div>
-                    </div>
-                </div>
-                """
-                st.success("✅ Bordereau généré")
-                st.download_button("📥 Télécharger (HTML)", html_bord, f"Bordereau_{ref_num.replace('/', '_')}.html", "text/html")
-
-        with tab_pv:
-            st.subheader("📄 Génération de PV")
-            st.info("Module de génération de Procès-verbaux de délibération")
-            st.text_area("Contenu du PV :", height=200, placeholder="Saisir le contenu du PV ici...")
-            if st.button("Générer le PV", use_container_width=True):
-                st.success("✅ PV généré (simulation)")
-                st.download_button("📥 Télécharger", "<html><body><h1>PV</h1></body></html>", "PV.html", "text/html")
+                    st.caption("📧 Email non renseigné dans le fichier source") 
 
 
 # =============================================================================
