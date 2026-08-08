@@ -291,17 +291,13 @@ def detecter_colonnes_etudiant(df):
         s = s.replace(' ', '').replace('-', '').replace('_', '').replace('.', '').replace('/', '')
         return s
     
-    # Dictionnaire des colonnes normalisées du fichier
     cols_norm = {normalize_col(c): c for c in df.columns}
     
     def find_col(variants):
-        """Cherche une colonne parmi plusieurs variantes possibles."""
         for v in variants:
             v_norm = normalize_col(v)
-            # Correspondance exacte normalisée
             if v_norm in cols_norm:
                 return cols_norm[v_norm]
-            # Correspondance partielle (contient)
             for key, orig in cols_norm.items():
                 if v_norm in key or key in v_norm:
                     return orig
@@ -309,7 +305,7 @@ def detecter_colonnes_etudiant(df):
     
     mapping = {}
     mapping['nom']           = find_col(['nom', 'name', 'familyname'])
-    mapping['prenom']        = find_col(['prenom', 'firstname', 'givenname', 'prenom'])
+    mapping['prenom']        = find_col(['prenom', 'firstname', 'givenname'])
     mapping['email']         = find_col(['email', 'e-mail', 'mail', 'courriel', 'adressemail'])
     mapping['promotion']     = find_col(['promotion', 'promo', 'niveau', 'annee'])
     mapping['mat_bac']       = find_col(['matbac', 'matriculebac', 'nombac', 'numbac', 'matriculedebac', 'mat.bac'])
@@ -321,6 +317,47 @@ def detecter_colonnes_etudiant(df):
     
     return mapping
 
+
+def format_date_naissance(val):
+    """Formate une date de naissance quelle que soit son type d'origine (Excel, string, Timestamp...)."""
+    if pd.isna(val):
+        return 'N/A'
+    
+    # Cas 1 : Déjà un objet date/datetime/pandas Timestamp
+    if hasattr(val, 'strftime'):
+        try:
+            return val.strftime('%d/%m/%Y')
+        except:
+            pass
+    
+    # Cas 2 : Nombre → Date Excel (nombre de jours depuis 1899-12-30)
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        try:
+            dt = pd.to_datetime(val, unit='D', origin='1899-12-30')
+            return dt.strftime('%d/%m/%Y')
+        except:
+            pass
+    
+    # Cas 3 : Chaîne de caractères
+    val_str = str(val).strip()
+    if val_str:
+        # Format DD/MM/YYYY ou DD-MM-YYYY
+        import re
+        if re.match(r'^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$', val_str):
+            try:
+                dt = pd.to_datetime(val_str, dayfirst=True, format='%d/%m/%Y')
+                return dt.strftime('%d/%m/%Y')
+            except:
+                pass
+        
+        # Parsing général
+        try:
+            dt = pd.to_datetime(val_str, dayfirst=True, errors='raise')
+            return dt.strftime('%d/%m/%Y')
+        except:
+            pass
+    
+    return str(val)
 # =============================================================================
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
@@ -2241,28 +2278,25 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             st.markdown(f"**Groupe :** `{row.get(cols_map['groupe'], 'N/A')}`")
                             st.markdown(f"**Sous groupe :** `{row.get(cols_map['sous_groupe'], 'N/A')}`")
                         with col_c:
+                            st.markdown("#### 📋 État civil")
+                            
+                            # --- DATE DE NAISSANCE (avec diagnostic caché) ---
                             naiss_raw = row.get(cols_map['date_naiss'], None)
-                            naiss_str = 'N/A'
-                            if pd.notna(naiss_raw):
-                                if hasattr(naiss_raw, 'strftime'):
-                                    naiss_str = naiss_raw.strftime('%d/%m/%Y')
-                                else:
-                                    # Essaie de parser une chaîne de date
-                                    try:
-                                        naiss_parsed = pd.to_datetime(str(naiss_raw), dayfirst=True, errors='coerce')
-                                        if pd.notna(naiss_parsed):
-                                            naiss_str = naiss_parsed.strftime('%d/%m/%Y')
-                                        else:
-                                            naiss_str = str(naiss_raw)
-                                    except:
-                                        naiss_str = str(naiss_raw)
+                            naiss_str = format_date_naissance(naiss_raw)
                             
                             lieu = row.get(cols_map['lieu_naiss'], 'N/A')
                             if pd.isna(lieu):
                                 lieu = 'N/A'
                             
                             st.markdown(f"**Date de naiss. :** `{naiss_str}`")
-                            st.markdown(f"**Lieu de naissance :** `{lieu}`")                                                    
+                            st.markdown(f"**Lieu de naissance :** `{lieu}`")
+                            
+                            # Diagnostic (à retirer une fois tout OK)
+                            with st.expander("🔧 Voir valeur brute (debug)"):
+                                st.write(f"Type détecté : `{type(naiss_raw).__name__}`")
+                                st.write(f"Valeur brute : `{repr(naiss_raw)}`")
+                                st.write(f"Colonne source : `{cols_map.get('date_naiss', 'NON TROUVÉE')}`")
+                                                                            
                         st.divider()
                         email_val = row.get(cols_map['email'], '')
                         if email_val and str(email_val).lower() not in ['nan', 'none', '']:
@@ -2915,13 +2949,22 @@ def run_edt():
                 with cc:
                     with st.container(border=True):
                         st.markdown("**📋 État civil**")
-                        naiss = row.get(cols_map['date_naiss'], 'N/A')
+                        
+                        naiss_raw = row.get(cols_map['date_naiss'], None)
+                        naiss_str = format_date_naissance(naiss_raw)
+                        
                         lieu = row.get(cols_map['lieu_naiss'], 'N/A')
-                        if hasattr(naiss, 'strftime'):
-                            naiss = naiss.strftime('%d/%m/%Y')
-                        st.write(f"**Date de naiss. :** {naiss}")
+                        if pd.isna(lieu):
+                            lieu = 'N/A'
+                        
+                        st.write(f"**Date de naiss. :** {naiss_str}")
                         st.write(f"**Lieu de naissance :** {lieu}")
-                
+                        
+                        with st.expander("🔧 Voir valeur brute (debug)"):
+                            st.write(f"Type détecté : `{type(naiss_raw).__name__}`")
+                            st.write(f"Valeur brute : `{repr(naiss_raw)}`")
+                            st.write(f"Colonne source : `{cols_map.get('date_naiss', 'NON TROUVÉE')}`")
+                           
                 st.divider()
                 email_val = row.get(cols_map['email'], '')
                 if email_val and str(email_val).lower() not in ['nan', 'none', '']:
