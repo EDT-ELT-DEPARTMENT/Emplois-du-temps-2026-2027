@@ -473,7 +473,7 @@ def run_Assiduité():
         if not MODE_SUPABASE:
             return False
         try:
-            query = supabase.table("suivi_assiduite_2026").update({"justifie": True})\
+            query = supabase.table("suivi_assiduite_2026").update({"justifié": True})\
                 .eq("etud_non_eligible", etudiant).eq("matiere", matiere)
             if date_abs: query = query.eq("date_absence", date_abs)
             if jour_abs: query = query.eq("jour_absence", jour_abs)
@@ -534,7 +534,7 @@ def run_Assiduité():
         if MODE_SUPABASE:
             try:
                 res = supabase.table("suivi_assiduite_2026")\
-                    .select("id,etud_non_eligible,matiere,promotion,date_absence,jour_absence,horaire_absence,cause_non_eligibilite,justifie")\
+                    .select("id,etud_non_eligible,matiere,promotion,date_absence,jour_absence,horaire_absence,cause_non_eligibilite,justifié")\
                     .eq("etud_non_eligible", nom_etudiant)\
                     .order("id", desc=True)\
                     .limit(50)\
@@ -1088,7 +1088,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
                         absences_etu_matiere = df_db_full[df_db_full["etud_non_eligible"] == etud_non]
                         nb_abs_matiere = len(absences_etu_matiere)
-                        nb_abs_justif = len(absences_etu_matiere[absences_etu_matiere.get("justifie") == True]) if "justifie" in absences_etu_matiere.columns else 0
+                        nb_abs_justif = len(absences_etu_matiere[absences_etu_matiere.get("justifié") == True]) if "justifié" in absences_etu_matiere.columns else 0
                     else:
                         nb_abs_matiere = 0
                         nb_abs_justif = 0
@@ -1106,7 +1106,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         color = "#ef4444" if nb_abs_matiere >= 5 else "#f59e0b" if nb_abs_matiere >= 3 else "#22c55e"
                         st.markdown(f"<div style='background:{color}15;border:2px solid {color};border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:{color};'>{nb_abs_matiere}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>🔢 Absences matiere</div></div>", unsafe_allow_html=True)
                     with c2:
-                        st.markdown(f"<div style='background:#22c55e15;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#22c55e;'>{nb_abs_justif}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>✅ Justifiées</div></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='background:#22c55e15;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#22c55e;'>{nb_abs_justif}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>✅ justifiées</div></div>", unsafe_allow_html=True)
                     with c3:
                         st.markdown(f"<div style='background:#3b82f615;border:2px solid #3b82f6;border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#3b82f6;'>{nb_abs_global}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>🌍 Total global</div></div>", unsafe_allow_html=True)
                     with c4:
@@ -1143,7 +1143,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     
                     if abs_etudiant_cible:
                         for a in abs_etudiant_cible:
-                            label = f"{a.get('date_absence','')} | {a.get('jour_absence','')} {a.get('horaire_absence','')} — {a.get('cause_non_eligibilite','Non justifie')}"
+                            label = f"{a.get('date_absence','')} | {a.get('jour_absence','')} {a.get('horaire_absence','')} — {a.get('cause_non_eligibilite','Non justifié')}"
                             options_annulation[label] = a
                         
                         sel_abs_a_annuler = st.selectbox(
@@ -1189,12 +1189,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     "matiere": sel_mat,
                                     "promotion": promo_c,
                                     "etud_non_eligible": etud_non,
-                                    "cause_non_eligibilite": cause_s if cause_s else "Non justifie",
+                                    "cause_non_eligibilite": cause_s if cause_s else "Non justifié",
                                     "date_absence": str(date_abs),
                                     "jour_absence": jour_abs,
                                     "horaire_absence": horaire_abs,
                                     "date_saisie": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                                    "justifie": False
+                                    "justifié": False
                                 }
                                 if MODE_SUPABASE:
                                     if enregistrer_absence_supabase(payload):
@@ -1204,7 +1204,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                             envoyer_notification_absence_étudiant(
                                                 email_etu, etud_non, sel_mat, sel_prof,
                                                 jour_abs, horaire_abs, str(date_abs),
-                                                cause_s if cause_s else "Non justifie",
+                                                cause_s if cause_s else "Non justifié",
                                                 get_absences_étudiant(etud_non)
                                             )
                                             st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
@@ -1222,7 +1222,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                         envoyer_notification_absence_étudiant(
                                             email_etu, etud_non, sel_mat, sel_prof,
                                             jour_abs, horaire_abs, str(date_abs),
-                                            cause_s if cause_s else "Non justifie",
+                                            cause_s if cause_s else "Non justifié",
                                             get_absences_étudiant(etud_non)
                                         )
                                         st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
@@ -1273,11 +1273,11 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 st.subheader("📋 Liste globale des absences")
 
                 if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
-                    if "justifie" not in df_db_full.columns:
-                        df_db_full["justifie"] = False
-                    df_db_full["justifie"] = df_db_full["justifie"].fillna(False)
+                    if "justifié" not in df_db_full.columns:
+                        df_db_full["justifié"] = False
+                    df_db_full["justifié"] = df_db_full["justifié"].fillna(False)
                     df_liste = df_db_full.copy()
-                    df_liste["Statut justificatif"] = df_liste["justifie"].apply(lambda x: "✅ Justifiée" if x else "❌ Non justifiée")
+                    df_liste["Statut justificatif"] = df_liste["justifié"].apply(lambda x: "✅ justifiée" if x else "❌ Non justifiée")
                     df_count_mat = df_liste.groupby(["etud_non_eligible", "matiere"]).size().reset_index(name="Abs matiere")
                     df_liste = df_liste.merge(df_count_mat, on=["etud_non_eligible", "matiere"], how="left")
                     df_liste["Statut exclusion"] = df_liste["Abs matiere"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Eligible")
@@ -1367,7 +1367,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             d_abs = a.get("date_absence", "")
                             j_abs = a.get("jour_absence", "")
                             h_abs = a.get("horaire_absence", "")
-                            is_justif = a.get("justifie", False)
+                            is_justif = a.get("justifié", False)
 
                             # Recherche de la requête liée à CETTE séance spécifique
                             req = trouver_derniere_requete(nom_e, sel_mat, d_abs, j_abs, h_abs)
@@ -1392,7 +1392,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 "Jour": j_abs,
                                 "Horaire": h_abs,
                                 "Motif initial": a.get("cause_non_eligibilite", ""),
-                                "Justifiée": "✅ Oui" if is_justif else "❌ Non",
+                                "justifiée": "✅ Oui" if is_justif else "❌ Non",
                                 "Statut justificatif": statut_req,
                                 "Motif déposé": motif_req
                             })
@@ -1433,12 +1433,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         for row in data_suivi:
                             nom = row["Étudiant"]
                             if nom not in recap:
-                                recap[nom] = {"Mat. BAC": row["Mat. BAC"], "Total": 0, "Justifiées": 0, "En attente": 0, "Rejetées": 0}
+                                recap[nom] = {"Mat. BAC": row["Mat. BAC"], "Total": 0, "justifiées": 0, "En attente": 0, "Rejetées": 0}
                             recap[nom]["Total"] += 1
-                            if row["Justifiée"] == "✅ Oui":
-                                recap[nom]["Justifiées"] += 1
+                            if row["justifiée"] == "✅ Oui":
+                                recap[nom]["justifiées"] += 1
                             elif "Favorable" in row["Statut justificatif"]:
-                                recap[nom]["Justifiées"] += 1
+                                recap[nom]["justifiées"] += 1
                             elif "Defavorable" in row["Statut justificatif"]:
                                 recap[nom]["Rejetées"] += 1
                             elif "En attente" in row["Statut justificatif"]:
@@ -1446,7 +1446,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                         df_recap = pd.DataFrame([
                             {"Étudiant": k, "Mat. BAC": v["Mat. BAC"], "Total absences": v["Total"], 
-                             "Justifiées": v["Justifiées"], "En attente": v["En attente"], "Rejetées": v["Rejetées"]}
+                             "justifiées": v["justifiées"], "En attente": v["En attente"], "Rejetées": v["Rejetées"]}
                             for k, v in sorted(recap.items())
                         ])
                         st.dataframe(df_recap, use_container_width=True, hide_index=True)
@@ -1484,7 +1484,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 nom = row["etud_non_eligible"]
                                 absents_noms.append(nom)
                                 absents_details[nom] = {
-                                    "motif": row.get("cause_non_eligibilite", "Non justifie"),
+                                    "motif": row.get("cause_non_eligibilite", "Non justifié"),
                                     "date": row.get("date_absence", ""),
                                     "jour": row.get("jour_absence", ""),
                                     "horaire": row.get("horaire_absence", "")
@@ -1638,10 +1638,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         # Pour l'affichage : chercher la DERNIERE requete (tous statuts) pour CETTE séance
                         req_affichage = trouver_derniere_requete(étudiant_sel, mat, d_abs, j_abs, h_abs)
                         req_en_attente = trouver_requete_existante(étudiant_sel, mat, d_abs, j_abs, h_abs)
-                        is_justif = abs_item.get("justifie", False)
+                        is_justif = abs_item.get("justifié", False)
 
                         if is_justif:
-                            statut_j = "🟢 Justifiée (acceptée)"
+                            statut_j = "🟢 justifiée (acceptée)"
                         elif req_affichage:
                             statut_j = "🟡 " + req_affichage.get("statut", "En attente")
                         else:
@@ -1663,10 +1663,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     st.dataframe(df_disp, use_container_width=True, hide_index=True)
 
                     
-                    st.markdown("### 📎 Justifier vos absences (un justificatif par absence)")
+                    st.markdown("### 📎 justifiér vos absences (un justificatif par absence)")
                     # 1. FILTRAGE : seules les absences vraiment justifiables
-                    absences_sans_justif = []   # Celles que l'étudiant PEUT justifier (Non déposé)
-                    absences_bloquees = []      # Celles qu'il NE PEUT PLUS justifier (Rejetées)
+                    absences_sans_justif = []   # Celles que l'étudiant PEUT justifiér (Non déposé)
+                    absences_bloquees = []      # Celles qu'il NE PEUT PLUS justifiér (Rejetées)
     
                     for a in absences_etu:
                         mat = a.get("matiere", "")
@@ -1675,7 +1675,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         h_abs = a.get("horaire_absence")
     
                         # A. Déjà justifiée dans la table absences → on saute
-                        if a.get("justifie", False):
+                        if a.get("justifié", False):
                             continue
     
                         # B. Requête EN ATTENTE existante → on saute (déjà traité)
@@ -1714,7 +1714,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     
                     # 3. FORMULAIRE DE DÉPÔT (uniquement pour les absences justifiables)
                     if absences_sans_justif:
-                        st.info("Remplissez les champs ci-dessous pour chaque absence que vous souhaitez justifier, puis validez l'envoi global.")
+                        st.info("Remplissez les champs ci-dessous pour chaque absence que vous souhaitez justifiér, puis validez l'envoi global.")
                         
                         uploads = {}
     
@@ -1855,8 +1855,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                                 if d_abs and a.get("date_absence") != d_abs: continue
                                                 if j_abs and a.get("jour_absence") != j_abs: continue
                                                 if h_abs and a.get("horaire_absence") != h_abs: continue
-                                                a["justifie"] = True
-                                                a["cause_non_eligibilite"] = "Justifiee - " + str(a.get("cause_non_eligibilite", ""))
+                                                a["justifié"] = True
+                                                a["cause_non_eligibilite"] = "justifiée - " + str(a.get("cause_non_eligibilite", ""))
 
                                     # ═══ NOTIFICATIONS EMAIL ═══
                                     # 1. Notification à l'étudiant
@@ -2109,14 +2109,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
             if abs_promo:
                 df_abs = pd.DataFrame(abs_promo)
-                if "justifie" not in df_abs.columns:
-                    df_abs["justifie"] = False
+                if "justifié" not in df_abs.columns:
+                    df_abs["justifié"] = False
 
                 df_abs_count = df_abs.groupby(["etud_non_eligible", "matiere"]).agg(
                     Nombre_Absences=("etud_non_eligible", "size"),
-                    Dont_Justifiees=("justifie", lambda x: (x == True).sum())
+                    Dont_justifiées=("justifié", lambda x: (x == True).sum())
                 ).reset_index()
-                df_abs_count["Dont_Non_Justifiees"] = df_abs_count["Nombre_Absences"] - df_abs_count["Dont_Justifiees"]
+                df_abs_count["Dont_Non_justifiées"] = df_abs_count["Nombre_Absences"] - df_abs_count["Dont_justifiées"]
                 df_abs_count["Statut"] = df_abs_count["Nombre_Absences"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Sous seuil")
                 df_abs_count = df_abs_count.sort_values(by="Nombre_Absences", ascending=False)
 
