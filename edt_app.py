@@ -2305,14 +2305,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             if pd.isna(lieu):
                                 lieu = 'N/A'
                             st.markdown(f"**Date de naiss. :** `{naiss_str}`")
-                            st.markdown(f"**Lieu de naissance :** `{lieu}`")
-                                                    
-                            # Diagnostic (à retirer une fois tout OK)
-                            with st.expander("🔧 Voir valeur brute (debug)"):
-                                st.write(f"Type détecté : `{type(naiss_raw).__name__}`")
-                                st.write(f"Valeur brute : `{repr(naiss_raw)}`")
-                                st.write(f"Colonne source : `{cols_map.get('date_naiss', 'NON TROUVÉE')}`")
-                                                                            
+                            st.markdown(f"**Lieu de naissance :** `{lieu}`")                  
+                                                                                                       
                         st.divider()
                         email_val = row.get(cols_map['email'], '')
                         if email_val and str(email_val).lower() not in ['nan', 'none', '']:
