@@ -1070,7 +1070,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # ONGLETS
     # =============================================================================
     # Création des onglets (toujours 4 pour éviter UnboundLocalError)
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports", "👤 Infos Étudiant", "📅 Mon EDT"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports", "👤 Infos Étudiant"])
     with tab1:
         st.header("📝 Suivi de l'Assiduité et Compteur d'Absences")
 
@@ -2080,7 +2080,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     if pwd_tab3 != "":
                         st.error("❌ Code incorrect.")
                     st.info("ℹ️ Veuillez saisir le code administrateur pour accéder aux bilans et exports.")
-                    
+                    st.stop()
 
             promo_filtre = st.selectbox(
                 "Filtrer par Promotion :",
@@ -2313,194 +2313,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             st.markdown(f"📧 **Email :** `{email_val}`")
                         else:
                             st.markdown(f"📧 **Email :** *Non renseigné*")
+
+def run_edt():
+    st.markdown("<h1 class='main-title'>🏛️ Espace enseignant & Administration</h1>", unsafe_allow_html=True)
     
-        
-            with tab5:
-                st.header("📅 Mon Emploi du Temps individuel-Etudiant")
-                st.caption("Consultation et téléchargement de votre EDT hebdomadaire")
-        
-                # ─── INFOS ÉTUDIANT ───
-                promo_etu = str(étudiant_connecte.get("promotion", "")).strip()
-                nom_etu   = str(étudiant_connecte.get("nom", "Étudiant")).strip()
-            
-                if df_edt.empty:
-                    st.error("❌ Les données EDT ne sont pas disponibles.")
-                else:
-                    # ─── MAPPING PROMOTION ───
-                    df_edt["Promotion_Mappee"] = df_edt["Promotion"].apply(mapper_promotion)
-                    promo_mapped = mapper_promotion(promo_etu)
-        
-                    df_edt_etu = df_edt[df_edt["Promotion_Mappee"] == promo_mapped].copy()
-        
-                    # Fallback si le mapping échoue
-                    if df_edt_etu.empty:
-                        df_edt_etu = df_edt[
-                            df_edt["Promotion"].astype(str).str.strip().str.upper() == promo_etu.upper()
-                        ].copy()
-        
-                    # ═══════════════════════════════════════════════════════
-                    # FILTRAGE PAR GROUPE / SOUS-GROUPE (G1, G2…)
-                    # ═══════════════════════════════════════════════════════
-                    groupe_etu = ""
-                    sous_groupe_etu = ""
-                    try:
-                        cols_map = detecter_colonnes_etudiant(df_etu)
-                        row_etu = df_etu[
-                            df_etu["Nom_Complet"].astype(str).str.strip().str.upper() == nom_etu.upper()
-                        ]
-                        if not row_etu.empty:
-                            groupe_etu = str(row_etu.iloc[0].get(cols_map.get('groupe', ''), '')).strip().upper()
-                            sous_groupe_etu = str(row_etu.iloc[0].get(cols_map.get('sous_groupe', ''), '')).strip().upper()
-                    except Exception:
-                        pass
-        
-                    # Extraction G1, G2… depuis Code et Lieu
-                    def extraire_groupe_edt(val):
-                        if pd.isna(val):
-                            return None
-                        m = re.search(r'G(\d+)', str(val).upper())
-                        return f"G{m.group(1)}" if m else None
-        
-                    df_edt_etu["Groupe_Code"] = df_edt_etu["Code"].apply(extraire_groupe_edt)
-                    df_edt_etu["Groupe_Lieu"] = df_edt_etu["Lieu"].apply(extraire_groupe_edt)
-                    df_edt_etu["Groupe_EDT"] = df_edt_etu["Groupe_Code"].fillna(df_edt_etu["Groupe_Lieu"])
-        
-                    # Filtre : cours communs (pas de groupe) OU mon groupe
-                    if groupe_etu:
-                        mask_commun = df_edt_etu["Groupe_EDT"].isna()
-                        mask_mon_groupe = df_edt_etu["Groupe_EDT"] == groupe_etu
-                        df_edt_etu = df_edt_etu[mask_commun | mask_mon_groupe].copy()
-                        st.info(f"🔍 Filtrage appliqué : **{groupe_etu}** | Sous-groupe : **{sous_groupe_etu or 'N/A'}**")
-                    else:
-                        st.warning("⚠️ Groupe non détecté dans votre fiche étudiant. Affichage de tous les cours.")
-        
-                    if df_edt_etu.empty:
-                        st.warning(f"⚠️ Aucun cours trouvé pour **{promo_etu}** / **{groupe_etu or 'tous groupes'}**.")
-                    else:
-                        st.success(f"🎓 {len(df_edt_etu)} séance(s) trouvée(s) pour vous.")
-        
-                        # ─── GRILLE EDT ───
-                        def _norm(x):
-                            if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
-                                return "vide"
-                            s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
-                            return s.replace(":00", "").replace("h00", "h")
-        
-                        df_edt_etu["h_norm"] = df_edt_etu["Horaire"].apply(_norm)
-                        df_edt_etu["j_norm"] = df_edt_etu["Jours"].apply(_norm)
-        
-                        horaires_ref = [
-                            "08h00-09h30", "09h30-11h00", "11h00-12h30",
-                            "12h30-14h00", "14h00-15h30", "15h30-17h00"
-                        ]
-                        jours_ref = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
-        
-                        map_h_labels = {
-                            "08h00-09h30": "08h00 - 09h30",
-                            "09h30-11h00": "09h30 - 11h00",
-                            "11h00-12h30": "11h00 - 12h30",
-                            "12h30-14h00": "12h30 - 14h00",
-                            "14h00-15h30": "14h00 - 15h30",
-                            "15h30-17h00": "15h30 - 17h00"
-                        }
-                        map_j_labels = {
-                            "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
-                            "mercredi": "Mercredi", "jeudi": "Jeudi"
-                        }
-        
-                        def _fmt_cell(rows):
-                            items = []
-                            for _, r in rows.iterrows():
-                                code_up = str(r["Code"]).upper()
-                                if "COURS" in code_up:
-                                    nat, color, bg = "📘", "#1e40af", "#dbeafe"
-                                elif "TD" in code_up:
-                                    nat, color, bg = "📗", "#166534", "#dcfce7"
-                                else:
-                                    nat, color, bg = "🔴", "#991b1b", "#fee2e2"
-        
-                                badge = ""
-                                if pd.notna(r.get("Groupe_EDT")):
-                                    badge = (f"<div style='display:inline-block;background:#7c3aed;"
-                                             f"color:white;padding:1px 6px;border-radius:4px;"
-                                             f"font-size:10px;font-weight:700;margin-bottom:4px;'>"
-                                             f"👥 {r['Groupe_EDT']}</div><br>")
-        
-                                items.append(
-                                    f"<div style='margin-bottom:6px;padding:8px;border-left:4px solid {color};"
-                                    f"background-color:{bg};border-radius:6px;text-align:left;'>"
-                                    f"{badge}"
-                                    f"<b style='color:{color};font-size:13px;'>{nat} {r['Enseignements']}</b><br>"
-                                    f"<span style='font-size:12px;color:#334155;'>👤 {r['Enseignants']}</span><br>"
-                                    f"<span style='font-size:11px;color:#64748b;'>📍 {r['Lieu']}</span>"
-                                    f"</div>"
-                                )
-                            return "".join(items)
-        
-                        grouped = df_edt_etu.groupby(["j_norm", "h_norm"]).apply(_fmt_cell, include_groups=False)
-                        grid = grouped.unstack("j_norm") if not grouped.empty else pd.DataFrame()
-        
-                        jours_present = [j for j in jours_ref if j in grid.columns]
-                        h_present = [h for h in horaires_ref if h in grid.index]
-        
-                        if not jours_present or not h_present:
-                            st.info("ℹ️ Impossible de construire la grille (données incomplètes après filtrage).")
-                        else:
-                            grid = grid.reindex(index=h_present, columns=jours_present).fillna("")
-                            grid.index = [map_h_labels.get(i, i) for i in grid.index]
-                            grid.columns = [map_j_labels.get(c, c) for c in grid.columns]
-        
-                            st.markdown("### 📋 Votre emploi du temps hebdomadaire")
-                            st.write(grid.to_html(escape=False), unsafe_allow_html=True)
-        
-                            # ─── EXPORT HTML ───
-                            groupe_suffix = f"_{groupe_etu}" if groupe_etu else ""
-                            html_doc = f"""<!DOCTYPE html>
-    <html lang="fr">
-    <head>
-    <meta charset="UTF-8">
-    <title>EDT — {nom_etu}</title>
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-    body{{font-family:'Inter','Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#f1f5f9 0%,#e2e8f0 100%);margin:0;padding:30px;color:#1e293b;}}
-    .container{{max-width:1200px;margin:auto;background:white;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,0.08);overflow:hidden;}}
-    .header{{background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:30px;text-align:center;}}
-    .header h1{{margin:0;font-size:22px;}}.header p{{margin:8px 0 0 0;opacity:0.9;font-size:14px;}}
-    .badge{{display:inline-block;background:#D4AF37;color:#1E3A8A;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px;}}
-    .content{{padding:30px;}}table{{width:100%;border-collapse:collapse;margin-top:15px;}}
-    th{{background-color:#0f172a;color:white;padding:14px;text-align:center;font-size:13px;border:1px solid #e2e8f0;position:sticky;top:0;}}
-    td{{padding:14px;border:1px solid #e2e8f0;vertical-align:top;font-size:12px;}}
-    tr:nth-child(even){{background-color:#f8fafc;}}
-    .footer{{text-align:center;padding:20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;}}
-    @media print{{body{{background:white;padding:0;}}.container{{box-shadow:none;border-radius:0;}}}}
-    </style>
-    </head>
-    <body>
-    <div class="container">
-    <div class="header">
-    <h1>📅 Emploi du Temps Individuel</h1>
-    <p>{nom_etu} — Promotion {promo_etu}{f' ({groupe_etu})' if groupe_etu else ''}</p>
-    <span class="badge">Semestre 01 — 2026-2027</span>
-    </div>
-    <div class="content">
-    <p style="color:#64748b;font-size:13px;">Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
-    {grid.to_html(escape=False)}
-    </div>
-    <div class="footer">département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA</div>
-    </div>
-    </body>
-    </html>"""
-        
-                            st.download_button(
-                                label="🌐 Télécharger mon EDT (HTML)",
-                                data=html_doc,
-                                file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{groupe_suffix}.html",
-                                mime="text/html",
-                                use_container_width=True,
-                                key="dl_edt_etudiant"
-                            )
-                                                         
-                
     # --- CONNEXION BASE DE DONNÉES ---
     try:
         URL = st.secrets["SUPABASE_URL"]
@@ -2707,7 +2523,13 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     
     if is_admin:
         options_portail = [
-            "📖 Emploi du Temps"
+            "📖 Emploi du Temps", 
+            "📅 Surveillances Examens", 
+            "🤖 Générateur Automatique", 
+            "👥 Portail Enseignants", 
+            "🎓 Portail mise à jour EDT", 
+            "📢 Gestion Administrative",
+            "🎓 Recherche Étudiant"
         ]
     else:
         options_portail = [
@@ -2724,7 +2546,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     if portail == "📖 Emploi du Temps" and is_admin:
         mode_view = st.radio("Vue Administration :", [
             "Promotion", "Enseignant", "🏢 Planning Salles", 
-            "🚩 Vérificateur de conflits"
+            "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
         ], horizontal=True)
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
     elif portail == "👤 Mon Espace Enseignant":
@@ -3002,8 +2824,91 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             st.download_button("📥 Télécharger", buf_s.getvalue(), f"Surv_{prof_sel}.xlsx",
                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-     
     # ============================================================
+    # PORTAIL : GÉNÉRATEUR AUTOMATIQUE (ADMIN)
+    # ============================================================
+    elif portail == "🤖 Générateur Automatique":
+        if not is_admin:
+            st.error("🚫 Accès réservé à l'administration.")
+            return
+        
+        st.header("⚙️ Générateur de Surveillances")
+        st.info("Cet outil génère automatiquement les plannings de surveillance d'examens.")
+        
+        # Interface simplifiée
+        st.markdown("### 🎓 Promotions à traiter")
+        promos_dispo = sorted(df['Promotion'].unique().tolist())
+        promos_sel = st.multiselect("Sélectionner :", promos_dispo)
+        
+        if promos_sel and st.button("🚀 Générer le planning", use_container_width=True):
+            st.success(f"✅ Planning généré pour : {', '.join(promos_sel)}")
+            st.info("(Simulation - Intégrez votre algorithme de répartition ici)")
+            st.balloons()
+
+    # ============================================================
+    # PORTAIL : PORTAIL ENSEIGNANTS (ADMIN - ENVOI MAIL)
+    # ============================================================
+    elif portail == "👥 Portail Enseignants":
+        if not is_admin:
+            st.error("🚫 Accès réservé à l'administration.")
+            return
+
+        st.header("📧 Portail Enseignants - Envoi des EDT")
+        
+        # Liste des enseignants avec emails
+        donnees_envoi = []
+        for ens in sorted(df["Enseignants"].unique()):
+            if ens and ens != "Non défini":
+                email = repertoire_source.get(str(ens).strip().upper(), "Non communiqué")
+                donnees_envoi.append({"Enseignant": ens, "Email": email, "Statut": "✅ Prêt" if "@" in str(email) else "❌ Sans email"})
+
+        df_envoi = pd.DataFrame(donnees_envoi)
+        st.dataframe(df_envoi, use_container_width=True, hide_index=True)
+
+        # Filtre
+        filtre_statut = st.selectbox("Filtrer :", ["Tous", "✅ Prêt", "❌ Sans email"])
+        if filtre_statut != "Tous":
+            df_envoi = df_envoi[df_envoi["Statut"] == filtre_statut]
+
+        st.download_button("📥 Télécharger la liste", df_envoi.to_csv(index=False), "liste_enseignants.csv", "text/csv")
+
+        st.markdown("---")
+        st.info("💡 Pour l'envoi automatisé par email, configurez les identifiants SMTP dans les secrets Streamlit.")
+
+    # ============================================================
+    # PORTAIL : MISE À JOUR EDT (ADMIN)
+    # ============================================================
+    elif portail == "🎓 Portail mise à jour EDT":
+        st.subheader("📚 Mise à jour des Emplois du Temps")
+        
+        promo_vue = st.selectbox("Promotion à consulter :", sorted(df["Promotion"].unique()))
+        df_vue = df[df["Promotion"] == promo_vue][['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
+        
+        st.dataframe(df_vue.sort_values(['Jours', 'Horaire']), use_container_width=True, hide_index=True)
+        
+        c1, c2 = st.columns(2)
+        buf_v = io.BytesIO()
+        df_vue.to_excel(buf_v, index=False)
+        c1.download_button("📊 Excel", buf_v.getvalue(), f"EDT_{promo_vue}.xlsx", 
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        c2.download_button("🌐 HTML", df_vue.to_html(index=False), f"EDT_{promo_vue}.html", "text/html")
+
+        if is_admin:
+            st.divider()
+            st.markdown("### ✍️ Import / Mise à jour par fichier")
+            fichier_import = st.file_uploader("Importer un fichier Excel EDT", type=["xlsx"])
+            if fichier_import:
+                try:
+                    df_imp = pd.read_excel(fichier_import)
+                    st.success(f"✅ {len(df_imp)} lignes importées. Cliquez sur Sauvegarder pour fusionner.")
+                    if st.button("💾 Fusionner avec l'EDT actuel", use_container_width=True):
+                        df_new = pd.concat([df, df_imp], ignore_index=True)
+                        df_new.to_excel(NOM_FICHIER_FIXE, index=False)
+                        st.success("✅ Fichier maître mis à jour !")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur import : {e}")
+        # ============================================================
     # PORTAIL : RECHERCHE ÉTUDIANT
     # ============================================================
     # ============================================================
@@ -3070,7 +2975,113 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if email_val and str(email_val).lower() not in ['nan', 'none', '']:
                     st.info(f"📧 **Email :** `{email_val}`")
                 else:
-                    st.caption("📧 Email non renseigné dans le fichier source")                    
+                    st.caption("📧 Email non renseigné dans le fichier source")
+    
+    # ============================================================
+    # PORTAIL : GESTION ADMINISTRATIVE (BORDEREAUX)
+    # ============================================================
+    elif portail == "📢 Gestion Administrative":
+        if not is_admin:
+            st.error("🚫 Accès réservé à l'administration.")
+            return
+
+        st.header("📋 Gestion Administrative - Bordereaux & Documents")
+        
+        tab_bord, tab_pv = st.tabs(["📨 Bordereau d'envoi", "📄 PV / Procès-verbal"])
+
+        with tab_bord:
+            st.subheader("Génération de Bordereau d'Envoi")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                destinataire = st.selectbox("Destinataire :", [
+                    "Le Doyen de la Faculté", 
+                    "Le Vice-Doyen", 
+                    "Le Chef de département", 
+                    "La Scolarité", 
+                    "Autre"
+                ])
+                if destinataire == "Autre":
+                    destinataire = st.text_input("Préciser :")
+            with col2:
+                ref_num = st.text_input("N° Référence :", f"001/FGE/ELT/{datetime.now().year}")
+                date_bord = st.date_input("Date :", datetime.now())
+
+            st.markdown("### 📎 Pièces jointes")
+            pieces_df = st.data_editor(
+                pd.DataFrame([
+                    {"Désignation": "Emploi du temps S1", "Nombre": 1, "Observation": "Pour diffusion"},
+                    {"Désignation": "Liste des étudiants", "Nombre": 1, "Observation": "Pour contrôle"}
+                ]),
+                column_config={
+                    "Désignation": st.column_config.TextColumn("Désignation", required=True),
+                    "Nombre": st.column_config.NumberColumn("Nombre", min_value=1),
+                    "Observation": st.column_config.TextColumn("Observation")
+                },
+                num_rows="dynamic",
+                use_container_width=True,
+                key="pieces_bord"
+            )
+
+            if st.button("📄 Générer le Bordereau", use_container_width=True, type="primary"):
+                # Génération simple HTML (fallback si python-docx non dispo)
+                html_bord = f"""
+                <div style="border:2px solid #1E3A8A; padding:30px; max-width:800px; margin:auto; font-family:Arial;">
+                    <div style="text-align:center; border-bottom:2px solid #D4AF37; padding-bottom:15px; margin-bottom:20px;">
+                        <h2 style="color:#1E3A8A; margin:0;">UNIVERSITÉ DJILLALI LIABES</h2>
+                        <p style="margin:5px 0;">Faculté de Génie Électrique - Sidi Bel Abbès</p>
+                        <h3 style="color:#D4AF37; margin:10px 0 0 0;">BORDEREAU D'ENVOI</h3>
+                    </div>
+                    <p><b>N° Référence :</b> {ref_num}</p>
+                    <p><b>Date :</b> {date_bord.strftime('%d/%m/%Y')}</p>
+                    <p><b>Destinataire :</b> {destinataire}</p>
+                    <hr>
+                    <table style="width:100%; border-collapse:collapse; margin-top:20px;">
+                        <tr style="background:#1E3A8A; color:white;">
+                            <th style="padding:10px; border:1px solid #333;">Désignation des pièces</th>
+                            <th style="padding:10px; border:1px solid #333;">Nombre</th>
+                            <th style="padding:10px; border:1px solid #333;">Observations</th>
+                        </tr>
+                """
+                for _, row in pieces_df.iterrows():
+                    html_bord += f"""
+                        <tr>
+                            <td style="padding:8px; border:1px solid #333;">{row['Désignation']}</td>
+                            <td style="padding:8px; border:1px solid #333; text-align:center;">{row['Nombre']}</td>
+                            <td style="padding:8px; border:1px solid #333;">{row['Observation']}</td>
+                        </tr>
+                    """
+                html_bord += """
+                    </table>
+                    <div style="margin-top:40px; display:flex; justify-content:space-between;">
+                        <div><b>Signature du responsable</b><br><br>_________________</div>
+                        <div><b>Accusé de réception</b><br><br>_________________</div>
+                    </div>
+                </div>
+                """
+                st.success("✅ Bordereau généré")
+                st.download_button("📥 Télécharger (HTML)", html_bord, f"Bordereau_{ref_num.replace('/', '_')}.html", "text/html")
+
+        with tab_pv:
+            st.subheader("📄 Génération de PV")
+            st.info("Module de génération de Procès-verbaux de délibération")
+            st.text_area("Contenu du PV :", height=200, placeholder="Saisir le contenu du PV ici...")
+            if st.button("Générer le PV", use_container_width=True):
+                st.success("✅ PV généré (simulation)")
+                st.download_button("📥 Télécharger", "<html><body><h1>PV</h1></body></html>", "PV.html", "text/html")
+
+
+# =============================================================================
+# POINT D'ENTRÉE PRINCIPAL
+# =============================================================================
+if module_sel == "📊 Suivi d'Assiduite":
+    run_Assiduité()
+else:
+    run_edt() 
+
+
+
+                     
 
 import streamlit as st
 import pandas as pd
