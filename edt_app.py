@@ -2822,11 +2822,22 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 st.write(grid.to_html(escape=False), unsafe_allow_html=True)
 
         elif mode_view == "Promotion":
+            import io
+            from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import landscape, A4
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import mm
+        
             p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
             df_p = df[df["Promotion"] == p_sel].copy()
             
             st.markdown(f"### 📚 EDT Promotion : {p_sel}")
             
+            # ═══════════════════════════════════════════════════════
+            # 1) AFFICHAGE HTML (Streamlit)
+            # ═══════════════════════════════════════════════════════
             def fmt_p(rows):
                 items = []
                 for _, r in rows.iterrows():
@@ -2834,7 +2845,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
                     nat = '📘' if 'COURS' in code_up else ('📗' if 'TD' in code_up else '🔴')
                     items.append(
-                        f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;'>"
+                        f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;border-radius:4px;'>"
                         f"<b>{nat} {r['Enseignements']}</b><br>"
                         f"<small>👤 {r['Enseignants']} | 📍 {r['Lieu']}</small>"
                         f"</div>"
@@ -2850,7 +2861,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             grid_p.index = [map_h.get(i, i) for i in grid_p.index]
             grid_p.columns = [map_j.get(c, c) for c in grid_p.columns]
         
-            # ─── Style : quadrillage + centrage + horaire sur une ligne ───
+            # Style HTML : quadrillage + centrage + horaire sur 1 ligne
             styled = (
                 grid_p.style
                 .set_properties(**{
@@ -2859,7 +2870,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     'border': '1px solid #cbd5e1'
                 })
                 .set_table_styles([
-                    # En-têtes (jours)
                     {'selector': 'th',
                      'props': [
                          ('text-align', 'center'),
@@ -2868,14 +2878,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                          ('background-color', '#f1f5f9'),
                          ('font-weight', '600')
                      ]},
-                    # Cellules d'index (horaires) : pas de retour à la ligne
                     {'selector': 'th.row_heading, th.index_name',
                      'props': [
                          ('white-space', 'nowrap'),
                          ('border', '1px solid #94a3b8'),
                          ('background-color', '#f8fafc')
                      ]},
-                    # Toutes les cellules de données
                     {'selector': 'td',
                      'props': [
                          ('text-align', 'center'),
@@ -2885,21 +2893,193 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 ])
             )
             html_table = styled.to_html(escape=False)
-        
             st.write(html_table, unsafe_allow_html=True)
         
-            # Export
-            c1, c2 = st.columns(2)
-            buf_p = io.BytesIO()
-            df_p[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']].to_excel(buf_p, index=False)
+            # ═══════════════════════════════════════════════════════
+            # 2) DONNÉES BRUTES (même structure, sans HTML)
+            # ═══════════════════════════════════════════════════════
+            def fmt_p_text(rows):
+                items = []
+                for _, r in rows.iterrows():
+                    code_up = str(r['Code']).upper()
+                    nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'AUTRE')
+                    items.append(f"{nat} – {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}")
+                return "\n────────\n".join(items)
+        
+            grid_text = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_text, include_groups=False).unstack('j_norm')
+            grid_text = grid_text.reindex(
+                index=[normalize(h) for h in horaires_list],
+                columns=[normalize(j) for j in jours_list]
+            ).fillna("")
+            grid_text = grid_text[grid_text.any(axis=1)]
+            grid_text.index = [map_h.get(i, i) for i in grid_text.index]
+            grid_text.columns = [map_j.get(c, c) for c in grid_text.columns]
+        
+            # ═══════════════════════════════════════════════════════
+            # 3) EXCEL (openpyxl) – copie conforme du layout
+            # ═══════════════════════════════════════════════════════
+            buf_xlsx = io.BytesIO()
+            
+            with pd.ExcelWriter(buf_xlsx, engine='openpyxl') as writer:
+                grid_text.to_excel(writer, sheet_name='EDT')
+                ws = writer.sheets['EDT']
+                
+                # ── Styles ──
+                thin = Side(style='thin', color='000000')
+                border = Border(left=thin, right=thin, top=thin, bottom=thin)
+                fill_header = PatternFill(start_color='E2E8F0', end_color='E2E8F0', fill_type='solid')   # Jours
+                fill_index  = PatternFill(start_color='F1F5F9', end_color='F1F5F9', fill_type='solid')   # Horaires
+                font_bold   = Font(bold=True, size=11)
+                font_header = Font(bold=True, size=11, color='1E293B')
+                
+                align_center_wrap   = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                align_center_nowrap = Alignment(horizontal='center', vertical='center', wrap_text=False)
+                
+                ws.column_dimensions['A'].width = 18
+                
+                for row in ws.iter_rows():
+                    for cell in row:
+                        cell.border = border
+                        
+                        if cell.row == 1:
+                            # Ligne d'en-tête (jours)
+                            if cell.column == 1:
+                                cell.value = 'Horaire'
+                                cell.fill = fill_header
+                                cell.font = font_header
+                                cell.alignment = align_center_nowrap
+                            else:
+                                cell.fill = fill_header
+                                cell.font = font_header
+                                cell.alignment = align_center_nowrap
+                                ws.column_dimensions[cell.column_letter].width = 32
+                                
+                        elif cell.column == 1:
+                            # Colonne A (horaires) – pas de retour à la ligne
+                            cell.fill = fill_index
+                            cell.font = font_bold
+                            cell.alignment = align_center_nowrap
+                            
+                        else:
+                            # Cellules de données – retour à la ligne autorisé
+                            cell.alignment = align_center_wrap
+                
+                # Hauteur des lignes de données
+                for r in range(2, ws.max_row + 1):
+                    ws.row_dimensions[r].height = 65
+        
+            # ═══════════════════════════════════════════════════════
+            # 4) PDF (ReportLab) – orientation paysage, tableau identique
+            # ═══════════════════════════════════════════════════════
+            buf_pdf = io.BytesIO()
+            
+            doc = SimpleDocTemplate(
+                buf_pdf, pagesize=landscape(A4),
+                rightMargin=15*mm, leftMargin=15*mm,
+                topMargin=15*mm, bottomMargin=15*mm
+            )
+            
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                'CustomTitle', parent=styles['Heading1'],
+                fontSize=16, textColor=colors.HexColor('#1e293b'),
+                spaceAfter=12, alignment=1  # centre
+            )
+            cell_style = ParagraphStyle(
+                'CellStyle', parent=styles['Normal'],
+                fontSize=9, leading=12, alignment=1, spaceAfter=2
+            )
+            
+            # Construction des données du tableau
+            table_data = []
+            header_row = [Paragraph('<b>Horaire</b>', cell_style)]
+            for jour in grid_text.columns:
+                header_row.append(Paragraph(f'<b>{jour}</b>', cell_style))
+            table_data.append(header_row)
+            
+            for horaire in grid_text.index:
+                row = [Paragraph(f'<b>{horaire}</b>', cell_style)]
+                for jour in grid_text.columns:
+                    val = grid_text.loc[horaire, jour]
+                    if val == '':
+                        row.append('')
+                    else:
+                        val_html = val.replace('\n', '<br/>')
+                        row.append(Paragraph(val_html, cell_style))
+                table_data.append(row)
+            
+            # Largeurs des colonnes
+            page_width = landscape(A4)[0] - 30*mm
+            col_w_horaire = 30*mm
+            col_w_jour = (page_width - col_w_horaire) / len(grid_text.columns)
+            col_widths = [col_w_horaire] + [col_w_jour] * len(grid_text.columns)
+            
+            table = Table(table_data, colWidths=col_widths, repeatRows=1)
+            
+            table.setStyle(TableStyle([
+                # Quadrillage complet
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1e293b')),
+                
+                # En-têtes jours
+                ('BACKGROUND', (1, 0), (-1, 0), colors.HexColor('#e2e8f0')),
+                ('TEXTCOLOR', (1, 0), (-1, 0), colors.HexColor('#1e293b')),
+                ('FONTNAME', (1, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (1, 0), (-1, 0), 10),
+                ('ALIGN', (1, 0), (-1, 0), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                
+                # Colonne horaires
+                ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f1f5f9')),
+                ('TEXTCOLOR', (0, 1), (0, -1), colors.HexColor('#1e293b')),
+                ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 1), (0, -1), 10),
+                ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+                
+                # Cellules données
+                ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
+                ('FONTSIZE', (1, 1), (-1, -1), 9),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            
+            # Hauteur minimale des lignes
+            for i in range(1, len(table_data)):
+                table.setStyle(TableStyle([('MINROWHEIGHT', (0, i), (-1, i), 55)]))
+            
+            elements = []
+            elements.append(Paragraph(f"📚 EDT Promotion : {p_sel}", title_style))
+            elements.append(Spacer(1, 10*mm))
+            elements.append(table)
+            
+            doc.build(elements)
+        
+            # ═══════════════════════════════════════════════════════
+            # 5) BOUTONS DE TÉLÉCHARGEMENT
+            # ═══════════════════════════════════════════════════════
+            c1, c2, c3 = st.columns(3)
+            
             c1.download_button(
-                "📥 Excel", buf_p.getvalue(), f"EDT_{p_sel}.xlsx",
+                "📥 Excel",
+                buf_xlsx.getvalue(),
+                f"EDT_{p_sel}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             c2.download_button(
-                "🌐 HTML", html_table, f"EDT_{p_sel}.html", "text/html"
+                "🌐 HTML",
+                html_table,
+                f"EDT_{p_sel}.html",
+                "text/html"
             )
-                
+            c3.download_button(
+                "📄 PDF",
+                buf_pdf.getvalue(),
+                f"EDT_{p_sel}.pdf",
+                "application/pdf"
+            )
+                      
         elif mode_view == "🏢 Planning Salles":
             s_sel = st.selectbox("Choisir Salle :", sorted([s for s in df["Lieu"].unique() if s and s != "Non défini"]))
             df_s = df[df["Lieu"] == s_sel]
