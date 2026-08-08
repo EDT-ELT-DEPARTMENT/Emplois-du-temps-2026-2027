@@ -279,23 +279,47 @@ def Génerer_page_html(df_data, titre_bilan, colonnes, entetes):
 </html>"""
     return html_doc
 
-
 def detecter_colonnes_etudiant(df):
-    """Détecte automatiquement les colonnes étudiantes selon différentes orthographes possibles."""
-    cols = {c.strip().upper(): c for c in df.columns}
+    """Détecte automatiquement les colonnes étudiantes avec tolérance maximale."""
+    import unicodedata
+    
+    def normalize_col(name):
+        if pd.isna(name):
+            return ""
+        s = str(name).strip().lower()
+        s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII')
+        s = s.replace(' ', '').replace('-', '').replace('_', '').replace('.', '').replace('/', '')
+        return s
+    
+    # Dictionnaire des colonnes normalisées du fichier
+    cols_norm = {normalize_col(c): c for c in df.columns}
+    
+    def find_col(variants):
+        """Cherche une colonne parmi plusieurs variantes possibles."""
+        for v in variants:
+            v_norm = normalize_col(v)
+            # Correspondance exacte normalisée
+            if v_norm in cols_norm:
+                return cols_norm[v_norm]
+            # Correspondance partielle (contient)
+            for key, orig in cols_norm.items():
+                if v_norm in key or key in v_norm:
+                    return orig
+        return None
+    
     mapping = {}
-    mapping['nom'] = next((cols[c] for c in cols if c == 'NOM'), None)
-    mapping['prenom'] = next((cols[c] for c in cols if c in ['PRÉNOM', 'PRENOM']), None)
-    mapping['email'] = next((cols[c] for c in cols if c in ['EMAIL', 'E-MAIL', 'MAIL', 'COURRIEL']), None)
-    mapping['promotion'] = next((cols[c] for c in cols if c == 'PROMOTION'), None)
-    mapping['mat_bac'] = next((cols[c] for c in cols if 'MAT' in c and 'BAC' in c), None)
-    mapping['mat_etud'] = next((cols[c] for c in cols if c in ['MATRICULE', 'MAT. ETUDIANT', 'MAT ETUDIANT', 'N° ETUDIANT', 'N°ETUDIANT', 'NUM ETUDIANT', 'MAT ETUD']), None)
-    mapping['groupe'] = next((cols[c] for c in cols if c in ['GROUPE', 'GRP']), None)
-    mapping['sous_groupe'] = next((cols[c] for c in cols if c in ['SOUS GROUPE', 'SOUS-GROUPE', 'SOUSGROUPE', 'SG', 'SOUS_GRP']), None)
-    mapping['date_naiss'] = next((cols[c] for c in cols if c in ['DATE DE NAISSANCE', 'DATE NAISS.', 'DATE NAISSANCE', 'NAISSANCE']), None)
-    mapping['lieu_naiss'] = next((cols[c] for c in cols if c in ['LIEU DE NAISSANCE', 'LIEU NAISS.', 'LIEU NAISSANCE']), None)
+    mapping['nom']           = find_col(['nom', 'name', 'familyname'])
+    mapping['prenom']        = find_col(['prenom', 'firstname', 'givenname', 'prenom'])
+    mapping['email']         = find_col(['email', 'e-mail', 'mail', 'courriel', 'adressemail'])
+    mapping['promotion']     = find_col(['promotion', 'promo', 'niveau', 'annee'])
+    mapping['mat_bac']       = find_col(['matbac', 'matriculebac', 'nombac', 'numbac', 'matriculedebac', 'mat.bac'])
+    mapping['mat_etud']      = find_col(['matetudiant', 'matriculeetudiant', 'numetudiant', 'netudiant', 'matetud', 'nometudiant', 'codeetudiant'])
+    mapping['groupe']        = find_col(['groupe', 'grp', 'group', 'section'])
+    mapping['sous_groupe']   = find_col(['sousgroupe', 'sousgrp', 'sg', 'subgroup', 'sousgroupe', 'sousgroupe'])
+    mapping['date_naiss']    = find_col(['datedenaissance', 'datenaiss', 'datenaissance', 'naissance', 'datenaiss.', 'datedenaiss.', 'birthdate', 'birth', 'daten'])
+    mapping['lieu_naiss']    = find_col(['lieudenaissance', 'lieunaiss', 'lieunaissance', 'lieunaiss.', 'lieudenaiss.', 'birthplace', 'lieu'])
+    
     return mapping
-
 
 # =============================================================================
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
@@ -2216,16 +2240,29 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             st.markdown("#### 👥 Groupement")
                             st.markdown(f"**Groupe :** `{row.get(cols_map['groupe'], 'N/A')}`")
                             st.markdown(f"**Sous groupe :** `{row.get(cols_map['sous_groupe'], 'N/A')}`")
-                        
                         with col_c:
-                            st.markdown("#### 📋 État civil")
-                            naiss = row.get(cols_map['date_naiss'], 'N/A')
+                            naiss_raw = row.get(cols_map['date_naiss'], None)
+                            naiss_str = 'N/A'
+                            if pd.notna(naiss_raw):
+                                if hasattr(naiss_raw, 'strftime'):
+                                    naiss_str = naiss_raw.strftime('%d/%m/%Y')
+                                else:
+                                    # Essaie de parser une chaîne de date
+                                    try:
+                                        naiss_parsed = pd.to_datetime(str(naiss_raw), dayfirst=True, errors='coerce')
+                                        if pd.notna(naiss_parsed):
+                                            naiss_str = naiss_parsed.strftime('%d/%m/%Y')
+                                        else:
+                                            naiss_str = str(naiss_raw)
+                                    except:
+                                        naiss_str = str(naiss_raw)
+                            
                             lieu = row.get(cols_map['lieu_naiss'], 'N/A')
-                            if hasattr(naiss, 'strftime'):
-                                naiss = naiss.strftime('%d/%m/%Y')
-                            st.markdown(f"**Date de naiss. :** `{naiss}`")
-                            st.markdown(f"**Lieu de naissance :** `{lieu}`")
-                        
+                            if pd.isna(lieu):
+                                lieu = 'N/A'
+                            
+                            st.markdown(f"**Date de naiss. :** `{naiss_str}`")
+                            st.markdown(f"**Lieu de naissance :** `{lieu}`")                                                    
                         st.divider()
                         email_val = row.get(cols_map['email'], '')
                         if email_val and str(email_val).lower() not in ['nan', 'none', '']:
