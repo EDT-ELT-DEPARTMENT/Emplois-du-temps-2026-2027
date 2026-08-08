@@ -2979,287 +2979,16 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             st.info("Aucun cours trouvé pour cet enseignant.")
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# MODE : PROMOTION
-# ═══════════════════════════════════════════════════════════════════════
-elif mode_view == "Promotion":
-    p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
-    df_p = df[df["Promotion"] == p_sel].copy()
-
-    st.markdown(f"### 📚 EDT Promotion : {p_sel}")
-
-    def fmt_p(rows):
-        items = []
-        for _, r in rows.iterrows():
-            code_up = str(r['Code']).upper()
-            color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
-            nat = '📘' if 'COURS' in code_up else ('📗' if 'TD' in code_up else '🔴')
-            items.append(
-                f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;border-radius:4px;'>"
-                f"<b>{nat} {r['Enseignements']}</b><br>"
-                f"<small>👤 {r['Enseignants']} | 📍 {r['Lieu']}</small>"
-                f"</div>"
-            )
-        return "".join(items)
-
-    grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
-    grid_p = grid_p.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
-    grid_p = grid_p[grid_p.any(axis=1)]
-    grid_p.index = [map_h.get(i, i) for i in grid_p.index]
-    grid_p.columns = [map_j.get(c, c) for c in grid_p.columns]
-
-    styled = (
-        grid_p.style
-        .set_properties(**{'text-align': 'center', 'vertical-align': 'middle', 'border': '1px solid #cbd5e1'})
-        .set_table_styles([
-            {'selector': 'th', 'props': [
-                ('text-align', 'center'), ('vertical-align', 'middle'),
-                ('border', '1px solid #94a3b8'), ('background-color', '#f1f5f9'), ('font-weight', '600')
-            ]},
-            {'selector': 'th.row_heading, th.index_name', 'props': [
-                ('white-space', 'nowrap'), ('border', '1px solid #94a3b8'), ('background-color', '#f8fafc')
-            ]},
-            {'selector': 'td', 'props': [
-                ('text-align', 'center'), ('vertical-align', 'middle'), ('border', '1px solid #cbd5e1')
-            ]}
-        ])
-    )
-    html_table = styled.to_html(escape=False)
-    st.write(html_table, unsafe_allow_html=True)
-
-    def fmt_p_text(rows):
-        items = []
-        for _, r in rows.iterrows():
-            code_up = str(r['Code']).upper()
-            nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'AUTRE')
-            items.append(f"{nat} – {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}")
-        return "\n────────\n".join(items)
-
-    grid_text = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_text, include_groups=False).unstack('j_norm')
-    grid_text = grid_text.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
-    grid_text = grid_text[grid_text.any(axis=1)]
-    grid_text.index = [map_h.get(i, i) for i in grid_text.index]
-    grid_text.columns = [map_j.get(c, c) for c in grid_text.columns]
-
-    buf_xlsx = io.BytesIO()
-    with pd.ExcelWriter(buf_xlsx, engine='openpyxl') as writer:
-        grid_text.to_excel(writer, sheet_name='EDT')
-        ws = writer.sheets['EDT']
-        thin = Side(style='thin', color='000000')
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        fill_header = PatternFill(start_color='E2E8F0', end_color='E2E8F0', fill_type='solid')
-        fill_index  = PatternFill(start_color='F1F5F9', end_color='F1F5F9', fill_type='solid')
-        font_bold = Font(bold=True, size=11)
-        font_header = Font(bold=True, size=11, color='1E293B')
-        align_cw = Alignment(horizontal='center', vertical='center', wrap_text=True)
-        align_cn = Alignment(horizontal='center', vertical='center', wrap_text=False)
-
-        ws.column_dimensions['A'].width = 18
-        for row in ws.iter_rows():
-            for cell in row:
-                cell.border = border
-                if cell.row == 1:
-                    if cell.column == 1:
-                        cell.value = 'Horaire'
-                    cell.fill = fill_header
-                    cell.font = font_header
-                    cell.alignment = align_cn
-                    if cell.column > 1:
-                        ws.column_dimensions[cell.column_letter].width = 32
-                elif cell.column == 1:
-                    cell.fill = fill_index
-                    cell.font = font_bold
-                    cell.alignment = align_cn
-                else:
-                    cell.alignment = align_cw
-        for r in range(2, ws.max_row + 1):
-            ws.row_dimensions[r].height = 65
-
-    buf_pdf = None
-    if PDF_AVAILABLE:
-        buf_pdf = io.BytesIO()
-        doc = SimpleDocTemplate(buf_pdf, pagesize=landscape(A4),
-                                rightMargin=15*mm, leftMargin=15*mm,
-                                topMargin=15*mm, bottomMargin=15*mm)
-        styles = getSampleStyleSheet()
-        title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'],
-            fontSize=16, textColor=colors.HexColor('#1e293b'), spaceAfter=12, alignment=1)
-        cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'],
-            fontSize=9, leading=12, alignment=1, spaceAfter=2)
-
-        table_data = []
-        header_row = [Paragraph('<b>Horaire</b>', cell_style)]
-        for jour in grid_text.columns:
-            header_row.append(Paragraph(f'<b>{jour}</b>', cell_style))
-        table_data.append(header_row)
-
-        for horaire in grid_text.index:
-            row = [Paragraph(f'<b>{horaire}</b>', cell_style)]
-            for jour in grid_text.columns:
-                val = grid_text.loc[horaire, jour]
-                row.append('' if val == '' else Paragraph(val.replace('\n', '<br/>'), cell_style))
-            table_data.append(row)
-
-        page_width = landscape(A4)[0] - 30*mm
-        col_w_horaire = 30*mm
-        col_w_jour = (page_width - col_w_horaire) / len(grid_text.columns)
-        col_widths = [col_w_horaire] + [col_w_jour] * len(grid_text.columns)
-
-        table = Table(table_data, colWidths=col_widths, repeatRows=1)
-        table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
-            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1e293b')),
-            ('BACKGROUND', (1, 0), (-1, 0), colors.HexColor('#e2e8f0')),
-            ('TEXTCOLOR', (1, 0), (-1, 0), colors.HexColor('#1e293b')),
-            ('FONTNAME', (1, 0), (-1, 0), 'Helvetica-Bold'), ('FONTSIZE', (1, 0), (-1, 0), 10),
-            ('ALIGN', (1, 0), (-1, 0), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f1f5f9')),
-            ('TEXTCOLOR', (0, 1), (0, -1), colors.HexColor('#1e293b')),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'), ('FONTSIZE', (0, 1), (0, -1), 10),
-            ('ALIGN', (0, 1), (0, -1), 'CENTER'), ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
-            ('FONTSIZE', (1, 1), (-1, -1), 9),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 6), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ]))
-        for i in range(1, len(table_data)):
-            table.setStyle(TableStyle([('MINROWHEIGHT', (0, i), (-1, i), 55)]))
-
-        elements = [Paragraph(f"📚 EDT Promotion : {p_sel}", title_style), Spacer(1, 10*mm), table]
-        doc.build(elements)
-
-    c1, c2, c3 = st.columns(3)
-    c1.download_button("📥 Excel", buf_xlsx.getvalue(), f"EDT_{p_sel}.xlsx",
-                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    c2.download_button("🌐 HTML", html_table, f"EDT_{p_sel}.html", "text/html")
-    if PDF_AVAILABLE:
-        c3.download_button("📄 PDF", buf_pdf.getvalue(), f"EDT_{p_sel}.pdf", "application/pdf")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# MODE : PLANNING SALLES
-# ═══════════════════════════════════════════════════════════════════════
-elif mode_view == "🏢 Planning Salles":
-    s_sel = st.selectbox("Choisir Salle :", sorted([s for s in df["Lieu"].unique() if s and s != "Non défini"]))
-    df_s = df[df["Lieu"] == s_sel]
-    st.markdown(f"### 🏢 Planning : {s_sel}")
-    st.dataframe(df_s[['Jours', 'Horaire', 'Enseignements', 'Enseignants', 'Promotion']], use_container_width=True, hide_index=True)
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# MODE : VÉRIFICATEUR DE CONFLITS
-# ═══════════════════════════════════════════════════════════════════════
-elif mode_view == "🚩 Vérificateur de conflits":
-    st.subheader("🚩 Détection des Conflits")
-
-    conflits = []
-    grp_salle = df[(df["Lieu"] != "Non défini")].groupby(['Jours', 'Horaire', 'Lieu'])
-    for (j, h, l), g in grp_salle:
-        if len(g) > 1:
-            conflits.append({"Type": "Salle", "Jour": j, "Horaire": h, "Lieu": l, "Détail": f"{len(g)} cours simultanés"})
-
-    grp_prof = df[(df["Enseignants"] != "Non défini")].groupby(['Jours', 'Horaire', 'Enseignants'])
-    for (j, h, p), g in grp_prof:
-        if len(g) > 1:
-            conflits.append({"Type": "Enseignant", "Jour": j, "Horaire": h, "Enseignant": p, "Détail": f"{len(g)} affectations"})
-
-    if conflits:
-        st.warning(f"⚠️ {len(conflits)} conflit(s) détecté(s)")
-        st.dataframe(pd.DataFrame(conflits), use_container_width=True, hide_index=True)
-    else:
-        st.success("✅ Aucun conflit détecté")
-        st.balloons()
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# MODE : ÉDITEUR DE DONNÉES
-# ═══════════════════════════════════════════════════════════════════════
-elif mode_view == "✍️ Éditeur de données":
-    st.subheader("✍️ Éditeur de données EDT")
-
-    cols_ed = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-    for c in cols_ed:
-        if c not in df.columns:
-            df[c] = ""
-
-    if 'df_admin' not in st.session_state:
-        st.session_state.df_admin = df[cols_ed].copy()
-
-    search = st.text_input("🔍 Rechercher (Enseignant, Salle, matiere) :")
-    df_edit = st.session_state.df_admin.copy()
-    if search:
-        mask = df_edit.apply(lambda r: r.astype(str).str.contains(search, case=False).any(), axis=1)
-        df_edit = df_edit[mask]
-
-    edited = st.data_editor(df_edit, use_container_width=True, num_rows="dynamic", key="edt_editor")
-
-    c1, c2 = st.columns(2)
-    if c1.button("💾 Sauvegarder", use_container_width=True):
-        st.session_state.df_admin = edited
-        try:
-            edited.to_excel(NOM_FICHIER_FIXE, index=False)
-            st.success("✅ Sauvegardé !")
-        except Exception as e:
-            st.error(f"Erreur sauvegarde : {e}")
-    if c2.button("🔄 Réinitialiser", use_container_width=True):
-        if 'df_admin' in st.session_state:
-            del st.session_state.df_admin
-        st.rerun()
-
-
-# ============================================================
-# PORTAIL : MON ESPACE ENSEIGNANT
-# ============================================================
-elif portail == "👤 Mon Espace Enseignant":
-    cible = user['nom_officiel']
-    nom_aff = repertoire_noms_complets.get(cible.strip().upper(), cible)
-
-    col_id, col_deco = st.columns([4, 1])
-    with col_id:
-        st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #1E3A8A, #3B82F6); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
-                <h2 style="margin:0;">👤 {nom_aff}</h2>
-                <p style="margin:5px 0 0 0; opacity:0.9;">Espace Personnel Enseignant - S1 2026-2027</p>
-            </div>
-        """, unsafe_allow_html=True)
-    with col_deco:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🚪 Déconnexion", use_container_width=True, type="primary", key="deco_ens_indiv_main"):
-            st.session_state["user_data"] = None
-            st.rerun()
-
-    df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
-    if df_f.empty:
-        st.warning("⚠️ Aucun cours programmé pour vous.")
-        # return  # ← décommente si ce bloc est dans une fonction
-    else:
-        df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
-        df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
-
-        nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-        nb_td = len(df_u[df_u['Type'] == 'TD'])
-        nb_tp = len(df_u[df_u['Type'] == 'TP'])
-        seuil = 3.0 if poste_sup else 6.0
-        charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
-        delta = charge_eq - seuil
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("📘 Cours", nb_cours)
-        c2.metric("📗 TD", nb_td)
-        c3.metric("🔴 TP", nb_tp)
-        c4.metric("Équivalent", f"{charge_eq:.1f} eq/h")
-
-        if delta > 0:
-            st.success(f"✅ Heures supplémentaires : +{delta * 1.5:.1f}h")
-        elif delta < 0:
-            st.warning(f"⚠️ Déficit horaire : {delta * 1.5:.1f}h")
-        else:
-            st.info("⚖️ Seuil réglementaire atteint")
-
-        st.divider()
-        st.markdown("### 📅 Mon Emploi du Temps")
-
-        # ─── Grille EDT HTML (même logique que Enseignant admin) ───
-        def format_case(rows):
+    # ═══════════════════════════════════════════════════════════════════════
+    # MODE : PROMOTION
+    # ═══════════════════════════════════════════════════════════════════════
+    elif mode_view == "Promotion":
+        p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
+        df_p = df[df["Promotion"] == p_sel].copy()
+    
+        st.markdown(f"### 📚 EDT Promotion : {p_sel}")
+    
+        def fmt_p(rows):
             items = []
             for _, r in rows.iterrows():
                 code_up = str(r['Code']).upper()
@@ -3268,19 +2997,19 @@ elif portail == "👤 Mon Espace Enseignant":
                 items.append(
                     f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;border-radius:4px;'>"
                     f"<b>{nat} {r['Enseignements']}</b><br>"
-                    f"<small>📍 {r['Lieu']} | 🎓 {r['Promotion']}</small>"
+                    f"<small>👤 {r['Enseignants']} | 📍 {r['Lieu']}</small>"
                     f"</div>"
                 )
             return "".join(items)
-
-        grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
-        grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
-        grid = grid[grid.any(axis=1)]
-        grid.index = [map_h.get(i, i) for i in grid.index]
-        grid.columns = [map_j.get(c, c) for c in grid.columns]
-
+    
+        grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+        grid_p = grid_p.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
+        grid_p = grid_p[grid_p.any(axis=1)]
+        grid_p.index = [map_h.get(i, i) for i in grid_p.index]
+        grid_p.columns = [map_j.get(c, c) for c in grid_p.columns]
+    
         styled = (
-            grid.style
+            grid_p.style
             .set_properties(**{'text-align': 'center', 'vertical-align': 'middle', 'border': '1px solid #cbd5e1'})
             .set_table_styles([
                 {'selector': 'th', 'props': [
@@ -3297,23 +3026,21 @@ elif portail == "👤 Mon Espace Enseignant":
         )
         html_table = styled.to_html(escape=False)
         st.write(html_table, unsafe_allow_html=True)
-
-        # ─── Données brutes ───
-        def format_case_text(rows):
+    
+        def fmt_p_text(rows):
             items = []
             for _, r in rows.iterrows():
                 code_up = str(r['Code']).upper()
-                nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'TP')
-                items.append(f"{nat} – {r['Enseignements']}\n📍 {r['Lieu']} | 🎓 {r['Promotion']}")
+                nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'AUTRE')
+                items.append(f"{nat} – {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}")
             return "\n────────\n".join(items)
-
-        grid_text = df_f.groupby(['h_norm', 'j_norm']).apply(format_case_text, include_groups=False).unstack('j_norm')
+    
+        grid_text = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_text, include_groups=False).unstack('j_norm')
         grid_text = grid_text.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
         grid_text = grid_text[grid_text.any(axis=1)]
         grid_text.index = [map_h.get(i, i) for i in grid_text.index]
         grid_text.columns = [map_j.get(c, c) for c in grid_text.columns]
-
-        # ─── Excel ───
+    
         buf_xlsx = io.BytesIO()
         with pd.ExcelWriter(buf_xlsx, engine='openpyxl') as writer:
             grid_text.to_excel(writer, sheet_name='EDT')
@@ -3326,7 +3053,7 @@ elif portail == "👤 Mon Espace Enseignant":
             font_header = Font(bold=True, size=11, color='1E293B')
             align_cw = Alignment(horizontal='center', vertical='center', wrap_text=True)
             align_cn = Alignment(horizontal='center', vertical='center', wrap_text=False)
-
+    
             ws.column_dimensions['A'].width = 18
             for row in ws.iter_rows():
                 for cell in row:
@@ -3347,8 +3074,7 @@ elif portail == "👤 Mon Espace Enseignant":
                         cell.alignment = align_cw
             for r in range(2, ws.max_row + 1):
                 ws.row_dimensions[r].height = 65
-
-        # ─── PDF ───
+    
         buf_pdf = None
         if PDF_AVAILABLE:
             buf_pdf = io.BytesIO()
@@ -3360,25 +3086,25 @@ elif portail == "👤 Mon Espace Enseignant":
                 fontSize=16, textColor=colors.HexColor('#1e293b'), spaceAfter=12, alignment=1)
             cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'],
                 fontSize=9, leading=12, alignment=1, spaceAfter=2)
-
+    
             table_data = []
             header_row = [Paragraph('<b>Horaire</b>', cell_style)]
             for jour in grid_text.columns:
                 header_row.append(Paragraph(f'<b>{jour}</b>', cell_style))
             table_data.append(header_row)
-
+    
             for horaire in grid_text.index:
                 row = [Paragraph(f'<b>{horaire}</b>', cell_style)]
                 for jour in grid_text.columns:
                     val = grid_text.loc[horaire, jour]
                     row.append('' if val == '' else Paragraph(val.replace('\n', '<br/>'), cell_style))
                 table_data.append(row)
-
+    
             page_width = landscape(A4)[0] - 30*mm
             col_w_horaire = 30*mm
             col_w_jour = (page_width - col_w_horaire) / len(grid_text.columns)
             col_widths = [col_w_horaire] + [col_w_jour] * len(grid_text.columns)
-
+    
             table = Table(table_data, colWidths=col_widths, repeatRows=1)
             table.setStyle(TableStyle([
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
@@ -3397,127 +3123,401 @@ elif portail == "👤 Mon Espace Enseignant":
             ]))
             for i in range(1, len(table_data)):
                 table.setStyle(TableStyle([('MINROWHEIGHT', (0, i), (-1, i), 55)]))
-
-            elements = [Paragraph(f"📚 Mon EDT : {nom_aff}", title_style), Spacer(1, 10*mm), table]
+    
+            elements = [Paragraph(f"📚 EDT Promotion : {p_sel}", title_style), Spacer(1, 10*mm), table]
             doc.build(elements)
-
-        # ─── Boutons ───
-        safe_name = cible.replace(' ', '_')
+    
+        c1, c2, c3 = st.columns(3)
+        c1.download_button("📥 Excel", buf_xlsx.getvalue(), f"EDT_{p_sel}.xlsx",
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        c2.download_button("🌐 HTML", html_table, f"EDT_{p_sel}.html", "text/html")
         if PDF_AVAILABLE:
-            c1, c2, c3 = st.columns(3)
-            c1.download_button("📥 Excel", buf_xlsx.getvalue(), f"Mon_EDT_{safe_name}.xlsx",
-                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            c2.download_button("🌐 HTML", html_table, f"Mon_EDT_{safe_name}.html", "text/html")
-            c3.download_button("📄 PDF", buf_pdf.getvalue(), f"Mon_EDT_{safe_name}.pdf", "application/pdf")
+            c3.download_button("📄 PDF", buf_pdf.getvalue(), f"EDT_{p_sel}.pdf", "application/pdf")
+    
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # MODE : PLANNING SALLES
+    # ═══════════════════════════════════════════════════════════════════════
+    elif mode_view == "🏢 Planning Salles":
+        s_sel = st.selectbox("Choisir Salle :", sorted([s for s in df["Lieu"].unique() if s and s != "Non défini"]))
+        df_s = df[df["Lieu"] == s_sel]
+        st.markdown(f"### 🏢 Planning : {s_sel}")
+        st.dataframe(df_s[['Jours', 'Horaire', 'Enseignements', 'Enseignants', 'Promotion']], use_container_width=True, hide_index=True)
+    
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # MODE : VÉRIFICATEUR DE CONFLITS
+    # ═══════════════════════════════════════════════════════════════════════
+    elif mode_view == "🚩 Vérificateur de conflits":
+        st.subheader("🚩 Détection des Conflits")
+    
+        conflits = []
+        grp_salle = df[(df["Lieu"] != "Non défini")].groupby(['Jours', 'Horaire', 'Lieu'])
+        for (j, h, l), g in grp_salle:
+            if len(g) > 1:
+                conflits.append({"Type": "Salle", "Jour": j, "Horaire": h, "Lieu": l, "Détail": f"{len(g)} cours simultanés"})
+    
+        grp_prof = df[(df["Enseignants"] != "Non défini")].groupby(['Jours', 'Horaire', 'Enseignants'])
+        for (j, h, p), g in grp_prof:
+            if len(g) > 1:
+                conflits.append({"Type": "Enseignant", "Jour": j, "Horaire": h, "Enseignant": p, "Détail": f"{len(g)} affectations"})
+    
+        if conflits:
+            st.warning(f"⚠️ {len(conflits)} conflit(s) détecté(s)")
+            st.dataframe(pd.DataFrame(conflits), use_container_width=True, hide_index=True)
         else:
-            st.warning("⚠️ `reportlab` non installé. PDF désactivé.")
-            c1, c2 = st.columns(2)
-            c1.download_button("📥 Excel", buf_xlsx.getvalue(), f"Mon_EDT_{safe_name}.xlsx",
-                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            c2.download_button("🌐 HTML", html_table, f"Mon_EDT_{safe_name}.html", "text/html")
-
-
-# ============================================================
-# PORTAIL : SURVEILLANCES EXAMENS
-# ============================================================
-elif portail == "📅 Surveillances Examens":
-    FILE_S = str(_BASE_DIR / "surveillances_2027.xlsx")
-    if not os.path.exists(FILE_S):
-        st.error("❌ Fichier 'surveillances_2027.xlsx' introuvable.")
-        # return  # ← décommente si dans une fonction
-    else:
-        df_surv = pd.read_excel(FILE_S)
-        df_surv.columns = [str(c).strip() for c in df_surv.columns]
-
-        c_prof = 'Surveillant(s)' if 'Surveillant(s)' in df_surv.columns else 'Enseignants'
-        u_nom = user['nom_officiel']
-
-        if is_admin:
-            profs_surv = sorted([p for p in df_surv[c_prof].unique() if p and p != "Non défini"])
-            prof_sel = st.selectbox("🔍 Filtrer par enseignant :", profs_surv)
+            st.success("✅ Aucun conflit détecté")
+            st.balloons()
+    
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # MODE : ÉDITEUR DE DONNÉES
+    # ═══════════════════════════════════════════════════════════════════════
+    elif mode_view == "✍️ Éditeur de données":
+        st.subheader("✍️ Éditeur de données EDT")
+    
+        cols_ed = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+        for c in cols_ed:
+            if c not in df.columns:
+                df[c] = ""
+    
+        if 'df_admin' not in st.session_state:
+            st.session_state.df_admin = df[cols_ed].copy()
+    
+        search = st.text_input("🔍 Rechercher (Enseignant, Salle, matiere) :")
+        df_edit = st.session_state.df_admin.copy()
+        if search:
+            mask = df_edit.apply(lambda r: r.astype(str).str.contains(search, case=False).any(), axis=1)
+            df_edit = df_edit[mask]
+    
+        edited = st.data_editor(df_edit, use_container_width=True, num_rows="dynamic", key="edt_editor")
+    
+        c1, c2 = st.columns(2)
+        if c1.button("💾 Sauvegarder", use_container_width=True):
+            st.session_state.df_admin = edited
+            try:
+                edited.to_excel(NOM_FICHIER_FIXE, index=False)
+                st.success("✅ Sauvegardé !")
+            except Exception as e:
+                st.error(f"Erreur sauvegarde : {e}")
+        if c2.button("🔄 Réinitialiser", use_container_width=True):
+            if 'df_admin' in st.session_state:
+                del st.session_state.df_admin
+            st.rerun()
+    
+    
+    # ============================================================
+    # PORTAIL : MON ESPACE ENSEIGNANT
+    # ============================================================
+    elif portail == "👤 Mon Espace Enseignant":
+        cible = user['nom_officiel']
+        nom_aff = repertoire_noms_complets.get(cible.strip().upper(), cible)
+    
+        col_id, col_deco = st.columns([4, 1])
+        with col_id:
+            st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #1E3A8A, #3B82F6); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+                    <h2 style="margin:0;">👤 {nom_aff}</h2>
+                    <p style="margin:5px 0 0 0; opacity:0.9;">Espace Personnel Enseignant - S1 2026-2027</p>
+                </div>
+            """, unsafe_allow_html=True)
+        with col_deco:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🚪 Déconnexion", use_container_width=True, type="primary", key="deco_ens_indiv_main"):
+                st.session_state["user_data"] = None
+                st.rerun()
+    
+        df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
+        if df_f.empty:
+            st.warning("⚠️ Aucun cours programmé pour vous.")
+            # return  # ← décommente si ce bloc est dans une fonction
         else:
-            prof_sel = u_nom
-            st.info(f"👤 Vos surveillances : **{u_nom}**")
-
-        df_u = df_surv[df_surv[c_prof].str.contains(prof_sel, case=False, na=False)]
-        st.markdown(f"### 📋 Planning de surveillance : {prof_sel}")
-        st.dataframe(df_u, use_container_width=True, hide_index=True)
-
-        if not df_u.empty:
-            buf_s = io.BytesIO()
-            df_u.to_excel(buf_s, index=False)
-            st.download_button("📥 Télécharger", buf_s.getvalue(), f"Surv_{prof_sel}.xlsx",
-                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-     
+            df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
+            df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
+    
+            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
+            nb_td = len(df_u[df_u['Type'] == 'TD'])
+            nb_tp = len(df_u[df_u['Type'] == 'TP'])
+            seuil = 3.0 if poste_sup else 6.0
+            charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
+            delta = charge_eq - seuil
+    
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("📘 Cours", nb_cours)
+            c2.metric("📗 TD", nb_td)
+            c3.metric("🔴 TP", nb_tp)
+            c4.metric("Équivalent", f"{charge_eq:.1f} eq/h")
+    
+            if delta > 0:
+                st.success(f"✅ Heures supplémentaires : +{delta * 1.5:.1f}h")
+            elif delta < 0:
+                st.warning(f"⚠️ Déficit horaire : {delta * 1.5:.1f}h")
+            else:
+                st.info("⚖️ Seuil réglementaire atteint")
+    
+            st.divider()
+            st.markdown("### 📅 Mon Emploi du Temps")
+    
+            # ─── Grille EDT HTML (même logique que Enseignant admin) ───
+            def format_case(rows):
+                items = []
+                for _, r in rows.iterrows():
+                    code_up = str(r['Code']).upper()
+                    color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
+                    nat = '📘' if 'COURS' in code_up else ('📗' if 'TD' in code_up else '🔴')
+                    items.append(
+                        f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;border-radius:4px;'>"
+                        f"<b>{nat} {r['Enseignements']}</b><br>"
+                        f"<small>📍 {r['Lieu']} | 🎓 {r['Promotion']}</small>"
+                        f"</div>"
+                    )
+                return "".join(items)
+    
+            grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
+            grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
+            grid = grid[grid.any(axis=1)]
+            grid.index = [map_h.get(i, i) for i in grid.index]
+            grid.columns = [map_j.get(c, c) for c in grid.columns]
+    
+            styled = (
+                grid.style
+                .set_properties(**{'text-align': 'center', 'vertical-align': 'middle', 'border': '1px solid #cbd5e1'})
+                .set_table_styles([
+                    {'selector': 'th', 'props': [
+                        ('text-align', 'center'), ('vertical-align', 'middle'),
+                        ('border', '1px solid #94a3b8'), ('background-color', '#f1f5f9'), ('font-weight', '600')
+                    ]},
+                    {'selector': 'th.row_heading, th.index_name', 'props': [
+                        ('white-space', 'nowrap'), ('border', '1px solid #94a3b8'), ('background-color', '#f8fafc')
+                    ]},
+                    {'selector': 'td', 'props': [
+                        ('text-align', 'center'), ('vertical-align', 'middle'), ('border', '1px solid #cbd5e1')
+                    ]}
+                ])
+            )
+            html_table = styled.to_html(escape=False)
+            st.write(html_table, unsafe_allow_html=True)
+    
+            # ─── Données brutes ───
+            def format_case_text(rows):
+                items = []
+                for _, r in rows.iterrows():
+                    code_up = str(r['Code']).upper()
+                    nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'TP')
+                    items.append(f"{nat} – {r['Enseignements']}\n📍 {r['Lieu']} | 🎓 {r['Promotion']}")
+                return "\n────────\n".join(items)
+    
+            grid_text = df_f.groupby(['h_norm', 'j_norm']).apply(format_case_text, include_groups=False).unstack('j_norm')
+            grid_text = grid_text.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
+            grid_text = grid_text[grid_text.any(axis=1)]
+            grid_text.index = [map_h.get(i, i) for i in grid_text.index]
+            grid_text.columns = [map_j.get(c, c) for c in grid_text.columns]
+    
+            # ─── Excel ───
+            buf_xlsx = io.BytesIO()
+            with pd.ExcelWriter(buf_xlsx, engine='openpyxl') as writer:
+                grid_text.to_excel(writer, sheet_name='EDT')
+                ws = writer.sheets['EDT']
+                thin = Side(style='thin', color='000000')
+                border = Border(left=thin, right=thin, top=thin, bottom=thin)
+                fill_header = PatternFill(start_color='E2E8F0', end_color='E2E8F0', fill_type='solid')
+                fill_index  = PatternFill(start_color='F1F5F9', end_color='F1F5F9', fill_type='solid')
+                font_bold = Font(bold=True, size=11)
+                font_header = Font(bold=True, size=11, color='1E293B')
+                align_cw = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                align_cn = Alignment(horizontal='center', vertical='center', wrap_text=False)
+    
+                ws.column_dimensions['A'].width = 18
+                for row in ws.iter_rows():
+                    for cell in row:
+                        cell.border = border
+                        if cell.row == 1:
+                            if cell.column == 1:
+                                cell.value = 'Horaire'
+                            cell.fill = fill_header
+                            cell.font = font_header
+                            cell.alignment = align_cn
+                            if cell.column > 1:
+                                ws.column_dimensions[cell.column_letter].width = 32
+                        elif cell.column == 1:
+                            cell.fill = fill_index
+                            cell.font = font_bold
+                            cell.alignment = align_cn
+                        else:
+                            cell.alignment = align_cw
+                for r in range(2, ws.max_row + 1):
+                    ws.row_dimensions[r].height = 65
+    
+            # ─── PDF ───
+            buf_pdf = None
+            if PDF_AVAILABLE:
+                buf_pdf = io.BytesIO()
+                doc = SimpleDocTemplate(buf_pdf, pagesize=landscape(A4),
+                                        rightMargin=15*mm, leftMargin=15*mm,
+                                        topMargin=15*mm, bottomMargin=15*mm)
+                styles = getSampleStyleSheet()
+                title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'],
+                    fontSize=16, textColor=colors.HexColor('#1e293b'), spaceAfter=12, alignment=1)
+                cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'],
+                    fontSize=9, leading=12, alignment=1, spaceAfter=2)
+    
+                table_data = []
+                header_row = [Paragraph('<b>Horaire</b>', cell_style)]
+                for jour in grid_text.columns:
+                    header_row.append(Paragraph(f'<b>{jour}</b>', cell_style))
+                table_data.append(header_row)
+    
+                for horaire in grid_text.index:
+                    row = [Paragraph(f'<b>{horaire}</b>', cell_style)]
+                    for jour in grid_text.columns:
+                        val = grid_text.loc[horaire, jour]
+                        row.append('' if val == '' else Paragraph(val.replace('\n', '<br/>'), cell_style))
+                    table_data.append(row)
+    
+                page_width = landscape(A4)[0] - 30*mm
+                col_w_horaire = 30*mm
+                col_w_jour = (page_width - col_w_horaire) / len(grid_text.columns)
+                col_widths = [col_w_horaire] + [col_w_jour] * len(grid_text.columns)
+    
+                table = Table(table_data, colWidths=col_widths, repeatRows=1)
+                table.setStyle(TableStyle([
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
+                    ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1e293b')),
+                    ('BACKGROUND', (1, 0), (-1, 0), colors.HexColor('#e2e8f0')),
+                    ('TEXTCOLOR', (1, 0), (-1, 0), colors.HexColor('#1e293b')),
+                    ('FONTNAME', (1, 0), (-1, 0), 'Helvetica-Bold'), ('FONTSIZE', (1, 0), (-1, 0), 10),
+                    ('ALIGN', (1, 0), (-1, 0), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f1f5f9')),
+                    ('TEXTCOLOR', (0, 1), (0, -1), colors.HexColor('#1e293b')),
+                    ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'), ('FONTSIZE', (0, 1), (0, -1), 10),
+                    ('ALIGN', (0, 1), (0, -1), 'CENTER'), ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
+                    ('FONTSIZE', (1, 1), (-1, -1), 9),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ]))
+                for i in range(1, len(table_data)):
+                    table.setStyle(TableStyle([('MINROWHEIGHT', (0, i), (-1, i), 55)]))
+    
+                elements = [Paragraph(f"📚 Mon EDT : {nom_aff}", title_style), Spacer(1, 10*mm), table]
+                doc.build(elements)
+    
+            # ─── Boutons ───
+            safe_name = cible.replace(' ', '_')
+            if PDF_AVAILABLE:
+                c1, c2, c3 = st.columns(3)
+                c1.download_button("📥 Excel", buf_xlsx.getvalue(), f"Mon_EDT_{safe_name}.xlsx",
+                                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                c2.download_button("🌐 HTML", html_table, f"Mon_EDT_{safe_name}.html", "text/html")
+                c3.download_button("📄 PDF", buf_pdf.getvalue(), f"Mon_EDT_{safe_name}.pdf", "application/pdf")
+            else:
+                st.warning("⚠️ `reportlab` non installé. PDF désactivé.")
+                c1, c2 = st.columns(2)
+                c1.download_button("📥 Excel", buf_xlsx.getvalue(), f"Mon_EDT_{safe_name}.xlsx",
+                                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                c2.download_button("🌐 HTML", html_table, f"Mon_EDT_{safe_name}.html", "text/html")
+    
+    
     # ============================================================
-    # PORTAIL : RECHERCHE ÉTUDIANT
+    # PORTAIL : SURVEILLANCES EXAMENS
     # ============================================================
-    # ============================================================
-    # PORTAIL : RECHERCHE ÉTUDIANT
-    # ============================================================
-    elif portail == "🎓 Recherche Étudiant":
-        st.markdown("<h1 class='main-title'>🎓 Recherche d'Informations Étudiant</h1>", unsafe_allow_html=True)
-        
-        if df_etu_edt.empty:
-            st.error("❌ Le fichier des étudiants n'est pas disponible.")
+    elif portail == "📅 Surveillances Examens":
+        FILE_S = str(_BASE_DIR / "surveillances_2027.xlsx")
+        if not os.path.exists(FILE_S):
+            st.error("❌ Fichier 'surveillances_2027.xlsx' introuvable.")
+            # return  # ← décommente si dans une fonction
         else:
-            liste_etudiants = sorted(df_etu_edt["Nom_Complet"].dropna().unique())
+            df_surv = pd.read_excel(FILE_S)
+            df_surv.columns = [str(c).strip() for c in df_surv.columns]
+    
+            c_prof = 'Surveillant(s)' if 'Surveillant(s)' in df_surv.columns else 'Enseignants'
+            u_nom = user['nom_officiel']
+    
+            if is_admin:
+                profs_surv = sorted([p for p in df_surv[c_prof].unique() if p and p != "Non défini"])
+                prof_sel = st.selectbox("🔍 Filtrer par enseignant :", profs_surv)
+            else:
+                prof_sel = u_nom
+                st.info(f"👤 Vos surveillances : **{u_nom}**")
+    
+            df_u = df_surv[df_surv[c_prof].str.contains(prof_sel, case=False, na=False)]
+            st.markdown(f"### 📋 Planning de surveillance : {prof_sel}")
+            st.dataframe(df_u, use_container_width=True, hide_index=True)
+    
+            if not df_u.empty:
+                buf_s = io.BytesIO()
+                df_u.to_excel(buf_s, index=False)
+                st.download_button("📥 Télécharger", buf_s.getvalue(), f"Surv_{prof_sel}.xlsx",
+                                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    
+         
+        # ============================================================
+        # PORTAIL : RECHERCHE ÉTUDIANT
+        # ============================================================
+        # ============================================================
+        # PORTAIL : RECHERCHE ÉTUDIANT
+        # ============================================================
+        elif portail == "🎓 Recherche Étudiant":
+            st.markdown("<h1 class='main-title'>🎓 Recherche d'Informations Étudiant</h1>", unsafe_allow_html=True)
             
-            c1, c2 = st.columns([3, 1])
-            with c1:
-                sel_etud = st.selectbox("🔍 Sélectionner un étudiant :", [""] + liste_etudiants, key="sel_etud_edt")
-            with c2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.metric("Total inscrits", len(liste_etudiants))
-            
-            if sel_etud:
-                cols_map = detecter_colonnes_etudiant(df_etu_edt)
-                row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
+            if df_etu_edt.empty:
+                st.error("❌ Le fichier des étudiants n'est pas disponible.")
+            else:
+                liste_etudiants = sorted(df_etu_edt["Nom_Complet"].dropna().unique())
                 
-                st.markdown(f"""
-                    <div style="background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); 
-                                padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
-                        <div style="font-size: 12px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px;">
-                            Fiche Étudiant — département d'Électrotechnique
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    sel_etud = st.selectbox("🔍 Sélectionner un étudiant :", [""] + liste_etudiants, key="sel_etud_edt")
+                with c2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.metric("Total inscrits", len(liste_etudiants))
+                
+                if sel_etud:
+                    cols_map = detecter_colonnes_etudiant(df_etu_edt)
+                    row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
+                    
+                    st.markdown(f"""
+                        <div style="background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); 
+                                    padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+                            <div style="font-size: 12px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px;">
+                                Fiche Étudiant — département d'Électrotechnique
+                            </div>
+                            <div style="font-size: 24px; font-weight: bold; margin-top: 6px;">
+                                {sel_etud}
+                            </div>
                         </div>
-                        <div style="font-size: 24px; font-weight: bold; margin-top: 6px;">
-                            {sel_etud}
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                ca, cb, cc = st.columns(3)
-                with ca:
-                    with st.container(border=True):
-                        st.markdown("**🎓 Scolarité**")
-                        st.write(f"**Promotion :** {row.get(cols_map['promotion'], 'N/A')}")
-                        st.write(f"**Mat. BAC :** {row.get(cols_map['mat_bac'], 'N/A')}")
-                        st.write(f"**Mat. Étudiant :** {row.get(cols_map['mat_etud'], 'N/A')}")
-                
-                with cb:
-                    with st.container(border=True):
-                        st.markdown("**👥 Groupement**")
-                        st.write(f"**Groupe :** {row.get(cols_map['groupe'], 'N/A')}")
-                        st.write(f"**Sous groupe :** {row.get(cols_map['sous_groupe'], 'N/A')}")
-                
-                with cc:
-                    with st.container(border=True):
-                        st.markdown("**📋 État civil**")
-                        naiss_raw = row.get(cols_map['date_naiss'], None)
-                        naiss_str = format_date_naissance(naiss_raw)
-                        lieu = row.get(cols_map['lieu_naiss'], 'N/A')
-                        if pd.isna(lieu):
-                            lieu = 'N/A'
-                        st.write(f"**Date de naiss. :** {naiss_str}")
-                        st.write(f"**Lieu de naissance :** {lieu}")
-                
-                st.divider()
-                email_val = row.get(cols_map['email'], '')
-                if email_val and str(email_val).lower() not in ['nan', 'none', '']:
-                    st.info(f"📧 **Email :** `{email_val}`")
-                else:
-                    st.caption("📧 Email non renseigné dans le fichier source") 
+                    """, unsafe_allow_html=True)
+                    
+                    ca, cb, cc = st.columns(3)
+                    with ca:
+                        with st.container(border=True):
+                            st.markdown("**🎓 Scolarité**")
+                            st.write(f"**Promotion :** {row.get(cols_map['promotion'], 'N/A')}")
+                            st.write(f"**Mat. BAC :** {row.get(cols_map['mat_bac'], 'N/A')}")
+                            st.write(f"**Mat. Étudiant :** {row.get(cols_map['mat_etud'], 'N/A')}")
+                    
+                    with cb:
+                        with st.container(border=True):
+                            st.markdown("**👥 Groupement**")
+                            st.write(f"**Groupe :** {row.get(cols_map['groupe'], 'N/A')}")
+                            st.write(f"**Sous groupe :** {row.get(cols_map['sous_groupe'], 'N/A')}")
+                    
+                    with cc:
+                        with st.container(border=True):
+                            st.markdown("**📋 État civil**")
+                            naiss_raw = row.get(cols_map['date_naiss'], None)
+                            naiss_str = format_date_naissance(naiss_raw)
+                            lieu = row.get(cols_map['lieu_naiss'], 'N/A')
+                            if pd.isna(lieu):
+                                lieu = 'N/A'
+                            st.write(f"**Date de naiss. :** {naiss_str}")
+                            st.write(f"**Lieu de naissance :** {lieu}")
+                    
+                    st.divider()
+                    email_val = row.get(cols_map['email'], '')
+                    if email_val and str(email_val).lower() not in ['nan', 'none', '']:
+                        st.info(f"📧 **Email :** `{email_val}`")
+                    else:
+                        st.caption("📧 Email non renseigné dans le fichier source") 
 
 
 # =============================================================================
