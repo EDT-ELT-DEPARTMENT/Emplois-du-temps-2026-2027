@@ -3070,20 +3070,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if email_val and str(email_val).lower() not in ['nan', 'none', '']:
                     st.info(f"📧 **Email :** `{email_val}`")
                 else:
-                    st.caption("📧 Email non renseigné dans le fichier source") 
-
-
-# =============================================================================
-# POINT D'ENTRÉE PRINCIPAL
-# =============================================================================
-if module_sel == "📊 Suivi d'Assiduite":
-    run_Assiduité()
-else:
-    run_edt() 
-
-
-
-                     
+                    st.caption("📧 Email non renseigné dans le fichier source")                    
 
 import streamlit as st
 import pandas as pd
