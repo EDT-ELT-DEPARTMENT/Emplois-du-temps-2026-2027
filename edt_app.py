@@ -294,14 +294,36 @@ def detecter_colonnes_etudiant(df):
     cols_norm = {normalize_col(c): c for c in df.columns}
     
     def find_col(variants):
+        """Cherche la MEILLEURE correspondance pour éviter les collisions (ex: N° vs Date de naiss.)."""
+        best_match = None
+        best_score = 0
+        MIN_LEN = 4  # Rejette les correspondances sur moins de 4 caractères
+        
         for v in variants:
             v_norm = normalize_col(v)
-            if v_norm in cols_norm:
-                return cols_norm[v_norm]
+            if not v_norm:
+                continue
+            
             for key, orig in cols_norm.items():
-                if v_norm in key or key in v_norm:
-                    return orig
-        return None
+                if not key:
+                    continue
+                score = 0
+                
+                # Correspondance exacte = score maximal
+                if v_norm == key:
+                    score = 1000 + len(key)
+                # Correspondance partielle : exige des chaînes suffisamment longues
+                elif len(v_norm) >= MIN_LEN and len(key) >= MIN_LEN:
+                    if v_norm in key:
+                        score = 500 + len(v_norm)
+                    elif key in v_norm:
+                        score = 200 + len(key)
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = orig
+        
+        return best_match
     
     mapping = {}
     mapping['nom']           = find_col(['nom', 'name', 'familyname'])
@@ -341,7 +363,6 @@ def format_date_naissance(val):
     # Cas 3 : Chaîne de caractères
     val_str = str(val).strip()
     if val_str:
-        # Format DD/MM/YYYY ou DD-MM-YYYY
         import re
         if re.match(r'^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$', val_str):
             try:
@@ -349,8 +370,6 @@ def format_date_naissance(val):
                 return dt.strftime('%d/%m/%Y')
             except:
                 pass
-        
-        # Parsing général
         try:
             dt = pd.to_datetime(val_str, dayfirst=True, errors='raise')
             return dt.strftime('%d/%m/%Y')
@@ -2277,20 +2296,17 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             st.markdown("#### 👥 Groupement")
                             st.markdown(f"**Groupe :** `{row.get(cols_map['groupe'], 'N/A')}`")
                             st.markdown(f"**Sous groupe :** `{row.get(cols_map['sous_groupe'], 'N/A')}`")
+                            
                         with col_c:
                             st.markdown("#### 📋 État civil")
-                            
-                            # --- DATE DE NAISSANCE (avec diagnostic caché) ---
                             naiss_raw = row.get(cols_map['date_naiss'], None)
                             naiss_str = format_date_naissance(naiss_raw)
-                            
                             lieu = row.get(cols_map['lieu_naiss'], 'N/A')
                             if pd.isna(lieu):
                                 lieu = 'N/A'
-                            
                             st.markdown(f"**Date de naiss. :** `{naiss_str}`")
                             st.markdown(f"**Lieu de naissance :** `{lieu}`")
-                            
+                                                    
                             # Diagnostic (à retirer une fois tout OK)
                             with st.expander("🔧 Voir valeur brute (debug)"):
                                 st.write(f"Type détecté : `{type(naiss_raw).__name__}`")
@@ -2901,11 +2917,14 @@ def run_edt():
         # ============================================================
     # PORTAIL : RECHERCHE ÉTUDIANT
     # ============================================================
+    # ============================================================
+    # PORTAIL : RECHERCHE ÉTUDIANT
+    # ============================================================
     elif portail == "🎓 Recherche Étudiant":
         st.markdown("<h1 class='main-title'>🎓 Recherche d'Informations Étudiant</h1>", unsafe_allow_html=True)
         
         if df_etu_edt.empty:
-            st.error("❌ Le fichier des étudiants n'est pas disponible. Vérifiez le chemin : " + FILE_ETUDIANTS)
+            st.error("❌ Le fichier des étudiants n'est pas disponible.")
         else:
             liste_etudiants = sorted(df_etu_edt["Nom_Complet"].dropna().unique())
             
@@ -2949,28 +2968,21 @@ def run_edt():
                 with cc:
                     with st.container(border=True):
                         st.markdown("**📋 État civil**")
-                        
                         naiss_raw = row.get(cols_map['date_naiss'], None)
                         naiss_str = format_date_naissance(naiss_raw)
-                        
                         lieu = row.get(cols_map['lieu_naiss'], 'N/A')
                         if pd.isna(lieu):
                             lieu = 'N/A'
-                        
                         st.write(f"**Date de naiss. :** {naiss_str}")
                         st.write(f"**Lieu de naissance :** {lieu}")
-                        
-                        with st.expander("🔧 Voir valeur brute (debug)"):
-                            st.write(f"Type détecté : `{type(naiss_raw).__name__}`")
-                            st.write(f"Valeur brute : `{repr(naiss_raw)}`")
-                            st.write(f"Colonne source : `{cols_map.get('date_naiss', 'NON TROUVÉE')}`")
-                           
+                
                 st.divider()
                 email_val = row.get(cols_map['email'], '')
                 if email_val and str(email_val).lower() not in ['nan', 'none', '']:
                     st.info(f"📧 **Email :** `{email_val}`")
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source")
+    
     # ============================================================
     # PORTAIL : GESTION ADMINISTRATIVE (BORDEREAUX)
     # ============================================================
