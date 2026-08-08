@@ -474,7 +474,7 @@ def run_Assiduité():
             return False
         try:
             query = supabase.table("suivi_assiduite_2026").update({"justifié": True})\
-                .eq("etud_non_eligible", etudiant).eq("matiere", matiere)
+                .eq("etud_non_éligible", etudiant).eq("matiere", matiere)
             if date_abs: query = query.eq("date_absence", date_abs)
             if jour_abs: query = query.eq("jour_absence", jour_abs)
             if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
@@ -534,8 +534,8 @@ def run_Assiduité():
         if MODE_SUPABASE:
             try:
                 res = supabase.table("suivi_assiduite_2026")\
-                    .select("id,etud_non_eligible,matiere,promotion,date_absence,jour_absence,horaire_absence,cause_non_eligibilite,justifié")\
-                    .eq("etud_non_eligible", nom_etudiant)\
+                    .select("id,etud_non_éligible,matiere,promotion,date_absence,jour_absence,horaire_absence,cause_non_eligibilite,justifié")\
+                    .eq("etud_non_éligible", nom_etudiant)\
                     .order("id", desc=True)\
                     .limit(50)\
                     .execute()
@@ -544,7 +544,7 @@ def run_Assiduité():
                 st.error(f"Erreur de chargement absences : {e}")
                 return []
         else:
-            return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]    
+            return [a for a in st.session_state.absences if a.get("etud_non_éligible") == nom_etudiant]    
         
     
     def trouver_requete_existante(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
@@ -613,7 +613,7 @@ def run_Assiduité():
             return False
         try:
             res = supabase.table("suivi_assiduite_2026").select("*")\
-                .eq("etud_non_eligible", etudiant)\
+                .eq("etud_non_éligible", etudiant)\
                 .eq("matiere", matiere)\
                 .eq("promotion", promotion)\
                 .order("id", desc=True).limit(1).execute()
@@ -629,7 +629,7 @@ def run_Assiduité():
     def supprimer_derniere_absence_locale(etudiant, matiere, promotion):
         candidates = [
             (idx, a) for idx, a in enumerate(st.session_state.absences)
-            if a.get("etud_non_eligible") == etudiant
+            if a.get("etud_non_éligible") == etudiant
             and a.get("matiere") == matiere
             and a.get("promotion") == promotion
         ]
@@ -1085,8 +1085,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 # ─── COMPTEUR NUMÉRIQUE D'ABSENCES ───
                 if etud_non and status_assid == "Absent":
-                    if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
-                        absences_etu_matiere = df_db_full[df_db_full["etud_non_eligible"] == etud_non]
+                    if not df_db_full.empty and "etud_non_éligible" in df_db_full.columns:
+                        absences_etu_matiere = df_db_full[df_db_full["etud_non_éligible"] == etud_non]
                         nb_abs_matiere = len(absences_etu_matiere)
                         nb_abs_justif = len(absences_etu_matiere[absences_etu_matiere.get("justifié") == True]) if "justifié" in absences_etu_matiere.columns else 0
                     else:
@@ -1094,9 +1094,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         nb_abs_justif = 0
 
                     if MODE_SUPABASE:
-                        abs_global = [a for a in charger_absences_supabase() if a.get("etud_non_eligible") == etud_non]
+                        abs_global = [a for a in charger_absences_supabase() if a.get("etud_non_éligible") == etud_non]
                     else:
-                        abs_global = [a for a in st.session_state.absences if a.get("etud_non_eligible") == etud_non]
+                        abs_global = [a for a in st.session_state.absences if a.get("etud_non_éligible") == etud_non]
                     nb_abs_global = len(abs_global)
 
                     # Afficheur numérique stylisé
@@ -1131,12 +1131,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     if MODE_SUPABASE:
                         abs_etudiant_cible = [
                             a for a in charger_absences_supabase(sel_mat, promo_c)
-                            if a.get("etud_non_eligible") == etud_non
+                            if a.get("etud_non_éligible") == etud_non
                         ]
                     else:
                         abs_etudiant_cible = [
                             a for a in st.session_state.absences
-                            if a.get("etud_non_eligible") == etud_non
+                            if a.get("etud_non_éligible") == etud_non
                             and a.get("matiere") == sel_mat
                             and a.get("promotion") == promo_c
                         ]
@@ -1166,14 +1166,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             absence_existante = False
                             if MODE_SUPABASE:
                                 try:
-                                    res = supabase.table("suivi_assiduite_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
+                                    res = supabase.table("suivi_assiduite_2026").select("*")                                        .eq("etud_non_éligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
                                     if res.data:
                                         absence_existante = True
                                 except Exception:
                                     pass
                             else:
                                 for a in st.session_state.absences:
-                                    if (a.get("etud_non_eligible") == etud_non and
+                                    if (a.get("etud_non_éligible") == etud_non and
                                         a.get("matiere") == sel_mat and
                                         a.get("jour_absence") == jour_abs and
                                         a.get("horaire_absence") == horaire_abs and
@@ -1188,7 +1188,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     "enseignant": sel_prof,
                                     "matiere": sel_mat,
                                     "promotion": promo_c,
-                                    "etud_non_eligible": etud_non,
+                                    "etud_non_éligible": etud_non,
                                     "cause_non_eligibilite": cause_s if cause_s else "Non justifié",
                                     "date_absence": str(date_abs),
                                     "jour_absence": jour_abs,
@@ -1272,21 +1272,21 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 st.divider()
                 st.subheader("📋 Liste globale des absences")
 
-                if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
+                if not df_db_full.empty and "etud_non_éligible" in df_db_full.columns:
                     if "justifié" not in df_db_full.columns:
                         df_db_full["justifié"] = False
                     df_db_full["justifié"] = df_db_full["justifié"].fillna(False)
                     df_liste = df_db_full.copy()
                     df_liste["Statut justificatif"] = df_liste["justifié"].apply(lambda x: "✅ justifiée" if x else "❌ Non justifiée")
-                    df_count_mat = df_liste.groupby(["etud_non_eligible", "matiere"]).size().reset_index(name="Abs matiere")
-                    df_liste = df_liste.merge(df_count_mat, on=["etud_non_eligible", "matiere"], how="left")
-                    df_liste["Statut exclusion"] = df_liste["Abs matiere"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Eligible")
+                    df_count_mat = df_liste.groupby(["etud_non_éligible", "matiere"]).size().reset_index(name="Abs matiere")
+                    df_liste = df_liste.merge(df_count_mat, on=["etud_non_éligible", "matiere"], how="left")
+                    df_liste["Statut exclusion"] = df_liste["Abs matiere"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "éligible")
 
                     affichage_cols = {
                         "enseignant": "Chargé de cours",
                         "matiere": "matiere",
                         "promotion": "Promotion",
-                        "etud_non_eligible": "Étudiant",
+                        "etud_non_éligible": "Étudiant",
                         "jour_absence": "Jour",
                         "date_absence": "Date",
                         "horaire_absence": "Horaire",
@@ -1362,8 +1362,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                         # Préparer le DataFrame d'affichage par ABSENCE INDIVIDUELLE
                         data_suivi = []
-                        for a in sorted(abs_ens, key=lambda x: (x.get("etud_non_eligible",""), x.get("date_absence",""))):
-                            nom_e = a.get("etud_non_eligible", "")
+                        for a in sorted(abs_ens, key=lambda x: (x.get("etud_non_éligible",""), x.get("date_absence",""))):
+                            nom_e = a.get("etud_non_éligible", "")
                             d_abs = a.get("date_absence", "")
                             j_abs = a.get("jour_absence", "")
                             h_abs = a.get("horaire_absence", "")
@@ -1479,9 +1479,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                         absents_noms = []
                         absents_details = {}
-                        if not df_abs_cours.empty and "etud_non_eligible" in df_abs_cours.columns:
+                        if not df_abs_cours.empty and "etud_non_éligible" in df_abs_cours.columns:
                             for _, row in df_abs_cours.iterrows():
-                                nom = row["etud_non_eligible"]
+                                nom = row["etud_non_éligible"]
                                 absents_noms.append(nom)
                                 absents_details[nom] = {
                                     "motif": row.get("cause_non_eligibilite", "Non justifié"),
@@ -1492,7 +1492,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                         df_liste_finale = df_p_rapport.copy()
                         df_liste_finale["Statut"] = df_liste_finale["Nom_Complet"].apply(
-                            lambda x: "❌ Non Eligible (Absent)" if x in absents_noms else "✅ Eligible"
+                            lambda x: "❌ Non éligible (Absent)" if x in absents_noms else "✅ éligible"
                         )
                         df_liste_finale["Motif du retrait"] = df_liste_finale["Nom_Complet"].map(
                             lambda x: absents_details.get(x, {}).get("motif", "")
@@ -1531,10 +1531,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 'italic': True, 'font_size': 11, 'align': 'center'
                             })
                             fmt_bold = workbook.add_format({'bold': True})
-                            fmt_eligible = workbook.add_format({
+                            fmt_éligible = workbook.add_format({
                                 'bg_color': '#dcfce7', 'font_color': '#166534', 'border': 1
                             })
-                            fmt_non_eligible = workbook.add_format({
+                            fmt_non_éligible = workbook.add_format({
                                 'bg_color': '#fee2e2', 'font_color': '#991b1b', 'border': 1
                             })
 
@@ -1557,10 +1557,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                             for row_num in range(9, 9 + len(df_export)):
                                 statut_val = df_export.iloc[row_num - 9]["Statut"]
-                                if "Eligible" in str(statut_val) and "Non" not in str(statut_val):
-                                    ws.set_row(row_num, None, fmt_eligible)
+                                if "éligible" in str(statut_val) and "Non" not in str(statut_val):
+                                    ws.set_row(row_num, None, fmt_éligible)
                                 else:
-                                    ws.set_row(row_num, None, fmt_non_eligible)
+                                    ws.set_row(row_num, None, fmt_non_éligible)
 
                             ws.freeze_panes(9, 0)
 
@@ -1850,7 +1850,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Favorable"
                                         for a in st.session_state.absences:
-                                            if (a.get("etud_non_eligible") == req['nom_etudiant']
+                                            if (a.get("etud_non_éligible") == req['nom_etudiant']
                                                     and a.get("matiere") == req['matiere']):
                                                 if d_abs and a.get("date_absence") != d_abs: continue
                                                 if j_abs and a.get("jour_absence") != j_abs: continue
@@ -2112,8 +2112,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if "justifié" not in df_abs.columns:
                     df_abs["justifié"] = False
 
-                df_abs_count = df_abs.groupby(["etud_non_eligible", "matiere"]).agg(
-                    Nombre_Absences=("etud_non_eligible", "size"),
+                df_abs_count = df_abs.groupby(["etud_non_éligible", "matiere"]).agg(
+                    Nombre_Absences=("etud_non_éligible", "size"),
                     Dont_justifiées=("justifié", lambda x: (x == True).sum())
                 ).reset_index()
                 df_abs_count["Dont_Non_justifiées"] = df_abs_count["Nombre_Absences"] - df_abs_count["Dont_justifiées"]
