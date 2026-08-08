@@ -474,7 +474,7 @@ def run_Assiduité():
             return False
         try:
             query = supabase.table("suivi_assiduite_2026").update({"justifié": True})\
-                .eq("etud_non_éligible", etudiant).eq("matiere", matiere)
+                .eq("etud_non_eligible", etudiant).eq("matiere", matiere)
             if date_abs: query = query.eq("date_absence", date_abs)
             if jour_abs: query = query.eq("jour_absence", jour_abs)
             if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
