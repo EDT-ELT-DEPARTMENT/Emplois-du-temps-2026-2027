@@ -2320,13 +2320,13 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             st.header("📅 Mon Emploi du Temps individuel-Etudiant")
             st.caption("Consultation et téléchargement de votre EDT hebdomadaire")
     
-                # ─── INFOS ÉTUDIANT ───
-                promo_etu = str(étudiant_connecte.get("promotion", "")).strip()
-                nom_etu   = str(étudiant_connecte.get("nom", "Étudiant")).strip()
-    
-                if df_edt.empty:
-                    st.error("❌ Les données EDT ne sont pas disponibles.")
-                else:
+                    # ─── INFOS ÉTUDIANT ───
+                    promo_etu = str(étudiant_connecte.get("promotion", "")).strip()
+                    nom_etu   = str(étudiant_connecte.get("nom", "Étudiant")).strip()
+        
+                    if df_edt.empty:
+                        st.error("❌ Les données EDT ne sont pas disponibles.")
+                    else:
                     # ─── MAPPING PROMOTION ───
                     df_edt["Promotion_Mappee"] = df_edt["Promotion"].apply(mapper_promotion)
                     promo_mapped = mapper_promotion(promo_etu)
