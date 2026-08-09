@@ -10776,7 +10776,7 @@ def format_cell_text(row, mode="enseignant"):
     emoji = COLORS.get(typ, COLORS["AUTRE"])["emoji"]
     lines = [f"{emoji} {normalize_text(row.get('Enseignements', ''))}"]
     if mode == "promotion":
-        lines.append(f"Prof: {normalize_text(row.get('Enseignants', ''))}")
+        lines.append(f"M: {normalize_text(row.get('Enseignants', ''))}")
     else:
         lines.append(f"Promo: {normalize_text(row.get('Promotion', ''))}")
     lines.append(f"Salle: {normalize_text(row.get('Lieu', ''))}")
