@@ -1,3 +1,10 @@
+# =============================================================================
+# POINT D'ENTRÉE PRINCIPAL
+# =============================================================================
+                if module_sel == "📊 Suivi d'Assiduite":
+                    run_Assiduité()
+                else:
+                    run_edt() 
 """
 ================================================================================
 Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
@@ -3094,19 +3101,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     st.info(f"📧 **Email :** `{email_val}`")
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source") 
-
-
-# =============================================================================
-# POINT D'ENTRÉE PRINCIPAL
-# =============================================================================
-                if module_sel == "📊 Suivi d'Assiduite":
-                    run_Assiduité()
-                else:
-                    run_edt() 
-
-
-
-                     
+                  
 
 import streamlit as st
 import pandas as pd
