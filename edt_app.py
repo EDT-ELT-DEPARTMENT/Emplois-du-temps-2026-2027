@@ -499,7 +499,6 @@ def run_edt_intelligent():
 
             if module_sel == "🧠 EDT Intelligent":
               run_edt_intelligent()
-        else:
             # Module 2 : Gestion des EDTs & Admin
             st.info("Module Gestion des EDTs — utilisez le portail de connexion ci-dessus.")
 # =============================================================================
