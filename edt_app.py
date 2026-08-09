@@ -2225,7 +2225,11 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             else:
                 st.info(f"ℹ️ Aucune absence directe enregistrée pour {promo_abs}.")
 
-"""
+
+# =============================================================================
+# MODULE 2 : GESTION DES EDTs & ADMINISTRATION
+# =============================================================================
+ """
 ================================================================================
 Module EDT Intelligent — Plateforme ELT/UDL-SBA
 Génération automatique : Enseignants & Promotions
@@ -2680,11 +2684,7 @@ def run_edt_intelligent():
 
 if __name__ == "__main__":
     run_edt_intelligent()
-
 # =============================================================================
-# MODULE 2 : GESTION DES EDTs & ADMINISTRATION
-# =============================================================================
-    # =============================================================================
     # ONGLET 4 : INFORMATIONS ÉTUDIANT (ENSEIGNANT & ADMIN)
     # =============================================================================
         with tab4:
@@ -2950,7 +2950,7 @@ if __name__ == "__main__":
                                 use_container_width=True,
                                 key="dl_edt_etudiant"
                             )
-                
+                    
 
     
     # --- CONNEXION BASE DE DONNÉES ---
