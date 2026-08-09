@@ -2833,73 +2833,24 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     code_up = str(r['Code']).upper()
                     color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
                     nat = '📘' if 'COURS' in code_up else ('📗' if 'TD' in code_up else '🔴')
-                    items.append(
-                        f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;'>"
-                        f"<b>{nat} {r['Enseignements']}</b><br>"
-                        f"<small>👤 {r['Enseignants']} | 📍 {r['Lieu']}</small>"
-                        f"</div>"
-                    )
+                    items.append(f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;'><b>{nat} {r['Enseignements']}</b><br><small>👤 {r['Enseignants']} | 📍 {r['Lieu']}</small></div>")
                 return "".join(items)
-        
+
             grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
-            grid_p = grid_p.reindex(
-                index=[normalize(h) for h in horaires_list],
-                columns=[normalize(j) for j in jours_list]
-            ).fillna("")
+            grid_p = grid_p.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
             grid_p = grid_p[grid_p.any(axis=1)]
             grid_p.index = [map_h.get(i, i) for i in grid_p.index]
             grid_p.columns = [map_j.get(c, c) for c in grid_p.columns]
-        
-            # ─── Style : quadrillage + centrage + horaire sur une ligne ───
-            styled = (
-                grid_p.style
-                .set_properties(**{
-                    'text-align': 'center',
-                    'vertical-align': 'middle',
-                    'border': '1px solid #cbd5e1'
-                })
-                .set_table_styles([
-                    # En-têtes (jours)
-                    {'selector': 'th',
-                     'props': [
-                         ('text-align', 'center'),
-                         ('vertical-align', 'middle'),
-                         ('border', '1px solid #94a3b8'),
-                         ('background-color', '#f1f5f9'),
-                         ('font-weight', '600')
-                     ]},
-                    # Cellules d'index (horaires) : pas de retour à la ligne
-                    {'selector': 'th.row_heading, th.index_name',
-                     'props': [
-                         ('white-space', 'nowrap'),
-                         ('border', '1px solid #94a3b8'),
-                         ('background-color', '#f8fafc')
-                     ]},
-                    # Toutes les cellules de données
-                    {'selector': 'td',
-                     'props': [
-                         ('text-align', 'center'),
-                         ('vertical-align', 'middle'),
-                         ('border', '1px solid #cbd5e1')
-                     ]}
-                ])
-            )
-            html_table = styled.to_html(escape=False)
-        
-            st.write(html_table, unsafe_allow_html=True)
-        
+            st.write(grid_p.to_html(escape=False), unsafe_allow_html=True)
+
             # Export
             c1, c2 = st.columns(2)
             buf_p = io.BytesIO()
             df_p[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']].to_excel(buf_p, index=False)
-            c1.download_button(
-                "📥 Excel", buf_p.getvalue(), f"EDT_{p_sel}.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            c2.download_button(
-                "🌐 HTML", html_table, f"EDT_{p_sel}.html", "text/html"
-            )
-                
+            c1.download_button("📥 Excel", buf_p.getvalue(), f"EDT_{p_sel}.xlsx", 
+                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            c2.download_button("🌐 HTML", grid_p.to_html(escape=False), f"EDT_{p_sel}.html", "text/html")
+
         elif mode_view == "🏢 Planning Salles":
             s_sel = st.selectbox("Choisir Salle :", sorted([s for s in df["Lieu"].unique() if s and s != "Non défini"]))
             df_s = df[df["Lieu"] == s_sel]
