@@ -3099,10 +3099,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 # =============================================================================
 # POINT D'ENTRÉE PRINCIPAL
 # =============================================================================
-if module_sel == "📊 Suivi d'Assiduite":
-    run_Assiduité()
-else:
-    run_edt() 
+                if module_sel == "📊 Suivi d'Assiduite":
+                    run_Assiduité()
+                else:
+                    run_edt() 
 
 
 
