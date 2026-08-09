@@ -6218,6 +6218,15 @@ with st.sidebar:
     mode_view = "Personnel"
     poste_sup = False
 
+    if portail == "📖 Emploi du Temps" and is_admin:
+        mode_view = st.radio("Vue Administration :", [
+            "Promotion", "Enseignant", "🏢 Planning Salles", 
+            "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
+        ])
+        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
+    elif portail == "👤 Mon Espace Enseignant":
+        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
+
     if st.button("🚪 Déconnexion du compte"):
         st.session_state["user_data"] = None
         st.rerun()
