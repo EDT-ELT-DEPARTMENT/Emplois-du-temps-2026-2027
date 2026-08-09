@@ -4136,7 +4136,7 @@ def render_edt_interactif(df_source, cible, mode="enseignant", poste_sup=False, 
 # =============================================================================
 # POINT D'ENTRÉE PRINCIPAL
 # =============================================================================
-"""
+
 ================================================================================
 FONCTION EDT INTERACTIF — À INTÉGRER DANS VOTRE APPLICATION STREAMLIT
 ================================================================================
@@ -4156,7 +4156,7 @@ Dans la section "📖 Emploi du Temps", remplacez l'affichage des grilles par :
         p_sel = st.selectbox("Choisir Promotion :", [...])
         if p_sel:
             render_edt_interactif(df, p_sel, mode="promotion")
-"""
+
 
 import pandas as pd
 import io
@@ -4197,10 +4197,10 @@ def _normalize_horaire(h):
 
 
 def _build_grid_data(df_source, cible, mode="enseignant"):
-    """
+    
     Construit la DataFrame grille : index=Jours, columns=Horaires.
     Retourne (grid_df, df_filtre, stats)
-    """
+    
     df = df_source.copy()
     df["Type"] = df["Code"].apply(_detect_type)
 
@@ -4287,7 +4287,7 @@ def _render_html_table(grid_df, titre, sous_titre=""):
                         <th style="background:#0f172a;color:white;padding:14px 10px;border:1px solid #1e3a8a;width:110px;text-align:center;position:sticky;left:0;z-index:20;font-size:12px;">
                             Jour \ Horaire
                         </th>
-    """
+    
     for h in grid_df.columns:
         html += f'<th style="background:#1E3A8A;color:white;padding:14px 8px;border:1px solid #1e3a8a;text-align:center;font-size:12px;min-width:150px;">{h}</th>'
     html += "</tr></thead><tbody>"
@@ -4312,7 +4312,7 @@ def _render_html_table(grid_df, titre, sous_titre=""):
                 html += f'<td style="border:1px dashed #e2e8f0;padding:8px;vertical-align:middle;text-align:center;background:#f8fafc;color:#cbd5e1;font-size:12px;">—</td>'
         html += "</tr>"
 
-    html += """
+    html += 
                 </tbody>
             </table>
         </div>
@@ -4324,7 +4324,7 @@ def _render_html_table(grid_df, titre, sous_titre=""):
         td {{ transition: all 0.15s ease; }}
         td:hover {{ background-color:#f0f9ff !important; }}
     </style>
-    """
+    
     return html
 
 
