@@ -1,12 +1,9 @@
 
-"""
-
 ================================================================================
 Module EDT Intelligent — Plateforme ELT/UDL-SBA
 Génération automatique : Enseignants & Promotions
 Exports : HTML, Excel (openpyxl), PDF (fpdf) avec cellules flexibles
 ================================================================================
-
 
 import streamlit as st
 import pandas as pd
@@ -16,8 +13,6 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-
-
 
 try:
     from fpdf import FPDF
@@ -81,24 +76,24 @@ def get_type_matiere(code):
 def format_cell_html(row, mode="enseignant"):
     typ = get_type_matiere(row.get("Code", ""))
     style = COLORS.get(typ, COLORS["AUTRE"])
-    lines = [f"<b style=\"font-size:13px;\">{style['emoji']} {normalize_text(row.get('Enseignements', ''))}</b>"]
+    lines = ["<b style=\"font-size:13px;\">" + style['emoji'] + " " + normalize_text(row.get('Enseignements', '')) + "</b>"]
     if mode == "promotion":
-        lines.append(f"<span style=\"font-size:11px;\">👤 {normalize_text(row.get('Enseignants', ''))}</span>")
+        lines.append("<span style=\"font-size:11px;\">👤 " + normalize_text(row.get('Enseignants', '')) + "</span>")
     else:
-        lines.append(f"<span style=\"font-size:11px;\">🎓 {normalize_text(row.get('Promotion', ''))}</span>")
-    lines.append(f"<span style=\"font-size:10px;color:#64748b;\">📍 {normalize_text(row.get('Lieu', ''))}</span>")
+        lines.append("<span style=\"font-size:11px;\">🎓 " + normalize_text(row.get('Promotion', '')) + "</span>")
+    lines.append("<span style=\"font-size:10px;color:#64748b;\">📍 " + normalize_text(row.get('Lieu', '')) + "</span>")
     content = "<br>".join(lines)
-    return f"""<div style="background:{style['bg']};border-left:4px solid {style['border']};border-radius:6px;padding:6px;margin:2px 0;color:{style['text']};font-family:'Segoe UI',Arial,sans-serif;line-height:1.4;">{content}</div>"""
+    return '<div style="background:' + style['bg'] + ';border-left:4px solid ' + style['border'] + ';border-radius:6px;padding:6px;margin:2px 0;color:' + style['text'] + ';font-family:\'Segoe UI\',Arial,sans-serif;line-height:1.4;">' + content + '</div>'
 
 def format_cell_text(row, mode="enseignant"):
     typ = get_type_matiere(row.get("Code", ""))
     emoji = COLORS.get(typ, COLORS["AUTRE"])["emoji"]
-    lines = [f"{emoji} {normalize_text(row.get('Enseignements', ''))}"]
+    lines = [emoji + " " + normalize_text(row.get('Enseignements', ''))]
     if mode == "promotion":
-        lines.append(f"Prof: {normalize_text(row.get('Enseignants', ''))}")
+        lines.append("Prof: " + normalize_text(row.get('Enseignants', '')))
     else:
-        lines.append(f"Promo: {normalize_text(row.get('Promotion', ''))}")
-    lines.append(f"Salle: {normalize_text(row.get('Lieu', ''))}")
+        lines.append("Promo: " + normalize_text(row.get('Promotion', '')))
+    lines.append("Salle: " + normalize_text(row.get('Lieu', '')))
     return "\n".join(lines)
 
 # =============================================================================
@@ -135,12 +130,14 @@ def generer_grille(df_filtre, mode="enseignant"):
     return grille_html, grille_text
 
 # =============================================================================
-# PARTIE 5 — EXPORT HTML
+# PARTIE 5 — EXPORT HTML (CORRIGÉ : pas de f-string pour le CSS)
 # =============================================================================
 def export_html(grille_html, titre, sous_titre=""):
     if grille_html is None or grille_html.empty:
-        return "<p>Aucune donnée</p>"
-    css = """
+        return "<p>Aucune donnee</p>"
+
+    # CSS séparé — pas de f-string pour éviter l'erreur d'accolades
+    css_block = """
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         body { font-family: 'Inter', 'Segoe UI', Arial, sans-serif; background: #f8fafc; margin: 0; padding: 30px; color: #1e293b; }
@@ -160,33 +157,18 @@ def export_html(grille_html, titre, sous_titre=""):
         @media print { body { background: white; padding: 0; } .container { box-shadow: none; border-radius: 0; } }
     </style>
     """
-    thead = "<tr><th class='time-col'>JOUR / HORAIRE</th>" + "".join([f"<th>{h}</th>" for h in grille_html.columns]) + "</tr>"
+
+    thead = "<tr><th class='time-col'>JOUR / HORAIRE</th>" + "".join(["<th>" + h + "</th>" for h in grille_html.columns]) + "</tr>"
     tbody = ""
     for jour, row in grille_html.iterrows():
-        tbody += f"<tr><td class='time-col'>{jour}</td>"
+        tbody += "<tr><td class='time-col'>" + jour + "</td>"
         for val in row:
-            tbody += f"<td>{val}</td>"
+            tbody += "<td>" + val + "</td>"
         tbody += "</tr>"
-    return f"""<!DOCTYPE html>
-<html lang="fr">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>{titre}</title>{css}</head>
-<body>
-<div class="container">
-    <div class="header">
-        <h1>📅 {titre}</h1>
-        <p>{sous_titre}</p>
-        <span style="display:inline-block;background:#D4AF37;color:#1E3A8A;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px;">EDT Semestre 01 — 2026-2027</span>
-    </div>
-    <div class="content">
-        <div class="meta">
-            <span>Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</span>
-            <span>{len(grille_html)} jours × {len(grille_html.columns)} créneaux</span>
-        </div>
-        <table><thead>{thead}</thead><tbody>{tbody}</tbody></table>
-    </div>
-    <div class="footer">département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA</div>
-</div>
-</body></html>"""
+
+    meta_line = "<span>Généré le " + datetime.now().strftime('%d/%m/%Y à %H:%M') + "</span><span>" + str(len(grille_html)) + " jours × " + str(len(grille_html.columns)) + " créneaux</span>"
+
+    return "<!DOCTYPE html>\n<html lang=\"fr\">\n<head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>" + titre + "</title>" + css_block + "</head>\n<body>\n<div class=\"container\">\n    <div class=\"header\">\n        <h1>📅 " + titre + "</h1>\n        <p>" + sous_titre + "</p>\n        <span style=\"display:inline-block;background:#D4AF37;color:#1E3A8A;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px;\">EDT Semestre 01 — 2026-2027</span>\n    </div>\n    <div class=\"content\">\n        <div class=\"meta\">" + meta_line + "</div>\n        <table><thead>" + thead + "</thead><tbody>" + tbody + "</tbody></table>\n    </div>\n    <div class=\"footer\">département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA</div>\n</div>\n</body></html>"
 
 # =============================================================================
 # PARTIE 6 — EXPORT EXCEL (HAUTEURS FLEXIBLES)
@@ -203,7 +185,7 @@ def export_excel(grille_text, titre):
     ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
     ws.row_dimensions[1].height = 30
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(grille_text.columns)+1)
-    ws['A2'] = f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} — UDL-SBA"
+    ws['A2'] = "Généré le " + datetime.now().strftime('%d/%m/%Y à %H:%M') + " — UDL-SBA"
     ws['A2'].font = Font(italic=True, size=10, color="64748B")
     ws['A2'].alignment = Alignment(horizontal='center', vertical='center')
     ws.row_dimensions[2].height = 20
@@ -266,12 +248,12 @@ def export_pdf(grille_text, titre, sous_titre=""):
             self.set_y(-15)
             self.set_font('Arial', 'I', 8)
             self.set_text_color(128, 128, 128)
-            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+            self.cell(0, 10, 'Page ' + str(self.page_no()), 0, 0, 'C')
 
     def sanitize(text):
         if not text: return ""
         t = str(text)
-        repl = {"'":"'","'":"'","“":"\"","”":"\"","–":"-","—":"-","…":"...","«":"\"","»":"\"","œ":"oe","Œ":"OE",
+        repl = {"'":"'","'":"'","\u201c":"\"","\u201d":"\"","–":"-","—":"-","…":"...","«":"\"","»":"\"","œ":"oe","Œ":"OE",
                 "à":"a","â":"a","ä":"a","á":"a","ã":"a","å":"a","è":"e","é":"e","ê":"e","ë":"e","ì":"i","í":"i","î":"i","ï":"i",
                 "ò":"o","ó":"o","ô":"o","ö":"o","ù":"u","ú":"u","û":"u","ü":"u","ç":"c","ñ":"n","ÿ":"y","ý":"y",
                 "À":"A","Â":"A","Ä":"A","Á":"A","Ã":"A","È":"E","É":"E","Ê":"E","Ë":"E","Ì":"I","Í":"I","Î":"I","Ï":"I",
@@ -403,7 +385,7 @@ def run_edt_intelligent():
                 if col in df_edt.columns:
                     df_edt[col] = df_edt[col].fillna("Non défini").astype(str).str.strip()
         except Exception as e:
-            st.error(f"Erreur chargement EDT : {e}")
+            st.error("Erreur chargement EDT : " + str(e))
     else:
         st.warning("Fichier EDT local non trouvé. Veuillez uploader le fichier.")
         uploaded = st.file_uploader("Uploader dataEDT-ELT-S1-2027.xlsx", type=["xlsx", "xls"])
@@ -423,13 +405,13 @@ def run_edt_intelligent():
             liste = sorted([e for e in df_edt["Enseignants"].unique() if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
             selection = st.selectbox("Sélectionner :", liste, key="edt_ens")
             df_filtre = df_edt[df_edt["Enseignants"].str.contains(selection, case=False, na=False)]
-            titre = f"EDT Individuel — {selection}"
+            titre = "EDT Individuel — " + selection
             mode_export = "enseignant"
         else:
             liste = sorted([p for p in df_edt["Promotion"].unique() if p and str(p).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
             selection = st.selectbox("Sélectionner :", liste, key="edt_promo")
             df_filtre = df_edt[df_edt["Promotion"] == selection]
-            titre = f"EDT Promotion — {selection}"
+            titre = "EDT Promotion — " + selection
             mode_export = "promotion"
         st.divider()
         st.markdown("### 📥 Exports")
@@ -451,19 +433,19 @@ def run_edt_intelligent():
 
     with col2:
         if grille_html is not None and not grille_html.empty:
-            st.markdown(f"### 📅 {titre}")
+            st.markdown("### 📅 " + titre)
             st.write(grille_html.to_html(escape=False), unsafe_allow_html=True)
             c1, c2, c3 = st.columns(3)
-            html_data = export_html(grille_html, titre, f"Mode : {mode_export.title()}")
-            c1.download_button("🌐 HTML", html_data, f"EDT_{selection.replace(' ', '_')}.html", "text/html", use_container_width=True)
+            html_data = export_html(grille_html, titre, "Mode : " + mode_export.title())
+            c1.download_button("🌐 HTML", html_data, "EDT_" + selection.replace(' ', '_') + ".html", "text/html", use_container_width=True)
             xlsx_data = export_excel(grille_text, titre)
             if xlsx_data:
-                c2.download_button("📊 Excel", xlsx_data, f"EDT_{selection.replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                c2.download_button("📊 Excel", xlsx_data, "EDT_" + selection.replace(' ', '_') + ".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             else:
                 c2.button("📊 Excel", disabled=True, use_container_width=True)
-            pdf_data = export_pdf(grille_text, titre, f"Mode : {mode_export.title()}")
+            pdf_data = export_pdf(grille_text, titre, "Mode : " + mode_export.title())
             if pdf_data:
-                c3.download_button("📄 PDF", pdf_data, f"EDT_{selection.replace(' ', '_')}.pdf", "application/pdf", use_container_width=True)
+                c3.download_button("📄 PDF", pdf_data, "EDT_" + selection.replace(' ', '_') + ".pdf", "application/pdf", use_container_width=True)
             else:
                 c3.button("📄 PDF", disabled=True, use_container_width=True)
         else:
@@ -472,12 +454,16 @@ def run_edt_intelligent():
 if __name__ == "__main__":
     run_edt_intelligent()
 
+
+
+
+
 ================================================================================
 Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
 département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA
 année universitaire 2026-2027
 ================================================================================
-"""
+
 
 # =============================================================================
 # IMPORTS UNIFIES
