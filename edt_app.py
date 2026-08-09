@@ -6731,7 +6731,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                 if idx_h in horaires_ordre and col_j in jours_ordre:
                     # Formatage selon votre exemple
                     salle_label = f"🏢 {row['Lieu']}"
-                    prof_label = f"(Prof: {row['Enseignants']})"
+                    prof_label = f"(M: {row['Enseignants']})"
                     promo_label = f"🎓 {row['Promotion']}"
                     matiere_label = f"📚 {row['Enseignements']}"
                     heure_label = f"🕒 {row['Horaire']}"
