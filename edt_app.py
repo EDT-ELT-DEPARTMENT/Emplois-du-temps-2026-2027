@@ -50,20 +50,28 @@ def normalize_text(s):
     if not s or str(s).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
         return ""
     return re.sub(r'\s+', ' ', str(s).strip())
-
+import re
 def normalize_horaire(h):
-    if not h:
+    if not h or str(h).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
         return ""
-    s = str(h).lower().replace(" ", "").replace("-", "").replace("–", "").replace(":", "").replace("h00", "h")
-    mapping = {
-        "08h00-09h30": "08h00 - 09h30", "08h-09h30": "08h00 - 09h30", "8h-9h30": "08h00 - 09h30",
-        "09h30-11h00": "09h30 - 11h00", "9h30-11h": "09h30 - 11h00", "9h30-11h00": "09h30 - 11h00",
-        "11h00-12h30": "11h00 - 12h30", "11h-12h30": "11h00 - 12h30",
-        "12h30-14h00": "12h30 - 14h00", "12h30-14h": "12h30 - 14h00",
-        "14h00-15h30": "14h00 - 15h30", "14h-15h30": "14h00 - 15h30",
-        "15h30-17h00": "15h30 - 17h00", "15h30-17h": "15h30 - 17h00",
-    }
-    return mapping.get(s, str(h).strip())
+    
+    s = str(h).strip().lower()
+    
+    # Regex robuste : capture les deux horaires quelle que soit la syntaxe
+    # Ex: 8h-9h30 | 9h30 -11h | 11h00-12h30 | 12h30-14h | 15h30-17h | 08h00 - 09h30
+    m = re.match(r'(\d{1,2})[h:\s](\d{2})?\s*[-–]\s*(\d{1,2})[h:\s](\d{2})?', s)
+    if m:
+        h1 = int(m.group(1))
+        min1 = int(m.group(2)) if m.group(2) else 0
+        h2 = int(m.group(3))
+        min2 = int(m.group(4)) if m.group(4) else 0
+        return f"{h1:02d}h{min1:02d} - {h2:02d}h{min2:02d}"
+    
+    # Si déjà au bon format, renvoyer tel quel
+    if re.match(r'\d{2}h\d{2} - \d{2}h\d{2}', s):
+        return s
+    
+    return str(h).strip()
 
 def get_type_matiere(code):
     c = str(code).upper()
@@ -392,113 +400,101 @@ def run_edt_intelligent():
     fichier_edt = str(base_dir / "dataEDT-ELT-S1-2027.xlsx")
 
     df_edt = pd.DataFrame()
+    source_ok = False
+
+    # ─── CHARGEMENT ───
     if os.path.exists(fichier_edt):
         try:
             df_edt = pd.read_excel(fichier_edt)
-            df_edt.columns = df_edt.columns.str.strip()
-            for col in ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']:
-                if col in df_edt.columns:
-                    df_edt[col] = df_edt[col].fillna("Non défini").astype(str).str.strip()
+            source_ok = True
+            st.success(f"✅ Source chargée : `{os.path.basename(fichier_edt)}` — {len(df_edt)} ligne(s)")
         except Exception as e:
-            st.error(f"Erreur chargement EDT : {e}")
+            st.error(f"❌ Erreur lecture : {e}")
     else:
-        st.warning("Fichier EDT local non trouvé. Veuillez uploader le fichier.")
+        st.warning(f"⚠️ Fichier non trouvé dans `{base_dir}`")
         uploaded = st.file_uploader("Uploader dataEDT-ELT-S1-2027.xlsx", type=["xlsx", "xls"])
         if uploaded:
             df_edt = pd.read_excel(uploaded)
-            df_edt.columns = df_edt.columns.str.strip()
+            source_ok = True
+            st.success(f"✅ Upload : `{uploaded.name}` — {len(df_edt)} ligne(s)")
 
-    if df_edt.empty:
-        st.error("Aucune donnée EDT disponible.")
+    if not source_ok or df_edt.empty:
+        st.error("❌ Aucune donnée EDT disponible.")
         return
 
+    # Nettoyage
+    df_edt.columns = df_edt.columns.str.strip()
+    for col in ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']:
+        if col in df_edt.columns:
+            df_edt[col] = df_edt[col].fillna("Non défini").astype(str).str.strip()
+
     col1, col2 = st.columns([1, 3])
-    
+
     with col1:
         st.markdown("### ⚙️ Paramètres")
         mode = st.radio("Mode :", ["👤 Enseignant", "🎓 Promotion"], key="edt_mode")
-        
+
         if mode == "👤 Enseignant":
-            liste = sorted([e for e in df_edt["Enseignants"].unique() 
-                          if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+            liste = sorted([e for e in df_edt["Enseignants"].unique()
+                          if e and str(e).strip().lower() not in ["", "nan", "none", "non defini", "non défini"]])
             selection = st.selectbox("Sélectionner :", liste, key="edt_ens")
-            df_filtre = df_edt[df_edt["Enseignants"].str.contains(selection, case=False, na=False)]
+            df_filtre = df_edt[df_edt["Enseignants"].str.contains(selection, case=False, na=False)].copy()
             titre = f"EDT Individuel — {selection}"
             mode_export = "enseignant"
         else:
-            liste = sorted([p for p in df_edt["Promotion"].unique() 
-                          if p and str(p).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+            liste = sorted([p for p in df_edt["Promotion"].unique()
+                          if p and str(p).strip().lower() not in ["", "nan", "none", "non defini", "non défini"]])
             selection = st.selectbox("Sélectionner :", liste, key="edt_promo")
-            df_filtre = df_edt[df_edt["Promotion"] == selection]
+            df_filtre = df_edt[df_edt["Promotion"] == selection].copy()
             titre = f"EDT Promotion — {selection}"
             mode_export = "promotion"
-        
+
         st.divider()
         st.markdown("### 📥 Exports")
-        
-        # CORRECTION CRITIQUE : suppression des clés pour FORCER la régénération
-        if st.button("🔄 Générer / Rafraîchir", use_container_width=True, type="primary"):
-            for key in ['edt_grille_html', 'edt_grille_text', 'edt_last_selection', 'edt_titre', 'edt_mode_export']:
-                st.session_state.pop(key, None)
-            st.rerun()
 
-    # ─── GÉNÉRATION DE LA GRILLE (avec condition robuste) ───
-    must_generate = (
-        'edt_grille_html' not in st.session_state 
-        or st.session_state.get('edt_grille_html') is None
-        or 'edt_grille_text' not in st.session_state
-        or st.session_state.get('edt_grille_text') is None
-        or st.session_state.get('edt_last_selection') != selection
-        or st.session_state.get('edt_mode_export') != mode_export
-    )
-    
-    if must_generate:
-        grille_html, grille_text = generer_grille(df_filtre, mode_export)
-        st.session_state['edt_grille_html'] = grille_html
-        st.session_state['edt_grille_text'] = grille_text
-        st.session_state['edt_last_selection'] = selection
-        st.session_state['edt_titre'] = titre
-        st.session_state['edt_mode_export'] = mode_export
+    # ─── GÉNÉRATION DIRECTE (pas de session_state) ───
+    grille_html, grille_text = generer_grille(df_filtre, mode_export)
 
-    grille_html = st.session_state.get('edt_grille_html')
-    grille_text = st.session_state.get('edt_grille_text')
-    titre = st.session_state.get('edt_titre', 'EDT')
+    # ─── DEBUG : voir si la grille est vide et pourquoi ───
+    with st.expander("🔍 Debug grille"):
+        st.write(f"Lignes filtrées : {len(df_filtre)}")
+        st.write(f"Grille HTML vide ? {grille_html.empty if grille_html is not None else 'None'}")
+        st.write(f"Grille text vide ? {grille_text.empty if grille_text is not None else 'None'}")
+        if not df_filtre.empty:
+            st.write("Horaires uniques dans df_filtre :", df_filtre["Horaire"].unique().tolist())
+            st.write("Jours uniques dans df_filtre :", df_filtre["Jours"].unique().tolist())
 
     with col2:
+        st.markdown(f"### 📅 {titre}")
+
         if grille_html is not None and not grille_html.empty:
-            st.markdown(f"### 📅 {titre}")
             st.write(grille_html.to_html(escape=False), unsafe_allow_html=True)
-            
+
             c1, c2, c3 = st.columns(3)
-            
-            # Export HTML
+
             html_data = export_html(grille_html, titre, f"Mode : {mode_export.title()}")
-            c1.download_button("🌐 HTML", html_data, 
-                             f"EDT_{selection.replace(' ', '_')}.html", 
+            c1.download_button("🌐 HTML", html_data,
+                             f"EDT_{selection.replace(' ', '_')}.html",
                              "text/html", use_container_width=True)
-            
-            # Export Excel
+
             xlsx_data = export_excel(grille_text, titre)
             if xlsx_data:
-                c2.download_button("📊 Excel", xlsx_data, 
-                                 f"EDT_{selection.replace(' ', '_')}.xlsx", 
-                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                c2.download_button("📊 Excel", xlsx_data,
+                                 f"EDT_{selection.replace(' ', '_')}.xlsx",
+                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                  use_container_width=True)
             else:
-                c2.warning("openpyxl non installé")
-            
-            # Export PDF
+                c2.warning("openpyxl manquant")
+
             pdf_data = export_pdf(grille_text, titre, f"Mode : {mode_export.title()}")
             if pdf_data:
-                c3.download_button("📄 PDF", pdf_data, 
-                                 f"EDT_{selection.replace(' ', '_')}.pdf", 
+                c3.download_button("📄 PDF", pdf_data,
+                                 f"EDT_{selection.replace(' ', '_')}.pdf",
                                  "application/pdf", use_container_width=True)
             else:
-                c3.warning("fpdf non installé")
+                c3.warning("fpdf manquant")
         else:
-            st.info("Sélectionnez un enseignant ou une promotion pour générer l'EDT.")
-if __name__ == "__main__":
-    run_edt_intelligent()
+            st.error("❌ La grille est vide. Ouvrez 🔍 *Debug grille* ci-dessus pour diagnostiquer.")
 # =============================================================================
 # IMPORTS UNIFIES
 # =============================================================================
@@ -4088,11 +4084,10 @@ if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
 elif module_sel == "🧠 EDT Intelligent":
     run_edt_intelligent()
+elif module_sel == "📅 Gestion des EDTs & Admin":
+    st.info("Module Gestion des EDTs & Admin")
 else:
-    # Module 2 : Gestion des EDTs & Admin
-    st.info("Module Gestion des EDTs — utilisez le portail de connexion ci-dessus.")
-
-                     
+    st.error(f"Module inconnu : {module_sel}")
 
 import streamlit as st
 import pandas as pd
