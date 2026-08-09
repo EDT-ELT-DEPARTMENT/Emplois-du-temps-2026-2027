@@ -11172,4 +11172,6 @@ def run_edt_intelligent():
         else:
             st.error("❌ La grille est vide. Ouvrez 🔍 *Debug grille* ci-dessus pour diagnostiquer.")
     if __name__ == "__main__":
+        run_edt_intelligent()
+
 
