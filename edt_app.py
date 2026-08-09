@@ -125,14 +125,13 @@ with st.sidebar:
     st.markdown("<h2 style='text-align:center;color:#1E3A8A;'>🏛️ UDL-SBA</h2>", unsafe_allow_html=True)
     st.caption("département d'Électrotechnique - FGE")
     st.markdown("---")
-    
     module_sel = st.radio(
         "📂 Choix du module :",
-        ["📊 Suivi d'Assiduite", "📅 Gestion des EDTs & Admin"],
+        ["📊 Suivi d'Assiduite", "📅 Gestion des EDTs & Admin", "🧠 EDT Intelligent"],
         index=0,
         key="module_selector"
     )
-    
+        
     st.markdown("---")
     st.caption("annee universitaire 2026-2027")
 
