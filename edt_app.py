@@ -1,3 +1,5 @@
+
+"""
 """
 ================================================================================
 Module EDT Intelligent — Plateforme ELT/UDL-SBA
@@ -470,7 +472,6 @@ def run_edt_intelligent():
 if __name__ == "__main__":
     run_edt_intelligent()
 
-"""
 ================================================================================
 Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
 département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA
