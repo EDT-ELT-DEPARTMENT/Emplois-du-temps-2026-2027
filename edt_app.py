@@ -14,6 +14,8 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
+from module_edt_intelligent import run_edt_intelligent
+
 
 try:
     from fpdf import FPDF
