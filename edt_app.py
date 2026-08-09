@@ -377,7 +377,7 @@ def format_date_naissance(val):
             pass
     
     return str(val)
-"""
+
 ================================================================================
 FONCTION EDT INTERACTIF — À INTÉGRER DANS VOTRE APPLICATION STREAMLIT
 ================================================================================
