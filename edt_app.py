@@ -4023,7 +4023,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 # =============================================================================
 
 if module_sel == "📊 Suivi d'Assiduite":
-    run_assiduite()
+    run_Assiduité()
 else:
     run_edt() 
 
