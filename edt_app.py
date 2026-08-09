@@ -412,6 +412,7 @@ def run_edt_intelligent():
         return
 
     col1, col2 = st.columns([1, 3])
+    
     with col1:
         st.markdown("### ⚙️ Paramètres")
         mode = st.radio("Mode :", ["👤 Enseignant", "🎓 Promotion"], key="edt_mode")
@@ -434,23 +435,23 @@ def run_edt_intelligent():
         st.divider()
         st.markdown("### 📥 Exports")
         
-        # CORRECTION BUG 1 : On supprime edt_last_selection pour FORCER la régénération
+        # CORRECTION CRITIQUE : suppression des clés pour FORCER la régénération
         if st.button("🔄 Générer / Rafraîchir", use_container_width=True, type="primary"):
-            st.session_state.pop('edt_last_selection', None)
-            st.session_state['edt_grille_html'] = None
-            st.session_state['edt_grille_text'] = None
-            st.rerun()  # Force le re-run immédiat
+            for key in ['edt_grille_html', 'edt_grille_text', 'edt_last_selection', 'edt_titre', 'edt_mode_export']:
+                st.session_state.pop(key, None)
+            st.rerun()
 
-    # CORRECTION BUG 1 : Condition renforcée pour détecter None aussi
-    needs_regen = (
+    # ─── GÉNÉRATION DE LA GRILLE (avec condition robuste) ───
+    must_generate = (
         'edt_grille_html' not in st.session_state 
         or st.session_state.get('edt_grille_html') is None
+        or 'edt_grille_text' not in st.session_state
         or st.session_state.get('edt_grille_text') is None
         or st.session_state.get('edt_last_selection') != selection
         or st.session_state.get('edt_mode_export') != mode_export
     )
     
-    if needs_regen:
+    if must_generate:
         grille_html, grille_text = generer_grille(df_filtre, mode_export)
         st.session_state['edt_grille_html'] = grille_html
         st.session_state['edt_grille_text'] = grille_text
@@ -469,13 +470,13 @@ def run_edt_intelligent():
             
             c1, c2, c3 = st.columns(3)
             
-            # HTML
+            # Export HTML
             html_data = export_html(grille_html, titre, f"Mode : {mode_export.title()}")
             c1.download_button("🌐 HTML", html_data, 
                              f"EDT_{selection.replace(' ', '_')}.html", 
                              "text/html", use_container_width=True)
             
-            # Excel
+            # Export Excel
             xlsx_data = export_excel(grille_text, titre)
             if xlsx_data:
                 c2.download_button("📊 Excel", xlsx_data, 
@@ -485,7 +486,7 @@ def run_edt_intelligent():
             else:
                 c2.warning("openpyxl non installé")
             
-            # PDF
+            # Export PDF
             pdf_data = export_pdf(grille_text, titre, f"Mode : {mode_export.title()}")
             if pdf_data:
                 c3.download_button("📄 PDF", pdf_data, 
