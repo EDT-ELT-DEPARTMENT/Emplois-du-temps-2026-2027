@@ -7156,10 +7156,7 @@ if df is not None:
                         mime="text/html",
                         use_container_width=True
                     )
-        elif is_admin and mode_view == "Promotion":
-            # 1. Sélection de la promotion via le menu déroulant
-            p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
-            df_p = df[df["Promotion"] == p_sel].copy()
+        
             
             # --- 2. CALCUL DES STATISTIQUES POUR L'EN-TÊTE ---
             # Identification des types pour le décompte (Cours, TD, TP)
