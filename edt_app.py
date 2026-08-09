@@ -2775,9 +2775,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 sorted([e for e in df["Enseignants"].unique() 
                                        if e and e != "Non défini"]))
             if cible:
-            render_edt_interactif(df, cible, mode="enseignant", 
-                                 poste_sup=poste_sup,
-                                 repertoire_noms=repertoire_noms_complets)      
+                render_edt_interactif(df, cible, mode="enseignant", 
+                                     poste_sup=poste_sup,
+                                     repertoire_noms=repertoire_noms_complets)      
         
             df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
             df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
