@@ -4078,8 +4078,6 @@ if __name__ == "__main__":
 
 if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
-elif module_sel == "🧠 EDT Intelligent":
-    run_edt_intelligent()
 elif module_sel == "📅 Gestion des EDTs & Admin":
     st.info("Module Gestion des EDTs & Admin")
 else:
