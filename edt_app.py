@@ -496,9 +496,10 @@ def run_edt_intelligent():
                 c3.warning("fpdf non installé")
         else:
             st.info("Sélectionnez un enseignant ou une promotion pour générer l'EDT.")
-
+            if __name__ == "__main__":
+                run_edt_intelligent()
             if module_sel == "🧠 EDT Intelligent":
-              run_edt_intelligent()
+                run_edt_intelligent()
             # Module 2 : Gestion des EDTs & Admin
             st.info("Module Gestion des EDTs — utilisez le portail de connexion ci-dessus.")
 # =============================================================================
