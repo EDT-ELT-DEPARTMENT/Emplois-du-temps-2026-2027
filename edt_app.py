@@ -1,10 +1,10 @@
-
+"""
 ================================================================================
 Module EDT Intelligent — Plateforme ELT/UDL-SBA
 Génération automatique : Enseignants & Promotions
 Exports : HTML, Excel (openpyxl), PDF (fpdf) avec cellules flexibles
 ================================================================================
-
+"""
 import streamlit as st
 import pandas as pd
 import io
