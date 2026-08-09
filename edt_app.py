@@ -378,36 +378,13 @@ def format_date_naissance(val):
     
     return str(val)
 
-"""
-================================================================================
-FONCTION EDT INTERACTIF — À INTÉGRER DANS VOTRE APPLICATION STREAMLIT
-================================================================================
-Insérez ce bloc dans votre fichier principal, après les fonctions utilitaires
-et avant le point d'entrée principal.
-
-UTILISATION :
-------------
-Dans la section "📖 Emploi du Temps", remplacez l'affichage des grilles par :
-
-    if mode_view == "Enseignant":
-        cible = st.selectbox("Sélectionner l'Enseignant :", [...])
-        if cible:
-            render_edt_interactif(df, cible, mode="enseignant", poste_sup=poste_sup)
-
-    elif mode_view == "Promotion":
-        p_sel = st.selectbox("Choisir Promotion :", [...])
-        if p_sel:
-            render_edt_interactif(df, p_sel, mode="promotion")
-"""
-
+# =============================================================================
+# MODULE EDT INTERACTIF
+# =============================================================================
 import pandas as pd
 import io
-import os
 from datetime import datetime
 
-# =============================================================================
-# CONSTANTES EDT
-# =============================================================================
 JOURS_ORDRE = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 HORAIRES_ORDRE = [
     "8h - 9h30", "9h30 - 11h", "11h - 12h30",
@@ -423,7 +400,6 @@ COULEURS_EDT = {
 
 
 def _detect_type(code_str):
-    """Détecte COURS/TD/TP depuis le code."""
     c = str(code_str).upper()
     if "COURS" in c: return "COURS"
     if "TD" in c:    return "TD"
@@ -431,7 +407,6 @@ def _detect_type(code_str):
 
 
 def _normalize_horaire(h):
-    """Normalise un horaire pour matching."""
     if pd.isna(h): return "vide"
     s = str(h).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
     s = s.replace(":00", "").replace("h00", "h")
@@ -439,18 +414,11 @@ def _normalize_horaire(h):
 
 
 def _build_grid_data(df_source, cible, mode="enseignant"):
-    """
-    Construit la DataFrame grille : index=Jours, columns=Horaires.
-    Retourne (grid_df, df_filtre, stats)
-    """
     df = df_source.copy()
     df["Type"] = df["Code"].apply(_detect_type)
-
-    # Normalisation
     df["h_norm"] = df["Horaire"].apply(_normalize_horaire)
     df["j_norm"] = df["Jours"].astype(str).str.strip().str.capitalize()
 
-    # Filtrage
     if mode == "enseignant":
         df_f = df[df["Enseignants"].astype(str).str.contains(str(cible), case=False, na=False)].copy()
     else:
@@ -459,7 +427,6 @@ def _build_grid_data(df_source, cible, mode="enseignant"):
     if df_f.empty:
         return None, df_f, {}
 
-    # Déduplication pour les stats (séances uniques)
     df_u = df_f.drop_duplicates(subset=["j_norm", "h_norm"])
     stats = {
         "cours": len(df_u[df_u["Type"] == "COURS"]),
@@ -468,35 +435,25 @@ def _build_grid_data(df_source, cible, mode="enseignant"):
         "total": len(df_u)
     }
 
-    # Construction de la cellule texte
     def _fmt_cell(rows):
         items = []
         for _, r in rows.iterrows():
             t = _detect_type(r["Code"])
             sty = COULEURS_EDT[t]
-            if mode == "enseignant":
-                extra = f"🎓 {r['Promotion']}"
-            else:
-                extra = f"👤 {r['Enseignants']}"
+            extra = f"🎓 {r['Promotion']}" if mode == "enseignant" else f"👤 {r['Enseignants']}"
             items.append({
-                "matiere": r["Enseignements"],
-                "type": t,
-                "salle": r["Lieu"],
-                "extra": extra,
-                **sty
+                "matiere": r["Enseignements"], "type": t, "salle": r["Lieu"],
+                "extra": extra, **sty
             })
         return items
 
     grouped = df_f.groupby(["j_norm", "h_norm"]).apply(_fmt_cell, include_groups=False)
-
-    # Création grille vide
     h_norms = [_normalize_horaire(h) for h in HORAIRES_ORDRE]
     j_norms = [j for j in JOURS_ORDRE]
 
     grid = pd.DataFrame("", index=j_norms, columns=HORAIRES_ORDRE)
     grid.index.name = "Jour"
 
-    # Remplissage
     if not grouped.empty:
         for (j, h), cells in grouped.items():
             j_label = j if j in j_norms else None
@@ -507,12 +464,10 @@ def _build_grid_data(df_source, cible, mode="enseignant"):
                     break
             if j_label and h_label:
                 grid.at[j_label, h_label] = cells
-
     return grid, df_f, stats
 
 
 def _render_html_table(grid_df, titre, sous_titre=""):
-    """Génère le HTML du tableau coloré."""
     html = f"""
     <div style="font-family:'Segoe UI',Arial,sans-serif;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
         <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:18px;text-align:center;">
@@ -527,7 +482,7 @@ def _render_html_table(grid_df, titre, sous_titre=""):
                 <thead>
                     <tr>
                         <th style="background:#0f172a;color:white;padding:14px 10px;border:1px solid #1e3a8a;width:110px;text-align:center;position:sticky;left:0;z-index:20;font-size:12px;">
-                            Jour \ Horaire
+                            Jour \\ Horaire
                         </th>
     """
     for h in grid_df.columns:
@@ -539,7 +494,6 @@ def _render_html_table(grid_df, titre, sous_titre=""):
         for h in grid_df.columns:
             cell = row[h]
             if cell and isinstance(cell, list) and len(cell) > 0:
-                # Il peut y avoir plusieurs séances dans la même case
                 cells_html = ""
                 for c in cell:
                     cells_html += f"""
@@ -563,18 +517,15 @@ def _render_html_table(grid_df, titre, sous_titre=""):
         </div>
     </div>
     <style>
-        td {{ transition: all 0.15s ease; }}
-        td:hover {{ background-color:#f0f9ff !important; }}
+        td { transition: all 0.15s ease; }
+        td:hover { background-color:#f0f9ff !important; }
     </style>
     """
     return html
 
 
 def _export_excel(grid_df, titre, file_name):
-    """Export Excel professionnel avec xlsxwriter."""
     buffer = io.BytesIO()
-
-    # Préparation des données texte pour Excel
     df_export = grid_df.copy()
     for jour in df_export.index:
         for h in df_export.columns:
@@ -591,61 +542,32 @@ def _export_excel(grid_df, titre, file_name):
 
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         workbook = writer.book
+        fmt_title = workbook.add_format({'bold': True, 'font_size': 14, 'font_color': '#1E3A8A', 'align': 'center', 'valign': 'vcenter'})
+        fmt_header = workbook.add_format({'bold': True, 'font_size': 11, 'font_color': 'white', 'bg_color': '#1E3A8A', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+        fmt_jour = workbook.add_format({'bold': True, 'font_size': 11, 'bg_color': '#f1f5f9', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+        fmt_cell = workbook.add_format({'font_size': 10, 'border': 1, 'valign': 'top', 'text_wrap': True})
+        fmt_cours = workbook.add_format({'font_size': 10, 'border': 1, 'valign': 'top', 'text_wrap': True, 'bg_color': '#dbeafe', 'font_color': '#1e40af'})
+        fmt_td = workbook.add_format({'font_size': 10, 'border': 1, 'valign': 'top', 'text_wrap': True, 'bg_color': '#dcfce7', 'font_color': '#166534'})
+        fmt_tp = workbook.add_format({'font_size': 10, 'border': 1, 'valign': 'top', 'text_wrap': True, 'bg_color': '#fee2e2', 'font_color': '#991b1b'})
 
-        # Formats
-        fmt_title = workbook.add_format({
-            'bold': True, 'font_size': 14, 'font_color': '#1E3A8A',
-            'align': 'center', 'valign': 'vcenter'
-        })
-        fmt_header = workbook.add_format({
-            'bold': True, 'font_size': 11, 'font_color': 'white',
-            'bg_color': '#1E3A8A', 'border': 1, 'align': 'center', 'valign': 'vcenter',
-            'text_wrap': True
-        })
-        fmt_jour = workbook.add_format({
-            'bold': True, 'font_size': 11, 'bg_color': '#f1f5f9',
-            'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True
-        })
-        fmt_cell = workbook.add_format({
-            'font_size': 10, 'border': 1, 'valign': 'top', 'text_wrap': True
-        })
-        fmt_cours = workbook.add_format({
-            'font_size': 10, 'border': 1, 'valign': 'top', 'text_wrap': True,
-            'bg_color': '#dbeafe', 'font_color': '#1e40af'
-        })
-        fmt_td = workbook.add_format({
-            'font_size': 10, 'border': 1, 'valign': 'top', 'text_wrap': True,
-            'bg_color': '#dcfce7', 'font_color': '#166534'
-        })
-        fmt_tp = workbook.add_format({
-            'font_size': 10, 'border': 1, 'valign': 'top', 'text_wrap': True,
-            'bg_color': '#fee2e2', 'font_color': '#991b1b'
-        })
-
-        # Écriture
         df_export.to_excel(writer, sheet_name='EDT', startrow=3)
         ws = writer.sheets['EDT']
 
-        # Titre
         ws.merge_range('A1:F1', titre, fmt_title)
-        ws.merge_range('A2:F2', f"Généré le {datetime.now().strftime('%d/%m/%Y')} — UDL-SBA", 
+        ws.merge_range('A2:F2', f"Généré le {datetime.now().strftime('%d/%m/%Y')} — UDL-SBA",
                        workbook.add_format({'italic': True, 'align': 'center', 'font_size': 10}))
 
-        # Largeurs
-        ws.set_column(0, 0, 16)  # Colonne Jour
+        ws.set_column(0, 0, 16)
         for i in range(1, len(df_export.columns) + 1):
             ws.set_column(i, i, 28)
 
-        # En-têtes
         for col_num, col_name in enumerate(df_export.columns):
             ws.write(3, col_num + 1, col_name, fmt_header)
         ws.write(3, 0, "JOUR", fmt_header)
 
-        # Données avec couleurs
         for row_num, (jour, row) in enumerate(df_export.iterrows(), start=4):
             ws.write(row_num, 0, jour, fmt_jour)
-            ws.set_row(row_num, 65)  # Hauteur adaptée
-
+            ws.set_row(row_num, 65)
             for col_num, val in enumerate(row):
                 cell_val = grid_df.iloc[row_num - 4, col_num]
                 fmt = fmt_cell
@@ -663,7 +585,6 @@ def _export_excel(grid_df, titre, file_name):
 
 
 def _export_pdf(grid_df, titre, sous_titre, file_name):
-    """Export PDF avec fpdf, hauteur adaptée au contenu."""
     try:
         from fpdf import FPDF
         import math
@@ -725,7 +646,6 @@ def _export_pdf(grid_df, titre, sous_titre, file_name):
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
-    # Titre
     pdf.set_font("Arial", "B", 14)
     pdf.set_text_color(30, 58, 138)
     pdf.cell(0, 10, _sanitize(titre), 0, 1, "C")
@@ -735,7 +655,6 @@ def _export_pdf(grid_df, titre, sous_titre, file_name):
         pdf.cell(0, 6, _sanitize(sous_titre), 0, 1, "C")
     pdf.ln(4)
 
-    # Dimensions
     n_cols = len(grid_df.columns)
     page_w = pdf.w - 20
     col_jour_w = 28
@@ -744,7 +663,6 @@ def _export_pdf(grid_df, titre, sous_titre, file_name):
     margin_h = 4
     padding_v = 3
 
-    # Calcul des hauteurs de ligne
     pdf.set_font("Arial", "", 6.5)
     row_heights = []
     for jour, row in grid_df.iterrows():
@@ -759,17 +677,14 @@ def _export_pdf(grid_df, titre, sous_titre, file_name):
         h_needed = max_lines * interline + padding_v * 2 + 2
         row_heights.append(max(12, h_needed))
 
-    # En-têtes
     pdf.set_font("Arial", "B", 8)
     pdf.set_fill_color(30, 58, 138)
     pdf.set_text_color(255, 255, 255)
     pdf.cell(col_jour_w, 9, "JOUR", 1, 0, "C", True)
     for h in grid_df.columns:
-        h_txt = _sanitize(str(h))
-        pdf.cell(col_data_w, 9, h_txt, 1, 0, "C", True)
+        pdf.cell(col_data_w, 9, _sanitize(str(h)), 1, 0, "C", True)
     pdf.ln()
 
-    # Données
     pdf.set_text_color(0, 0, 0)
     for idx, ((jour, row), row_h) in enumerate(zip(grid_df.iterrows(), row_heights)):
         if pdf.get_y() + row_h > pdf.h - 20:
@@ -792,7 +707,6 @@ def _export_pdf(grid_df, titre, sous_titre, file_name):
         for h in grid_df.columns:
             val = row[h]
             x, y = pdf.get_x(), pdf.get_y()
-
             if val and isinstance(val, list):
                 c = val[0]
                 t = c["type"]
@@ -822,20 +736,7 @@ def _export_pdf(grid_df, titre, sous_titre, file_name):
     return bytes(pdf.output())
 
 
-# =============================================================================
-# FONCTION PRINCIPALE — À APPELER DANS VOTRE INTERFACE STREAMLIT
-# =============================================================================
 def render_edt_interactif(df_source, cible, mode="enseignant", poste_sup=False, repertoire_noms=None):
-    """
-    Affiche le tableau EDT interactif + boutons d'export.
-
-    Args:
-        df_source: DataFrame EDT complet
-        cible: nom de l'enseignant ou de la promotion
-        mode: "enseignant" ou "promotion"
-        poste_sup: bool pour le calcul du seuil (mode enseignant)
-        repertoire_noms: dict optionnel {NOM: "NOM Prénom"}
-    """
     if df_source is None or df_source.empty:
         st.error("❌ Données EDT non disponibles.")
         return
@@ -845,13 +746,6 @@ def render_edt_interactif(df_source, cible, mode="enseignant", poste_sup=False, 
     if grid is None:
         st.warning(f"⚠️ Aucun cours trouvé pour : {cible}")
         return
-
-    # --- AFFICHAGE STATS ---
-    st.markdown("""
-        <style>
-        .stat-box-int { flex:1; padding:15px; border-radius:10px; text-align:center; color:white; font-weight:bold; }
-        </style>
-    """, unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -863,7 +757,6 @@ def render_edt_interactif(df_source, cible, mode="enseignant", poste_sup=False, 
     with c4:
         st.markdown(f"<div style='background:linear-gradient(135deg,#64748b,#94a3b8);padding:15px;border-radius:10px;text-align:center;color:white;font-weight:bold;'>Total Séances<br><span style='font-size:22px;'>{stats['total']}</span></div>", unsafe_allow_html=True)
 
-    # --- CALCUL SEUIL (enseignant uniquement) ---
     if mode == "enseignant":
         seuil = 3.0 if poste_sup else 6.0
         charge_eq = (stats['cours'] * 1.5) + (stats['td'] + stats['tp'])
@@ -876,11 +769,10 @@ def render_edt_interactif(df_source, cible, mode="enseignant", poste_sup=False, 
         with col_b2:
             color = "#22c55e" if h_sup >= 0 else "#ef4444"
             label = "Heures Sup." if h_sup >= 0 else "Déficit"
-            st.markdown(f"<div style='text-align:center;padding:10px;background:{"#f0fdf4" if h_sup >= 0 else "#fef2f2"};border-radius:8px;border-left:4px solid {color};'><div style='font-size:12px;color:#64748b;'>{label}</div><div style='font-size:24px;font-weight:bold;color:{color};'>{h_sup:+.1f}h</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center;padding:10px;background:{('#f0fdf4' if h_sup >= 0 else '#fef2f2')};border-radius:8px;border-left:4px solid {color};'><div style='font-size:12px;color:#64748b;'>{label}</div><div style='font-size:24px;font-weight:bold;color:{color};'>{h_sup:+.1f}h</div></div>", unsafe_allow_html=True)
 
     st.divider()
 
-    # --- AFFICHAGE TABLEAU ---
     nom_aff = repertoire_noms.get(str(cible).strip().upper(), cible) if repertoire_noms else cible
     if mode == "enseignant":
         titre = f"EDT Individuel — {nom_aff}"
@@ -892,7 +784,6 @@ def render_edt_interactif(df_source, cible, mode="enseignant", poste_sup=False, 
     html_table = _render_html_table(grid, titre, sous_titre)
     st.write(html_table, unsafe_allow_html=True)
 
-    # --- BOUTONS D'EXPORT ---
     st.markdown("### 📥 Exports")
     col_ex1, col_ex2, col_ex3 = st.columns(3)
 
@@ -906,14 +797,14 @@ def render_edt_interactif(df_source, cible, mode="enseignant", poste_sup=False, 
 
     with col_ex2:
         xlsx_bytes = _export_excel(grid, titre, f"EDT_{safe_name}.xlsx")
-        st.download_button("📊 Excel", xlsx_bytes, f"EDT_{safe_name}.xlsx", 
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+        st.download_button("📊 Excel", xlsx_bytes, f"EDT_{safe_name}.xlsx",
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                           use_container_width=True, key=f"dl_xl_{mode}_{safe_name}")
 
     with col_ex3:
         pdf_bytes = _export_pdf(grid, titre, sous_titre, f"EDT_{safe_name}.pdf")
         if pdf_bytes:
-            st.download_button("📄 PDF", pdf_bytes, f"EDT_{safe_name}.pdf", "application/pdf", 
+            st.download_button("📄 PDF", pdf_bytes, f"EDT_{safe_name}.pdf", "application/pdf",
                               use_container_width=True, key=f"dl_pdf_{mode}_{safe_name}")
         else:
             st.button("📄 PDF (fpdf requis)", disabled=True, use_container_width=True)
