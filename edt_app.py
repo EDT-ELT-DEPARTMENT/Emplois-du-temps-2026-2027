@@ -735,12 +735,6 @@ def _export_pdf(grid_df, titre, sous_titre, file_name):
 
     return bytes(pdf.output())
 
-
-def render_edt_interactif(df_source, cible, mode="enseignant", poste_sup=False, repertoire_noms=None):
-    if df_source is None or df_source.empty:
-        st.error("❌ Données EDT non disponibles.")
-        return
-
     grid, df_f, stats = _build_grid_data(df_source, cible, mode)
 
     if grid is None:
