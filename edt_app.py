@@ -496,8 +496,6 @@ def run_edt_intelligent():
                 c3.warning("fpdf non installé")
         else:
             st.info("Sélectionnez un enseignant ou une promotion pour générer l'EDT.")
-if __name__ == "__main__":
-    run_edt_intelligent()
 
 # =============================================================================
 # IMPORTS UNIFIES
