@@ -4130,7 +4130,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
                 nat = '[TD]'
             else:
                 nat = '[TP]'
-            txt = f"{nat} {r.get('Enseignements', '')}\nPromo: {r.get('Promotion', '')}\nSalle: {r.get('Lieu', '')}"
+            txt = f"{nat} {r.get('Enseignements', '')}\nPromo: {r.get('Promotion', '')}\ {r.get('Lieu', '')}"
             items.append(txt)
         return "\n".join(items)
 
@@ -10779,7 +10779,7 @@ def format_cell_text(row, mode="enseignant"):
         lines.append(f"M: {normalize_text(row.get('Enseignants', ''))}")
     else:
         lines.append(f"Promo: {normalize_text(row.get('Promotion', ''))}")
-    lines.append(f"Salle: {normalize_text(row.get('Lieu', ''))}")
+    lines.append(f" {normalize_text(row.get('Lieu', ''))}")
     return "\n".join(lines)
 
 # =============================================================================
