@@ -3583,13 +3583,13 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 # =============================================================================
 # POINT D'ENTRÉE PRINCIPAL UNIQUE
 # =============================================================================
-"""
+
 ================================================================================
 Module EDT Intelligent — Plateforme ELT/UDL-SBA
 Génération automatique : Enseignants & Promotions
 Exports : HTML, Excel (openpyxl), PDF (fpdf) avec cellules flexibles
 ================================================================================
-"""
+
 from module_edt_intelligent import run_edt_intelligent
 import streamlit as st
 import pandas as pd
@@ -4080,6 +4080,9 @@ def run_edt_intelligent():
                 c3.warning("fpdf manquant")
         else:
             st.error("❌ La grille est vide. Ouvrez 🔍 *Debug grille* ci-dessus pour diagnostiquer.")
+if __name__ == "__main__":
+    run_edt_intelligent()
+
 if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
 elif module_sel == "🧠 EDT Intelligent":
