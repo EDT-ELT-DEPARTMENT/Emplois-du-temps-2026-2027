@@ -11175,5 +11175,10 @@ if is_admin:
 
     with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
         afficher_historique_bordereaux()
-
+if module_sel == "📊 Suivi d'Assiduite":
+    run_Assiduité()
+elif module_sel == "📅 Gestion des EDTs & Admin":
+    st.info("Module Gestion des EDTs & Admin")
+else:
+    st.error(f"Module inconnu : {module_sel}")
 # =============================================================================
