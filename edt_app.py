@@ -10939,10 +10939,13 @@ def export_pdf(grille_text, titre, sous_titre=""):
         def header(self):
             self.set_font('Arial', 'B', 9)
             self.set_text_color(30, 58, 138)
-            self.cell(0, 6, "Plateforme EDT — UDL-SBA | Semestre 01 2026-2027", 0, 1, 'C')
+            # CORRECTION : passer le texte par sanitize_for_pdf() déjà définie dans ton fichier
+            header_text = sanitize_for_pdf("Plateforme EDT — UDL-SBA | Semestre 01 2026-2027")
+            self.cell(0, 6, header_text, 0, 1, 'C')
             self.set_draw_color(212, 175, 55)
             self.line(10, self.get_y(), self.w - 10, self.get_y())
             self.ln(3)
+        
         def footer(self):
             self.set_y(-15)
             self.set_font('Arial', 'I', 8)
