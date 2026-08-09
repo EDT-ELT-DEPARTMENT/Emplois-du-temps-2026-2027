@@ -10889,17 +10889,17 @@ if is_admin:
                     
                     rows_recap.append({
                         'Date': date_str,
-                        'Généré par': row.get('generated_by', '—'),
-                        'Expéditeur': row.get('expediteur_qualite', '—'),
-                        'departement': row.get('departement', '—'),
-                        'Destinataire': row.get('destinataire', '—'),
-                        'N° Référence': row.get('num_reference', '—'),
+                        'Généré par': row.get('generated_by', '-'),
+                        'Expéditeur': row.get('expediteur_qualite', '-'),
+                        'departement': row.get('departement', '-'),
+                        'Destinataire': row.get('destinataire', '-'),
+                        'N° Référence': row.get('num_reference', '-'),
                         'Nb pièces': row.get('nombre_pieces', 0),
-                        'Fichier': row.get('fichier_nom', '—')
+                        'Fichier': row.get('fichier_nom', '-')
                     })
                     
                     pieces = row.get('pieces_details', [])
-                    ref_num = row.get('num_reference', '—')
+                    ref_num = row.get('num_reference', '-')
                     ref_annee = row.get('annee_reference', datetime.now().year)
                     ref_full = construire_reference(ref_num, ref_annee)
                     
@@ -10907,28 +10907,28 @@ if is_admin:
                         for p in pieces:
                             rows_detail.append({
                                 'Date génération': date_str,
-                                'Généré par': row.get('generated_by', '—'),
-                                'Expéditeur': row.get('expediteur_qualite', '—'),
-                                'departement': row.get('Departement', '—'),
-                                'Destinataire': row.get('destinataire', '—'),
+                                'Généré par': row.get('generated_by', '-'),
+                                'Expéditeur': row.get('expediteur_qualite', '-'),
+                                'departement': row.get('Departement', '-'),
+                                'Destinataire': row.get('destinataire', '-'),
                                 'N° Référence': ref_full,
                                 'Désignation des pièces': p.get('Désignation des pièces', ''),
                                 'Nbre': p.get('Nbre', ''),
                                 'Observations': p.get('Observations', ''),
-                                'Fichier': row.get('fichier_nom', '—')
+                                'Fichier': row.get('fichier_nom', '-')
                             })
                     else:
                         rows_detail.append({
                             'Date génération': date_str,
-                            'Généré par': row.get('generated_by', '—'),
-                            'Expéditeur': row.get('expediteur_qualite', '—'),
-                            'departement': row.get('departement', '—'),
-                            'Destinataire': row.get('destinataire', '—'),
+                            'Généré par': row.get('generated_by', '-'),
+                            'Expéditeur': row.get('expediteur_qualite', '-'),
+                            'departement': row.get('departement', '-'),
+                            'Destinataire': row.get('destinataire', '-'),
                             'N° Référence': ref_full,
-                            'Désignation des pièces': '—',
-                            'Nbre': '—',
-                            'Observations': '—',
-                            'Fichier': row.get('fichier_nom', '—')
+                            'Désignation des pièces': '-',
+                            'Nbre': '-',
+                            'Observations': '-',
+                            'Fichier': row.get('fichier_nom', '-')
                         })
                 
                 df_recap = pd.DataFrame(rows_recap)
@@ -10995,21 +10995,21 @@ if is_admin:
                 
                 for i, row in enumerate(res.data):
                     date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
-                    ref_num = row.get('num_reference', '—')
+                    ref_num = row.get('num_reference', '-')
                     ref_annee = row.get('annee_reference', datetime.now().year)
                     ref_full = construire_reference(ref_num, ref_annee)
-                    dest = row.get('destinataire', '—')
+                    dest = row.get('destinataire', '-')
                     
                     with st.expander(
                         f"📝 Bordereau N° {ref_full} — {dest} — {date_str}", 
                         expanded=(i == 0)
                     ):
                         c1, c2, c3, c4, c5 = st.columns(5)
-                        c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '—')}")
-                        c2.markdown(f"**🏛️ departement**\n{row.get('departement', '—')}")
-                        c3.markdown(f"**📤 Expéditeur**\n{row.get('expediteur_qualite', '—')}")
+                        c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '-')}")
+                        c2.markdown(f"**🏛️ departement**\n{row.get('departement', '-')}")
+                        c3.markdown(f"**📤 Expéditeur**\n{row.get('expediteur_qualite', '-')}")
                         c4.markdown(f"**📅 Date**\n{date_str}")
-                        c5.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '—')}")
+                        c5.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '-')}")
                         
                         st.markdown("---")
                         st.markdown("**Tableau de transmission :**")
