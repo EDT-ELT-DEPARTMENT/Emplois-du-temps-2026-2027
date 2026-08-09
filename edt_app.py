@@ -497,7 +497,7 @@ def run_edt_intelligent():
         else:
             st.info("Sélectionnez un enseignant ou une promotion pour générer l'EDT.")
 
-    elif module_sel == "🧠 EDT Intelligent":
+    if module_sel == "🧠 EDT Intelligent":
     run_edt_intelligent()
 else:
     # Module 2 : Gestion des EDTs & Admin
