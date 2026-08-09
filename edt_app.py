@@ -11171,7 +11171,7 @@ def run_edt_intelligent():
                 c3.warning("fpdf manquant")
         else:
             st.error("❌ La grille est vide. Ouvrez 🔍 *Debug grille* ci-dessus pour diagnostiquer.")
-    if __name__ == "__main__":
-        run_edt_intelligent()
+if __name__ == "__main__":
+    run_edt_intelligent()
 
 
