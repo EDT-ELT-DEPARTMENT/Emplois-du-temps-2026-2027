@@ -3771,7 +3771,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 # POINT D'ENTRÉE PRINCIPAL
 # =============================================================================
 if module_sel == "📊 Suivi d'Assiduite":
-    run_assiduite()
+    run_Assiduite()
 else:
     run_edt() 
 
