@@ -1,4 +1,3 @@
-from module_edt_intelligent import run_edt_intelligent
 """
 ================================================================================
 Module EDT Intelligent — Plateforme ELT/UDL-SBA
