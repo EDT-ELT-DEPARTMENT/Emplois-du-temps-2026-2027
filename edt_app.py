@@ -1096,12 +1096,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 st.markdown("*Supervision complète — Toutes les promotions*")
         else:
             pwd = st.text_input("🔑 Code d'accès :", type="password", key="pwd_tab1")
-            if pwd == CODE_ADMIN:
-                c1, c2 = st.columns(2)
-                with c1:
-                    sel_prof = st.selectbox("👤 Sélectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1")
-            elif pwd != "":
-                st.error("❌ Code incorrect.")
+            
 
         # SUITE COMMUNE
         if sel_prof:
