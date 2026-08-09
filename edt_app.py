@@ -415,25 +415,42 @@ def run_edt_intelligent():
     with col1:
         st.markdown("### ⚙️ Paramètres")
         mode = st.radio("Mode :", ["👤 Enseignant", "🎓 Promotion"], key="edt_mode")
+        
         if mode == "👤 Enseignant":
-            liste = sorted([e for e in df_edt["Enseignants"].unique() if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+            liste = sorted([e for e in df_edt["Enseignants"].unique() 
+                          if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
             selection = st.selectbox("Sélectionner :", liste, key="edt_ens")
             df_filtre = df_edt[df_edt["Enseignants"].str.contains(selection, case=False, na=False)]
             titre = f"EDT Individuel — {selection}"
             mode_export = "enseignant"
         else:
-            liste = sorted([p for p in df_edt["Promotion"].unique() if p and str(p).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+            liste = sorted([p for p in df_edt["Promotion"].unique() 
+                          if p and str(p).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
             selection = st.selectbox("Sélectionner :", liste, key="edt_promo")
             df_filtre = df_edt[df_edt["Promotion"] == selection]
             titre = f"EDT Promotion — {selection}"
             mode_export = "promotion"
+        
         st.divider()
         st.markdown("### 📥 Exports")
+        
+        # CORRECTION BUG 1 : On supprime edt_last_selection pour FORCER la régénération
         if st.button("🔄 Générer / Rafraîchir", use_container_width=True, type="primary"):
+            st.session_state.pop('edt_last_selection', None)
             st.session_state['edt_grille_html'] = None
             st.session_state['edt_grille_text'] = None
+            st.rerun()  # Force le re-run immédiat
 
-    if 'edt_grille_html' not in st.session_state or st.session_state.get('edt_last_selection') != selection:
+    # CORRECTION BUG 1 : Condition renforcée pour détecter None aussi
+    needs_regen = (
+        'edt_grille_html' not in st.session_state 
+        or st.session_state.get('edt_grille_html') is None
+        or st.session_state.get('edt_grille_text') is None
+        or st.session_state.get('edt_last_selection') != selection
+        or st.session_state.get('edt_mode_export') != mode_export
+    )
+    
+    if needs_regen:
         grille_html, grille_text = generer_grille(df_filtre, mode_export)
         st.session_state['edt_grille_html'] = grille_html
         st.session_state['edt_grille_text'] = grille_text
@@ -449,22 +466,35 @@ def run_edt_intelligent():
         if grille_html is not None and not grille_html.empty:
             st.markdown(f"### 📅 {titre}")
             st.write(grille_html.to_html(escape=False), unsafe_allow_html=True)
+            
             c1, c2, c3 = st.columns(3)
+            
+            # HTML
             html_data = export_html(grille_html, titre, f"Mode : {mode_export.title()}")
-            c1.download_button("🌐 HTML", html_data, f"EDT_{selection.replace(' ', '_')}.html", "text/html", use_container_width=True)
+            c1.download_button("🌐 HTML", html_data, 
+                             f"EDT_{selection.replace(' ', '_')}.html", 
+                             "text/html", use_container_width=True)
+            
+            # Excel
             xlsx_data = export_excel(grille_text, titre)
             if xlsx_data:
-                c2.download_button("📊 Excel", xlsx_data, f"EDT_{selection.replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                c2.download_button("📊 Excel", xlsx_data, 
+                                 f"EDT_{selection.replace(' ', '_')}.xlsx", 
+                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                                 use_container_width=True)
             else:
-                c2.button("📊 Excel", disabled=True, use_container_width=True)
+                c2.warning("openpyxl non installé")
+            
+            # PDF
             pdf_data = export_pdf(grille_text, titre, f"Mode : {mode_export.title()}")
             if pdf_data:
-                c3.download_button("📄 PDF", pdf_data, f"EDT_{selection.replace(' ', '_')}.pdf", "application/pdf", use_container_width=True)
+                c3.download_button("📄 PDF", pdf_data, 
+                                 f"EDT_{selection.replace(' ', '_')}.pdf", 
+                                 "application/pdf", use_container_width=True)
             else:
-                c3.button("📄 PDF", disabled=True, use_container_width=True)
+                c3.warning("fpdf non installé")
         else:
             st.info("Sélectionnez un enseignant ou une promotion pour générer l'EDT.")
-
 if __name__ == "__main__":
     run_edt_intelligent()
 
@@ -4051,14 +4081,15 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
 
 # =============================================================================
-# POINT D'ENTRÉE PRINCIPAL
+# POINT D'ENTRÉE PRINCIPAL UNIQUE
 # =============================================================================
 if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
+elif module_sel == "🧠 EDT Intelligent":
+    run_edt_intelligent()
 else:
-    run_edt() 
-
-
+    # Module 2 : Gestion des EDTs & Admin
+    st.info("Module Gestion des EDTs — utilisez le portail de connexion ci-dessus.")
 
                      
 
