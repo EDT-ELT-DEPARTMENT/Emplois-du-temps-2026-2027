@@ -2771,9 +2771,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # ============================================================
     if portail == "📖 Emploi du Temps" and is_admin:
         if mode_view == "Enseignant":
-            cible = st.selectbox("Sélectionner l'Enseignant :", 
+            cible = st.selectbox("Sélectionner l'Enseignant :",
                                 sorted([e for e in df["Enseignants"].unique() if e and e != "Non défini"]))
-            
+
             df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
             df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
             df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
@@ -2800,27 +2800,279 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             else:
                 st.info("⚖️ Seuil exact")
 
-            # Grille EDT
-            def format_case(rows):
+            # ═══════════════════════════════════════════════════════
+            # 1) AFFICHAGE HTML (Streamlit) avec EN-TÊTE ISO
+            # ═══════════════════════════════════════════════════════
+            def fmt_e(rows):
                 items = []
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
-                    if 'COURS' in code_up:
-                        nat = '📘'
-                    elif 'TD' in code_up:
-                        nat = '📗'
+                    color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
+                    nat = '📘' if 'COURS' in code_up else ('📗' if 'TD' in code_up else '🔴')
+                    items.append(
+                        f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;border-radius:4px;'>"
+                        f"<b>{nat} {r['Enseignements']}</b><br>"
+                        f"<small>📍 {r['Lieu']} | 🎓 {r['Promotion']}</small>"
+                        f"</div>"
+                    )
+                return "".join(items)
+
+            grid_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e, include_groups=False).unstack('j_norm')
+            grid_e = grid_e.reindex(
+                index=[normalize(h) for h in horaires_list],
+                columns=[normalize(j) for j in jours_list]
+            ).fillna("")
+            grid_e = grid_e[grid_e.any(axis=1)]
+            grid_e.index = [map_h.get(i, i) for i in grid_e.index]
+            grid_e.columns = [map_j.get(c, c) for c in grid_e.columns]
+
+            styled_e = (
+                grid_e.style
+                .set_properties(**{
+                    'text-align': 'center',
+                    'vertical-align': 'middle',
+                    'border': '1px solid #cbd5e1'
+                })
+                .set_table_styles([
+                    {'selector': 'th',
+                     'props': [
+                         ('text-align', 'center'),
+                         ('vertical-align', 'middle'),
+                         ('border', '1px solid #94a3b8'),
+                         ('background-color', '#f1f5f9'),
+                         ('font-weight', '600')
+                     ]},
+                    {'selector': 'th.row_heading, th.index_name',
+                     'props': [
+                         ('white-space', 'nowrap'),
+                         ('border', '1px solid #94a3b8'),
+                         ('background-color', '#f8fafc')
+                     ]},
+                    {'selector': 'td',
+                     'props': [
+                         ('text-align', 'center'),
+                         ('vertical-align', 'middle'),
+                         ('border', '1px solid #cbd5e1')
+                     ]}
+                ])
+            )
+            html_table_e = styled_e.to_html(escape=False)
+
+            iso_header_html = f"""
+            <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:15px;border-radius:8px 8px 0 0;margin-bottom:0;text-align:center;">
+                <h2 style="margin:0;font-size:18px;">📊 EMPLOI DU TEMPS — ENSEIGNANT</h2>
+                <p style="margin:5px 0 0 0;opacity:0.9;font-size:13px;">{cible} | Semestre 01 — 2026-2027</p>
+                <div style="display:flex;justify-content:center;gap:20px;margin-top:10px;font-size:11px;opacity:0.85;">
+                    <span>📋 Code : PPER.03</span>
+                    <span>🔄 Révision : 00</span>
+                    <span>📅 Date : {datetime.now().strftime('%d/%m/%Y')}</span>
+                </div>
+            </div>
+            """
+            st.write(iso_header_html + html_table_e, unsafe_allow_html=True)
+
+            # ═══════════════════════════════════════════════════════
+            # 2) DONNÉES BRUTES (sans HTML)
+            # ═══════════════════════════════════════════════════════
+            def fmt_e_text(rows):
+                items = []
+                for _, r in rows.iterrows():
+                    code_up = str(r['Code']).upper()
+                    nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'AUTRE')
+                    items.append(f"{nat} – {r['Enseignements']}\n📍 {r['Lieu']} | 🎓 {r['Promotion']}")
+                return "\n────────\n".join(items)
+
+            grid_text_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e_text, include_groups=False).unstack('j_norm')
+            grid_text_e = grid_text_e.reindex(
+                index=[normalize(h) for h in horaires_list],
+                columns=[normalize(j) for j in jours_list]
+            ).fillna("")
+            grid_text_e = grid_text_e[grid_text_e.any(axis=1)]
+            grid_text_e.index = [map_h.get(i, i) for i in grid_text_e.index]
+            grid_text_e.columns = [map_j.get(c, c) for c in grid_text_e.columns]
+
+            # ═══════════════════════════════════════════════════════
+            # 3) EXCEL (openpyxl) avec EN-TÊTE ISO
+            # ═══════════════════════════════════════════════════════
+            import io
+            from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
+            buf_xlsx_e = io.BytesIO()
+
+            with pd.ExcelWriter(buf_xlsx_e, engine='openpyxl') as writer:
+                grid_text_e.to_excel(writer, sheet_name='EDT', startrow=4)
+                ws = writer.sheets['EDT']
+
+                thin = Side(style='thin', color='000000')
+                border = Border(left=thin, right=thin, top=thin, bottom=thin)
+                fill_header = PatternFill(start_color='E2E8F0', end_color='E2E8F0', fill_type='solid')
+                fill_index  = PatternFill(start_color='F1F5F9', end_color='F1F5F9', fill_type='solid')
+                font_bold   = Font(bold=True, size=11)
+                font_header = Font(bold=True, size=11, color='1E293B')
+                font_iso    = Font(bold=True, size=12, color='1E3A8A')
+
+                align_center_wrap   = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                align_center_nowrap = Alignment(horizontal='center', vertical='center', wrap_text=False)
+
+                # EN-TÊTE ISO (lignes fusionnées)
+                ws.merge_cells('A1:F1')
+                ws['A1'] = f"EMPLOI DU TEMPS — ENSEIGNANT : {cible}"
+                ws['A1'].font = font_iso
+                ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+                ws.row_dimensions[1].height = 25
+
+                ws.merge_cells('A2:F2')
+                ws['A2'] = f"📋 Code : PPER.03  |  🔄 Révision : 00  |  📅 Date : {datetime.now().strftime('%d/%m/%Y')}"
+                ws['A2'].font = Font(italic=True, size=10, color='64748B')
+                ws['A2'].alignment = Alignment(horizontal='center', vertical='center')
+                ws.row_dimensions[2].height = 20
+
+                ws.merge_cells('A3:F3')
+                ws['A3'] = f"📘 Cours: {nb_cours}  |  📗 TD: {nb_td}  |  🔴 TP: {nb_tp}  |  Charge Eq/h: {charge_eq:.1f}"
+                ws['A3'].font = Font(bold=True, size=10, color='334155')
+                ws['A3'].alignment = Alignment(horizontal='center', vertical='center')
+                ws.row_dimensions[3].height = 20
+
+                ws.column_dimensions['A'].width = 18
+
+                for row in ws.iter_rows(min_row=5):
+                    for cell in row:
+                        cell.border = border
+                        if cell.row == 5:
+                            if cell.column == 1:
+                                cell.value = 'Horaire'
+                                cell.fill = fill_header
+                                cell.font = font_header
+                                cell.alignment = align_center_nowrap
+                            else:
+                                cell.fill = fill_header
+                                cell.font = font_header
+                                cell.alignment = align_center_nowrap
+                                ws.column_dimensions[cell.column_letter].width = 32
+                        elif cell.column == 1:
+                            cell.fill = fill_index
+                            cell.font = font_bold
+                            cell.alignment = align_center_nowrap
+                        else:
+                            cell.alignment = align_center_wrap
+
+                for r in range(6, ws.max_row + 1):
+                    ws.row_dimensions[r].height = 65
+
+            # ═══════════════════════════════════════════════════════
+            # 4) PDF (ReportLab) avec EN-TÊTE ISO
+            # ═══════════════════════════════════════════════════════
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import landscape, A4
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import mm
+
+            buf_pdf_e = io.BytesIO()
+
+            doc_e = SimpleDocTemplate(
+                buf_pdf_e, pagesize=landscape(A4),
+                rightMargin=15*mm, leftMargin=15*mm,
+                topMargin=20*mm, bottomMargin=15*mm
+            )
+
+            styles_e = getSampleStyleSheet()
+            title_style_e = ParagraphStyle(
+                'CustomTitle', parent=styles_e['Heading1'],
+                fontSize=16, textColor=colors.HexColor('#1e293b'),
+                spaceAfter=6, alignment=1
+            )
+            iso_style_e = ParagraphStyle(
+                'ISOHeader', parent=styles_e['Normal'],
+                fontSize=10, textColor=colors.HexColor('#64748b'),
+                spaceAfter=4, alignment=1
+            )
+            cell_style_e = ParagraphStyle(
+                'CellStyle', parent=styles_e['Normal'],
+                fontSize=9, leading=12, alignment=1, spaceAfter=2
+            )
+
+            table_data_e = []
+            header_row_e = [Paragraph('<b>Horaire</b>', cell_style_e)]
+            for jour in grid_text_e.columns:
+                header_row_e.append(Paragraph(f'<b>{jour}</b>', cell_style_e))
+            table_data_e.append(header_row_e)
+
+            for horaire in grid_text_e.index:
+                row = [Paragraph(f'<b>{horaire}</b>', cell_style_e)]
+                for jour in grid_text_e.columns:
+                    val = grid_text_e.loc[horaire, jour]
+                    if val == '':
+                        row.append('')
                     else:
-                        nat = '🔴'
-                    items.append(f"<b>{nat} {r['Enseignements']}</b><br><small>{r['Lieu']} | {r['Promotion']}</small>")
-                return "<hr style='margin:4px 0;'>".join(items)
+                        val_html = val.replace('\n', '<br/>')
+                        row.append(Paragraph(val_html, cell_style_e))
+                table_data_e.append(row)
 
-            if not df_f.empty:
-                grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
-                grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
-                grid.index = [map_h.get(i, i) for i in grid.index]
-                grid.columns = [map_j.get(c, c) for c in grid.columns]
-                st.write(grid.to_html(escape=False), unsafe_allow_html=True)
+            page_width_e = landscape(A4)[0] - 30*mm
+            col_w_horaire_e = 30*mm
+            col_w_jour_e = (page_width_e - col_w_horaire_e) / len(grid_text_e.columns)
+            col_widths_e = [col_w_horaire_e] + [col_w_jour_e] * len(grid_text_e.columns)
 
+            table_e = Table(table_data_e, colWidths=col_widths_e, repeatRows=1)
+
+            table_e.setStyle(TableStyle([
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1e293b')),
+                ('BACKGROUND', (1, 0), (-1, 0), colors.HexColor('#e2e8f0')),
+                ('TEXTCOLOR', (1, 0), (-1, 0), colors.HexColor('#1e293b')),
+                ('FONTNAME', (1, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (1, 0), (-1, 0), 10),
+                ('ALIGN', (1, 0), (-1, 0), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f1f5f9')),
+                ('TEXTCOLOR', (0, 1), (0, -1), colors.HexColor('#1e293b')),
+                ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 1), (0, -1), 10),
+                ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+                ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
+                ('FONTSIZE', (1, 1), (-1, -1), 9),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+
+            for i in range(1, len(table_data_e)):
+                table_e.setStyle(TableStyle([('MINROWHEIGHT', (0, i), (-1, i), 55)]))
+
+            elements_e = []
+            elements_e.append(Paragraph(f"📊 EMPLOI DU TEMPS — ENSEIGNANT", title_style_e))
+            elements_e.append(Paragraph(f"<b>{cible}</b> | Semestre 01 — 2026-2027", iso_style_e))
+            elements_e.append(Paragraph(f"📋 Code : PPER.03 &nbsp;&nbsp;|&nbsp;&nbsp; 🔄 Révision : 00 &nbsp;&nbsp;|&nbsp;&nbsp; 📅 Date : {datetime.now().strftime('%d/%m/%Y')}", iso_style_e))
+            elements_e.append(Spacer(1, 8*mm))
+            elements_e.append(table_e)
+
+            doc_e.build(elements_e)
+
+            # ═══════════════════════════════════════════════════════
+            # 5) BOUTONS DE TÉLÉCHARGEMENT
+            # ═══════════════════════════════════════════════════════
+            ce1, ce2, ce3 = st.columns(3)
+
+            ce1.download_button(
+                "📥 Excel",
+                buf_xlsx_e.getvalue(),
+                f"EDT_Ens_{cible.replace(' ', '_')}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            ce2.download_button(
+                "🌐 HTML",
+                iso_header_html + html_table_e,
+                f"EDT_Ens_{cible.replace(' ', '_')}.html",
+                "text/html"
+            )
+            ce3.download_button(
+                "📄 PDF",
+                buf_pdf_e.getvalue(),
+                f"EDT_Ens_{cible.replace(' ', '_')}.pdf",
+                "application/pdf"
+            )
+            
         elif mode_view == "Promotion":
             import io
             from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
@@ -2829,14 +3081,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib.units import mm
-        
+
             p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
             df_p = df[df["Promotion"] == p_sel].copy()
-            
+
             st.markdown(f"### 📚 EDT Promotion : {p_sel}")
-            
+
             # ═══════════════════════════════════════════════════════
-            # 1) AFFICHAGE HTML (Streamlit)
+            # 1) AFFICHAGE HTML (Streamlit) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
             def fmt_p(rows):
                 items = []
@@ -2851,7 +3103,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         f"</div>"
                     )
                 return "".join(items)
-        
+
             grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
             grid_p = grid_p.reindex(
                 index=[normalize(h) for h in horaires_list],
@@ -2860,8 +3112,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             grid_p = grid_p[grid_p.any(axis=1)]
             grid_p.index = [map_h.get(i, i) for i in grid_p.index]
             grid_p.columns = [map_j.get(c, c) for c in grid_p.columns]
-        
-            # Style HTML : quadrillage + centrage + horaire sur 1 ligne
+
             styled = (
                 grid_p.style
                 .set_properties(**{
@@ -2893,8 +3144,21 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 ])
             )
             html_table = styled.to_html(escape=False)
-            st.write(html_table, unsafe_allow_html=True)
-        
+
+            # EN-TÊTE ISO pour le HTML
+            iso_header_html_p = f"""
+            <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:15px;border-radius:8px 8px 0 0;margin-bottom:0;text-align:center;">
+                <h2 style="margin:0;font-size:18px;">📚 EMPLOI DU TEMPS — PROMOTION</h2>
+                <p style="margin:5px 0 0 0;opacity:0.9;font-size:13px;">{p_sel} | Semestre 01 — 2026-2027</p>
+                <div style="display:flex;justify-content:center;gap:20px;margin-top:10px;font-size:11px;opacity:0.85;">
+                    <span>📋 Code : PPER.03</span>
+                    <span>🔄 Révision : 00</span>
+                    <span>📅 Date : {datetime.now().strftime('%d/%m/%Y')}</span>
+                </div>
+            </div>
+            """
+            st.write(iso_header_html_p + html_table, unsafe_allow_html=True)
+
             # ═══════════════════════════════════════════════════════
             # 2) DONNÉES BRUTES (même structure, sans HTML)
             # ═══════════════════════════════════════════════════════
@@ -2905,7 +3169,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'AUTRE')
                     items.append(f"{nat} – {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}")
                 return "\n────────\n".join(items)
-        
+
             grid_text = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_text, include_groups=False).unstack('j_norm')
             grid_text = grid_text.reindex(
                 index=[normalize(h) for h in horaires_list],
@@ -2914,35 +3178,54 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             grid_text = grid_text[grid_text.any(axis=1)]
             grid_text.index = [map_h.get(i, i) for i in grid_text.index]
             grid_text.columns = [map_j.get(c, c) for c in grid_text.columns]
-        
+
             # ═══════════════════════════════════════════════════════
-            # 3) EXCEL (openpyxl) – copie conforme du layout
+            # 3) EXCEL (openpyxl) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
             buf_xlsx = io.BytesIO()
-            
+
             with pd.ExcelWriter(buf_xlsx, engine='openpyxl') as writer:
-                grid_text.to_excel(writer, sheet_name='EDT')
+                grid_text.to_excel(writer, sheet_name='EDT', startrow=4)
                 ws = writer.sheets['EDT']
-                
+
                 # ── Styles ──
                 thin = Side(style='thin', color='000000')
                 border = Border(left=thin, right=thin, top=thin, bottom=thin)
-                fill_header = PatternFill(start_color='E2E8F0', end_color='E2E8F0', fill_type='solid')   # Jours
-                fill_index  = PatternFill(start_color='F1F5F9', end_color='F1F5F9', fill_type='solid')   # Horaires
+                fill_header = PatternFill(start_color='E2E8F0', end_color='E2E8F0', fill_type='solid')
+                fill_index  = PatternFill(start_color='F1F5F9', end_color='F1F5F9', fill_type='solid')
                 font_bold   = Font(bold=True, size=11)
                 font_header = Font(bold=True, size=11, color='1E293B')
-                
+                font_iso    = Font(bold=True, size=12, color='1E3A8A')
+
                 align_center_wrap   = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 align_center_nowrap = Alignment(horizontal='center', vertical='center', wrap_text=False)
-                
+
+                # EN-TÊTE ISO (lignes fusionnées)
+                ws.merge_cells('A1:F1')
+                ws['A1'] = f"EMPLOI DU TEMPS — PROMOTION : {p_sel}"
+                ws['A1'].font = font_iso
+                ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+                ws.row_dimensions[1].height = 25
+
+                ws.merge_cells('A2:F2')
+                ws['A2'] = f"📋 Code : PPER.03  |  🔄 Révision : 00  |  📅 Date : {datetime.now().strftime('%d/%m/%Y')}"
+                ws['A2'].font = Font(italic=True, size=10, color='64748B')
+                ws['A2'].alignment = Alignment(horizontal='center', vertical='center')
+                ws.row_dimensions[2].height = 20
+
+                ws.merge_cells('A3:F3')
+                ws['A3'] = "département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA"
+                ws['A3'].font = Font(bold=True, size=10, color='334155')
+                ws['A3'].alignment = Alignment(horizontal='center', vertical='center')
+                ws.row_dimensions[3].height = 20
+
                 ws.column_dimensions['A'].width = 18
-                
-                for row in ws.iter_rows():
+
+                for row in ws.iter_rows(min_row=5):
                     for cell in row:
                         cell.border = border
-                        
-                        if cell.row == 1:
-                            # Ligne d'en-tête (jours)
+
+                        if cell.row == 5:
                             if cell.column == 1:
                                 cell.value = 'Horaire'
                                 cell.fill = fill_header
@@ -2953,50 +3236,52 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 cell.font = font_header
                                 cell.alignment = align_center_nowrap
                                 ws.column_dimensions[cell.column_letter].width = 32
-                                
+
                         elif cell.column == 1:
-                            # Colonne A (horaires) – pas de retour à la ligne
                             cell.fill = fill_index
                             cell.font = font_bold
                             cell.alignment = align_center_nowrap
-                            
+
                         else:
-                            # Cellules de données – retour à la ligne autorisé
                             cell.alignment = align_center_wrap
-                
-                # Hauteur des lignes de données
-                for r in range(2, ws.max_row + 1):
+
+                for r in range(6, ws.max_row + 1):
                     ws.row_dimensions[r].height = 65
-        
+
             # ═══════════════════════════════════════════════════════
-            # 4) PDF (ReportLab) – orientation paysage, tableau identique
+            # 4) PDF (ReportLab) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
             buf_pdf = io.BytesIO()
-            
+
             doc = SimpleDocTemplate(
                 buf_pdf, pagesize=landscape(A4),
                 rightMargin=15*mm, leftMargin=15*mm,
-                topMargin=15*mm, bottomMargin=15*mm
+                topMargin=20*mm, bottomMargin=15*mm
             )
-            
+
             styles = getSampleStyleSheet()
             title_style = ParagraphStyle(
                 'CustomTitle', parent=styles['Heading1'],
                 fontSize=16, textColor=colors.HexColor('#1e293b'),
-                spaceAfter=12, alignment=1  # centre
+                spaceAfter=6, alignment=1
+            )
+            iso_style = ParagraphStyle(
+                'ISOHeader', parent=styles['Normal'],
+                fontSize=10, textColor=colors.HexColor('#64748b'),
+                spaceAfter=4, alignment=1
             )
             cell_style = ParagraphStyle(
                 'CellStyle', parent=styles['Normal'],
                 fontSize=9, leading=12, alignment=1, spaceAfter=2
             )
-            
+
             # Construction des données du tableau
             table_data = []
             header_row = [Paragraph('<b>Horaire</b>', cell_style)]
             for jour in grid_text.columns:
                 header_row.append(Paragraph(f'<b>{jour}</b>', cell_style))
             table_data.append(header_row)
-            
+
             for horaire in grid_text.index:
                 row = [Paragraph(f'<b>{horaire}</b>', cell_style)]
                 for jour in grid_text.columns:
@@ -3007,36 +3292,29 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         val_html = val.replace('\n', '<br/>')
                         row.append(Paragraph(val_html, cell_style))
                 table_data.append(row)
-            
+
             # Largeurs des colonnes
             page_width = landscape(A4)[0] - 30*mm
             col_w_horaire = 30*mm
             col_w_jour = (page_width - col_w_horaire) / len(grid_text.columns)
             col_widths = [col_w_horaire] + [col_w_jour] * len(grid_text.columns)
-            
+
             table = Table(table_data, colWidths=col_widths, repeatRows=1)
-            
+
             table.setStyle(TableStyle([
-                # Quadrillage complet
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
                 ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1e293b')),
-                
-                # En-têtes jours
                 ('BACKGROUND', (1, 0), (-1, 0), colors.HexColor('#e2e8f0')),
                 ('TEXTCOLOR', (1, 0), (-1, 0), colors.HexColor('#1e293b')),
                 ('FONTNAME', (1, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (1, 0), (-1, 0), 10),
                 ('ALIGN', (1, 0), (-1, 0), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                
-                # Colonne horaires
                 ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f1f5f9')),
                 ('TEXTCOLOR', (0, 1), (0, -1), colors.HexColor('#1e293b')),
                 ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 1), (0, -1), 10),
                 ('ALIGN', (0, 1), (0, -1), 'CENTER'),
-                
-                # Cellules données
                 ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
                 ('FONTSIZE', (1, 1), (-1, -1), 9),
                 ('LEFTPADDING', (0, 0), (-1, -1), 6),
@@ -3044,23 +3322,25 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 ('TOPPADDING', (0, 0), (-1, -1), 6),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
-            
+
             # Hauteur minimale des lignes
             for i in range(1, len(table_data)):
                 table.setStyle(TableStyle([('MINROWHEIGHT', (0, i), (-1, i), 55)]))
-            
+
             elements = []
-            elements.append(Paragraph(f"📚 EDT Promotion : {p_sel}", title_style))
-            elements.append(Spacer(1, 10*mm))
+            elements.append(Paragraph(f"📚 EMPLOI DU TEMPS — PROMOTION", title_style))
+            elements.append(Paragraph(f"<b>{p_sel}</b> | Semestre 01 — 2026-2027", iso_style))
+            elements.append(Paragraph(f"📋 Code : PPER.03 &nbsp;&nbsp;|&nbsp;&nbsp; 🔄 Révision : 00 &nbsp;&nbsp;|&nbsp;&nbsp; 📅 Date : {datetime.now().strftime('%d/%m/%Y')}", iso_style))
+            elements.append(Spacer(1, 8*mm))
             elements.append(table)
-            
+
             doc.build(elements)
-        
+
             # ═══════════════════════════════════════════════════════
             # 5) BOUTONS DE TÉLÉCHARGEMENT
             # ═══════════════════════════════════════════════════════
             c1, c2, c3 = st.columns(3)
-            
+
             c1.download_button(
                 "📥 Excel",
                 buf_xlsx.getvalue(),
@@ -3069,7 +3349,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             )
             c2.download_button(
                 "🌐 HTML",
-                html_table,
+                iso_header_html_p + html_table,
                 f"EDT_{p_sel}.html",
                 "text/html"
             )
@@ -3079,7 +3359,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 f"EDT_{p_sel}.pdf",
                 "application/pdf"
             )
-                      
+                              
         elif mode_view == "🏢 Planning Salles":
             s_sel = st.selectbox("Choisir Salle :", sorted([s for s in df["Lieu"].unique() if s and s != "Non défini"]))
             df_s = df[df["Lieu"] == s_sel]
