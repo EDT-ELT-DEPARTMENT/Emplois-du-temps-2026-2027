@@ -841,6 +841,173 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
     raise ValueError(f"❌ Format non reconnu. Utilisez un fichier Excel valide (.xlsx, .xls, .xlsb). Erreur : {last_err}")
 
 
+# =============================================================================
+# MODULE EDT INTERACTIF (à placer AVANT run_Assiduité)
+# =============================================================================
+JOURS_ORDRE = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+HORAIRES_ORDRE = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"]
+
+COULEURS_EDT = {
+    "COURS": {"bg": "#dbeafe", "border": "#3b82f6", "text": "#1e40af", "icon": "📘"},
+    "TD":    {"bg": "#dcfce7", "border": "#22c55e", "text": "#166534", "icon": "📗"},
+    "TP":    {"bg": "#fee2e2", "border": "#ef4444", "text": "#991b1b", "icon": "🔴"},
+}
+
+def _detect_type(code_str):
+    c = str(code_str).upper()
+    if "COURS" in c: return "COURS"
+    if "TD" in c:    return "TD"
+    return "TP"
+
+def _norm_h(h):
+    if pd.isna(h): return "vide"
+    s = str(h).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
+    return s.replace(":00", "").replace("h00", "h")
+
+def _build_grid(df_source, cible, mode="enseignant"):
+    df = df_source.copy()
+    df["Type"] = df["Code"].apply(_detect_type)
+    df["h_norm"] = df["Horaire"].apply(_norm_h)
+    df["j_norm"] = df["Jours"].astype(str).str.strip().str.capitalize()
+
+    if mode == "enseignant":
+        df_f = df[df["Enseignants"].astype(str).str.contains(str(cible), case=False, na=False)].copy()
+    else:
+        df_f = df[df["Promotion"].astype(str).str.strip().str.upper() == str(cible).strip().upper()].copy()
+
+    if df_f.empty:
+        return None, {}
+
+    df_u = df_f.drop_duplicates(subset=["j_norm", "h_norm"])
+    stats = {"cours": len(df_u[df_u["Type"] == "COURS"]), "td": len(df_u[df_u["Type"] == "TD"]),
+             "tp": len(df_u[df_u["Type"] == "TP"]), "total": len(df_u)}
+
+    def _fmt(rows):
+        out = []
+        for _, r in rows.iterrows():
+            t = _detect_type(r["Code"])
+            st = COULEURS_EDT[t]
+            extra = f"🎓 {r['Promotion']}" if mode == "enseignant" else f"👤 {r['Enseignants']}"
+            out.append({"matiere": r["Enseignements"], "type": t, "salle": r["Lieu"], "extra": extra, **st})
+        return out
+
+    grouped = df_f.groupby(["j_norm", "h_norm"]).apply(_fmt, include_groups=False)
+    grid = pd.DataFrame("", index=JOURS_ORDRE, columns=HORAIRES_ORDRE)
+    if not grouped.empty:
+        for (j, h), cells in grouped.items():
+            hl = next((hh for hh in HORAIRES_ORDRE if _norm_h(hh) == h), None)
+            if j in JOURS_ORDRE and hl:
+                grid.at[j, hl] = cells
+    return grid, stats
+
+
+def _html_table(grid_df, titre, sous_titre=""):
+    hd = f'<th style="background:#1E3A8A;color:white;padding:12px;border:1px solid #1e3a8a;text-align:center;font-size:12px;">{titre}</th>'
+    th = '<th style="background:#0f172a;color:white;padding:12px;border:1px solid #1e3a8a;width:110px;text-align:center;position:sticky;left:0;z-index:20;">Jour \\ Horaire</th>'
+    for h in grid_df.columns:
+        th += f'<th style="background:#1E3A8A;color:white;padding:12px;border:1px solid #1e3a8a;text-align:center;font-size:12px;min-width:140px;">{h}</th>'
+
+    rows = ""
+    for jour, row in grid_df.iterrows():
+        rows += f'<tr><td style="background:#f1f5f9;font-weight:bold;padding:12px;border:1px solid #cbd5e1;text-align:center;position:sticky;left:0;z-index:10;">{jour}</td>'
+        for h in grid_df.columns:
+            cell = row[h]
+            if cell and isinstance(cell, list):
+                inner = ""
+                for c in cell:
+                    inner += f'<div style="margin-bottom:5px;padding:8px;border-left:4px solid {c["border"]};background:{c["bg"]};border-radius:5px;text-align:left;"><b style="color:{c["text"]};">{c["icon"]} {c["matiere"]}</b><br><span style="font-size:11px;">{c["extra"]}</span><br><span style="font-size:11px;color:#64748b;">📍 {c["salle"]}</span></div>'
+                rows += f'<td style="border:1px solid #e2e8f0;padding:6px;vertical-align:top;background:white;">{inner}</td>'
+            else:
+                rows += f'<td style="border:1px dashed #e2e8f0;padding:6px;vertical-align:middle;text-align:center;background:#f8fafc;color:#cbd5e1;">—</td>'
+        rows += "</tr>"
+
+    return f"""
+    <div style="font-family:'Segoe UI',Arial,sans-serif;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+        <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:16px;text-align:center;">
+            <h3 style="margin:0;font-size:17px;">📅 {titre}</h3>
+            <p style="margin:5px 0 0 0;opacity:0.9;font-size:12px;">{sous_titre}</p>
+        </div>
+        <div style="padding:12px;overflow-x:auto;">
+            <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:13px;table-layout:fixed;">
+                <thead><tr>{th}</tr></thead><tbody>{rows}</tbody>
+            </table>
+        </div>
+    </div>"""
+
+
+def _excel_bytes(grid_df, titre):
+    buf = io.BytesIO()
+    dfe = grid_df.copy()
+    for j in dfe.index:
+        for h in dfe.columns:
+            v = dfe.at[j, h]
+            dfe.at[j, h] = "\n".join([f"[{c['type']}] {c['matiere']}\n{c['extra']}\nSalle: {c['salle']}" for c in v]) if v and isinstance(v, list) else ""
+    with pd.ExcelWriter(buf, engine='xlsxwriter') as w:
+        wb = w.book
+        fmt_h = wb.add_format({'bold': True, 'font_color': 'white', 'bg_color': '#1E3A8A', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+        fmt_j = wb.add_format({'bold': True, 'bg_color': '#f1f5f9', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+        fmts = {"COURS": wb.add_format({'bg_color': '#dbeafe', 'border': 1, 'valign': 'top', 'text_wrap': True}),
+                "TD": wb.add_format({'bg_color': '#dcfce7', 'border': 1, 'valign': 'top', 'text_wrap': True}),
+                "TP": wb.add_format({'bg_color': '#fee2e2', 'border': 1, 'valign': 'top', 'text_wrap': True})}
+        dfe.to_excel(w, sheet_name='EDT', startrow=3)
+        ws = w.sheets['EDT']
+        ws.merge_range('A1:F1', titre, wb.add_format({'bold': True, 'font_size': 14, 'font_color': '#1E3A8A', 'align': 'center'}))
+        ws.set_column(0, 0, 16)
+        for i in range(1, len(dfe.columns) + 1): ws.set_column(i, i, 28)
+        for c, col in enumerate(dfe.columns): ws.write(3, c + 1, col, fmt_h)
+        ws.write(3, 0, "JOUR", fmt_h)
+        for r, (jour, row) in enumerate(dfe.iterrows(), start=4):
+            ws.write(r, 0, jour, fmt_j); ws.set_row(r, 60)
+            for c, val in enumerate(row):
+                cell = grid_df.iloc[r - 4, c]
+                fmt = fmts.get(cell[0]["type"], wb.add_format({'border': 1, 'valign': 'top', 'text_wrap': True})) if cell and isinstance(cell, list) else wb.add_format({'border': 1, 'valign': 'top', 'text_wrap': True})
+                ws.write(r, c + 1, val, fmt)
+        ws.freeze_panes(4, 1)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def render_edt_interactif(df_source, cible, mode="enseignant", poste_sup=False, repertoire_noms=None):
+    if df_source is None or df_source.empty:
+        st.error("❌ Données EDT non disponibles."); return
+    grid, stats = _build_grid(df_source, cible, mode)
+    if grid is None:
+        st.warning(f"⚠️ Aucun cours trouvé pour : {cible}"); return
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.markdown(f"<div style='background:linear-gradient(135deg,#1E3A8A,#3B82F6);padding:15px;border-radius:10px;text-align:center;color:white;font-weight:bold;'>📘 Cours<br><span style='font-size:22px;'>{stats['cours']}</span></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div style='background:linear-gradient(135deg,#15803d,#22c55e);padding:15px;border-radius:10px;text-align:center;color:white;font-weight:bold;'>📗 TD<br><span style='font-size:22px;'>{stats['td']}</span></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div style='background:linear-gradient(135deg,#b45309,#f59e0b);padding:15px;border-radius:10px;text-align:center;color:white;font-weight:bold;'>🔴 TP<br><span style='font-size:22px;'>{stats['tp']}</span></div>", unsafe_allow_html=True)
+    c4.markdown(f"<div style='background:linear-gradient(135deg,#64748b,#94a3b8);padding:15px;border-radius:10px;text-align:center;color:white;font-weight:bold;'>Total<br><span style='font-size:22px;'>{stats['total']}</span></div>", unsafe_allow_html=True)
+
+    if mode == "enseignant":
+        seuil = 3.0 if poste_sup else 6.0
+        charge_eq = (stats['cours'] * 1.5) + (stats['td'] + stats['tp'])
+        h_sup = (charge_eq - seuil) * 1.5
+        b1, b2 = st.columns(2)
+        b1.metric("Charge Eq/h", f"{charge_eq:.1f}")
+        color = "#22c55e" if h_sup >= 0 else "#ef4444"
+        label = "Heures Sup." if h_sup >= 0 else "Déficit"
+        b2.markdown(f"<div style='text-align:center;padding:10px;background:{('#f0fdf4' if h_sup>=0 else '#fef2f2')};border-radius:8px;border-left:4px solid {color};'><div style='font-size:12px;color:#64748b;'>{label}</div><div style='font-size:24px;font-weight:bold;color:{color};'>{h_sup:+.1f}h</div></div>", unsafe_allow_html=True)
+
+    st.divider()
+    nom_aff = repertoire_noms.get(str(cible).strip().upper(), cible) if repertoire_noms else cible
+    titre = f"EDT — {nom_aff}" if mode == "enseignant" else f"EDT — {cible}"
+    sous = f"Semestre 01 — 2026-2027 | {stats['total']} séance(s)"
+    html = _html_table(grid, titre, sous)
+    st.write(html, unsafe_allow_html=True)
+
+    st.markdown("### 📥 Exports")
+    e1, e2, e3 = st.columns(3)
+    safe = str(cible).replace(" ", "_").replace("/", "_")
+    e1.download_button("🌐 HTML", f"<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body style='margin:0;background:#f1f5f9;padding:20px;'>{html}</body></html>", f"EDT_{safe}.html", "text/html", use_container_width=True, key=f"h_{mode}_{safe}")
+    e2.download_button("📊 Excel", _excel_bytes(grid, titre), f"EDT_{safe}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key=f"x_{mode}_{safe}")
+    e3.button("📄 PDF (fpdf requis)", disabled=True, use_container_width=True)
+
+
+# =============================================================================
+# MODULE 1 : SUIVI Assiduité DES ETUDIANTS
+# =============================================================================
 def run_Assiduité():
     st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
     st.caption("département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - année 2026-2027")
