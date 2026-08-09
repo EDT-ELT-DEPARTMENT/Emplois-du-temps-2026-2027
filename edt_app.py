@@ -497,11 +497,11 @@ def run_edt_intelligent():
         else:
             st.info("Sélectionnez un enseignant ou une promotion pour générer l'EDT.")
 
-    if module_sel == "🧠 EDT Intelligent":
-    run_edt_intelligent()
-else:
-    # Module 2 : Gestion des EDTs & Admin
-    st.info("Module Gestion des EDTs — utilisez le portail de connexion ci-dessus.")
+            if module_sel == "🧠 EDT Intelligent":
+              run_edt_intelligent()
+        else:
+            # Module 2 : Gestion des EDTs & Admin
+            st.info("Module Gestion des EDTs — utilisez le portail de connexion ci-dessus.")
 # =============================================================================
 # IMPORTS UNIFIES
 # =============================================================================
