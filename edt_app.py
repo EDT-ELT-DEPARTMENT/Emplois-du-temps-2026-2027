@@ -1,10 +1,10 @@
 # =============================================================================
 # POINT D'ENTRÉE PRINCIPAL
 # =============================================================================
-                if module_sel == "📊 Suivi d'Assiduite":
+if module_sel == "📊 Suivi d'Assiduite":
                     run_Assiduité()
                 else:
-                    run_edt() 
+                    run_edt()                 
 """
 ================================================================================
 Application Unifiée : Suivi d'Assiduité + Gestion des EDTs
