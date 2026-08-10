@@ -11676,8 +11676,7 @@ if df_contacts is not None and not df_contacts.empty:
 # ═════════════════════════════════════════════════════════════════════════════
 # >>> TABLEAU DE BORD RÉPERTOIRE ÉTUDIANTS (ADMIN UNIQUEMENT) <<<
 # ═════════════════════════════════════════════════════════════════════════════
-# Utilise df_etu_edt (chargé dans le Module 2) et non df_etu (Module 1)
-if 'df_etu_edt' in locals() and df_etu_edt is not None and not df_etu_edt.empty:
+if df_etu_edt is not None and not df_etu_edt.empty:
     st.divider()
     st.markdown("""
         <div style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%); 
