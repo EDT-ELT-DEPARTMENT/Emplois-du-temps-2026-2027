@@ -5504,7 +5504,7 @@ st.set_page_config(
 # --- CONNEXION BASE DE DONNÉES ---
 
 KEY = st.secrets["SUPABASE_KEY"]
-supabase = create_client(URL, KEY)
+
 
 def hash_pw(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
