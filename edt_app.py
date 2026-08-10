@@ -366,7 +366,14 @@ def format_date_naissance(val):
             return dt.strftime('%d/%m/%Y')
         except:
             pass
-    
+def normalize(s):
+    """Normalise une chaîne pour comparaison (horaires, jours, etc.)."""
+    if not s or s == "Non défini": 
+        return "vide"
+    s = str(s).strip().lower()
+    s = s.replace(" ", "").replace("-", "").replace("–", "")
+    s = s.replace(":00", "").replace("h00", "h")
+    return s    
     return str(val)
 # =============================================================================
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
