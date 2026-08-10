@@ -2853,7 +2853,7 @@ tr:nth-child(even){{background-color:#f8fafc;}}
         st.markdown("<h3 style='color:#1E3A8A;margin:0;'>Plateforme de gestion des EDTs 2026-2027</h3>", unsafe_allow_html=True)
         st.caption("département d'Électrotechnique - Faculté de Génie Électrique - UDL-SBA")
     with col_date:
-        st.markdown(f"<div style='background:#1E3A8A;color:white;padding:8px 12px;border-radius:8px;text-align:center;font-size:12px;'>📅 {nom_jour_fr}<br>{date_str}</div>", unsafe_allow_html=True)
+         
 
     st.markdown("<hr style='border:2px solid #D4AF37;margin:15px 0;'>", unsafe_allow_html=True)
 
