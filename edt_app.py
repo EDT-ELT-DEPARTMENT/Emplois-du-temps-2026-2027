@@ -9922,10 +9922,7 @@ if is_admin:
     
         # =================================================================
         # =================================================================
-    # --- LOGIQUE D'AFFICHAGE DU PORTAIL MISE À JOUR ---
-    elif portail == "🎓 Portail mise à jour EDT":
-        st.header("🎓 Portail mise à jour EDT")
-        st.info("Module de mise à jour des emplois du temps — intégrez ici votre formulaire d'édition.")
+   
             
         # Rappel du titre obligatoire
         st.info("Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
