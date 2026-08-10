@@ -2316,31 +2316,34 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         # =============================================================================
         # ONGLET 5 : MON EDT (ÉTUDIANT CONNECTÉ UNIQUEMENT)
         # =============================================================================
+        # =============================================================================
+        # ONGLET 5 : MON EDT (ÉTUDIANT CONNECTÉ UNIQUEMENT)
+        # =============================================================================
         with tab5:
             st.header("📅 Mon Emploi du Temps")
-            st.caption("Consultation et téléchargement de votre EDT hebdomadaire")
-    
+            st.caption("Consultation et téléchargement de votre EDT hebdomadaire filtré par groupe & sous-groupe")
+
             if not étudiant_connecte:
                 st.info("ℹ️ Cet onglet est réservé aux étudiants connectés. Retournez à l'onglet 📝 Suivi d'Assiduité pour vous authentifier.")
             else:
                 promo_etu = str(étudiant_connecte.get("promotion", "")).strip()
                 nom_etu   = str(étudiant_connecte.get("nom", "Étudiant")).strip()
-    
+
                 if df_edt.empty:
                     st.error("❌ Les données EDT ne sont pas disponibles.")
                 else:
                     # ─── MAPPING PROMOTION ───
                     df_edt["Promotion_Mappee"] = df_edt["Promotion"].apply(mapper_promotion)
                     promo_mapped = mapper_promotion(promo_etu)
-    
+
                     df_edt_etu = df_edt[df_edt["Promotion_Mappee"] == promo_mapped].copy()
-    
+
                     # Fallback si le mapping échoue
                     if df_edt_etu.empty:
                         df_edt_etu = df_edt[
                             df_edt["Promotion"].astype(str).str.strip().str.upper() == promo_etu.upper()
                         ].copy()
-    
+
                     # ═══════════════════════════════════════════════════════
                     # RÉCUPÉRATION GROUPE / SOUS-GROUPE ÉTUDIANT
                     # ═══════════════════════════════════════════════════════
@@ -2356,7 +2359,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             sous_groupe_etu = str(row_etu.iloc[0].get(cols_map.get('sous_groupe', ''), '')).strip().upper()
                     except Exception:
                         pass
-    
+
                     # ═══════════════════════════════════════════════════════
                     # DÉTECTION INTELLIGENTE DES GROUPES/SOUS-GROUPES DANS TOUTES LES COLONNES EDT
                     # ═══════════════════════════════════════════════════════
@@ -2370,7 +2373,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             if m:
                                 return extracteur(m)
                         return None
-    
+
                     # Patterns de recherche pour les groupes (tolérants : G1, Grp1, Groupe 1, Groupe A, Gr 1...)
                     patterns_groupes = [
                         (r'\bG(\d+)\b', lambda m: f"G{m.group(1)}"),
@@ -2379,7 +2382,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         (r'\bGROUPE\s*([A-Z])\b', lambda m: f"G{m.group(1)}"),
                         (r'\bGR\s*(\d+)\b', lambda m: f"G{m.group(1)}"),
                     ]
-    
+
                     # Patterns de recherche pour les sous-groupes (SG1, Sous-groupe 1, SousGrp1...)
                     patterns_sous_groupes = [
                         (r'\bSG(\d+)\b', lambda m: f"SG{m.group(1)}"),
@@ -2387,15 +2390,15 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         (r'\bSOUS[-\s]?GRP\s*(\d+)\b', lambda m: f"SG{m.group(1)}"),
                         (r'\bSOUS[-\s]?G\s*(\d+)\b', lambda m: f"SG{m.group(1)}"),
                     ]
-    
+
                     # On scanne toutes les colonnes textuelles du DataFrame EDT
                     colonnes_texte = df_edt_etu.select_dtypes(include=['object']).columns.tolist()
                     colonnes_texte = [c for c in colonnes_texte if c not in ['h_norm', 'j_norm', 'Promotion_Mappee', 'Groupe_Detecte', 'SousGroupe_Detecte']]
-    
+
                     # Initialisation des colonnes de détection
                     df_edt_etu["Groupe_Detecte"] = None
                     df_edt_etu["SousGroupe_Detecte"] = None
-    
+
                     for col in colonnes_texte:
                         # Détection groupe dans cette colonne
                         detected_g = df_edt_etu[col].apply(lambda x: extraire_identifiant_groupe(x, patterns_groupes))
@@ -2404,26 +2407,26 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         # Détection sous-groupe dans cette colonne
                         detected_sg = df_edt_etu[col].apply(lambda x: extraire_identifiant_groupe(x, patterns_sous_groupes))
                         df_edt_etu["SousGroupe_Detecte"] = df_edt_etu["SousGroupe_Detecte"].combine_first(detected_sg)
-    
+
                     # ═══════════════════════════════════════════════════════
                     # FILTRAGE INTELLIGENT
                     # ═══════════════════════════════════════════════════════
                     grp_etu_norm = groupe_etu.replace(" ", "").replace("-", "").upper() if groupe_etu else ""
                     sg_etu_norm = sous_groupe_etu.replace(" ", "").replace("-", "").upper() if sous_groupe_etu else ""
-    
+
                     # Cours communs = aucun groupe ni sous-groupe détecté dans l'EDT
                     mask_commun = df_edt_etu["Groupe_Detecte"].isna() & df_edt_etu["SousGroupe_Detecte"].isna()
-    
+
                     if grp_etu_norm or sg_etu_norm:
                         mask_mon_groupe = pd.Series([False] * len(df_edt_etu))
                         mask_mon_sg = pd.Series([False] * len(df_edt_etu))
-    
+
                         if grp_etu_norm:
                             mask_mon_groupe = df_edt_etu["Groupe_Detecte"].astype(str).str.replace(" ", "").str.upper() == grp_etu_norm
                         
                         if sg_etu_norm:
                             mask_mon_sg = df_edt_etu["SousGroupe_Detecte"].astype(str).str.replace(" ", "").str.upper() == sg_etu_norm
-    
+
                         # Logique combinée : 
                         # Si l'étudiant a un groupe ET un sous-groupe :
                         #   → cours communs + cours du sous-groupe spécifique + cours du groupe sans sous-groupe précisé
@@ -2438,7 +2441,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     else:
                         st.info("ℹ️ Aucun groupe/sous-groupe détecté dans votre fiche étudiant. Affichage des cours communs.")
                         df_edt_etu = df_edt_etu[mask_commun].copy()
-    
+
                     # Info-bulle récapitulative
                     filtre_info = []
                     if groupe_etu: filtre_info.append(f"Groupe **{groupe_etu}**")
@@ -2447,29 +2450,29 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         st.info(f"🔍 Filtrage appliqué : {' | '.join(filtre_info)}")
                     else:
                         st.info("🔍 Affichage des cours communs à toute la promotion.")
-    
+
                     if df_edt_etu.empty:
                         st.warning(f"⚠️ Aucun cours trouvé pour **{promo_etu}** avec vos critères de groupement.")
                     else:
                         st.success(f"🎓 {len(df_edt_etu)} séance(s) trouvée(s) pour vous.")
-    
+
                         # ─── GRILLE EDT ───
                         def _norm(x):
                             if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
                                 return "vide"
                             s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
                             return s.replace(":00", "").replace("h00", "h")
-    
+
                         df_edt_etu["h_norm"] = df_edt_etu["Horaire"].apply(_norm)
                         df_edt_etu["j_norm"] = df_edt_etu["Jours"].apply(_norm)
-    
+
                         horaires_ref = [
                             "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
                             "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
                         ]
                         jours_ref = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
-    
-                        def _fmt_cell(rows):
+
+                        def _fmt_html(rows):
                             items = []
                             for _, r in rows.iterrows():
                                 code_up = str(r["Code"]).upper()
@@ -2479,7 +2482,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     nat, color, bg = "📗", "#166534", "#dcfce7"
                                 else:
                                     nat, color, bg = "🔴", "#991b1b", "#fee2e2"
-    
+
                                 # Badges groupe / sous-groupe si détectés
                                 badges = ""
                                 if pd.notna(r.get("Groupe_Detecte")):
@@ -2492,7 +2495,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                               f"color:white;padding:1px 6px;border-radius:4px;"
                                               f"font-size:10px;font-weight:700;margin-bottom:4px;'>"
                                               f"🔹 {r['SousGroupe_Detecte']}</div>")
-    
+
                                 items.append(
                                     f"<div style='margin-bottom:6px;padding:8px;border-left:4px solid {color};"
                                     f"background-color:{bg};border-radius:6px;text-align:left;'>"
@@ -2503,13 +2506,35 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     f"</div>"
                                 )
                             return "".join(items)
-    
-                        grouped = df_edt_etu.groupby(["j_norm", "h_norm"]).apply(_fmt_cell, include_groups=False)
-                        grid = grouped.unstack("j_norm") if not grouped.empty else pd.DataFrame()
-    
-                        jours_present = [j for j in jours_ref if j in grid.columns]
-                        h_present = [h for h in horaires_ref if _norm(h) in grid.index]
-    
+
+                        def _fmt_text(rows):
+                            """Version texte brute pour Excel/PDF"""
+                            items = []
+                            for _, r in rows.iterrows():
+                                code_up = str(r["Code"]).upper()
+                                if "COURS" in code_up:
+                                    nat = "COURS"
+                                elif "TD" in code_up:
+                                    nat = "TD"
+                                else:
+                                    nat = "TP"
+                                g_info = ""
+                                if pd.notna(r.get("Groupe_Detecte")):
+                                    g_info += f" [Grp:{r['Groupe_Detecte']}]"
+                                if pd.notna(r.get("SousGroupe_Detecte")):
+                                    g_info += f" [SG:{r['SousGroupe_Detecte']}]"
+                                items.append(f"{nat} – {r['Enseignements']}{g_info}\n{r['Enseignants']}\nSalle: {r['Lieu']}")
+                            return "\n────────\n".join(items)
+
+                        grouped_html = df_edt_etu.groupby(["j_norm", "h_norm"]).apply(_fmt_html, include_groups=False)
+                        grouped_text = df_edt_etu.groupby(["j_norm", "h_norm"]).apply(_fmt_text, include_groups=False)
+                        
+                        grid_html = grouped_html.unstack("j_norm") if not grouped_html.empty else pd.DataFrame()
+                        grid_text = grouped_text.unstack("j_norm") if not grouped_text.empty else pd.DataFrame()
+
+                        jours_present = [j for j in jours_ref if j in grid_html.columns]
+                        h_present = [h for h in horaires_ref if _norm(h) in grid_html.index]
+
                         if not jours_present or not h_present:
                             st.info("ℹ️ Impossible de construire la grille (données incomplètes après filtrage).")
                             st.dataframe(
@@ -2517,185 +2542,214 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 use_container_width=True, hide_index=True
                             )
                         else:
-                            grid = grid.reindex(index=[_norm(h) for h in h_present], columns=jours_present).fillna("")
+                            grid_html = grid_html.reindex(index=[_norm(h) for h in h_present], columns=jours_present).fillna("")
+                            grid_text = grid_text.reindex(index=[_norm(h) for h in h_present], columns=jours_present).fillna("")
                             
                             h_labels = { _norm(h): h for h in h_present }
                             j_labels = { j: j.capitalize() for j in jours_present }
                             
-                            grid.index = [h_labels.get(i, i) for i in grid.index]
-                            grid.columns = [j_labels.get(c, c) for c in grid.columns]
-    
+                            grid_html.index = [h_labels.get(i, i) for i in grid_html.index]
+                            grid_html.columns = [j_labels.get(c, c) for c in grid_html.columns]
+                            grid_text.index = [h_labels.get(i, i) for i in grid_text.index]
+                            grid_text.columns = [j_labels.get(c, c) for c in grid_text.columns]
+
                             st.markdown("### 📋 Votre emploi du temps hebdomadaire")
-                            st.write(grid.to_html(escape=False), unsafe_allow_html=True)
-    
-                            # ─── EXPORT HTML ───
+                            st.write(grid_html.to_html(escape=False), unsafe_allow_html=True)
+
+                            # ═══════════════════════════════════════════════════════
+                            # EXPORTS : HTML + EXCEL + PDF
+                            # ═══════════════════════════════════════════════════════
                             groupe_suffix = f"_{groupe_etu}" if groupe_etu else ""
                             sg_suffix = f"_SG{sous_groupe_etu}" if sous_groupe_etu else ""
-                            
+                            base_filename = f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{groupe_suffix}{sg_suffix}"
+
+                            # ─── 1. HTML ───
                             html_doc = f"""<!DOCTYPE html>
-    <html lang="fr">
-    <head>
-    <meta charset="UTF-8">
-    <title>EDT — {nom_etu}</title>
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-    body{{font-family:'Inter','Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#f1f5f9 0%,#e2e8f0 100%);margin:0;padding:30px;color:#1e293b;}}
-    .container{{max-width:1200px;margin:auto;background:white;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,0.08);overflow:hidden;}}
-    .header{{background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:30px;text-align:center;}}
-    .header h1{{margin:0;font-size:22px;}}.header p{{margin:8px 0 0 0;opacity:0.9;font-size:14px;}}
-    .badge{{display:inline-block;background:#D4AF37;color:#1E3A8A;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px;}}
-    .content{{padding:30px;}}table{{width:100%;border-collapse:collapse;margin-top:15px;}}
-    th{{background-color:#0f172a;color:white;padding:14px;text-align:center;font-size:13px;border:1px solid #e2e8f0;position:sticky;top:0;}}
-    td{{padding:14px;border:1px solid #e2e8f0;vertical-align:top;font-size:12px;}}
-    tr:nth-child(even){{background-color:#f8fafc;}}
-    .footer{{text-align:center;padding:20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;}}
-    @media print{{body{{background:white;padding:0;}}.container{{box-shadow:none;border-radius:0;}}}}
-    </style>
-    </head>
-    <body>
-    <div class="container">
-    <div class="header">
-    <h1>📅 Emploi du Temps Individuel</h1>
-    <p>{nom_etu} — Promotion {promo_etu}{f' ({groupe_etu})' if groupe_etu else ''}{f' — Sous-groupe {sous_groupe_etu}' if sous_groupe_etu else ''}</p>
-    <span class="badge">Semestre 01 — 2026-2027</span>
-    </div>
-    <div class="content">
-    <p style="color:#64748b;font-size:13px;">Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
-    {grid.to_html(escape=False)}
-    </div>
-    <div class="footer">département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA</div>
-    </div>
-    </body>
-    </html>"""
-    
-                            st.download_button(
-                                label="🌐 Télécharger mon EDT (HTML)",
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>EDT — {nom_etu}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+body{{font-family:'Inter','Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#f1f5f9 0%,#e2e8f0 100%);margin:0;padding:30px;color:#1e293b;}}
+.container{{max-width:1200px;margin:auto;background:white;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,0.08);overflow:hidden;}}
+.header{{background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:30px;text-align:center;}}
+.header h1{{margin:0;font-size:22px;}}.header p{{margin:8px 0 0 0;opacity:0.9;font-size:14px;}}
+.badge{{display:inline-block;background:#D4AF37;color:#1E3A8A;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px;}}
+.content{{padding:30px;}}table{{width:100%;border-collapse:collapse;margin-top:15px;}}
+th{{background-color:#0f172a;color:white;padding:14px;text-align:center;font-size:13px;border:1px solid #e2e8f0;position:sticky;top:0;}}
+td{{padding:14px;border:1px solid #e2e8f0;vertical-align:top;font-size:12px;}}
+tr:nth-child(even){{background-color:#f8fafc;}}
+.footer{{text-align:center;padding:20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;}}
+@media print{{body{{background:white;padding:0;}}.container{{box-shadow:none;border-radius:0;}}}}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>📅 Emploi du Temps Individuel</h1>
+<p>{nom_etu} — Promotion {promo_etu}{f' ({groupe_etu})' if groupe_etu else ''}{f' — Sous-groupe {sous_groupe_etu}' if sous_groupe_etu else ''}</p>
+<span class="badge">Semestre 01 — 2026-2027</span>
+</div>
+<div class="content">
+<p style="color:#64748b;font-size:13px;">Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
+{grid_html.to_html(escape=False)}
+</div>
+<div class="footer">département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA</div>
+</div>
+</body>
+</html>"""
+
+                            # ─── 2. EXCEL ───
+                            buf_xl = io.BytesIO()
+                            with pd.ExcelWriter(buf_xl, engine='xlsxwriter') as writer:
+                                grid_text.to_excel(writer, sheet_name='Mon_EDT', startrow=2)
+                                wb = writer.book
+                                ws = writer.sheets['Mon_EDT']
+                                
+                                title_fmt = wb.add_format({'bold': True, 'font_size': 14, 'font_color': '#1E3A8A', 'align': 'center', 'valign': 'vcenter'})
+                                info_fmt = wb.add_format({'italic': True, 'align': 'center', 'font_size': 10, 'font_color': '#64748b'})
+                                hdr_fmt = wb.add_format({'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                                idx_fmt = wb.add_format({'bold': True, 'bg_color': '#f1f5f9', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                                cell_fmt = wb.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10})
+                                alt_fmt = wb.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10, 'bg_color': '#F8FAFC'})
+                                
+                                # Titre
+                                ws.merge_range(0, 0, 0, len(grid_text.columns), f"EDT Individuel — {nom_etu}", title_fmt)
+                                ws.merge_range(1, 0, 1, len(grid_text.columns), 
+                                               f"Promotion {promo_etu} | Généré le {datetime.now().strftime('%d/%m/%Y')}", info_fmt)
+                                
+                                ws.set_column(0, 0, 16)
+                                ws.set_column(1, len(grid_text.columns), 28)
+                                
+                                # En-têtes (ligne 2)
+                                for col_num, val in enumerate(grid_text.columns, start=1):
+                                    ws.write(2, col_num, val, hdr_fmt)
+                                ws.write(2, 0, "HORAIRE", hdr_fmt)
+                                
+                                # Données
+                                for row_num, (horaire, row) in enumerate(grid_text.iterrows(), start=3):
+                                    fmt = alt_fmt if row_num % 2 == 0 else cell_fmt
+                                    ws.write(row_num, 0, horaire, idx_fmt)
+                                    for col_num, val in enumerate(row, start=1):
+                                        ws.write(row_num, col_num, val, fmt)
+                                    n_lines = max([str(v).count('\n') + 1 for v in row] + [1])
+                                    ws.set_row(row_num, max(40, n_lines * 14))
+                                
+                                ws.freeze_panes(3, 1)
+
+                            # ─── 3. PDF ───
+                            buf_pdf = io.BytesIO()
+                            try:
+                                from fpdf import FPDF
+                                
+                                class EtudiantEDTPDF(FPDF):
+                                    def header(self):
+                                        self.set_font('Arial', 'B', 9)
+                                        self.set_text_color(30, 58, 138)
+                                        t = "Plateforme EDT — UDL-SBA | Semestre 01 2026-2027".encode('latin-1','ignore').decode('latin-1')
+                                        self.cell(0, 6, t, 0, 1, 'C')
+                                        self.set_draw_color(212, 175, 55)
+                                        self.line(10, self.get_y(), self.w - 10, self.get_y())
+                                        self.ln(3)
+                                    
+                                    def footer(self):
+                                        self.set_y(-15)
+                                        self.set_font('Arial', 'I', 8)
+                                        self.set_text_color(128, 128, 128)
+                                        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+                                def _san(text):
+                                    if not text: return ""
+                                    t = str(text)
+                                    repl = {"'":"'","'":"'","–":"-","—":"-","…":"...","«":"\"","»":"\"","œ":"oe","Œ":"OE",
+                                            "à":"a","â":"a","ä":"a","á":"a","ã":"a","å":"a","è":"e","é":"e","ê":"e","ë":"e",
+                                            "ì":"i","í":"i","î":"i","ï":"i","ò":"o","ó":"o","ô":"o","ö":"o","ù":"u","ú":"u","û":"u","ü":"u",
+                                            "ç":"c","ñ":"n","ÿ":"y","ý":"y","À":"A","Â":"A","Ä":"A","Á":"A","Ã":"A","È":"E","É":"E","Ê":"E","Ë":"E",
+                                            "Ì":"I","Í":"I","Î":"I","Ï":"I","Ò":"O","Ó":"O","Ô":"O","Ö":"O","Ù":"U","Ú":"U","Û":"U","Ü":"U","Ç":"C","Ñ":"N"}
+                                    for o,n in repl.items(): t=t.replace(o,n)
+                                    return t.encode('latin-1','ignore').decode('latin-1')
+
+                                pdf = EtudiantEDTPDF(orientation='L', unit='mm', format='A4')
+                                pdf.set_auto_page_break(auto=True, margin=15)
+                                pdf.add_page()
+                                
+                                pdf.set_font("Arial", "B", 13)
+                                pdf.set_text_color(30, 58, 138)
+                                pdf.cell(0, 8, _san(f"EDT Individuel — {nom_etu}"), 0, 1, "C")
+                                pdf.set_font("Arial", "I", 9)
+                                pdf.set_text_color(100, 100, 100)
+                                sub = f"Promotion {promo_etu}"
+                                if groupe_etu: sub += f" | Groupe {groupe_etu}"
+                                if sous_groupe_etu: sub += f" | Sous-groupe {sous_groupe_etu}"
+                                pdf.cell(0, 5, _san(sub), 0, 1, "C")
+                                pdf.ln(3)
+
+                                n_cols = len(grid_text.columns)
+                                page_w = pdf.w - 20
+                                col_h = 25
+                                col_w = (page_w - col_h) / n_cols if n_cols > 0 else page_w
+                                
+                                # En-tête
+                                pdf.set_font("Arial", "B", 8)
+                                pdf.set_fill_color(30, 58, 138)
+                                pdf.set_text_color(255, 255, 255)
+                                pdf.cell(col_h, 8, "HORAIRE", 1, 0, "C", True)
+                                for h in grid_text.columns:
+                                    pdf.cell(col_w, 8, _san(h), 1, 0, "C", True)
+                                pdf.ln()
+                                
+                                # Données
+                                pdf.set_text_color(0, 0, 0)
+                                pdf.set_font("Arial", "", 7)
+                                for idx, (horaire, row) in enumerate(grid_text.iterrows()):
+                                    bg = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
+                                    pdf.set_fill_color(*bg)
+                                    pdf.set_font("Arial", "B", 7.5)
+                                    pdf.cell(col_h, 10, _san(horaire), 1, 0, "C", True)
+                                    pdf.set_font("Arial", "", 7)
+                                    for val in row:
+                                        pdf.cell(col_w, 10, _san(val)[:60], 1, 0, "C", True)
+                                    pdf.ln()
+                                
+                                pdf_data = bytes(pdf.output())
+                            except Exception as e:
+                                pdf_data = None
+                                st.caption(f"ℹ️ Export PDF indisponible : {e}")
+
+                            # ─── BOUTONS DE TÉLÉCHARGEMENT ───
+                            st.markdown("### 📥 Télécharger mon EDT")
+                            c1, c2, c3 = st.columns(3)
+                            
+                            c1.download_button(
+                                label="🌐 HTML",
                                 data=html_doc,
-                                file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{groupe_suffix}{sg_suffix}.html",
+                                file_name=f"{base_filename}.html",
                                 mime="text/html",
                                 use_container_width=True,
-                                key="dl_edt_etudiant"
+                                key="dl_edt_etudiant_html"
                             )
-                    
-
-    
-    # --- CONNEXION BASE DE DONNÉES ---
-    try:
-        URL = st.secrets["SUPABASE_URL"]
-        KEY = st.secrets["SUPABASE_KEY"]
-        supabase_edt = create_client(URL, KEY)
-    except Exception as e:
-        st.error(f"Erreur connexion Supabase : {e}")
-        supabase_edt = None
-
-    def hash_pw(password):
-        return hashlib.sha256(str.encode(password)).hexdigest()
-
-    # --- GESTION DU TEMPS ---
-    now = datetime.now()
-    date_str = now.strftime("%d/%m/%Y")
-    jours_semaine = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
-    nom_jour_fr = jours_semaine[now.weekday()]
-
-    # --- STYLE CSS ---
-    st.markdown("""
-        <style>
-        .main-title { 
-            color: #1E3A8A; 
-            text-align: center; 
-            font-family: 'serif'; 
-            font-weight: bold; 
-            border-bottom: 3px solid #D4AF37; 
-            padding-bottom: 15px; 
-            font-size: 18px; 
-            margin-top: 5px;
-        }
-        .portal-badge { 
-            background-color: #D4AF37; 
-            color: #1E3A8A; 
-            padding: 5px 15px; 
-            border-radius: 5px; 
-            font-weight: bold; 
-            text-align: center; 
-            margin-bottom: 20px; 
-        }
-        .date-badge { 
-            background-color: #1E3A8A; 
-            color: white; 
-            padding: 5px 15px; 
-            border-radius: 20px; 
-            font-size: 12px; 
-            float: right; 
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # --- CHARGEMENT DES DONNÉES ---
-    df = None
-    repertoire_qualites = {} 
-    repertoire_grades = {} 
-    repertoire_source = {}
-    repertoire_noms_complets = {}
-    repertoire_telephones = {}
-    df_contacts = None
-
-    def normalize(s):
-        if not s or s == "Non défini": 
-            return "vide"
-        s = str(s).strip().lower()
-        s = s.replace(" ", "").replace("-", "").replace("–", "")
-        s = s.replace(":00", "").replace("h00", "h")
-        return s
-
-    if os.path.exists(NOM_FICHIER_FIXE):
-        try:
-            df = pd.read_excel(NOM_FICHIER_FIXE)
-            df.columns = [str(c).strip() for c in df.columns]
-            colonnes_cles = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-            for col in colonnes_cles:
-                if col in df.columns: 
-                    df[col] = df[col].fillna("Non défini").astype(str).str.strip()
-                else:
-                    df[col] = "Non défini"
-            df['h_norm'] = df['Horaire'].apply(normalize)
-            df['j_norm'] = df['Jours'].apply(normalize)
-            df_etu_edt = pd.DataFrame()
-            if os.path.exists(FILE_ETUDIANTS):
-                try:
-                    df_etu_edt = lire_excel_robuste(FILE_ETUDIANTS)
-                    df_etu_edt.columns = df_etu_edt.columns.str.strip()
-                    col_n = next((c for c in df_etu_edt.columns if c.strip().upper() == "NOM"), None)
-                    col_p = next((c for c in df_etu_edt.columns if c.strip().upper() in ["PRÉNOM", "PRENOM"]), None)
-                    if col_n and col_p:
-                        df_etu_edt["Nom_Complet"] = df_etu_edt[col_n].astype(str).str.strip().str.upper() + " " + df_etu_edt[col_p].astype(str).str.strip().str.title()
-                except Exception as e:
-                    st.warning(f"⚠️ Chargement étudiants indisponible : {e}")
-        except Exception as e:
-            st.error(f"Erreur de chargement EDT : {e}")
-
-    if os.path.exists(NOM_FICHIER_CONTACTS):
-        try:
-            df_contacts = pd.read_excel(NOM_FICHIER_CONTACTS)
-            df_contacts.columns = [str(c).strip() for c in df_contacts.columns]
-            for _, row in df_contacts.iterrows():
-                nom_brut = str(row.get('NOM', '')).strip().upper()
-                prénom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
-                email_brut = str(row.get('Email', '')).strip()
-                qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
-                grade_brut = str(row.get('Grade', 'N/A')).strip()
-                tel_brut = str(row.get('N°/TEL', '')).strip()
-                tel_nettoye = ''.join([c for c in tel_brut if c.isdigit()])
-                if tel_nettoye and tel_nettoye.lower() != 'nan':
-                    repertoire_telephones[nom_brut] = tel_nettoye
-                if nom_brut:
-                    nom_complet = f"{nom_brut} {prénom_brut}".strip()
-                    if email_brut and email_brut.lower() != 'nan':
-                        repertoire_source[nom_brut] = email_brut
-                    repertoire_noms_complets[nom_brut] = nom_complet
-                    repertoire_qualites[nom_brut] = qualite_brute
-                    repertoire_grades[nom_brut] = grade_brut
-        except Exception as e:
-            st.warning(f"Fichier contacts : {e}")
+                            
+                            c2.download_button(
+                                label="📊 Excel",
+                                data=buf_xl.getvalue(),
+                                file_name=f"{base_filename}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key="dl_edt_etudiant_xlsx"
+                            )
+                            
+                            if pdf_data:
+                                c3.download_button(
+                                    label="📄 PDF",
+                                    data=pdf_data,
+                                    file_name=f"{base_filename}.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True,
+                                    key="dl_edt_etudiant_pdf"
+                                )
+                            else:
+                                c3.button("📄 PDF", disabled=True, use_container_width=True)
 
     # --- SYSTÈME D'AUTH ---
     if "user_data" not in st.session_state:
