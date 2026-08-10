@@ -10711,9 +10711,7 @@ try:
 except ImportError:
     Workbook = None
 
-# =============================================================================
-# PARTIE 1 — CONSTANTES & CONFIGURATION
-# =============================================================================
+# --- Constantes ---
 HORAIRES_STD = [
     "08h00 - 09h30", "09h30 - 11h00", "11h00 - 12h30",
     "12h30 - 14h00", "14h00 - 15h30", "15h30 - 17h00"
@@ -10727,22 +10725,16 @@ COLORS = {
     "AUTRE": {"bg": "#f3f4f6", "border": "#9ca3af", "text": "#374151", "emoji": "⚪"}
 }
 
-# =============================================================================
-# PARTIE 2 — FONCTIONS UTILITAIRES
-# =============================================================================
+# --- Fonctions utilitaires ---
 def normalize_text(s):
     if not s or str(s).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
         return ""
     return re.sub(r'\s+', ' ', str(s).strip())
-import re
+
 def normalize_horaire(h):
     if not h or str(h).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
         return ""
-    
     s = str(h).strip().lower()
-    
-    # Regex robuste : capture les deux horaires quelle que soit la syntaxe
-    # Ex: 8h-9h30 | 9h30 -11h | 11h00-12h30 | 12h30-14h | 15h30-17h | 08h00 - 09h30
     m = re.match(r'(\d{1,2})[h:\s](\d{2})?\s*[-–]\s*(\d{1,2})[h:\s](\d{2})?', s)
     if m:
         h1 = int(m.group(1))
@@ -10750,11 +10742,8 @@ def normalize_horaire(h):
         h2 = int(m.group(3))
         min2 = int(m.group(4)) if m.group(4) else 0
         return f"{h1:02d}h{min1:02d} - {h2:02d}h{min2:02d}"
-    
-    # Si déjà au bon format, renvoyer tel quel
     if re.match(r'\d{2}h\d{2} - \d{2}h\d{2}', s):
         return s
-    
     return str(h).strip()
 
 def get_type_matiere(code):
@@ -10764,9 +10753,6 @@ def get_type_matiere(code):
     if "TP" in c:    return "TP"
     return "AUTRE"
 
-# =============================================================================
-# PARTIE 3 — FORMATAGE DES CELLULES
-# =============================================================================
 def format_cell_html(row, mode="enseignant"):
     typ = get_type_matiere(row.get("Code", ""))
     style = COLORS.get(typ, COLORS["AUTRE"])
@@ -10790,9 +10776,6 @@ def format_cell_text(row, mode="enseignant"):
     lines.append(f" {normalize_text(row.get('Lieu', ''))}")
     return "\n".join(lines)
 
-# =============================================================================
-# PARTIE 4 — GÉNÉRATION DE LA GRILLE (Jours ↓, Horaires →)
-# =============================================================================
 def generer_grille(df_filtre, mode="enseignant"):
     if df_filtre is None or df_filtre.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -10823,9 +10806,7 @@ def generer_grille(df_filtre, mode="enseignant"):
     grille_text.columns = [horaires_map.get(c, c) for c in grille_text.columns]
     return grille_html, grille_text
 
-# =============================================================================
-# PARTIE 5 — EXPORT HTML
-# =============================================================================
+# --- Export HTML ---
 def export_html(grille_html, titre, sous_titre=""):
     if grille_html is None or grille_html.empty:
         return "<p>Aucune donnée</p>"
@@ -10877,9 +10858,7 @@ def export_html(grille_html, titre, sous_titre=""):
 </div>
 </body></html>"""
 
-# =============================================================================
-# PARTIE 6 — EXPORT EXCEL (HAUTEURS FLEXIBLES)
-# =============================================================================
+# --- Export Excel ---
 def export_excel(grille_text, titre):
     if Workbook is None:
         return None
@@ -10936,9 +10915,7 @@ def export_excel(grille_text, titre):
     buf.seek(0)
     return buf.getvalue()
 
-# =============================================================================
-# PARTIE 7 — EXPORT PDF (CELLULES AUTO-AJUSTÉES)
-# =============================================================================
+# --- Export PDF ---
 def export_pdf(grille_text, titre, sous_titre=""):
     if FPDF is None:
         return None
@@ -10947,8 +10924,8 @@ def export_pdf(grille_text, titre, sous_titre=""):
         def header(self):
             self.set_font('Arial', 'B', 9)
             self.set_text_color(30, 58, 138)
-            # CORRECTION : passer le texte par sanitize_for_pdf() déjà définie dans ton fichier
-            header_text = sanitize_for_pdf("Plateforme de gestion des EDTs — Département d'électrotechnique_FGE-UDL-SBA | Semestre 01 2026-2027")
+            # CORRECTION : utiliser sanitize() locale, pas sanitize_for_pdf
+            header_text = sanitize("Plateforme de gestion des EDTs — Departement d'electrotechnique_FGE-UDL-SBA | Semestre 01 2026-2027")
             self.cell(0, 6, header_text, 0, 1, 'C')
             self.set_draw_color(212, 175, 55)
             self.line(10, self.get_y(), self.w - 10, self.get_y())
@@ -11077,11 +11054,16 @@ def export_pdf(grille_text, titre, sous_titre=""):
     return bytes(pdf.output())
 
 # =============================================================================
-# PARTIE 8 — INTERFACE STREAMLIT
+# POINT D'ENTRÉE DU MODULE 3 (avec gestion des rôles)
 # =============================================================================
 def run_edt_intelligent():
     st.title("🧠 EDT Intelligent")
     st.caption("Génération automatique des emplois du temps individuels et par promotion")
+
+    # ─── AUTH : qui est connecté ? ───
+    user = st.session_state.get("user_data")
+    is_admin = user is not None and user.get("role") == "admin"
+    nom_ens_connecte = user.get("nom_officiel", "") if user else ""
 
     base_dir = Path(__file__).parent.resolve()
     fichier_edt = str(base_dir / "dataEDT-ELT-S1-2027.xlsx")
@@ -11099,7 +11081,7 @@ def run_edt_intelligent():
             st.error(f"❌ Erreur lecture : {e}")
     else:
         st.warning(f"⚠️ Fichier non trouvé dans `{base_dir}`")
-        uploaded = st.file_uploader("Uploader dataEDT-ELT-S1-2027.xlsx", type=["xlsx", "xls"])
+        uploaded = st.file_uploader("Uploader dataEDT-ELT-S1-2027.xlsx", type=["xlsx", "xls"], key="edt_upload_global")
         if uploaded:
             df_edt = pd.read_excel(uploaded)
             source_ok = True
@@ -11119,19 +11101,39 @@ def run_edt_intelligent():
 
     with col1:
         st.markdown("### ⚙️ Paramètres")
-        mode = st.radio("Mode :", ["👤 Enseignant", "🎓 Promotion"], key="edt_mode")
 
+        # ─── MODE SELON LE RÔLE ───
+        if is_admin:
+            mode = st.radio("Mode :", ["👤 Enseignant", "🎓 Promotion"], key="edt_mode_global")
+        else:
+            # Enseignant : mode forcé, info uniquement
+            st.info(f"👤 Connecté : **{nom_ens_connecte}**")
+            mode = "👤 Enseignant"
+            st.radio("Mode :", ["👤 Enseignant (lecture seule)"], index=0, disabled=True, key="edt_mode_ens_lock")
+
+        # ─── SÉLECTION ───
         if mode == "👤 Enseignant":
-            liste = sorted([e for e in df_edt["Enseignants"].unique()
-                          if e and str(e).strip().lower() not in ["", "nan", "none", "non defini", "non défini"]])
-            selection = st.selectbox("Sélectionner :", liste, key="edt_ens")
+            if is_admin:
+                liste = sorted([e for e in df_edt["Enseignants"].unique()
+                              if e and str(e).strip().lower() not in ["", "nan", "none", "non defini", "non défini"]])
+                selection = st.selectbox("Sélectionner :", liste, key="edt_ens_global")
+            else:
+                # Enseignant : son nom est verrouillé
+                selection = nom_ens_connecte
+                st.markdown(f"**Enseignant :** `{selection}`")
+                # Vérifier que l'enseignant existe bien dans les données
+                if selection not in df_edt["Enseignants"].values:
+                    st.warning("⚠️ Votre nom n'apparaît pas dans le fichier EDT. Contactez l'administrateur.")
+            
             df_filtre = df_edt[df_edt["Enseignants"].str.contains(selection, case=False, na=False)].copy()
             titre = f"EDT Individuel — {selection}"
             mode_export = "enseignant"
+
         else:
+            # Seulement admin
             liste = sorted([p for p in df_edt["Promotion"].unique()
                           if p and str(p).strip().lower() not in ["", "nan", "none", "non defini", "non défini"]])
-            selection = st.selectbox("Sélectionner :", liste, key="edt_promo")
+            selection = st.selectbox("Sélectionner :", liste, key="edt_promo_global")
             df_filtre = df_edt[df_edt["Promotion"] == selection].copy()
             titre = f"EDT Promotion — {selection}"
             mode_export = "promotion"
@@ -11139,17 +11141,8 @@ def run_edt_intelligent():
         st.divider()
         st.markdown("### 📥 Exports")
 
-    # ─── GÉNÉRATION DIRECTE (pas de session_state) ───
+    # ─── GÉNÉRATION ───
     grille_html, grille_text = generer_grille(df_filtre, mode_export)
-
-    # ─── DEBUG : voir si la grille est vide et pourquoi ───
-    with st.expander("🔍 Debug grille"):
-        st.write(f"Lignes filtrées : {len(df_filtre)}")
-        st.write(f"Grille HTML vide ? {grille_html.empty if grille_html is not None else 'None'}")
-        st.write(f"Grille text vide ? {grille_text.empty if grille_text is not None else 'None'}")
-        if not df_filtre.empty:
-            st.write("Horaires uniques dans df_filtre :", df_filtre["Horaire"].unique().tolist())
-            st.write("Jours uniques dans df_filtre :", df_filtre["Jours"].unique().tolist())
 
     with col2:
         st.markdown(f"### 📅 {titre}")
@@ -11162,14 +11155,14 @@ def run_edt_intelligent():
             html_data = export_html(grille_html, titre, f"Mode : {mode_export.title()}")
             c1.download_button("🌐 HTML", html_data,
                              f"EDT_{selection.replace(' ', '_')}.html",
-                             "text/html", use_container_width=True)
+                             "text/html", use_container_width=True, key="dl_html_edt_global")
 
             xlsx_data = export_excel(grille_text, titre)
             if xlsx_data:
                 c2.download_button("📊 Excel", xlsx_data,
                                  f"EDT_{selection.replace(' ', '_')}.xlsx",
                                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 use_container_width=True)
+                                 use_container_width=True, key="dl_xlsx_edt_global")
             else:
                 c2.warning("openpyxl manquant")
 
@@ -11177,11 +11170,16 @@ def run_edt_intelligent():
             if pdf_data:
                 c3.download_button("📄 PDF", pdf_data,
                                  f"EDT_{selection.replace(' ', '_')}.pdf",
-                                 "application/pdf", use_container_width=True)
+                                 "application/pdf", use_container_width=True, key="dl_pdf_edt_global")
             else:
                 c3.warning("fpdf manquant")
         else:
-            st.error("❌ La grille est vide. Ouvrez 🔍 *Debug grille* ci-dessus pour diagnostiquer.")
+            st.error("❌ La grille est vide. Aucun cours trouvé pour cette sélection.")
+            with st.expander("🔍 Diagnostic"):
+                st.write(f"Lignes filtrées : {len(df_filtre)}")
+                if not df_filtre.empty:
+                    st.write("Horaires trouvés :", df_filtre["Horaire"].unique().tolist())
+                    st.write("Jours trouvés :", df_filtre["Jours"].unique().tolist())
 if __name__ == "__main__":
     run_edt_intelligent()
 
