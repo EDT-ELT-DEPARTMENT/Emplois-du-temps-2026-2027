@@ -3947,6 +3947,8 @@ if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
 elif module_sel == "📅 Gestion des EDTs & Admin":
     st.info("Module Gestion des EDTs & Admin")
+elif module_sel == "📅 Mon EDT":
+    st.info("Module Mon EDT")    
 else:
     st.error(f"Module inconnu : {module_sel}")
 
