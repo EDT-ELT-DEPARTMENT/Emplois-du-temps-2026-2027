@@ -7133,7 +7133,7 @@ with col_logo:
         st.markdown("🏛️") # Secours si le fichier est manquant
 
 with col_titre:
-    st.markdown("<h1 class='main-title' style='border-bottom: none; margin-top: 0;'>Plateforme de gestion des emplois du temps 2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title' style='border-bottom: none; margin-top: 0;'>Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants</h1>", unsafe_allow_html=True)
 
 with col_date:
     st.markdown(f"<div class='date-badge' style='float: right;'>📅 {nom_jour_fr}<br>{date_str}</div>", unsafe_allow_html=True)
@@ -9131,7 +9131,7 @@ if df is not None:
             st.image("logo.PNG", width=80)
         with col_t:
             st.header("🏢 Répertoire et Envoi Automatisé")
-            st.write("Plateforme de gestion des emplois du temps 2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+            st.write("Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
 
         # 1. RÉCUPÉRATION DES DONNÉES (Supabase + Répertoire Source Excel)
         res_auth = supabase.table("enseignants_auth").select("nom_officiel, email, last_sent").execute()
