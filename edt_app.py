@@ -92,8 +92,7 @@ NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
 HORAIRES_LIST = [
-    "08h00 - 09h30", "09h30 - 11h00", "11h00 - 12h30",
-    "12h30 - 14h00", "14h00 - 15h30", "15h30 - 17h00"
+    ""8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h""
 ]
 JOURS_SEMAINE = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
@@ -2398,12 +2397,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         jours_ref = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
     
                         map_h_labels = {
-                            "08h00-09h30": "08h00 - 09h30",
-                            "09h30-11h00": "09h30 - 11h00",
-                            "11h00-12h30": "11h00 - 12h30",
-                            "12h30-14h00": "12h30 - 14h00",
-                            "14h00-15h30": "14h00 - 15h30",
-                            "15h30-17h00": "15h30 - 17h00"
+                            ""8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
                         }
                         map_j_labels = {
                             "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
@@ -3489,8 +3483,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         st.markdown("### 📥 Exporter mon EDT (Grille complète)")
 
         # --- Constantes locales ---
-        _HORAIRES = ["08h00 - 09h30", "09h30 - 11h00", "11h00 - 12h30",
-                     "12h30 - 14h00", "14h00 - 15h30", "15h30 - 17h00"]
+        _HORAIRES = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"]
         _JOURS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
         def _norm_h(h):
@@ -6840,7 +6833,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
         else:
             st.warning("Le DataFrame est vide ou non initialisé.")
     # 2. PRÉPARATION DES OPTIONS
-    horaires_ref = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h00", "14h00 - 15h30", "15h30 - 17h00"]
+    horaires_ref = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"]
     h_existants = [h for h in st.session_state.df_admin["Horaire"].unique() if h and h.strip() != ""]
     liste_horaires = sorted(list(set(h_existants + horaires_ref)))
     jours_std = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
@@ -10975,8 +10968,7 @@ except ImportError:
 
 # --- Constantes ---
 HORAIRES_STD = [
-    "08h00 - 09h30", "09h30 - 11h00", "11h00 - 12h30",
-    "12h30 - 14h00", "14h00 - 15h30", "15h30 - 17h00"
+    ""8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h""
 ]
 JOURS_STD = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
