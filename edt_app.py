@@ -6760,9 +6760,10 @@ if df_contacts is not None and not df_contacts.empty:
             fmt = alt_fmt if row_num % 2 == 0 else cell_fmt
             for col_num, col_name in enumerate(cols_available):
                 val = df_filtre_rep.iloc[row_num - 1][col_name]
-                ws.write(row_num, col_num, val, fmt)
+                # >>> CORRECTION : Conversion forcée en str pour xlsxwriter <<<
+                val_clean = str(val) if val is not None and not pd.isna(val) else ""
+                ws.write(row_num, col_num, val_clean, fmt)
 
-        ws.freeze_panes(1, 0)
     st.download_button(
         label=f"📥 Télécharger {filtre_actif} ({len(df_filtre_rep)} lignes) — Excel",
         data=buffer_rep.getvalue(),
