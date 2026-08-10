@@ -2237,9 +2237,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 # =============================================================================
 # MODULE 2 : GESTION DES EDTs & ADMINISTRATION
 # =============================================================================
- # =============================================================================
-    # ONGLET 4 : INFORMATIONS ÉTUDIANT (ENSEIGNANT & ADMIN)
-    # =============================================================================
+ 
         with tab4:
             st.header("👤 Informations détaillées d'un étudiant")
             
@@ -3477,13 +3475,270 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         st.dataframe(df_f[['Jours', 'Horaire', 'Enseignements', 'Code', 'Lieu', 'Promotion']].sort_values(['Jours', 'Horaire']), 
                     use_container_width=True, hide_index=True)
 
-        # Export perso
-        col_ex1, col_ex2 = st.columns(2)
-        buf_ex = io.BytesIO()
-        df_f[['Enseignements', 'Code', 'Horaire', 'Jours', 'Lieu', 'Promotion']].to_excel(buf_ex, index=False)
-        col_ex1.download_button("📊 Excel", buf_ex.getvalue(), f"Mon_EDT_{cible}.xlsx", 
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        col_ex2.download_button("🌐 HTML", df_f.to_html(index=False), f"Mon_EDT_{cible}.html", "text/html")
+        # =============================================================================
+        # 📥 EXPORT GRILLE EDT — Jours ↓ | Horaires →
+        # =============================================================================
+        st.divider()
+        st.markdown("### 📥 Exporter mon EDT (Grille complète)")
+
+        # --- Constantes locales ---
+        _HORAIRES = ["08h00 - 09h30", "09h30 - 11h00", "11h00 - 12h30",
+                     "12h30 - 14h00", "14h00 - 15h30", "15h30 - 17h00"]
+        _JOURS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+
+        def _norm_h(h):
+            if not h: return ""
+            s = str(h).strip().lower().replace(" ", "").replace("–", "-")
+            s = s.replace(":00", "").replace("h00", "h")
+            # Mapping souple
+            for ref in _HORAIRES:
+                if s == ref.lower().replace(" ", ""): return ref
+            return str(h).strip()
+
+        def _norm_j(j):
+            if not j: return ""
+            s = str(j).strip().lower()
+            for ref in _JOURS:
+                if s == ref.lower(): return ref
+            return str(j).strip()
+
+        def _type_emoji(code):
+            c = str(code).upper()
+            if "COURS" in c: return "📘", "#dbeafe", "#1e40af"
+            if "TD" in c:    return "📗", "#dcfce7", "#166534"
+            if "TP" in c:    return "🔴", "#fee2e2", "#991b1b"
+            return "⚪", "#f3f4f6", "#374151"
+
+        def _fmt_html(rows):
+            out = []
+            for _, r in rows.iterrows():
+                em, bg, col = _type_emoji(r.get("Code", ""))
+                lines = [
+                    f"<b style='color:{col};font-size:12px;'>{em} {r.get('Enseignements','')}</b>",
+                    f"<span style='font-size:10px;color:#64748b;'>🎓 {r.get('Promotion','')}</span>",
+                    f"<span style='font-size:10px;color:#64748b;'>📍 {r.get('Lieu','')}</span>"
+                ]
+                out.append(f"<div style='background:{bg};border-left:3px solid {col};border-radius:4px;padding:4px;margin:2px 0;line-height:1.3;'>"+"<br>".join(lines)+"</div>")
+            return "".join(out)
+
+        def _fmt_text(rows):
+            out = []
+            for _, r in rows.iterrows():
+                em, _, _ = _type_emoji(r.get("Code", ""))
+                out.append(f"{em} {r.get('Enseignements','')}\nPromo: {r.get('Promotion','')}\nSalle: {r.get('Lieu','')}")
+            return "\n\n".join(out)
+
+        # Construction des grilles
+        df_g = df_f.copy()
+        df_g["h_norm"] = df_g["Horaire"].apply(_norm_h)
+        df_g["j_norm"] = df_g["Jours"].apply(_norm_j)
+
+        # On ne garde que les créneaux reconnus
+        df_g = df_g[df_g["h_norm"].isin(_HORAIRES)]
+        df_g = df_g[df_g["j_norm"].isin(_JOURS)]
+
+        grille_html = pd.DataFrame()
+        grille_text = pd.DataFrame()
+
+        if not df_g.empty:
+            g_html = df_g.groupby(["j_norm", "h_norm"]).apply(_fmt_html, include_groups=False).unstack(fill_value="")
+            g_text = df_g.groupby(["j_norm", "h_norm"]).apply(_fmt_text, include_groups=False).unstack(fill_value="")
+            
+            jours_ok = [j for j in _JOURS if j in g_html.index]
+            h_ok = [h for h in _HORAIRES if h in g_html.columns]
+            
+            if jours_ok and h_ok:
+                grille_html = g_html.reindex(index=jours_ok, columns=h_ok).fillna("")
+                grille_text = g_text.reindex(index=jours_ok, columns=h_ok).fillna("")
+
+        # --- BOUTONS D'EXPORT ---
+        c1, c2, c3 = st.columns(3)
+
+        # 1️⃣ EXCEL (xlsxwriter)
+        if not grille_text.empty:
+            buf_xl = io.BytesIO()
+            with pd.ExcelWriter(buf_xl, engine='xlsxwriter') as writer:
+                grille_text.to_excel(writer, sheet_name='Mon_EDT', startrow=2)
+                wb = writer.book
+                ws = writer.sheets['Mon_EDT']
+                
+                # Titre
+                title_fmt = wb.add_format({'bold': True, 'font_size': 14, 'font_color': '#1E3A8A', 'align': 'center', 'valign': 'vcenter'})
+                ws.merge_range(0, 0, 0, len(grille_text.columns), f"EDT Individuel — {cible}", title_fmt)
+                ws.merge_range(1, 0, 1, len(grille_text.columns), f"Semestre 01 — 2026-2027 | Généré le {datetime.now().strftime('%d/%m/%Y')}", 
+                               wb.add_format({'italic': True, 'align': 'center', 'font_size': 10, 'font_color': '#64748b'}))
+                
+                # En-têtes
+                hdr_fmt = wb.add_format({'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                idx_fmt = wb.add_format({'bold': True, 'bg_color': '#f1f5f9', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                cell_fmt = wb.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10})
+                alt_fmt = wb.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10, 'bg_color': '#F8FAFC'})
+                
+                ws.set_column(0, 0, 16)
+                ws.set_column(1, len(grille_text.columns), 28)
+                
+                # Ré-écriture propre des en-têtes (ligne 2 dans le fichier = index 2)
+                for col_num, val in enumerate(grille_text.columns, start=1):
+                    ws.write(2, col_num, val, hdr_fmt)
+                ws.write(2, 0, "JOUR", hdr_fmt)
+                
+                # Données
+                for row_num, (jour, row) in enumerate(grille_text.iterrows(), start=3):
+                    fmt = alt_fmt if row_num % 2 == 0 else cell_fmt
+                    ws.write(row_num, 0, jour, idx_fmt)
+                    for col_num, val in enumerate(row, start=1):
+                        ws.write(row_num, col_num, val, fmt)
+                    # Hauteur auto
+                    n_lines = max([str(v).count('\n') + 1 for v in row] + [1])
+                    ws.set_row(row_num, max(40, n_lines * 14))
+                
+                ws.freeze_panes(3, 1)
+
+            c1.download_button(
+                "📊 Excel (Grille)", buf_xl.getvalue(),
+                f"EDT_Grille_{cible.replace(' ','_')}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True, key="dl_grille_xl_ens"
+            )
+        else:
+            c1.button("📊 Excel (Grille)", disabled=True, use_container_width=True)
+
+        # 2️⃣ HTML
+        if not grille_html.empty:
+            thead = "<tr><th style='background:#1E3A8A;color:white;padding:10px;width:100px;'>JOUR</th>" + "".join([f"<th style='background:#1E3A8A;color:white;padding:10px;font-size:12px;'>{h}</th>" for h in grille_html.columns]) + "</tr>"
+            tbody = ""
+            for jour, row in grille_html.iterrows():
+                tbody += f"<tr><td style='background:#f1f5f9;font-weight:bold;text-align:center;padding:10px;'>{jour}</td>"
+                for val in row:
+                    tbody += f"<td style='border:1px solid #e2e8f0;padding:6px;vertical-align:top;'>{val}</td>"
+                tbody += "</tr>"
+            
+            html_doc = f"""<!DOCTYPE html>
+<html lang='fr'><head><meta charset='UTF-8'><title>EDT {cible}</title>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;margin:0;color:#1e293b;}}
+.container{{max-width:1200px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
+.header{{background:linear-gradient(135deg,#1E3A8A,#3B82F6);color:white;padding:20px;text-align:center;}}
+.header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
+.content{{padding:20px;}}
+table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+th{{position:sticky;top:0;z-index:10;}}
+td{{word-wrap:break-word;}}
+.footer{{text-align:center;padding:15px;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;}}
+@media print{{body{{background:white;padding:0;}} .container{{box-shadow:none;border-radius:0;}}}}
+</style></head><body>
+<div class='container'>
+<div class='header'><h1>📅 EDT Individuel — {cible}</h1><p>Semestre 01 — 2026-2027 | département d'Électrotechnique — FGE/UDL-SBA</p></div>
+<div class='content'><table><thead>{thead}</thead><tbody>{tbody}</tbody></table></div>
+<div class='footer'>Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</div>
+</div></body></html>"""
+            
+            c2.download_button(
+                "🌐 HTML (Grille)", html_doc,
+                f"EDT_Grille_{cible.replace(' ','_')}.html",
+                "text/html", use_container_width=True, key="dl_grille_html_ens"
+            )
+        else:
+            c2.button("🌐 HTML (Grille)", disabled=True, use_container_width=True)
+
+        # 3️⃣ PDF (fpdf)
+        if not grille_text.empty:
+            try:
+                from fpdf import FPDF
+                
+                class MonEDTpdf(FPDF):
+                    def header(self):
+                        self.set_font('Arial','B',9)
+                        self.set_text_color(30,58,138)
+                        t = "Plateforme EDT — UDL-SBA | Semestre 01 2026-2027".encode('latin-1','ignore').decode('latin-1')
+                        self.cell(0,6,t,0,1,'C')
+                        self.set_draw_color(212,175,55); self.line(10,self.get_y(),self.w-10,self.get_y()); self.ln(3)
+                    def footer(self):
+                        self.set_y(-15); self.set_font('Arial','I',8); self.set_text_color(128,128,128)
+                        self.cell(0,10,f'Page {self.page_no()}',0,0,'C')
+
+                def _san(text):
+                    if not text: return ""
+                    t = str(text)
+                    repl = {"'":"'","'":"'","–":"-","—":"-","…":"...","«":"\"","»":"\"","œ":"oe","Œ":"OE",
+                            "à":"a","â":"a","ä":"a","á":"a","ã":"a","å":"a","è":"e","é":"e","ê":"e","ë":"e",
+                            "ì":"i","í":"i","î":"i","ï":"i","ò":"o","ó":"o","ô":"o","ö":"o","ù":"u","ú":"u","û":"u","ü":"u",
+                            "ç":"c","ñ":"n","ÿ":"y","ý":"y","À":"A","Â":"A","Ä":"A","Á":"A","Ã":"A","È":"E","É":"E","Ê":"E","Ë":"E",
+                            "Ì":"I","Í":"I","Î":"I","Ï":"I","Ò":"O","Ó":"O","Ô":"O","Ö":"O","Ù":"U","Ú":"U","Û":"U","Ü":"U","Ç":"C","Ñ":"N"}
+                    for o,n in repl.items(): t=t.replace(o,n)
+                    return t.encode('latin-1','ignore').decode('latin-1')
+
+                pdf = MonEDTpdf(orientation='L',unit='mm',format='A4')
+                pdf.set_auto_page_break(auto=True,margin=15)
+                pdf.add_page()
+                pdf.set_font('Arial','B',13); pdf.set_text_color(30,58,138)
+                pdf.cell(0,8,_san(f"EDT Individuel — {cible}"),0,1,'C')
+                pdf.set_font('Arial','I',9); pdf.set_text_color(100,100,100)
+                pdf.cell(0,5,_san("Semestre 01 — 2026-2027"),0,1,'C'); pdf.ln(3)
+
+                n_cols = len(grille_text.columns)
+                page_w = pdf.w - 20
+                col_j = 25
+                col_h = (page_w - col_j) / n_cols if n_cols>0 else page_w
+                
+                # En-tête
+                pdf.set_font('Arial','B',8); pdf.set_fill_color(30,58,138); pdf.set_text_color(255,255,255)
+                pdf.cell(col_j,9,_san("JOUR"),1,0,'C',True)
+                for h in grille_text.columns:
+                    pdf.cell(col_h,9,_san(h),1,0,'C',True)
+                pdf.ln()
+                
+                pdf.set_text_color(0,0,0); pdf.set_font('Arial','',7.5); pdf.set_draw_color(180,180,180)
+                
+                for idx,(jour,row) in enumerate(grille_text.iterrows()):
+                    # Calcul hauteur
+                    max_h=12
+                    for val in row:
+                        if val:
+                            n_lines = str(val).count('\n') + max(1, int(len(str(val))/30))
+                            h_needed = n_lines*3.8 + 4
+                            if h_needed>max_h: max_h=h_needed
+                    
+                    if pdf.get_y()+max_h > pdf.h-15:
+                        pdf.add_page()
+                        pdf.set_font('Arial','B',8); pdf.set_fill_color(30,58,138); pdf.set_text_color(255,255,255)
+                        pdf.cell(col_j,9,_san("JOUR"),1,0,'C',True)
+                        for h in grille_text.columns:
+                            pdf.cell(col_h,9,_san(h),1,0,'C',True)
+                        pdf.ln(); pdf.set_text_color(0,0,0); pdf.set_font('Arial','',7.5)
+                    
+                    bg = (248,250,252) if idx%2==0 else (255,255,255)
+                    pdf.set_fill_color(*bg)
+                    pdf.set_font('Arial','B',7.5)
+                    pdf.cell(col_j,max_h,_san(jour),1,0,'C',True)
+                    pdf.set_font('Arial','',7.5)
+                    
+                    for val in row:
+                        x,y = pdf.get_x(), pdf.get_y()
+                        raw = str(val).upper()
+                        if "COURS" in raw: pdf.set_fill_color(219,234,254)
+                        elif "TD" in raw: pdf.set_fill_color(220,252,231)
+                        elif "TP" in raw: pdf.set_fill_color(254,226,226)
+                        else: pdf.set_fill_color(*bg)
+                        pdf.rect(x,y,col_h,max_h,'FD')
+                        if val:
+                            pdf.set_xy(x+1.5,y+1.5)
+                            pdf.multi_cell(col_h-3,3.5,_san(val),0,'L')
+                        pdf.set_xy(x+col_h,y)
+                    pdf.ln(max_h)
+                
+                c3.download_button(
+                    "📄 PDF (Grille)", bytes(pdf.output()),
+                    f"EDT_Grille_{cible.replace(' ','_')}.pdf",
+                    "application/pdf", use_container_width=True, key="dl_grille_pdf_ens"
+                )
+            except Exception as e:
+                c3.warning(f"PDF indisponible : {e}")
+        else:
+            c3.button("📄 PDF (Grille)", disabled=True, use_container_width=True)
+
+        if grille_text.empty:
+            st.info("ℹ️ Aucun cours sur les créneaux standards (08h00-17h00) pour cette sélection.")
 
     # ============================================================
     # PORTAIL : SURVEILLANCES EXAMENS
