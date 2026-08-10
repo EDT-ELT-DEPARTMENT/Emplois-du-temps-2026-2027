@@ -6747,9 +6747,12 @@ if df_contacts is not None and not df_contacts.empty:
 
         for col_num, col_name in enumerate(cols_available):
             ws.write(0, col_num, col_name, header_fmt)
-            # >>> CORRECTION ICI <<<
-            val_max = df_filtre_rep[col_name].astype(str).map(len).max()
-            val_max = 0 if pd.isna(val_max) else int(val_max)
+            # >>> CORRECTION DÉFINITIVE : .str.len() au lieu de .map(len) <<<
+            try:
+                val_max = df_filtre_rep[col_name].astype(str).str.len().max()
+                val_max = 0 if pd.isna(val_max) else int(val_max)
+            except Exception:
+                val_max = 10
             max_len = max(val_max, len(str(col_name))) + 4
             ws.set_column(col_num, col_num, min(max_len, 45))
 
