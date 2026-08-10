@@ -9666,7 +9666,7 @@ if is_admin:
                         <p><b>Récapitulatif de votre charge :</b> {nb_cours} Cours, {nb_td} TD, {nb_tp} TP.</p>
                         <p style="font-weight: bold; color: #b91c1c;">Objet : Urgent : Vérification de l'emploi du temps – Semestre 1</p>
                         <p>Merci de bien renseigner le fichier Excel joint. Envoie RAS si c'est bon.</p>
-                        <p style="color: #1E3A8A; font-weight: bold;">📎 Vous trouverez également en pièce jointe votre EDT au format PDF (grille horaire officielle PPER.03).</p>
+                        <p style="color: #1E3A8A; font-weight: bold;">📎 Vous trouverez également en pièce jointe votre EDT au format PDF selon la norme ISO.</p>
                         <div style="background-color: white;">{table_html}</div>
                         <p>Cordialement.<br><b>Service d'enseignement</b></p>
                     </div>
