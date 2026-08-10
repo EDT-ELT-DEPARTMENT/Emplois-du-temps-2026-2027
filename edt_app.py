@@ -11676,7 +11676,37 @@ if df_contacts is not None and not df_contacts.empty:
 # ═════════════════════════════════════════════════════════════════════════════
 # >>> TABLEAU DE BORD RÉPERTOIRE ÉTUDIANTS (ADMIN UNIQUEMENT) <<<
 # ═════════════════════════════════════════════════════════════════════════════
-if 'df_etu_edt' in locals() and df_etu_edt is not None and not df_etu_edt.empty:
+# =============================================================================
+# INITIALISATION ROBUSTE DES DATAFRAMES RÉPERTOIRE
+# =============================================================================
+import pandas as pd
+
+# Garantir l'existence de df_contacts (déjà fait implicitement dans votre code)
+if 'df_contacts' not in globals() or df_contacts is None:
+    df_contacts = pd.DataFrame()
+
+# Garantir l'existence de df_etu_edt (CORRECTION CRITIQUE)
+if 'df_etu_edt' not in globals() or df_etu_edt is None:
+    df_etu_edt = pd.DataFrame()
+
+# Si le fichier étudiants existe mais n'a pas été chargé, tenter le chargement
+FILE_ETUDIANTS = str(Path(__file__).parent.resolve() / "Liste des étudiants_2026-2027.xlsx")
+if df_etu_edt.empty and os.path.exists(FILE_ETUDIANTS):
+    try:
+        df_etu_edt = lire_excel_robuste(FILE_ETUDIANTS)
+        df_etu_edt.columns = df_etu_edt.columns.str.strip()
+        # Créer Nom_Complet si absent
+        col_n = next((c for c in df_etu_edt.columns if c.strip().upper() == "NOM"), None)
+        col_p = next((c for c in df_etu_edt.columns if c.strip().upper() in ["PRÉNOM", "PRENOM"]), None)
+        if col_n and col_p and "Nom_Complet" not in df_etu_edt.columns:
+            df_etu_edt["Nom_Complet"] = (
+                df_etu_edt[col_n].astype(str).str.strip().str.upper() + " " +
+                df_etu_edt[col_p].astype(str).str.strip().str.title()
+            )
+    except Exception as e:
+        st.warning(f"⚠️ Chargement étudiants impossible : {e}")
+        df_etu_edt = pd.DataFrame()
+if df_etu_edt is not None and not df_etu_edt.empty:
     st.divider()
     st.markdown("""
         <div style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%); 
