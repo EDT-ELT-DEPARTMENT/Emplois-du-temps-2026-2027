@@ -2,9 +2,7 @@
         # ONGLET 5 : MON EDT (ÉTUDIANT CONNECTÉ UNIQUEMENT)
         # =============================================================================
 
-    st.header("📅 Mon Emploi du Temps")
-    st.caption("Consultation et téléchargement de votre EDT hebdomadaire filtré par groupe & sous-groupe")
-
+    
     if not étudiant_connecte:
         st.info("ℹ️ Cet onglet est réservé aux étudiants connectés. Retournez à l'onglet 📝 Suivi d'Assiduité pour vous authentifier.")
     else:
