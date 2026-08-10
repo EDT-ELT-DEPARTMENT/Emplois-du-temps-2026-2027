@@ -2839,7 +2839,7 @@ tr:nth-child(even){{background-color:#f8fafc;}}
         "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
     ]
     jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-    map_h = {normalize(h): h for h in Horaires_list}
+    map_h = {normalize(h): h for h in horaires_list}
     map_j = {normalize(j): j for j in jours_list}
 
     # En-tête harmonisé
