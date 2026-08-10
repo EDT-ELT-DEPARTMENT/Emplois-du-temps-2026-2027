@@ -3173,7 +3173,6 @@ tr:nth-child(even){{background-color:#f8fafc;}}
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib.units import mm
 
-            p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
             df_p = df[df["Promotion"] == p_sel].copy()
 
             st.markdown(f"### 📚 EDT Promotion : {p_sel}")
