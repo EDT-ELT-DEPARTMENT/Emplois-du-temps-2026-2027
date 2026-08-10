@@ -3587,8 +3587,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source") 
 
-
-
 if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
 elif module_sel == "📅 Gestion des EDTs & Admin":
