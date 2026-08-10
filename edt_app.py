@@ -6570,7 +6570,201 @@ is_admin = user.get("role") == "admin"
 if is_admin:
     st.markdown("---")
     render_download_hub(df, user, is_admin)
+# ═════════════════════════════════════════════════════════════════════════════
+# >>> TABLEAU DE BORD RÉPERTOIRE ENSEIGNANTS (ADMIN UNIQUEMENT) <<<
+# ═════════════════════════════════════════════════════════════════════════════
+if df_contacts is not None and not df_contacts.empty:
+    st.divider()
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); 
+                    padding: 18px; border-radius: 14px; color: white; margin-bottom: 18px;
+                    box-shadow: 0 8px 24px rgba(30,58,138,0.25);">
+            <h3 style="margin:0; font-size: 20px;">👥 Répertoire du Personnel Enseignant</h3>
+            <p style="margin:8px 0 0 0; opacity:0.85; font-size:13px;">
+                Cliquez sur un afficheur pour filtrer le tableau · Export Excel complet disponible
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
 
+    # ── Initialisation du filtre session state ──
+    if "filtre_repertoire" not in st.session_state:
+        st.session_state.filtre_repertoire = "TOUS"
+
+    # ── Préparation des données ──
+    df_rep = df_contacts.copy()
+    df_rep['Qualité'] = df_rep['Qualité'].fillna('Non défini').astype(str)
+    df_rep['Grade']   = df_rep['Grade'].fillna('N/A').astype(str) if 'Grade' in df_rep.columns else 'N/A'
+    df_rep['Email']   = df_rep['Email'].fillna('—').astype(str) if 'Email' in df_rep.columns else '—'
+    
+    if 'N°/TEL' in df_rep.columns:
+        df_rep['N°/TEL'] = df_rep['N°/TEL'].astype(str).str.replace(r'[^\d]', '', regex=True).replace('', '—')
+
+    # ── Compteurs par statut ──
+    mask_perm = df_rep['Qualité'].str.contains('PERMANENT', case=False, na=False)
+    mask_vac  = df_rep['Qualité'].str.contains('VACATAIRE', case=False, na=False)
+    nb_perm   = int(mask_perm.sum())
+    nb_vac    = int(mask_vac.sum())
+    nb_autres = len(df_rep) - nb_perm - nb_vac
+
+    # ── AFFICHEURS NUMÉRIQUES CLIQUABLES ──
+    c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 1])
+    
+    with c1:
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1e3a8a, #3b82f6); 
+                        padding: 16px; border-radius: 12px; text-align: center; color: white;
+                        border: {'3px solid #fbbf24' if st.session_state.filtre_repertoire == 'PERMANENT' else '3px solid transparent'};">
+                <div style="font-size: 32px; font-weight: 800;">{nb_perm}</div>
+                <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">👔 Permanents</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("🔍 Filtrer", key="btn_filtre_perm", use_container_width=True):
+            st.session_state.filtre_repertoire = "PERMANENT"
+            st.rerun()
+
+    with c2:
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #b45309, #f59e0b); 
+                        padding: 16px; border-radius: 12px; text-align: center; color: white;
+                        border: {'3px solid #fbbf24' if st.session_state.filtre_repertoire == 'VACATAIRE' else '3px solid transparent'};">
+                <div style="font-size: 32px; font-weight: 800;">{nb_vac}</div>
+                <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">🎓 Vacataires</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("🔍 Filtrer", key="btn_filtre_vac", use_container_width=True):
+            st.session_state.filtre_repertoire = "VACATAIRE"
+            st.rerun()
+
+    with c3:
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #15803d, #22c55e); 
+                        padding: 16px; border-radius: 12px; text-align: center; color: white;
+                        border: {'3px solid #fbbf24' if st.session_state.filtre_repertoire == 'TOUS' else '3px solid transparent'};">
+                <div style="font-size: 32px; font-weight: 800;">{len(df_rep)}</div>
+                <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">📊 Total</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("🔄 Tout afficher", key="btn_filtre_tous", use_container_width=True):
+            st.session_state.filtre_repertoire = "TOUS"
+            st.rerun()
+
+    with c4:
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #475569, #94a3b8); 
+                        padding: 16px; border-radius: 12px; text-align: center; color: white;
+                        border: {'3px solid #fbbf24' if st.session_state.filtre_repertoire == 'AUTRES' else '3px solid transparent'};">
+                <div style="font-size: 32px; font-weight: 800;">{nb_autres}</div>
+                <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">🏷️ Autres</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("🔍 Filtrer", key="btn_filtre_autres", use_container_width=True):
+            st.session_state.filtre_repertoire = "AUTRES"
+            st.rerun()
+
+    with c5:
+        # Mini récap visuel du filtre actif
+        filtre_actif = st.session_state.filtre_repertoire
+        couleur_filtre = {"PERMANENT": "#3b82f6", "VACATAIRE": "#f59e0b", "AUTRES": "#94a3b8", "TOUS": "#22c55e"}
+        st.markdown(f"""
+            <div style="background: #f8fafc; border: 2px solid {couleur_filtre.get(filtre_actif, '#1e3a8a')}; 
+                        padding: 14px; border-radius: 12px; text-align: center; height: 100%;">
+                <div style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 600;">Filtre actif</div>
+                <div style="font-size: 16px; font-weight: 800; color: {couleur_filtre.get(filtre_actif, '#1e3a8a')}; margin-top: 6px;">
+                    {filtre_actif}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Application du filtre sur les données ──
+    df_filtre_rep = df_rep.copy()
+    filtre_actif = st.session_state.filtre_repertoire
+
+    if filtre_actif == "PERMANENT":
+        df_filtre_rep = df_rep[mask_perm]
+    elif filtre_actif == "VACATAIRE":
+        df_filtre_rep = df_rep[mask_vac]
+    elif filtre_actif == "AUTRES":
+        df_filtre_rep = df_rep[~(mask_perm | mask_vac)]
+
+    # ── Graphiques (basés sur les données filtrées) ──
+    if 'Grade' in df_filtre_rep.columns:
+        col_g, col_d = st.columns([2, 3])
+        with col_g:
+            st.markdown(f"**📈 Répartition par Grade ({filtre_actif})**")
+            if not df_filtre_rep.empty:
+                grade_counts = df_filtre_rep['Grade'].value_counts().head(8)
+                st.bar_chart(grade_counts, use_container_width=True, height=220)
+            else:
+                st.info("Aucune donnée pour ce filtre.")
+        
+        with col_d:
+            st.markdown(f"**📋 Répartition par Qualité ({filtre_actif})**")
+            if not df_filtre_rep.empty:
+                qual_counts = df_filtre_rep['Qualité'].value_counts().head(8)
+                st.bar_chart(qual_counts, use_container_width=True, height=220, color="#D4AF37")
+            else:
+                st.info("Aucune donnée pour ce filtre.")
+
+    # ── Tableau détaillé filtré ──
+    with st.expander(f"🔍 Consulter le répertoire détaillé — {len(df_filtre_rep)} résultat(s)", expanded=True):
+        cols_to_show = ['NOM', 'PRÉNOM', 'Qualité', 'Grade', 'Email', 'N°/TEL']
+        cols_available = [c for c in cols_to_show if c in df_filtre_rep.columns]
+        
+        # Recherche textuelle additionnelle
+        search_term = st.text_input("🔎 Rechercher dans les résultats filtrés (nom, prénom, grade...)", "")
+        df_display = df_filtre_rep[cols_available]
+        if search_term:
+            mask = df_display.astype(str).apply(lambda row: row.str.contains(search_term, case=False, na=False).any(), axis=1)
+            df_display = df_display[mask]
+        
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        
+        # Badge récap
+        st.caption(f"📌 Filtre actif : **{filtre_actif}** | {len(df_display)} affiché(s) sur {len(df_filtre_rep)} total")
+
+    # ── Export Excel (TOUJOURS basé sur le filtre actif) ──
+    import io
+    buffer_rep = io.BytesIO()
+    with pd.ExcelWriter(buffer_rep, engine='xlsxwriter') as writer:
+        sheet_name = f"Répertoire_{filtre_actif}"
+        df_filtre_rep[cols_available].to_excel(writer, index=False, sheet_name=sheet_name)
+        wb = writer.book
+        ws = writer.sheets[sheet_name]
+
+        header_fmt = wb.add_format({
+            'bold': True, 'font_size': 11, 'font_color': 'white',
+            'bg_color': '#1E3A8A', 'border': 1, 'align': 'center', 'valign': 'vcenter'
+        })
+        cell_fmt = wb.add_format({
+            'font_size': 10, 'border': 1, 'valign': 'vcenter', 'text_wrap': True
+        })
+        alt_fmt = wb.add_format({
+            'font_size': 10, 'border': 1, 'valign': 'vcenter', 'text_wrap': True, 'bg_color': '#F8FAFC'
+        })
+
+        for col_num, col_name in enumerate(cols_available):
+            ws.write(0, col_num, col_name, header_fmt)
+            max_len = max(df_filtre_rep[col_name].astype(str).map(len).max(), len(col_name)) + 4
+            ws.set_column(col_num, col_num, min(max_len, 45))
+
+        for row_num in range(1, len(df_filtre_rep) + 1):
+            fmt = alt_fmt if row_num % 2 == 0 else cell_fmt
+            for col_num, col_name in enumerate(cols_available):
+                val = df_filtre_rep.iloc[row_num - 1][col_name]
+                ws.write(row_num, col_num, val, fmt)
+
+        ws.freeze_panes(1, 0)
+
+    st.download_button(
+        label=f"📥 Télécharger {filtre_actif} ({len(df_filtre_rep)} lignes) — Excel",
+        data=buffer_rep.getvalue(),
+        file_name=f"Repertoire_{filtre_actif}_ELT_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key=f"dl_repertoire_{filtre_actif}_admin"
+    )
     # =============================================================================
     # >>> BILAN GLOBAL HEURES SUPPLÉMENTAIRES (ADMIN UNIQUEMENT) <<<
     # =============================================================================
