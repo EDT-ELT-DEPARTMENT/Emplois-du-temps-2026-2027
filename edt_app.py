@@ -6725,6 +6725,7 @@ if df_contacts is not None and not df_contacts.empty:
         st.caption(f"📌 Filtre actif : **{filtre_actif}** | {len(df_display)} affiché(s) sur {len(df_filtre_rep)} total")
 
     # ── Export Excel (TOUJOURS basé sur le filtre actif) ──
+    # ── Export Excel professionnel ──
     import io
     buffer_rep = io.BytesIO()
     with pd.ExcelWriter(buffer_rep, engine='xlsxwriter') as writer:
@@ -6746,7 +6747,7 @@ if df_contacts is not None and not df_contacts.empty:
 
         for col_num, col_name in enumerate(cols_available):
             ws.write(0, col_num, col_name, header_fmt)
-            # LIGNE CORRIGÉE (remplace la ligne 6749) :
+            # >>> CORRECTION ICI <<<
             val_max = df_filtre_rep[col_name].astype(str).map(len).max()
             val_max = 0 if pd.isna(val_max) else int(val_max)
             max_len = max(val_max, len(str(col_name))) + 4
@@ -6759,7 +6760,6 @@ if df_contacts is not None and not df_contacts.empty:
                 ws.write(row_num, col_num, val, fmt)
 
         ws.freeze_panes(1, 0)
-
     st.download_button(
         label=f"📥 Télécharger {filtre_actif} ({len(df_filtre_rep)} lignes) — Excel",
         data=buffer_rep.getvalue(),
