@@ -6772,6 +6772,216 @@ if df_contacts is not None and not df_contacts.empty:
         use_container_width=True,
         key=f"dl_repertoire_{filtre_actif}_admin"
     )
+# ═════════════════════════════════════════════════════════════════════════════
+# >>> TABLEAU DE BORD RÉPERTOIRE ÉTUDIANTS (ADMIN UNIQUEMENT) <<<
+# ═════════════════════════════════════════════════════════════════════════════
+if df_etu is not None and not df_etu.empty:
+    st.divider()
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%); 
+                    padding: 18px; border-radius: 14px; color: white; margin-bottom: 18px;
+                    box-shadow: 0 8px 24px rgba(5,150,105,0.25);">
+            <h3 style="margin:0; font-size: 20px;">📚 Répertoire des Étudiants</h3>
+            <p style="margin:8px 0 0 0; opacity:0.85; font-size:13px;">
+                Vue d'ensemble par promotion · Filtrage croisé · Export Excel complet
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ── Initialisation du filtre session state ──
+    if "filtre_etudiants" not in st.session_state:
+        st.session_state.filtre_etudiants = "TOUS"
+
+    # ── Préparation des données ──
+    df_etu_rep = df_etu.copy()
+    
+    # Détection auto des colonnes
+    cols_map = detecter_colonnes_etudiant(df_etu_rep)
+    
+    # S'assurer que Nom_Complet existe
+    if "Nom_Complet" not in df_etu_rep.columns:
+        col_n = cols_map.get('nom')
+        col_p = cols_map.get('prenom')
+        if col_n and col_p:
+            df_etu_rep["Nom_Complet"] = df_etu_rep[col_n].astype(str).str.strip().str.upper() + " " + df_etu_rep[col_p].astype(str).str.strip().str.title()
+        else:
+            df_etu_rep["Nom_Complet"] = "N/A"
+
+    # Normalisation de la promotion
+    promo_col = cols_map.get('promotion', 'Promotion')
+    if promo_col and promo_col in df_etu_rep.columns:
+        df_etu_rep["Promotion_Clean"] = df_etu_rep[promo_col].astype(str).str.strip().str.upper()
+    else:
+        df_etu_rep["Promotion_Clean"] = "NON DEFINI"
+
+    # Compteurs par promotion
+    promo_counts = df_etu_rep["Promotion_Clean"].value_counts().to_dict()
+    total_etu = len(df_etu_rep)
+    top_promos = sorted(promo_counts.items(), key=lambda x: x[1], reverse=True)
+
+    # ── AFFICHEURS NUMÉRIQUES CLIQUABLES ──
+    n_afficheurs = min(len(top_promos), 5)
+    cols_aff = st.columns(n_afficheurs + 2)
+
+    gradients = [
+        ("#1e3a8a", "#3b82f6"), ("#b45309", "#f59e0b"), ("#15803d", "#22c55e"),
+        ("#7c3aed", "#a78bfa"), ("#be123c", "#fb7185"),
+    ]
+
+    for idx, (promo, count) in enumerate(top_promos[:n_afficheurs]):
+        g1, g2 = gradients[idx % len(gradients)]
+        is_active = st.session_state.filtre_etudiants == promo
+        with cols_aff[idx]:
+            st.markdown(f"""
+                <div style="background: linear-gradient(135deg, {g1}, {g2}); 
+                            padding: 14px; border-radius: 12px; text-align: center; color: white;
+                            border: {'3px solid #fbbf24' if is_active else '3px solid transparent'};">
+                    <div style="font-size: 26px; font-weight: 800;">{count}</div>
+                    <div style="font-size: 11px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
+                        {promo}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            if st.button(f"🔍 {promo}", key=f"btn_filtre_etu_{promo}", use_container_width=True):
+                st.session_state.filtre_etudiants = promo
+                st.rerun()
+
+    with cols_aff[n_afficheurs]:
+        is_active = st.session_state.filtre_etudiants == "TOUS"
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #059669, #34d399); 
+                        padding: 14px; border-radius: 12px; text-align: center; color: white;
+                        border: {'3px solid #fbbf24' if is_active else '3px solid transparent'};">
+                <div style="font-size: 26px; font-weight: 800;">{total_etu}</div>
+                <div style="font-size: 11px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px;">📊 TOTAL</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("🔄 Tout afficher", key="btn_filtre_etu_tous", use_container_width=True):
+            st.session_state.filtre_etudiants = "TOUS"
+            st.rerun()
+
+    with cols_aff[n_afficheurs + 1]:
+        filtre_actif_etu = st.session_state.filtre_etudiants
+        couleur_filtre = {"TOUS": "#059669"}
+        couleur_defaut = "#64748b"
+        st.markdown(f"""
+            <div style="background: #f8fafc; border: 2px solid {couleur_filtre.get(filtre_actif_etu, couleur_defaut)}; 
+                        padding: 12px; border-radius: 12px; text-align: center; height: 100%;">
+                <div style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 600;">Filtre actif</div>
+                <div style="font-size: 16px; font-weight: 800; color: {couleur_filtre.get(filtre_actif_etu, couleur_defaut)}; margin-top: 6px;">
+                    {filtre_actif_etu}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # ── Application du filtre ──
+    df_filtre_etu = df_etu_rep.copy()
+    if filtre_actif_etu != "TOUS":
+        df_filtre_etu = df_etu_rep[df_etu_rep["Promotion_Clean"] == filtre_actif_etu]
+
+    # ── Graphiques ──
+    if not df_filtre_etu.empty:
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            st.markdown(f"**📈 Répartition par Promotion ({filtre_actif_etu})**")
+            if filtre_actif_etu == "TOUS":
+                chart_data = df_filtre_etu["Promotion_Clean"].value_counts()
+            else:
+                groupe_col = cols_map.get('groupe')
+                if groupe_col and groupe_col in df_filtre_etu.columns:
+                    chart_data = df_filtre_etu[groupe_col].astype(str).value_counts().head(10)
+                else:
+                    chart_data = df_filtre_etu["Promotion_Clean"].value_counts()
+            st.bar_chart(chart_data, use_container_width=True, height=220)
+
+        with col_g2:
+            st.markdown(f"**📊 Effectifs par Promotion**")
+            effectifs = df_etu_rep["Promotion_Clean"].value_counts().sort_index()
+            st.bar_chart(effectifs, use_container_width=True, height=220, color="#059669")
+    else:
+        st.warning("⚠️ Aucun étudiant trouvé pour ce filtre.")
+
+    # ── Tableau détaillé ──
+    with st.expander(f"🔍 Consulter le répertoire détaillé — {len(df_filtre_etu)} résultat(s)", expanded=True):
+        display_cols = []
+        for key in ['nom', 'prenom', 'promotion', 'email', 'mat_bac', 'mat_etud', 'groupe', 'sous_groupe', 'date_naiss', 'lieu_naiss']:
+            col_name = cols_map.get(key)
+            if col_name and col_name in df_filtre_etu.columns:
+                display_cols.append(col_name)
+        
+        if not display_cols and "Nom_Complet" in df_filtre_etu.columns:
+            display_cols = ["Nom_Complet", promo_col] if promo_col in df_filtre_etu.columns else ["Nom_Complet"]
+
+        search_etu = st.text_input("🔎 Rechercher un étudiant (nom, matricule, email...)", key="search_etu_rep")
+        df_display_etu = df_filtre_etu[display_cols].copy()
+        if search_etu:
+            mask = df_display_etu.astype(str).apply(
+                lambda row: row.str.contains(search_etu, case=False, na=False).any(), axis=1
+            )
+            df_display_etu = df_display_etu[mask]
+
+        date_col = cols_map.get('date_naiss')
+        if date_col and date_col in df_display_etu.columns:
+            df_display_etu[date_col] = df_display_etu[date_col].apply(format_date_naissance)
+
+        st.dataframe(df_display_etu, use_container_width=True, hide_index=True)
+        st.caption(f"📌 Filtre : **{filtre_actif_etu}** | {len(df_display_etu)} affiché(s) sur {len(df_filtre_etu)}")
+
+    # ── Export Excel professionnel (ROBUSTE) ──
+    import io
+    buffer_etu = io.BytesIO()
+    with pd.ExcelWriter(buffer_etu, engine='xlsxwriter') as writer:
+        sheet_name = f"Etudiants_{filtre_actif_etu}"
+        export_cols = display_cols if display_cols else df_filtre_etu.columns.tolist()
+        if "Promotion_Clean" not in export_cols and "Promotion_Clean" in df_filtre_etu.columns:
+            export_df = df_filtre_etu[export_cols + ["Promotion_Clean"]].copy()
+        else:
+            export_df = df_filtre_etu[export_cols].copy()
+
+        # >>> CONVERSION EN STRING POUR XLSXWRITER (évite TypeError) <<<
+        export_df = export_df.fillna("").astype(str).replace(['nan', 'None', '<NA>', 'NaT'], '')
+
+        export_df.to_excel(writer, index=False, sheet_name=sheet_name)
+        wb = writer.book
+        ws = writer.sheets[sheet_name]
+
+        header_fmt = wb.add_format({
+            'bold': True, 'font_size': 11, 'font_color': 'white',
+            'bg_color': '#059669', 'border': 1, 'align': 'center', 'valign': 'vcenter'
+        })
+        cell_fmt = wb.add_format({
+            'font_size': 10, 'border': 1, 'valign': 'vcenter', 'text_wrap': True
+        })
+        alt_fmt = wb.add_format({
+            'font_size': 10, 'border': 1, 'valign': 'vcenter', 'text_wrap': True, 'bg_color': '#F0FDF4'
+        })
+
+        for col_num, col_name in enumerate(export_df.columns):
+            ws.write(0, col_num, str(col_name), header_fmt)
+            try:
+                val_max = export_df[col_name].str.len().max()
+                val_max = 0 if pd.isna(val_max) else int(val_max)
+            except Exception:
+                val_max = 10
+            max_len = max(val_max, len(str(col_name))) + 3
+            ws.set_column(col_num, col_num, min(max_len, 40))
+
+        for row_num in range(1, len(export_df) + 1):
+            fmt = alt_fmt if row_num % 2 == 0 else cell_fmt
+            for col_num, col_name in enumerate(export_df.columns):
+                val = export_df.iloc[row_num - 1][col_name]
+                ws.write(row_num, col_num, str(val), fmt)
+
+        ws.freeze_panes(1, 0)
+
+    st.download_button(
+        label=f"📥 Télécharger {filtre_actif_etu} ({len(df_filtre_etu)} lignes) — Excel",
+        data=buffer_etu.getvalue(),
+        file_name=f"Repertoire_Etudiants_{filtre_actif_etu}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key=f"dl_etudiants_{filtre_actif_etu}_admin"
+    )
     # =============================================================================
     # >>> BILAN GLOBAL HEURES SUPPLÉMENTAIRES (ADMIN UNIQUEMENT) <<<
     # =============================================================================
