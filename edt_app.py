@@ -5501,6 +5501,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- CONNEXION BASE DE DONNÉES ---
+
+KEY = st.secrets["SUPABASE_KEY"]
+supabase = create_client(URL, KEY)
+
+def hash_pw(password):
+    return hashlib.sha256(str.encode(password)).hexdigest()
+
 # --- GESTION DU TEMPS ---
 now = datetime.now()
 date_str = now.strftime("%d/%m/%Y")
