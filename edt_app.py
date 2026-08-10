@@ -2852,9 +2852,7 @@ tr:nth-child(even){{background-color:#f8fafc;}}
     with col_titre:
         st.markdown("<h3 style='color:#1E3A8A;margin:0;'>Plateforme de gestion des EDTs 2026-2027</h3>", unsafe_allow_html=True)
         st.caption("département d'Électrotechnique - Faculté de Génie Électrique - UDL-SBA")
-    with col_date:
-         
-
+    
     st.markdown("<hr style='border:2px solid #D4AF37;margin:15px 0;'>", unsafe_allow_html=True)
 
     if df is None or df.empty:
