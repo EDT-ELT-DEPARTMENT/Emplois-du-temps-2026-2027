@@ -5502,7 +5502,7 @@ st.set_page_config(
 )
 
 # --- CONNEXION BASE DE DONNÉES ---
-URL = st.secrets["SUPABASE_URL"]
+
 KEY = st.secrets["SUPABASE_KEY"]
 supabase = create_client(URL, KEY)
 
@@ -6547,7 +6547,7 @@ with st.sidebar:
         ])
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
     elif portail == "👤 Mon Espace Enseignant":
-        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
+        poste_sup = st.session_state.get("poste_sup_ens", False)
 
     if st.button("🚪 Déconnexion du compte"):
         st.session_state["user_data"] = None
