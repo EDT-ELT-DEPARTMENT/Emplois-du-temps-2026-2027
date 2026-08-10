@@ -3587,20 +3587,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source") 
 
-# =============================================================================
-# ROUTAGE PRINCIPAL
-# =============================================================================
+
+
 if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
 elif module_sel == "📅 Gestion des EDTs & Admin":
-    # Votre code existant du Module 2...
-    # (ne pas toucher, il est déjà dans votre fichier)
-    pass
-elif module_sel == "🧠 EDT Intelligent":
-    run_edt_intelligent()
+    st.info("Module Gestion des EDTs & Admin")
 else:
     st.error(f"Module inconnu : {module_sel}")
-
 
 import streamlit as st
 import pandas as pd
@@ -5785,7 +5779,7 @@ if not st.session_state["user_data"]:
         email_input = st.text_input("Adresse Email", key="login_email")
         pass_input = st.text_input("Mot de passe", type="password", key="login_pass")
         if st.button("Se connecter au portail", use_container_width=True):
-            
+            result = supabase.table("enseignants_auth").select("*").eq("email", email_input).eq("password_hash", hash_pw(pass_input)).execute()
             if result.data:
                 st.session_state["user_data"] = result.data[0]
                 st.rerun()
