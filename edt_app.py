@@ -2397,7 +2397,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         jours_ref = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
     
                         map_h_labels = {
-                            ""8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
+                            "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
                         }
                         map_j_labels = {
                             "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
