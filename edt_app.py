@@ -3475,6 +3475,13 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         st.dataframe(df_f[['Jours', 'Horaire', 'Enseignements', 'Code', 'Lieu', 'Promotion']].sort_values(['Jours', 'Horaire']), 
                     use_container_width=True, hide_index=True)
 
+                # Export perso
+        col_ex1, col_ex2 = st.columns(2)
+        buf_ex = io.BytesIO()
+        df_f[['Enseignements', 'Code', 'Horaire', 'Jours', 'Lieu', 'Promotion']].to_excel(buf_ex, index=False)
+        col_ex1.download_button("📊 Excel", buf_ex.getvalue(), f"Mon_EDT_{cible}.xlsx", 
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        col_ex2.download_button("🌐 HTML", df_f.to_html(index=False), f"Mon_EDT_{cible}.html", "text/html")
         # =============================================================================
         # 📥 EXPORT GRILLE EDT — Jours ↓ | Horaires →
         # =============================================================================
