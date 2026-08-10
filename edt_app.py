@@ -9237,7 +9237,7 @@ if df is not None:
                                     
                                     <p>Cher collègue, Sallem,</p>
                                     
-                                    <p>Vous trouverez ci-joint votre emploi du temps individuel pour le second semestre.<br>
+                                    <p>Vous trouverez ci-joint votre emploi du temps individuel du premier semestre.<br>
                                     Afin de permettre au service des enseignements d'accomplir sa mission dans les meilleures conditions, il est impératif que vous procédiez à sa vérification immédiate. Cette étape est cruciale pour :</p>
                                     
                                     <ul style="margin-top: 5px;">
@@ -9343,10 +9343,287 @@ if is_admin:
         if (choix_enseignant == "TOUS" or e["Enseignant"] == choix_enseignant) and
            (choix_statut == "TOUS" or e["État d'envoi"] == choix_statut)
     ]
+    # =============================================================================
+    # FONCTION DE GÉNÉRATION PDF : GRILLE JOURS × HORAIRES (ISO PPER.03)
+    # =============================================================================
+    def generer_pdf_edt_individuel(nom_enseignant, df_source):
+        """Génère un PDF individuel avec en-tête ISO PPER.03 et grille horaire."""
+        try:
+            from fpdf import FPDF
+            import math
+        except ImportError:
+            return None, "fpdf non installé"
     
-    # --- FONCTION D'ENVOI (Pour éviter la répétition du code) ---
+        if df_source is None or df_source.empty:
+            return None, "Aucune donnée"
+    
+        # Dimensions ISO PPER.03 (inch → mm)
+        W_LOGO = 1.19 * 25.4
+        W_MILIEU = 3.70 * 25.4
+        W_INFO = 1.40 * 25.4
+        H_ENTETE = 1.04 * 25.4
+        H_HAUT_MILIEU = 0.60 * 25.4
+        H_BAS_MILIEU = H_ENTETE - H_HAUT_MILIEU
+        W_TOT = W_LOGO + W_MILIEU + W_INFO
+        MARGE_BAS = 15
+    
+        jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+        horaires_ordre = [
+            "8h - 9h30", "9h30 - 11h", "11h - 12h30",
+            "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
+        ]
+    
+        def _norm(x):
+            if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
+                return "vide"
+            s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
+            s = s.replace(":00", "").replace("h00", "h")
+            return s
+    
+        map_j = {_norm(j): j for j in jours_ordre}
+        map_h = {_norm(h): h for h in horaires_ordre}
+    
+        def _sanitize(text):
+            if text is None or pd.isna(text):
+                return ""
+            t = str(text)
+            repl = {
+                "'": "'", "'": "'", "’": "'", "‘": "'",
+                "–": "-", "—": "-", "…": "...", "«": "\"", "»": "\"",
+                "œ": "oe", "Œ": "OE",
+                "à": "a", "â": "a", "ä": "a", "á": "a", "ã": "a", "å": "a",
+                "è": "e", "é": "e", "ê": "e", "ë": "e",
+                "ì": "i", "í": "i", "î": "i", "ï": "i",
+                "ò": "o", "ó": "o", "ô": "o", "ö": "o", "õ": "o",
+                "ù": "u", "ú": "u", "û": "u", "ü": "u",
+                "ç": "c", "ñ": "n", "ÿ": "y", "ý": "y",
+                "À": "A", "Â": "A", "Ä": "A", "Á": "A", "Ã": "A",
+                "È": "E", "É": "E", "Ê": "E", "Ë": "E",
+                "Ì": "I", "Í": "I", "Î": "I", "Ï": "I",
+                "Ò": "O", "Ó": "O", "Ô": "O", "Ö": "O", "Õ": "O",
+                "Ù": "U", "Ú": "U", "Û": "U", "Ü": "U",
+                "Ç": "C", "Ñ": "N",
+            }
+            for old, new in repl.items():
+                t = t.replace(old, new)
+            return t.encode('latin-1', 'ignore').decode('latin-1')
+    
+        def _format_cell(rows):
+            items = []
+            for _, r in rows.iterrows():
+                code_up = str(r.get('Code', '')).upper()
+                if 'COURS' in code_up:
+                    nat = '[C]'
+                elif 'TD' in code_up:
+                    nat = '[TD]'
+                else:
+                    nat = '[TP]'
+                txt = f"{nat} {r.get('Enseignements', '')}\nPromo: {r.get('Promotion', '')}\nSalle: {r.get('Lieu', '')}"
+                items.append(txt)
+            return "\n".join(items)
+    
+        df_ens = df_source[df_source["Enseignants"].str.contains(nom_enseignant, case=False, na=False)].copy()
+        if df_ens.empty:
+            return None, "Aucun cours"
+    
+        df_ens['Jours_Norm'] = df_ens['Jours'].apply(_norm)
+        df_ens['Horaire_Norm'] = df_ens['Horaire'].apply(_norm)
+    
+        grouped = df_ens.groupby(['Jours_Norm', 'Horaire_Norm']).apply(_format_cell, include_groups=False)
+        grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
+    
+        jours_present = [j for j in [_norm(j) for j in jours_ordre] if j in grid.index]
+        horaires_present = [h for h in [_norm(h) for h in horaires_ordre] if h in grid.columns]
+    
+        if not jours_present or not horaires_present:
+            grid = pd.DataFrame(index=["Aucun"], columns=["Aucun"]).fillna("Aucun cours")
+        else:
+            grid = grid.reindex(index=jours_present, columns=horaires_present)
+            grid.index = [map_j.get(i, i) for i in grid.index]
+            grid.columns = [map_h.get(c, c) for c in grid.columns]
+    
+        class EDTpdf(FPDF):
+            def header(self):
+                X0 = 10 + ((self.w - 20) - W_TOT) / 2
+                Y0 = 10
+                X_MILIEU = X0 + W_LOGO
+                X_INFO = X_MILIEU + W_MILIEU
+                Y_SEP = Y0 + H_HAUT_MILIEU
+    
+                self.set_draw_color(0, 0, 0)
+                self.set_line_width(0.3)
+                self.rect(X0, Y0, W_TOT, H_ENTETE, 'D')
+                self.line(X_MILIEU, Y0, X_MILIEU, Y0 + H_ENTETE)
+                self.line(X_INFO, Y0, X_INFO, Y0 + H_ENTETE)
+                self.line(X_MILIEU, Y_SEP, X_INFO, Y_SEP)
+    
+                if os.path.exists("logo.PNG"):
+                    self.image("logo.PNG", x=X0 + 2, y=Y0 + 2, w=W_LOGO - 4, h=H_ENTETE - 4)
+    
+                self.set_xy(X_MILIEU, Y0 + 1.5)
+                self.set_font('Arial', 'B', 11)
+                self.cell(W_MILIEU, 5.5, _sanitize("Universite Djillali Liabes"), 0, 2, "C")
+                self.set_font('Arial', '', 10)
+                self.cell(W_MILIEU, 5, _sanitize("Sidi Bel Abbes"), 0, 2, "C")
+    
+                self.set_xy(X_MILIEU, Y_SEP + 0.5)
+                self.set_font('Arial', 'B', 12)
+                self.cell(W_MILIEU, H_BAS_MILIEU - 1, _sanitize("EMPLOI DU TEMPS"), 0, 0, "C")
+    
+                self.set_font('Arial', '', 9)
+                line_h = H_ENTETE / 4
+                infos = [
+                    "Code : PPER.03",
+                    "Revision : 00",
+                    f"Date : {datetime.now().strftime('%d/%m/%Y')}",
+                    f"Page : {self.page_no()}/{{nb}}"
+                ]
+                for i, info in enumerate(infos):
+                    self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
+                    self.cell(W_INFO - 3, line_h, _sanitize(info), 0, 2, "L")
+    
+                self.set_y(Y0 + H_ENTETE + 5)
+    
+            def footer(self):
+                self.set_y(-15)
+                self.set_font('Arial', '', 8)
+                self.set_text_color(80, 80, 80)
+                self.cell(0, 10, f"{self.page_no()}/{{nb}}", 0, 0, "R")
+    
+        pdf = EDTpdf(orientation="L", unit="mm", format="A4")
+        pdf.alias_nb_pages()
+        pdf.set_auto_page_break(auto=True, margin=MARGE_BAS)
+        pdf.add_page()
+    
+        # Sous-titre
+        pdf.set_font("Arial", "B", 11)
+        pdf.set_text_color(30, 58, 138)
+        pdf.cell(0, 8, _sanitize(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
+        pdf.set_font("Arial", "I", 8)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(0, 5, _sanitize("Semestre 01 - departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+        pdf.ln(3)
+    
+        if grid.empty or (grid.shape == (1, 1) and grid.iloc[0, 0] == "Aucun cours"):
+            pdf.set_font("Arial", "", 10)
+            pdf.cell(0, 10, "Aucun cours programme pour cet enseignant.", 0, 1, "C")
+        else:
+            n_cols = len(grid.columns)
+            page_w = pdf.w - 20
+            col_jour_w = 22
+            col_h_w = (page_w - col_jour_w) / n_cols if n_cols > 0 else page_w
+    
+            interline = 3.2
+            margin_h = 4.0
+            padding_v = 3.0
+    
+            # Calcul hauteurs de ligne
+            pdf.set_font("Arial", "", 5.5)
+            row_heights = []
+            for _, row in grid.iterrows():
+                max_lines = 1
+                for val in row:
+                    if val and str(val).strip():
+                        txt_propre = _sanitize(str(val))
+                        lines = 0
+                        for para in txt_propre.split('\n'):
+                            w_txt = pdf.get_string_width(para)
+                            if w_txt == 0:
+                                lines += 1
+                            else:
+                                usable_w = max(col_h_w - margin_h - 1.0, 10)
+                                lines += max(1, math.ceil(w_txt / usable_w))
+                        if lines > max_lines:
+                            max_lines = lines
+                h_needed = max_lines * interline + padding_v * 2 + 2.0
+                row_heights.append(max(10, h_needed))
+    
+            # En-têtes tableau
+            pdf.set_font("Arial", "B", 7)
+            pdf.set_fill_color(30, 58, 138)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+            for h in grid.columns:
+                h_txt = _sanitize(str(h))
+                if len(h_txt) > 12:
+                    h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+                pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+            pdf.ln()
+    
+            # Données
+            pdf.set_text_color(0, 0, 0)
+            for idx, ((jour, row), row_h) in enumerate(zip(grid.iterrows(), row_heights)):
+                if pdf.get_y() + row_h > pdf.h - MARGE_BAS:
+                    pdf.add_page()
+                    pdf.set_font("Arial", "B", 7)
+                    pdf.set_fill_color(30, 58, 138)
+                    pdf.set_text_color(255, 255, 255)
+                    pdf.cell(col_jour_w, 8, "JOUR", 1, 0, "C", True)
+                    for h in grid.columns:
+                        h_txt = _sanitize(str(h))
+                        if len(h_txt) > 12:
+                            h_txt = h_txt.replace(" - ", "-").replace(" ", "")
+                        pdf.cell(col_h_w, 8, h_txt, 1, 0, "C", True)
+                    pdf.ln()
+                    pdf.set_text_color(0, 0, 0)
+    
+                bg_color = (248, 250, 252) if idx % 2 == 0 else (255, 255, 255)
+                pdf.set_font("Arial", "B", 7)
+                pdf.set_fill_color(*bg_color)
+                pdf.set_draw_color(180, 180, 180)
+                pdf.cell(col_jour_w, row_h, _sanitize(str(jour)), 1, 0, "C", True)
+    
+                pdf.set_font("Arial", "", 5.5)
+                for val in row:
+                    cell_text = _sanitize(str(val)) if val else ""
+                    x, y = pdf.get_x(), pdf.get_y()
+    
+                    if cell_text.strip():
+                        raw_up = str(val).upper()
+                        if "COURS" in raw_up:
+                            bg = (225, 238, 255)
+                        elif "TD" in raw_up:
+                            bg = (232, 252, 235)
+                        elif "TP" in raw_up:
+                            bg = (255, 235, 235)
+                        else:
+                            bg = bg_color
+                    else:
+                        bg = bg_color
+    
+                    pdf.set_fill_color(*bg)
+                    pdf.set_draw_color(180, 180, 180)
+                    pdf.rect(x, y, col_h_w, row_h, 'FD')
+    
+                    if cell_text.strip():
+                        n_lines = 0
+                        for para in cell_text.split('\n'):
+                            w_txt = pdf.get_string_width(para)
+                            if w_txt == 0:
+                                n_lines += 1
+                            else:
+                                usable_w = max(col_h_w - margin_h - 1.0, 10)
+                                n_lines += max(1, math.ceil(w_txt / usable_w))
+    
+                        text_block_h = n_lines * interline
+                        offset_y = max((row_h - text_block_h) / 2, padding_v / 2)
+    
+                        pdf.set_xy(x + margin_h / 2, y + offset_y)
+                        pdf.multi_cell(col_h_w - margin_h, interline, cell_text, 0, "L")
+                        pdf.set_xy(x + col_h_w, y)
+                    else:
+                        pdf.set_xy(x + col_h_w, y)
+                pdf.ln(row_h)
+    
+        return bytes(pdf.output()), None
+    
+    
+    # =============================================================================
+    # FONCTION D'ENVOI UNIFIÉE (Excel + PDF grille en pièce jointe)
+    # =============================================================================
     def envoyer_emails(liste_destinataires, promotion_label="Individuel"):
-        import smtplib, io
+        import smtplib
+        import io
         from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
         from email.mime.base import MIMEBase
@@ -9356,19 +9633,19 @@ if is_admin:
             server = smtplib.SMTP('smtp.gmail.com', 587)
             server.starttls()
             server.login(EMAIL_EXPEDITEUR, SECRET_APP)
-            
+    
             barre_prog = st.progress(0)
             status_txt = st.empty()
-            
+    
             for i, info in enumerate(liste_destinataires):
                 nom_ens = info["Enseignant"]
                 email_ens = info["Email"]
                 status_txt.text(f"Envoi en cours : {nom_ens} ({i+1}/{len(liste_destinataires)})")
-                
-                # Extraction et mise en forme des données
+    
+                # Extraction des données
                 df_perso = df[df["Enseignants"].astype(str).str.contains(str(nom_ens).strip(), na=False)]
                 df_mail = df_perso[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
-                
+    
                 nb_cours = df_mail['Enseignements'].str.contains('Cours', case=False).sum()
                 nb_td = df_mail['Enseignements'].str.contains('TD', case=False).sum()
                 nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
@@ -9377,9 +9654,9 @@ if is_admin:
                 msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {nom_ens}"
                 msg['From'] = f"département d'Électrotechnique <{EMAIL_EXPEDITEUR}>"
                 msg['To'] = email_ens
-                
+    
                 table_html = df_mail.to_html(index=False, border=1, justify='center')
-                
+    
                 corps_html = f"""
                 <html>
                 <body style="font-family: Arial, sans-serif;">
@@ -9387,9 +9664,9 @@ if is_admin:
                         <h2 style="color: #1E3A8A; text-align: center;">Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h2>
                         <p>Sallem M./Mme <b>{nom_ens}</b>,</p>
                         <p><b>Récapitulatif de votre charge :</b> {nb_cours} Cours, {nb_td} TD, {nb_tp} TP.</p>
-                        <p style="font-weight: bold; color: #b91c1c;">Objet : Urgent : Vérification de l’emploi du temps – Semestre 2</p>
+                        <p style="font-weight: bold; color: #b91c1c;">Objet : Urgent : Vérification de l'emploi du temps – Semestre 1</p>
                         <p>Merci de bien renseigner le fichier Excel joint. Envoie RAS si c'est bon.</p>
-                        <p style="font-size: 1.2em; color: #b91c1c; font-weight: bold; text-align: center;"></p>
+                        <p style="color: #1E3A8A; font-weight: bold;">📎 Vous trouverez également en pièce jointe votre EDT au format PDF (grille horaire officielle PPER.03).</p>
                         <div style="background-color: white;">{table_html}</div>
                         <p>Cordialement.<br><b>Service d'enseignement</b></p>
                     </div>
@@ -9398,9 +9675,11 @@ if is_admin:
                 """
                 msg.attach(MIMEText(corps_html, 'html'))
     
-                # Fichier Excel formaté
-                buf = io.BytesIO()
-                with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
+                # ═══════════════════════════════════════════════════════
+                # PIÈCE JOINTE 1 : EXCEL (existant)
+                # ═══════════════════════════════════════════════════════
+                buf_xl = io.BytesIO()
+                with pd.ExcelWriter(buf_xl, engine='xlsxwriter') as writer:
                     df_mail.to_excel(writer, index=False, sheet_name='Mon EDT')
                     wb = writer.book
                     ws = writer.sheets['Mon EDT']
@@ -9408,24 +9687,41 @@ if is_admin:
                     for col_num, value in enumerate(df_mail.columns.values):
                         ws.write(0, col_num, value, header_fmt)
                     ws.set_column('A:G', 18)
-                
-                buf.seek(0)
-                part = MIMEBase('application', 'octet-stream')
-                part.set_payload(buf.read())
-                encoders.encode_base64(part)
-                part.add_header('Content-Disposition', f'attachment; filename="EDT_S1_2027_{nom_ens}.xlsx"')
-                msg.attach(part)
-                
+    
+                buf_xl.seek(0)
+                part_xl = MIMEBase('application', 'octet-stream')
+                part_xl.set_payload(buf_xl.read())
+                encoders.encode_base64(part_xl)
+                part_xl.add_header('Content-Disposition', f'attachment; filename="EDT_S1_2027_{nom_ens}.xlsx"')
+                msg.attach(part_xl)
+    
+                # ═══════════════════════════════════════════════════════
+                # PIÈCE JOINTE 2 : PDF GRILLE ISO (NOUVEAU)
+                # ═══════════════════════════════════════════════════════
+                pdf_bytes, err_pdf = generer_pdf_edt_individuel(nom_ens, df)
+                if pdf_bytes:
+                    part_pdf = MIMEBase('application', 'pdf')
+                    part_pdf.set_payload(pdf_bytes)
+                    encoders.encode_base64(part_pdf)
+                    safe_name = f"EDT_Grille_{nom_ens.replace(' ', '_')}_S1_2027.pdf"
+                    part_pdf.add_header('Content-Disposition', f'attachment; filename="{safe_name}"')
+                    msg.attach(part_pdf)
+                else:
+                    st.warning(f"⚠️ PDF non généré pour {nom_ens} : {err_pdf}")
+    
                 server.send_message(msg)
                 barre_prog.progress((i + 1) / len(liste_destinataires))
     
             server.quit()
-            status_txt.success(f"✅ {len(liste_destinataires)} emails envoyés avec succès !")
+            status_txt.success(f"✅ {len(liste_destinataires)} emails envoyés avec succès (Excel + PDF) !")
             st.balloons()
         except Exception as e:
             st.error(f"Erreur lors de l'envoi : {e}")
     
-    # --- AFFICHAGE SELON LE MODE ---
+    
+    # =============================================================================
+    # AFFICHAGE SELON LE MODE
+    # =============================================================================
     if mode_envoi == "Un par un (Individuel)":
         st.dataframe(pd.DataFrame(enseignants_filtres), use_container_width=True, hide_index=True)
         if st.button("🚀 ENVOYER AUX ENSEIGNANTS FILTRÉS", type="primary", use_container_width=True):
@@ -9438,6 +9734,14 @@ if is_admin:
     elif mode_envoi == "Sélection groupée (Multi-choix)":
         noms_dispo = [e["Enseignant"] for e in enseignants_filtres if "@" in str(e["Email"])]
         selection = st.multiselect("Sélectionner les enseignants :", noms_dispo)
+        
+        # Prévisualisation
+        if selection:
+            st.write(f"🔍 **Prévisualisation de la sélection ({len(selection)}) :**")
+            donnees_previsu = [e for e in enseignants_filtres if e["Enseignant"] in selection]
+            df_previsu = pd.DataFrame(donnees_previsu)[["Enseignant", "Email", "État d'envoi"]]
+            st.dataframe(df_previsu, use_container_width=True, hide_index=True)
+        
         if st.button("🚀 ENVOYER À LA SÉLECTION", type="primary", use_container_width=True):
             destinataires = [e for e in enseignants_filtres if e["Enseignant"] in selection]
             if destinataires:
@@ -9454,8 +9758,6 @@ if is_admin:
         st.write(f"### 📋 Contrôle : {choix_promo}")
         if liste_promo:
             df_export = pd.DataFrame(liste_promo)
-            
-            # Sélection des colonnes demandées : Nom/Prénom (Enseignant) et Email
             colonnes_export = ["Enseignant", "Email"]
             df_download = df_export[colonnes_export].drop_duplicates()
     
@@ -9464,16 +9766,14 @@ if is_admin:
             
             st.dataframe(df_export, use_container_width=True, hide_index=True)
     
-            # --- GÉNÉRATION DU FICHIER EXCEL ---
+            # Téléchargement liste Excel
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                 df_download.to_excel(writer, index=False, sheet_name='Liste_Emails')
-                # Optionnel : Ajustement automatique de la largeur des colonnes
                 worksheet = writer.sheets['Liste_Emails']
                 for i, col in enumerate(df_download.columns):
                     column_len = max(df_download[col].astype(str).map(len).max(), len(col)) + 2
                     worksheet.set_column(i, i, column_len)
-            
             buffer.seek(0)
     
             st.download_button(
@@ -9483,7 +9783,6 @@ if is_admin:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
-            # -----------------------------------
     
             st.divider()
     
@@ -9493,398 +9792,134 @@ if is_admin:
                     envoyer_emails(destinataires, choix_promo)
                 else:
                     st.error("Aucun email valide pour cette promotion.")
-                # --- SECTION PRÉVISUALISATION ---
-                if selection:
-                    st.write(f"🔍 **Prévisualisation de la sélection ({len(selection)}) :**")
-                    # Filtrage pour afficher uniquement les enseignants sélectionnés dans le tableau de contrôle
-                    donnees_previsu = [e for e in enseignants_filtres if e["Enseignant"] in selection]
-                    df_previsu = pd.DataFrame(donnees_previsu)[["Enseignant", "Email", "État d'envoi"]]
-                    st.dataframe(df_previsu, use_container_width=True, hide_index=True)
-                # --------------------------------
     
-                if st.button(f"🚀 Envoyer à la sélection ({len(selection)})", type="primary", use_container_width=True):
-                    if not selection:
-                        st.warning("Veuillez sélectionner au moins un enseignant.")
-                    else:
-                        import smtplib, io, pandas as pd
-                        from email.mime.text import MIMEText
-                        from email.mime.multipart import MIMEMultipart
-                        from email.mime.base import MIMEBase
-                        from email import encoders
+        else:
+            st.info("Aucun enseignant trouvé pour cette promotion.")
     
-                        try:
-                            server = smtplib.SMTP('smtp.gmail.com', 587)
-                            server.starttls()
-                            server.login(st.secrets["EMAIL_USER"], st.secrets["EMAIL_PASS"])
-                            
-                            progress_bar = st.progress(0)
-                            for i, nom in enumerate(selection):
-                                info_ens = next(e for e in enseignants_filtres if e["Enseignant"] == nom)
-                                nom_cible = str(nom).strip().upper()
-                                
-                                # Extraction des données spécifiques à l'enseignant pour le tableau
-                                df_perso = df[df["Enseignants"].astype(str).str.upper().str.contains(nom_cible, na=False)]
-                                df_mail = df_perso[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
-                                
-                                # Calcul du récapitulatif de charge
-                                nb_cours = df_mail['Enseignements'].str.contains('Cours', case=False).sum()
-                                nb_td = df_mail['Enseignements'].str.contains('TD', case=False).sum()
-                                nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
     
-                                msg = MIMEMultipart()
-                                msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {nom}"
-                                msg['From'] = st.secrets["EMAIL_USER"]
-                                msg['To'] = info_ens["Email"]
+    # =============================================================================
+    # SECTION COURRIER OFFICIEL : MULTI-EXPÉDITEURS (CHEF / ADJOINT / SEC)
+    # =============================================================================
+    st.divider()
+    with st.expander("✉️ ENVOYER UN COURRIER OFFICIEL (Direction / Secrétariat)", expanded=False):
+        st.info("""
+        **Mode Multi-Profils :** Sélectionnez votre fonction. L'email officiel correspondant sera utilisé. 
+        Chaque utilisateur doit entrer son propre 'Mot de passe d'application' Google.
+        """)
     
-                                # --- CORPS DU MESSAGE (IDENTIQUE À L'INDIVIDUEL) ---
-                                corps_html = f"""
-                                <html>
-                                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                                    <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                        Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
-                                    </h2>
-                                    
-                                    <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
-                                    
-                                    <div style="background-color: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 15px;">
-                                        <b>📊 Récapitulatif de votre charge (S1-2027) :</b><br>
-                                        <ul>
-                                            <li>Nombre de Cours : <b>{nb_cours}</b></li>
-                                            <li>Nombre de TD : <b>{nb_td}</b></li>
-                                            <li>Nombre d'unité de TP : <b>{nb_tp}</b></li>
-                                        </ul>
-                                    </div>
+        st.subheader("🔑 1. Identification de l'expéditeur")
+        
+        options_exp = {
+            "Chef de departement": "chef.department.elt.fge@gmail.com",
+            "Chef de departement Adjoint": st.secrets.get("EMAIL_ADJOINT", "Non configuré"),
+            "Secrétariat ELT": st.secrets.get("EMAIL_SEC", "Non configuré"),
+            "Chef de départemet ELT": st.secrets.get("EMAIL_USER", "Non configuré")
+        }
+        
+        col_auth1, col_auth2 = st.columns(2)
+        
+        with col_auth1:
+            role_choisi = st.selectbox("Expéditeur officiel :", list(options_exp.keys()))
+            expediteur_mail = options_exp[role_choisi]
+            st.success(f"📧 Compte : {expediteur_mail}")
+        
+        with col_auth2:
+            codes_secrets = {
+                "Chef de departement": "gkzs pdza yodb icvd", 
+                "Chef de départemet ELT": "kmtk zmkd kwpd cqzz",
+                "Chef de departement Adjoint": "",
+                "Secrétariat ELT": ""
+            }
+            code_auto = codes_secrets.get(role_choisi, "")
+            expediteur_pass = st.text_input(
+                f"Mot de passe d'application ({role_choisi}) :", 
+                value=code_auto,
+                type="password", 
+                help="Le code est rempli automatiquement pour les comptes autorisés.",
+                key=f"pass_{role_choisi}"
+            )
     
-                                    <div style="background-color: #fff4e5; border-left: 5px solid #ffa500; padding: 15px; margin: 20px 0;">
-                                        <p style="font-weight: bold; color: #d97706; margin-top: 0;">
-                                            Objet : Urgent : Vérification de l’emploi du temps – Semestre 1
-                                        </p>
-                                        
-                                        <p>Cher collègue, Sallem,</p>
-                                        
-                                        <p>Vous trouverez ci-joint votre emploi du temps individuel pour le premier semestre.<br>
-                                        Afin de permettre au service des enseignements d'accomplir sa mission dans les meilleures conditions, il est impératif que vous procédiez à sa vérification immédiate. Cette étape est cruciale pour :</p>
-                                        
-                                        <ul style="margin-top: 5px;">
-                                            <li>1- Valider la charge horaire exacte de chaque enseignant.</li>
-                                            <li>2- Planifier précisément le démarrage effectif des différents enseignements.</li>
-                                        </ul>
+        st.divider()
     
-                                        <p><b>🚀 Action requise :</b><br>
-                                        - <b>En cas d'anomalie :</b> nous retourner le fichier Excel dûment corrigé à l'adresse d'envoi : <b>chef.department.elt.fge@gmail.com</b><br>
-                                        - <b>Si tout est conforme :</b> nous répondre simplement par « <b>RAS</b> ».</p>
-                                        
-                                        <p>Votre retour est indispensable pour la stabilisation des emplois du temps. Sans réponse de votre part, nous ne pourrons garantir la mise à jour de vos charges pédagogiques.<br>
-                                        <span style="color: #b91c1c; font-weight: bold;">""</span></p>
-                                        
-                                        <p><b>Saha Ftourkoum</b></p>
-                                    </div>
-    
-                                    <div style="margin: 20px 0;">
-                                        {df_mail.to_html(index=False, border=1, justify='center')}
-                                    </div>
-                                    
-                                    <p>Cordialement.</p>
-                                    <hr>
-                                    <p style="color: #555;">
-                                        <b>Service d'enseignement</b><br>
-                                        département d'Électrotechnique<br>
-                                        Faculté de Génie Électrique (FGE)
-                                    </p>
-                                </body>
-                                </html>
-                                """
-                                msg.attach(MIMEText(corps_html, 'html'))
-    
-                                # Génération de la pièce jointe Excel formatée
-                                buffer = io.BytesIO()
-                                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                                    df_mail.to_excel(writer, index=False, sheet_name='Mon EDT')
-                                    workbook, worksheet = writer.book, writer.sheets['Mon EDT']
-                                    f_h = workbook.add_format({'bold': True, 'bg_color': '#4472C4', 'font_color': 'white', 'border': 1})
-                                    f_c = workbook.add_format({'bg_color': '#D9EAD3', 'border': 1})
-                                    f_d = workbook.add_format({'bg_color': '#FFF2CC', 'border': 1})
-                                    f_p = workbook.add_format({'bg_color': '#F4CCCC', 'border': 1})
-                                    
-                                    # Entête
-                                    for c_n, v_l in enumerate(df_mail.columns.values): 
-                                        worksheet.write(0, c_n, v_l, f_h)
-                                    
-                                    # Coloration des lignes par type d'enseignement
-                                    for i_x, e_n in enumerate(df_mail['Enseignements']):
-                                        f_r = None
-                                        if 'Cours' in str(e_n): f_r = f_c
-                                        elif 'TD' in str(e_n): f_r = f_d
-                                        elif 'TP' in str(e_n): f_r = f_p
-                                        if f_r: worksheet.set_row(i_x + 1, None, f_r)
-                                    worksheet.set_column('A:G', 18)
-                                
-                                buffer.seek(0)
-                                part = MIMEBase('application', 'octet-stream')
-                                part.set_payload(buffer.read())
-                                encoders.encode_base64(part)
-                                part.add_header('Content-Disposition', f'attachment; filename="EDT_S1_2027_{nom}.xlsx"')
-                                msg.attach(part)
-                                
-                                # Envoi effectif
-                                server.send_message(msg)
-                                progress_bar.progress((i + 1) / len(selection))
-                            
-                            server.quit()
-                            st.success(f"✅ Envoi terminé avec succès pour la sélection !")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erreur lors de l'envoi : {e}")
+        st.subheader("📝 2. Rédaction du message")
+        dict_emails = {row["Enseignant"]: row["Email"] for row in donnees_finales if "@" in str(row["Email"])}
+        
+        col_msg1, col_msg2 = st.columns([1, 2])
+        
+        with col_msg1:
+            cible_courrier = st.radio("Destinataires :", ["Tous les enseignants", "Sélection spécifique"])
+            destinataires_mails = []
+            
+            if cible_courrier == "Tous les enseignants":
+                destinataires_mails = list(dict_emails.values())
+                st.warning(f"⚠️ Envoi groupé à {len(destinataires_mails)} enseignants.")
             else:
-                # --- MODE INDIVIDUEL (Bouton par ligne) ---
-                for idx, row in enumerate(enseignants_filtres):
-                    col_ens, col_mail, col_stat, col_act = st.columns([2, 2, 1, 1])
-                    col_ens.write(f"**{row['Enseignant']}**")
-                    col_mail.write(row['Email'])
-                    col_stat.write(row["État d'envoi"])
-                    
-                    if "@" in str(row["Email"]):
-                        if col_act.button("📧 Envoyer", key=f"btn_unit_{row['Enseignant']}_{idx}"):
-                            import smtplib, io, pandas as pd
-                            from email.mime.text import MIMEText
-                            from email.mime.multipart import MIMEMultipart
-                            from email.mime.base import MIMEBase
-                            from email import encoders
+                selection_profs = st.multiselect("Choisir les enseignants :", sorted(dict_emails.keys()))
+                destinataires_mails = [dict_emails[p] for p in selection_profs]
     
-                            try:
-                                server = smtplib.SMTP('smtp.gmail.com', 587)
-                                server.starttls()
-                                
-                                # --- CONFIGURATION EXPÉDITEUR ---
-                                exp_mail = "chef.department.elt.fge@gmail.com"
-                                exp_pass = "gkzs pdza yodb icvd"
-                                nom_aff = "département d'Électrotechnique UDL-SBA"
-                                
-                                server.login(exp_mail, exp_pass)
-                                
-                                nom_c = str(row['Enseignant']).strip().upper()
-                                df_p = df[df["Enseignants"].astype(str).str.upper().str.contains(nom_c, na=False)]
-                                df_m = df_p[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
-                                
-                                msg = MIMEMultipart()
-                                msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {row['Enseignant']}"
-                                
-                                # --- MODIFICATION DES EN-TÊTES ---
-                                msg['From'] = f"{nom_aff} <{exp_mail}>"
-                                msg['To'] = row["Email"]
-                                
-                                # --- CORPS DU MESSAGE MIS À JOUR ---
-                                corps = f"""
-                                <html>
-                                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                                    <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px;">
-                                        Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA
-                                    </h2>
-                                    
-                                    <p>Sallem M./Mme <b>{row['Enseignant']}</b>,</p>
-                                    
-                                    <div style="background-color: #fff4e5; border-left: 5px solid #ffa500; padding: 15px; margin: 20px 0;">
-                                        <p style="font-weight: bold; color: #d97706; margin-top: 0;">
-                                            Objet : Urgent : Vérification de l’emploi du temps – Semestre 1
-                                        </p>
-                                        
-                                        <p>Cher collègue, Sallem,</p>
-                                        
-                                        <p>Vous trouverez ci-joint votre emploi du temps individuel pour le prmier semestre.<br>
-                                        Afin de permettre au service des enseignements d'accomplir sa mission dans les meilleures conditions, il est impératif que vous procédiez à sa vérification immédiate. Cette étape est cruciale pour :</p>
-                                        
-                                        <ul style="margin-top: 5px;">
-                                            <li>1- Valider la charge horaire exacte de chaque enseignant.</li>
-                                            <li>2- Planifier précisément le démarrage effectif des différents enseignements.</li>
-                                        </ul>
+        with col_msg2:
+            sujet_libre = st.text_input("Objet du message :", placeholder="Ex: Convocation réunion...")
+            corps_libre = st.text_area("Corps du message (Texte libre) :", height=150)
+            fichier_joint = st.file_uploader("📎 Pièce jointe (PDF, Excel, Image...)", type=["pdf", "png", "jpg", "docx", "xlsx"])
     
-                                        <p><b>🚀 Action requise :</b><br>
-                                        - <b>En cas d'anomalie :</b> nous retourner le fichier Excel dûment corrigé à l'adresse d'envoi : <b>chef.department.elt.fge@gmail.com</b><br>
-                                        - <b>Si tout est conforme :</b> nous répondre simplement par « <b>RAS</b> ».</p>
-                                        
-                                        <p>Votre retour est indispensable pour la stabilisation des emplois du temps. Sans réponse de votre part, nous ne pourrons garantir la mise à jour de vos charges pédagogiques.<br>
-                                        <span style="color: #b91c1c; font-weight: bold;">""</span></p>
-                                        
-                                        <p><b>Saha Ftourkoum</b></p>
-                                    </div>
+        if st.button("🚀 LANCER L'ENVOI OFFICIEL", type="primary", use_container_width=True):
+            if not expediteur_pass:
+                st.error(f"❌ Veuillez saisir le mot de passe d'application pour {expediteur_mail}")
+            elif not destinataires_mails:
+                st.error("❌ Aucun destinataire sélectionné.")
+            elif not sujet_libre or not corps_libre:
+                st.error("❌ L'objet et le corps du message sont obligatoires.")
+            else:
+                try:
+                    import mimetypes
     
-                                    <p>Voici le récapitulatif de votre emploi du temps pour le semestre 01 (S1-2027) :</p>
-    
-                                    <div style="margin: 20px 0;">
-                                        {df_m.to_html(index=False, border=1, justify='center')}
-                                    </div>
-                                    
-                                    <p>Cordialement.</p>
-                                    <hr>
-                                    <p style="color: #555;">
-                                        <b>Service d'enseignement</b><br>
-                                        departement d'Électrotechnique<br>
-                                        Faculté de Génie Électrique (FGE)
-                                    </p>
-                                </body>
-                                </html>
-                                """
-                                msg.attach(MIMEText(corps, 'html'))
-                                
-                                buf = io.BytesIO()
-                                with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
-                                    df_m.to_excel(writer, index=False, sheet_name='Mon EDT')
-                                buf.seek(0)
-                                
-                                part = MIMEBase('application', 'octet-stream')
-                                part.set_payload(buf.read())
-                                encoders.encode_base64(part)
-                                part.add_header('Content-Disposition', f'attachment; filename="EDT_2027_{row["Enseignant"]}.xlsx"')
-                                msg.attach(part)
-                                
-                                server.send_message(msg)
-                                server.quit()
-                                
-                                st.success(f"✅ Envoyé à {row['Enseignant']}")
-                                st.rerun()
-                            except Exception as e: 
-                                st.error(f"Erreur : {e}")
-            # =================================================================
-            # =================================================================
-            # SECTION COURRIER OFFICIEL : MULTI-EXPÉDITEURS (CHEF / ADJOINT / SEC)
-            # =================================================================
-            st.divider()
-            with st.expander("✉️ ENVOYER UN COURRIER OFFICIEL (Direction / Secrétariat)", expanded=False):
-                st.info("""
-                **Mode Multi-Profils :** Sélectionnez votre fonction. L'email officiel correspondant sera utilisé. 
-                Chaque utilisateur doit entrer son propre 'Mot de passe d'application' Google.
-                """)
-                
-                # --- 1. CONFIGURATION DE L'EXPÉDITEUR ---
-                st.subheader("🔑 1. Identification de l'expéditeur")
-                
-                # Configuration des profils
-                options_exp = {
-                    "Chef de departement": "chef.department.elt.fge@gmail.com",
-                    "Chef de departement Adjoint": st.secrets.get("EMAIL_ADJOINT", "Non configuré"),
-                    "Secrétariat ELT": st.secrets.get("EMAIL_SEC", "Non configuré"),
-                    "Chef de départemet ELT": st.secrets.get("EMAIL_USER", "Non configuré")
-                }
-                
-                col_auth1, col_auth2 = st.columns(2)
-                
-                with col_auth1:
-                    role_choisi = st.selectbox("Expéditeur officiel :", list(options_exp.keys()))
-                    expediteur_mail = options_exp[role_choisi]
-                    st.success(f"📧 Compte : {expediteur_mail}")
-                
-                with col_auth2:
-                    # Dictionnaire contenant vos codes de 16 lettres
-                    # Remplacez les textes par vos codes réels
-                    codes_secrets = {
-                        "Chef de departement": "gkzs pdza yodb icvd", 
-                        "Chef de départemet ELT": "kmtk zmkd kwpd cqzz",
-                        "Chef de departement Adjoint": "", # Vide pour le moment
-                        "Secrétariat ELT": ""              # Vide pour le moment
-                    }
-    
-                    # On récupère le code selon le rôle choisi
-                    code_auto = codes_secrets.get(role_choisi, "")
-    
-                    # Affichage du champ (rempli automatiquement si le code existe)
-                    expediteur_pass = st.text_input(
-                        f"Mot de passe d'application ({role_choisi}) :", 
-                        value=code_auto,
-                        type="password", 
-                        help="Le code est rempli automatiquement pour les comptes autorisés.",
-                        key=f"pass_{role_choisi}" # Clé dynamique pour que Streamlit rafraîchisse bien le champ
-                    )
-    
-                st.divider()
-    
-                # --- 2. RÉDACTION DU MESSAGE ---
-                st.subheader("📝 2. Rédaction du message")
-                dict_emails = {row["Enseignant"]: row["Email"] for row in donnees_finales if "@" in str(row["Email"])}
-                
-                col_msg1, col_msg2 = st.columns([1, 2])
-                
-                with col_msg1:
-                    cible_courrier = st.radio("Destinataires :", ["Tous les enseignants", "Sélection spécifique"])
-                    destinataires_mails = []
-                    
-                    if cible_courrier == "Tous les enseignants":
-                        destinataires_mails = list(dict_emails.values())
-                        st.warning(f"⚠️ Envoi groupé à {len(destinataires_mails)} enseignants.")
+                    if role_choisi == "Chef de departement":
+                        signature = (
+                            "\n\n---\nCordialement,\n\nPr. MILOUA Farid\n"
+                            "Chef de departement d'Électrotechnique\n"
+                            "Faculté de Génie Électrique (FGE)\n"
+                            "Université Djillali Liabes (UDL-SBA)"
+                        )
+                    elif role_choisi == "Chef de departement Adjoint":
+                        signature = "\n\n---\nCordialement,\nChef de departement Adjoint\ndepartement d'Électrotechnique - FGE - UDL-SBA"
+                    elif role_choisi == "Secrétariat ELT":
+                        signature = "\n\n---\nSecrétariat du departement d'Électrotechnique\nFGE - UDL-SBA"
                     else:
-                        selection_profs = st.multiselect("Choisir les enseignants :", sorted(dict_emails.keys()))
-                        destinataires_mails = [dict_emails[p] for p in selection_profs]
+                        signature = "\n\n---\nEnvoyé via la Plateforme de Gestion des EDTs (FGE-UDL-SBA)"
     
-                with col_msg2:
-                    sujet_libre = st.text_input("Objet du message :", placeholder="Ex: Convocation réunion...")
-                    corps_libre = st.text_area("Corps du message (Texte libre) :", height=150)
-                    fichier_joint = st.file_uploader("📎 Pièce jointe (PDF, Excel, Image...)", type=["pdf", "png", "jpg", "docx", "xlsx"])
+                    corps_final = corps_libre + signature
     
-                # --- 3. LOGIQUE D'ENVOI AVEC SIGNATURE AUTOMATIQUE ---
-                if st.button("🚀 LANCER L'ENVOI OFFICIEL", type="primary", use_container_width=True):
-                    if not expediteur_pass:
-                        st.error(f"❌ Veuillez saisir le mot de passe d'application pour {expediteur_mail}")
-                    elif not destinataires_mails:
-                        st.error("❌ Aucun destinataire sélectionné.")
-                    elif not sujet_libre or not corps_libre:
-                        st.error("❌ L'objet et le corps du message sont obligatoires.")
-                    else:
-                        try:
-                            import smtplib, mimetypes
-                            from email.mime.multipart import MIMEMultipart
-                            from email.mime.text import MIMEText
-                            from email.mime.base import MIMEBase
-                            from email import encoders
+                    with st.spinner(f"Envoi en cours par le {role_choisi}..."):
+                        server = smtplib.SMTP('smtp.gmail.com', 587)
+                        server.starttls()
+                        server.login(expediteur_mail, expediteur_pass)
     
-                            # Génération de la signature selon le rôle
-                            if role_choisi == "Chef de departement":
-                                signature = (
-                                    "\n\n---\n"
-                                    "Cordialement,\n\n"
-                                    "Pr. MILOUA Farid\n"
-                                    "Chef de departement d'Électrotechnique\n"
-                                    "Faculté de Génie Électrique (FGE)\n"
-                                    "Université Djillali Liabes (UDL-SBA)"
-                                )
-                            elif role_choisi == "Chef de departement Adjoint":
-                                signature = "\n\n---\nCordialement,\nChef de departement Adjoint\ndepartement d'Électrotechnique - FGE - UDL-SBA"
-                            elif role_choisi == "Secrétariat ELT":
-                                signature = "\n\n---\nSecrétariat du departement d'Électrotechnique\nFGE - UDL-SBA"
-                            else:
-                                signature = "\n\n---\nEnvoyé via la Plateforme de Gestion des EDTs (FGE-UDL-SBA)"
+                        msg = MIMEMultipart()
+                        msg['From'] = f"{role_choisi} <{expediteur_mail}>"
+                        msg['To'] = ", ".join(destinataires_mails)
+                        msg['Subject'] = sujet_libre
+                        
+                        msg.attach(MIMEText(corps_final, 'plain', 'utf-8'))
     
-                            corps_final = corps_libre + signature
+                        if fichier_joint:
+                            content_type, _ = mimetypes.guess_type(fichier_joint.name)
+                            main_type, sub_type = (content_type or 'application/octet-stream').split('/', 1)
+                            part = MIMEBase(main_type, sub_type)
+                            part.set_payload(fichier_joint.read())
+                            encoders.encode_base64(part)
+                            part.add_header('Content-Disposition', f'attachment; filename="{fichier_joint.name}"')
+                            msg.attach(part)
     
-                            with st.spinner(f"Envoi en cours par le {role_choisi}..."):
-                                server = smtplib.SMTP('smtp.gmail.com', 587)
-                                server.starttls()
-                                server.login(expediteur_mail, expediteur_pass)
+                        server.send_message(msg)
+                        server.quit()
+                    
+                    st.success(f"✅ Courrier de la part de {role_choisi} envoyé avec succès !")
+                    st.balloons()
+                    
+                except Exception as e:
+                    st.error(f"❌ Erreur technique : {e}")
+                    st.info("💡 Rappel : Vérifiez votre connexion et votre code de 16 lettres.")
     
-                                msg = MIMEMultipart()
-                                msg['From'] = f"{role_choisi} <{expediteur_mail}>"
-                                msg['To'] = ", ".join(destinataires_mails)
-                                msg['Subject'] = sujet_libre
-                                
-                                # Support complet des accents et caractères spéciaux
-                                msg.attach(MIMEText(corps_final, 'plain', 'utf-8'))
-    
-                                if fichier_joint:
-                                    content_type, _ = mimetypes.guess_type(fichier_joint.name)
-                                    main_type, sub_type = (content_type or 'application/octet-stream').split('/', 1)
-                                    part = MIMEBase(main_type, sub_type)
-                                    part.set_payload(fichier_joint.read())
-                                    encoders.encode_base64(part)
-                                    part.add_header('Content-Disposition', f'attachment; filename="{fichier_joint.name}"')
-                                    msg.attach(part)
-    
-                                server.send_message(msg)
-                                server.quit()
-                            
-                            st.success(f"✅ Courrier de la part de {role_choisi} envoyé avec succès !")
-                            st.balloons()
-                            
-                        except Exception as e:
-                            st.error(f"❌ Erreur technique : {e}")
-                            st.info("💡 Rappel : Vérifiez votre connexion et votre code de 16 lettres.")
         # =================================================================
         # =================================================================
     # --- LOGIQUE D'AFFICHAGE DU PORTAIL MISE À JOUR ---
