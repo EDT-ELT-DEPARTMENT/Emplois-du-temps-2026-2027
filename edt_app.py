@@ -11673,6 +11673,10 @@ if df_contacts is not None and not df_contacts.empty:
 # ═════════════════════════════════════════════════════════════════════════════
 # >>> TABLEAU DE BORD RÉPERTOIRE ÉTUDIANTS (ADMIN UNIQUEMENT) <<<
 # ═════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# >>> TABLEAU DE BORD RÉPERTOIRE ÉTUDIANTS (ADMIN UNIQUEMENT) <<<
+# ═════════════════════════════════════════════════════════════════════════════
+# Utilise df_etu_edt (chargé dans le Module 2) et non df_etu (Module 1)
 if 'df_etu_edt' in locals() and df_etu_edt is not None and not df_etu_edt.empty:
     st.divider()
     st.markdown("""
@@ -11691,7 +11695,7 @@ if 'df_etu_edt' in locals() and df_etu_edt is not None and not df_etu_edt.empty:
         st.session_state.filtre_etudiants = "TOUS"
 
     # ── Préparation des données ──
-    df_etu_rep = df_etu.copy()
+    df_etu_rep = df_etu_edt.copy()
     
     # Détection auto des colonnes
     cols_map = detecter_colonnes_etudiant(df_etu_rep)
@@ -11836,7 +11840,7 @@ if 'df_etu_edt' in locals() and df_etu_edt is not None and not df_etu_edt.empty:
         else:
             export_df = df_filtre_etu[export_cols].copy()
 
-        # >>> CONVERSION EN STRING POUR XLSXWRITER (évite TypeError) <<<
+        # Conversion en string pour xlsxwriter
         export_df = export_df.fillna("").astype(str).replace(['nan', 'None', '<NA>', 'NaT'], '')
 
         export_df.to_excel(writer, index=False, sheet_name=sheet_name)
@@ -11880,4 +11884,5 @@ if 'df_etu_edt' in locals() and df_etu_edt is not None and not df_etu_edt.empty:
         use_container_width=True,
         key=f"dl_etudiants_{filtre_actif_etu}_admin"
     )
+
 
