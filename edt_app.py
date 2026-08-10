@@ -2855,9 +2855,7 @@ tr:nth-child(even){{background-color:#f8fafc;}}
     
     st.markdown("<hr style='border:2px solid #D4AF37;margin:15px 0;'>", unsafe_allow_html=True)
 
-    if df is None or df.empty:
-        st.error("❌ Les données EDT ne sont pas disponibles. Vérifiez le fichier source.")
-        return
+    
 
     # ============================================================
     # PORTAIL : EMPLOI DU TEMPS (ADMIN)
