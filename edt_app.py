@@ -2313,6 +2313,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     
         # ONGLET 5 : MON EDT (ÉTUDIANT CONNECTÉ UNIQUEMENT)
         # =============================================================================
+        # =============================================================================
+        # ONGLET 5 : MON EDT (ÉTUDIANT CONNECTÉ UNIQUEMENT)
+        # =============================================================================
         with tab5:
             st.header("📅 Mon Emploi du Temps")
             st.caption("Consultation et téléchargement de votre EDT hebdomadaire")
@@ -2320,7 +2323,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             if not étudiant_connecte:
                 st.info("ℹ️ Cet onglet est réservé aux étudiants connectés. Retournez à l'onglet 📝 Suivi d'Assiduité pour vous authentifier.")
             else:
-                # ─── INFOS ÉTUDIANT ───
                 promo_etu = str(étudiant_connecte.get("promotion", "")).strip()
                 nom_etu   = str(étudiant_connecte.get("nom", "Étudiant")).strip()
     
@@ -2340,7 +2342,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         ].copy()
     
                     # ═══════════════════════════════════════════════════════
-                    # FILTRAGE PAR GROUPE / SOUS-GROUPE (G1, G2…)
+                    # RÉCUPÉRATION GROUPE / SOUS-GROUPE ÉTUDIANT
                     # ═══════════════════════════════════════════════════════
                     groupe_etu = ""
                     sous_groupe_etu = ""
@@ -2355,28 +2357,99 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     except Exception:
                         pass
     
-                    # Extraction G1, G2… depuis Code et Lieu
-                    def extraire_groupe_edt(val):
+                    # ═══════════════════════════════════════════════════════
+                    # DÉTECTION INTELLIGENTE DES GROUPES/SOUS-GROUPES DANS TOUTES LES COLONNES EDT
+                    # ═══════════════════════════════════════════════════════
+                    def extraire_identifiant_groupe(val, patterns):
+                        """Extrait un identifiant normalisé selon les patterns regex fournis."""
                         if pd.isna(val):
                             return None
-                        m = re.search(r'G(\d+)', str(val).upper())
-                        return f"G{m.group(1)}" if m else None
+                        s = str(val).upper()
+                        for pattern, extracteur in patterns:
+                            m = re.search(pattern, s)
+                            if m:
+                                return extracteur(m)
+                        return None
     
-                    df_edt_etu["Groupe_Code"] = df_edt_etu["Code"].apply(extraire_groupe_edt)
-                    df_edt_etu["Groupe_Lieu"] = df_edt_etu["Lieu"].apply(extraire_groupe_edt)
-                    df_edt_etu["Groupe_EDT"] = df_edt_etu["Groupe_Code"].fillna(df_edt_etu["Groupe_Lieu"])
+                    # Patterns de recherche pour les groupes (tolérants : G1, Grp1, Groupe 1, Groupe A, Gr 1...)
+                    patterns_groupes = [
+                        (r'\bG(\d+)\b', lambda m: f"G{m.group(1)}"),
+                        (r'\bGRP(\d+)\b', lambda m: f"G{m.group(1)}"),
+                        (r'\bGROUPE\s*(\d+)\b', lambda m: f"G{m.group(1)}"),
+                        (r'\bGROUPE\s*([A-Z])\b', lambda m: f"G{m.group(1)}"),
+                        (r'\bGR\s*(\d+)\b', lambda m: f"G{m.group(1)}"),
+                    ]
     
-                    # Filtre : cours communs (pas de groupe) OU mon groupe
-                    if groupe_etu:
-                        mask_commun = df_edt_etu["Groupe_EDT"].isna()
-                        mask_mon_groupe = df_edt_etu["Groupe_EDT"] == groupe_etu
-                        df_edt_etu = df_edt_etu[mask_commun | mask_mon_groupe].copy()
-                        st.info(f"🔍 Filtrage appliqué : **{groupe_etu}** | Sous-groupe : **{sous_groupe_etu or 'N/A'}**")
+                    # Patterns de recherche pour les sous-groupes (SG1, Sous-groupe 1, SousGrp1...)
+                    patterns_sous_groupes = [
+                        (r'\bSG(\d+)\b', lambda m: f"SG{m.group(1)}"),
+                        (r'\bSOUS[-\s]?GROUPE\s*(\d+)\b', lambda m: f"SG{m.group(1)}"),
+                        (r'\bSOUS[-\s]?GRP\s*(\d+)\b', lambda m: f"SG{m.group(1)}"),
+                        (r'\bSOUS[-\s]?G\s*(\d+)\b', lambda m: f"SG{m.group(1)}"),
+                    ]
+    
+                    # On scanne toutes les colonnes textuelles du DataFrame EDT
+                    colonnes_texte = df_edt_etu.select_dtypes(include=['object']).columns.tolist()
+                    colonnes_texte = [c for c in colonnes_texte if c not in ['h_norm', 'j_norm', 'Promotion_Mappee', 'Groupe_Detecte', 'SousGroupe_Detecte']]
+    
+                    # Initialisation des colonnes de détection
+                    df_edt_etu["Groupe_Detecte"] = None
+                    df_edt_etu["SousGroupe_Detecte"] = None
+    
+                    for col in colonnes_texte:
+                        # Détection groupe dans cette colonne
+                        detected_g = df_edt_etu[col].apply(lambda x: extraire_identifiant_groupe(x, patterns_groupes))
+                        df_edt_etu["Groupe_Detecte"] = df_edt_etu["Groupe_Detecte"].combine_first(detected_g)
+                        
+                        # Détection sous-groupe dans cette colonne
+                        detected_sg = df_edt_etu[col].apply(lambda x: extraire_identifiant_groupe(x, patterns_sous_groupes))
+                        df_edt_etu["SousGroupe_Detecte"] = df_edt_etu["SousGroupe_Detecte"].combine_first(detected_sg)
+    
+                    # ═══════════════════════════════════════════════════════
+                    # FILTRAGE INTELLIGENT
+                    # ═══════════════════════════════════════════════════════
+                    grp_etu_norm = groupe_etu.replace(" ", "").replace("-", "").upper() if groupe_etu else ""
+                    sg_etu_norm = sous_groupe_etu.replace(" ", "").replace("-", "").upper() if sous_groupe_etu else ""
+    
+                    # Cours communs = aucun groupe ni sous-groupe détecté dans l'EDT
+                    mask_commun = df_edt_etu["Groupe_Detecte"].isna() & df_edt_etu["SousGroupe_Detecte"].isna()
+    
+                    if grp_etu_norm or sg_etu_norm:
+                        mask_mon_groupe = pd.Series([False] * len(df_edt_etu))
+                        mask_mon_sg = pd.Series([False] * len(df_edt_etu))
+    
+                        if grp_etu_norm:
+                            mask_mon_groupe = df_edt_etu["Groupe_Detecte"].astype(str).str.replace(" ", "").str.upper() == grp_etu_norm
+                        
+                        if sg_etu_norm:
+                            mask_mon_sg = df_edt_etu["SousGroupe_Detecte"].astype(str).str.replace(" ", "").str.upper() == sg_etu_norm
+    
+                        # Logique combinée : 
+                        # Si l'étudiant a un groupe ET un sous-groupe :
+                        #   → cours communs + cours du sous-groupe spécifique + cours du groupe sans sous-groupe précisé
+                        if grp_etu_norm and sg_etu_norm:
+                            mask_sg_specific = df_edt_etu["SousGroupe_Detecte"].notna() & mask_mon_sg
+                            mask_g_sans_sg = df_edt_etu["Groupe_Detecte"].notna() & df_edt_etu["SousGroupe_Detecte"].isna() & mask_mon_groupe
+                            df_edt_etu = df_edt_etu[mask_commun | mask_sg_specific | mask_g_sans_sg].copy()
+                        elif grp_etu_norm:
+                            df_edt_etu = df_edt_etu[mask_commun | mask_mon_groupe].copy()
+                        elif sg_etu_norm:
+                            df_edt_etu = df_edt_etu[mask_commun | mask_mon_sg].copy()
                     else:
-                        st.warning("⚠️ Groupe non détecté dans votre fiche étudiant. Affichage de tous les cours.")
+                        st.info("ℹ️ Aucun groupe/sous-groupe détecté dans votre fiche étudiant. Affichage des cours communs.")
+                        df_edt_etu = df_edt_etu[mask_commun].copy()
+    
+                    # Info-bulle récapitulative
+                    filtre_info = []
+                    if groupe_etu: filtre_info.append(f"Groupe **{groupe_etu}**")
+                    if sous_groupe_etu: filtre_info.append(f"Sous-groupe **{sous_groupe_etu}**")
+                    if filtre_info:
+                        st.info(f"🔍 Filtrage appliqué : {' | '.join(filtre_info)}")
+                    else:
+                        st.info("🔍 Affichage des cours communs à toute la promotion.")
     
                     if df_edt_etu.empty:
-                        st.warning(f"⚠️ Aucun cours trouvé pour **{promo_etu}** / **{groupe_etu or 'tous groupes'}**.")
+                        st.warning(f"⚠️ Aucun cours trouvé pour **{promo_etu}** avec vos critères de groupement.")
                     else:
                         st.success(f"🎓 {len(df_edt_etu)} séance(s) trouvée(s) pour vous.")
     
@@ -2391,18 +2464,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         df_edt_etu["j_norm"] = df_edt_etu["Jours"].apply(_norm)
     
                         horaires_ref = [
-                            "08h00-09h30", "09h30-11h00", "11h00-12h30",
-                            "12h30-14h00", "14h00-15h30", "15h30-17h00"
+                            "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
+                            "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
                         ]
                         jours_ref = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
-    
-                        map_h_labels = {
-                            "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
-                        }
-                        map_j_labels = {
-                            "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
-                            "mercredi": "Mercredi", "jeudi": "Jeudi"
-                        }
     
                         def _fmt_cell(rows):
                             items = []
@@ -2415,17 +2480,23 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 else:
                                     nat, color, bg = "🔴", "#991b1b", "#fee2e2"
     
-                                badge = ""
-                                if pd.notna(r.get("Groupe_EDT")):
-                                    badge = (f"<div style='display:inline-block;background:#7c3aed;"
-                                             f"color:white;padding:1px 6px;border-radius:4px;"
-                                             f"font-size:10px;font-weight:700;margin-bottom:4px;'>"
-                                             f"👥 {r['Groupe_EDT']}</div><br>")
+                                # Badges groupe / sous-groupe si détectés
+                                badges = ""
+                                if pd.notna(r.get("Groupe_Detecte")):
+                                    badges += (f"<div style='display:inline-block;background:#7c3aed;"
+                                              f"color:white;padding:1px 6px;border-radius:4px;"
+                                              f"font-size:10px;font-weight:700;margin-bottom:4px;margin-right:4px;'>"
+                                              f"👥 {r['Groupe_Detecte']}</div>")
+                                if pd.notna(r.get("SousGroupe_Detecte")):
+                                    badges += (f"<div style='display:inline-block;background:#059669;"
+                                              f"color:white;padding:1px 6px;border-radius:4px;"
+                                              f"font-size:10px;font-weight:700;margin-bottom:4px;'>"
+                                              f"🔹 {r['SousGroupe_Detecte']}</div>")
     
                                 items.append(
                                     f"<div style='margin-bottom:6px;padding:8px;border-left:4px solid {color};"
                                     f"background-color:{bg};border-radius:6px;text-align:left;'>"
-                                    f"{badge}"
+                                    f"{badges}"
                                     f"<b style='color:{color};font-size:13px;'>{nat} {r['Enseignements']}</b><br>"
                                     f"<span style='font-size:12px;color:#334155;'>👤 {r['Enseignants']}</span><br>"
                                     f"<span style='font-size:11px;color:#64748b;'>📍 {r['Lieu']}</span>"
@@ -2437,20 +2508,30 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         grid = grouped.unstack("j_norm") if not grouped.empty else pd.DataFrame()
     
                         jours_present = [j for j in jours_ref if j in grid.columns]
-                        h_present = [h for h in horaires_ref if h in grid.index]
+                        h_present = [h for h in horaires_ref if _norm(h) in grid.index]
     
                         if not jours_present or not h_present:
                             st.info("ℹ️ Impossible de construire la grille (données incomplètes après filtrage).")
+                            st.dataframe(
+                                df_edt_etu[['Jours', 'Horaire', 'Enseignements', 'Enseignants', 'Lieu', 'Groupe_Detecte', 'SousGroupe_Detecte']],
+                                use_container_width=True, hide_index=True
+                            )
                         else:
-                            grid = grid.reindex(index=h_present, columns=jours_present).fillna("")
-                            grid.index = [map_h_labels.get(i, i) for i in grid.index]
-                            grid.columns = [map_j_labels.get(c, c) for c in grid.columns]
+                            grid = grid.reindex(index=[_norm(h) for h in h_present], columns=jours_present).fillna("")
+                            
+                            h_labels = { _norm(h): h for h in h_present }
+                            j_labels = { j: j.capitalize() for j in jours_present }
+                            
+                            grid.index = [h_labels.get(i, i) for i in grid.index]
+                            grid.columns = [j_labels.get(c, c) for c in grid.columns]
     
                             st.markdown("### 📋 Votre emploi du temps hebdomadaire")
                             st.write(grid.to_html(escape=False), unsafe_allow_html=True)
     
                             # ─── EXPORT HTML ───
                             groupe_suffix = f"_{groupe_etu}" if groupe_etu else ""
+                            sg_suffix = f"_SG{sous_groupe_etu}" if sous_groupe_etu else ""
+                            
                             html_doc = f"""<!DOCTYPE html>
     <html lang="fr">
     <head>
@@ -2475,7 +2556,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     <div class="container">
     <div class="header">
     <h1>📅 Emploi du Temps Individuel</h1>
-    <p>{nom_etu} — Promotion {promo_etu}{f' ({groupe_etu})' if groupe_etu else ''}</p>
+    <p>{nom_etu} — Promotion {promo_etu}{f' ({groupe_etu})' if groupe_etu else ''}{f' — Sous-groupe {sous_groupe_etu}' if sous_groupe_etu else ''}</p>
     <span class="badge">Semestre 01 — 2026-2027</span>
     </div>
     <div class="content">
@@ -2490,7 +2571,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             st.download_button(
                                 label="🌐 Télécharger mon EDT (HTML)",
                                 data=html_doc,
-                                file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{groupe_suffix}.html",
+                                file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{groupe_suffix}{sg_suffix}.html",
                                 mime="text/html",
                                 use_container_width=True,
                                 key="dl_edt_etudiant"
