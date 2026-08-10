@@ -408,6 +408,14 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
 
 
 def run_Assiduité():
+    import io
+    from fpdf import FPDF
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib.units import mm
+    from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
     st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
     st.caption("département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - année 2026-2027")
     
