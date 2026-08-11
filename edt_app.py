@@ -11465,6 +11465,361 @@ def run_edt_intelligent():
                 st.write(f"Lignes filtrées : {len(df_filtre)}")
                 if not df_filtre.empty:
                     st.write("Horaires trouvés :", df_filtre["Horaire"].unique().tolist())
+Voici le code à ajouter à la fin de votre fichier principal (avant le bloc `if __name__ == "__main__":`). Ce code ajoute :
+
+1. **Un répertoire matières** avec sélection et afficheurs numériques
+2. **Les matières communes entre promotions**
+
+```python
+# =============================================================================
+# RÉPERTOIRE DES MATIÈRES — AFFICHEURS NUMÉRIQUES & MATIÈRES COMMUNES
+# =============================================================================
+
+st.divider()
+st.markdown("""
+    <div style="background: linear-gradient(135deg, #312e81 0%, #6366f1 100%); 
+                padding: 18px; border-radius: 14px; color: white; margin-bottom: 18px;
+                box-shadow: 0 8px 24px rgba(99,102,241,0.25);">
+        <h3 style="margin:0; font-size: 20px;">📚 Répertoire des Matières</h3>
+        <p style="margin:8px 0 0 0; opacity:0.85; font-size:13px;">
+            Sélectionnez une matière pour voir les détails · Matières communes entre promotions
+        </p>
+    </div>
+""", unsafe_allow_html=True)
+
+# ── Chargement des données EDT ──
+_base = Path(__file__).parent.resolve()
+_fichier_edt = str(_base / "dataEDT-ELT-S1-2027.xlsx")
+
+df_matieres_src = pd.DataFrame()
+if os.path.exists(_fichier_edt):
+    try:
+        df_matieres_src = pd.read_excel(_fichier_edt)
+        df_matieres_src.columns = df_matieres_src.columns.str.strip()
+        for col in ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']:
+            if col in df_matieres_src.columns:
+                df_matieres_src[col] = df_matieres_src[col].fillna("Non défini").astype(str).str.strip()
+    except Exception as e:
+        st.error(f"❌ Erreur chargement EDT pour répertoire : {e}")
+
+if not df_matieres_src.empty:
+
+    # ═══════════════════════════════════════════════════════════════
+    # SECTION 1 : SÉLECTION D'UNE MATIÈRE + AFFICHEURS NUMÉRIQUES
+    # ═══════════════════════════════════════════════════════════════
+
+    # Liste des matières uniques (hors "Non défini")
+    matieres_uniques = sorted([
+        m for m in df_matieres_src["Enseignements"].unique()
+        if m and str(m).strip().lower() not in ["", "nan", "none", "non défini", "non defini"]
+    ])
+
+    st.markdown("### 🔍 Sélection d'une matière")
+
+    col_sel, col_info = st.columns([2, 3])
+    with col_sel:
+        matiere_choisie = st.selectbox(
+            "📖 Choisir une matière :",
+            options=["— Sélectionner —"] + matieres_uniques,
+            key="repertoire_matiere_sel"
+        )
+
+    if matiere_choisie and matiere_choisie != "— Sélectionner —":
+        # Filtrage pour la matière sélectionnée
+        df_mat = df_matieres_src[df_matieres_src["Enseignements"] == matiere_choisie].copy()
+
+        # Calculs statistiques
+        nb_seances = len(df_mat)
+        promotions_concernees = [p for p in df_mat["Promotion"].unique() if p.lower() not in ["non défini", "non defini"]]
+        nb_promotions = len(promotions_concernees)
+        enseignants_concernes = [e for e in df_mat["Enseignants"].unique() if e.lower() not in ["non défini", "non defini"]]
+        nb_enseignants = len(enseignants_concernes)
+
+        # Types (Cours / TD / TP)
+        nb_cours = len(df_mat[df_mat["Code"].str.contains("COURS", case=False, na=False)])
+        nb_td = len(df_mat[df_mat["Code"].str.contains("TD", case=False, na=False)])
+        nb_tp = len(df_mat[~df_mat["Code"].str.contains("COURS|TD", case=False, na=False)])
+
+        # Lieux uniques
+        lieux = [l for l in df_mat["Lieu"].unique() if l.lower() not in ["non défini", "non defini"]]
+        nb_lieux = len(lieux)
+
+        # Jours utilisés
+        jours_utilises = [j for j in df_mat["Jours"].unique() if j.lower() not in ["non défini", "non defini"]]
+        nb_jours = len(jours_utilises)
+
+        # ── AFFICHEURS NUMÉRIQUES ──
+        st.markdown(f"#### 📊 Statistiques : **{matiere_choisie}**")
+
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
+
+        with c1:
+            st.markdown(f"""
+                <div style="background:#312e8115;border:2px solid #6366f1;border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:28px;font-weight:800;color:#4f46e5;">{nb_seances}</div>
+                    <div style="font-size:11px;color:#64748b;font-weight:600;">📅 Séances</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""
+                <div style="background:#1e40af15;border:2px solid #3b82f6;border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:28px;font-weight:800;color:#1e40af;">{nb_cours}</div>
+                    <div style="font-size:11px;color:#64748b;font-weight:600;">📘 Cours</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"""
+                <div style="background:#16653415;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:28px;font-weight:800;color:#166534;">{nb_td}</div>
+                    <div style="font-size:11px;color:#64748b;font-weight:600;">📗 TD</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with c4:
+            st.markdown(f"""
+                <div style="background:#991b1b15;border:2px solid #ef4444;border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:28px;font-weight:800;color:#991b1b;">{nb_tp}</div>
+                    <div style="font-size:11px;color:#64748b;font-weight:600;">🔴 TP</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with c5:
+            st.markdown(f"""
+                <div style="background:#b4530915;border:2px solid #f59e0b;border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:28px;font-weight:800;color:#b45309;">{nb_promotions}</div>
+                    <div style="font-size:11px;color:#64748b;font-weight:600;">🎓 Promotions</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with c6:
+            st.markdown(f"""
+                <div style="background:#0f766e15;border:2px solid #14b8a6;border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:28px;font-weight:800;color:#0f766e;">{nb_enseignants}</div>
+                    <div style="font-size:11px;color:#64748b;font-weight:600;">👤 Enseignants</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        # ── Détails ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        col_d1, col_d2 = st.columns(2)
+
+        with col_d1:
+            st.markdown("**🎓 Promotions concernées :**")
+            for p in sorted(promotions_concernees):
+                nb_s = len(df_mat[df_mat["Promotion"] == p])
+                st.markdown(f"<span style='background:#ede9fe;color:#5b21b6;padding:3px 10px;border-radius:12px;margin:2px;display:inline-block;font-size:12px;font-weight:600;'>{p} ({nb_s} séances)</span>", unsafe_allow_html=True)
+
+        with col_d2:
+            st.markdown("**👤 Enseignants chargés :**")
+            for e in sorted(enseignants_concernes):
+                st.markdown(f"<span style='background:#dbeafe;color:#1e40af;padding:3px 10px;border-radius:12px;margin:2px;display:inline-block;font-size:12px;font-weight:600;'>{e}</span>", unsafe_allow_html=True)
+
+        # ── Tableau récapitulatif ──
+        with st.expander("📋 Détail des séances", expanded=False):
+            df_detail = df_mat[["Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion"]].copy()
+            st.dataframe(df_detail, use_container_width=True, hide_index=True)
+
+    # ═══════════════════════════════════════════════════════════════
+    # SECTION 2 : TOUTES LES MATIÈRES AVEC AFFICHEURS
+    # ═══════════════════════════════════════════════════════════════
+
+    st.divider()
+    st.markdown("### 📊 Vue d'ensemble — Toutes les matières")
+
+    # Construction du récap de toutes les matières
+    data_all_matieres = []
+    for mat in matieres_uniques:
+        df_m = df_matieres_src[df_matieres_src["Enseignements"] == mat]
+        promos = [p for p in df_m["Promotion"].unique() if p.lower() not in ["non défini", "non defini"]]
+        ens_list = [e for e in df_m["Enseignants"].unique() if e.lower() not in ["non défini", "non defini"]]
+        n_cours = len(df_m[df_m["Code"].str.contains("COURS", case=False, na=False)])
+        n_td = len(df_m[df_m["Code"].str.contains("TD", case=False, na=False)])
+        n_tp = len(df_m[~df_m["Code"].str.contains("COURS|TD", case=False, na=False)])
+        data_all_matieres.append({
+            "Matière": mat,
+            "📘 Cours": n_cours,
+            "📗 TD": n_td,
+            "🔴 TP": n_tp,
+            "Total séances": len(df_m),
+            "Nb Promotions": len(promos),
+            "Promotions": ", ".join(sorted(promos)),
+            "Enseignants": ", ".join(sorted(ens_list))
+        })
+
+    df_all_mat = pd.DataFrame(data_all_matieres).sort_values(by="Total séances", ascending=False)
+    st.dataframe(df_all_mat, use_container_width=True, hide_index=True)
+
+    # Export
+    buf_mat_rep = io.BytesIO()
+    with pd.ExcelWriter(buf_mat_rep, engine='xlsxwriter') as writer:
+        df_all_mat.to_excel(writer, index=False, sheet_name='Repertoire_Matieres')
+    st.download_button(
+        "📥 Exporter le répertoire matières (Excel)",
+        data=buf_mat_rep.getvalue(),
+        file_name=f"Repertoire_Matieres_ELT_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="dl_repertoire_matieres"
+    )
+
+    # ═══════════════════════════════════════════════════════════════
+    # SECTION 3 : MATIÈRES COMMUNES ENTRE PROMOTIONS
+    # ═══════════════════════════════════════════════════════════════
+
+    st.divider()
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #7c2d12 0%, #ea580c 100%); 
+                    padding: 16px; border-radius: 14px; color: white; margin-bottom: 18px;">
+            <h3 style="margin:0; font-size: 18px;">🔗 Matières communes entre Promotions</h3>
+            <p style="margin:6px 0 0 0; opacity:0.85; font-size:12px;">
+                Identifie les matières partagées par plusieurs promotions (enseignement mutualisé)
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Calculer les matières communes (présentes dans 2+ promotions)
+    matieres_par_promo = {}
+    toutes_promos_edt = sorted([
+        p for p in df_matieres_src["Promotion"].unique()
+        if p and str(p).strip().lower() not in ["", "nan", "none", "non défini", "non defini"]
+    ])
+
+    for promo in toutes_promos_edt:
+        df_promo = df_matieres_src[df_matieres_src["Promotion"] == promo]
+        mats = set([m for m in df_promo["Enseignements"].unique()
+                    if m.lower() not in ["non défini", "non defini"]])
+        matieres_par_promo[promo] = mats
+
+    # Trouver les matières présentes dans plusieurs promotions
+    from collections import defaultdict
+    matiere_to_promos = defaultdict(set)
+    for promo, mats in matieres_par_promo.items():
+        for m in mats:
+            matiere_to_promos[m].add(promo)
+
+    matieres_communes = {m: promos for m, promos in matiere_to_promos.items() if len(promos) >= 2}
+
+    if matieres_communes:
+        # Afficheur du nombre de matières communes
+        nb_communes = len(matieres_communes)
+        st.markdown(f"""
+            <div style="display:flex;gap:15px;margin-bottom:20px;flex-wrap:wrap;">
+                <div style="background:#7c2d1215;border:2px solid #ea580c;border-radius:12px;padding:16px 24px;text-align:center;">
+                    <div style="font-size:32px;font-weight:800;color:#ea580c;">{nb_communes}</div>
+                    <div style="font-size:12px;color:#64748b;font-weight:600;">🔗 Matières communes</div>
+                </div>
+                <div style="background:#0f766e15;border:2px solid #14b8a6;border-radius:12px;padding:16px 24px;text-align:center;">
+                    <div style="font-size:32px;font-weight:800;color:#0f766e;">{len(toutes_promos_edt)}</div>
+                    <div style="font-size:12px;color:#64748b;font-weight:600;">🎓 Promotions totales</div>
+                </div>
+                <div style="background:#4f46e515;border:2px solid #6366f1;border-radius:12px;padding:16px 24px;text-align:center;">
+                    <div style="font-size:32px;font-weight:800;color:#4f46e5;">{len(matieres_uniques)}</div>
+                    <div style="font-size:12px;color:#64748b;font-weight:600;">📚 Matières uniques</div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Tableau des matières communes trié par nombre de promotions
+        data_communes = []
+        for mat, promos in sorted(matieres_communes.items(), key=lambda x: len(x[1]), reverse=True):
+            data_communes.append({
+                "Matière": mat,
+                "Nb Promotions": len(promos),
+                "Promotions concernées": " | ".join(sorted(promos)),
+                "Type": "Mutualisée" if len(promos) >= 3 else "Partagée"
+            })
+
+        df_communes = pd.DataFrame(data_communes)
+        st.dataframe(df_communes, use_container_width=True, hide_index=True)
+
+        # ── Analyse croisée : sélection de 2 promotions pour comparaison ──
+        st.markdown("#### 🔄 Comparaison entre deux promotions")
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            promo_a = st.selectbox("Promotion A :", toutes_promos_edt, index=0, key="promo_compare_a")
+        with col_p2:
+            promo_b = st.selectbox("Promotion B :", toutes_promos_edt,
+                                   index=min(1, len(toutes_promos_edt)-1), key="promo_compare_b")
+
+        if promo_a != promo_b:
+            mats_a = matieres_par_promo.get(promo_a, set())
+            mats_b = matieres_par_promo.get(promo_b, set())
+            communes_ab = mats_a & mats_b
+            exclusives_a = mats_a - mats_b
+            exclusives_b = mats_b - mats_a
+
+            # Afficheurs
+            ca, cb, cc = st.columns(3)
+            with ca:
+                st.markdown(f"""
+                    <div style="background:#dcfce7;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#166534;">{len(communes_ab)}</div>
+                        <div style="font-size:11px;color:#64748b;font-weight:600;">🔗 Communes</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with cb:
+                st.markdown(f"""
+                    <div style="background:#dbeafe;border:2px solid #3b82f6;border-radius:12px;padding:14px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#1e40af;">{len(exclusives_a)}</div>
+                        <div style="font-size:11px;color:#64748b;font-weight:600;">🔵 Exclusives {promo_a}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with cc:
+                st.markdown(f"""
+                    <div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:12px;padding:14px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#b45309;">{len(exclusives_b)}</div>
+                        <div style="font-size:11px;color:#64748b;font-weight:600;">🟡 Exclusives {promo_b}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            # Détails
+            if communes_ab:
+                st.success(f"**Matières communes ({promo_a} ∩ {promo_b}) :**")
+                for m in sorted(communes_ab):
+                    st.markdown(f"<span style='background:#dcfce7;color:#166534;padding:4px 12px;border-radius:12px;margin:3px;display:inline-block;font-size:12px;font-weight:600;'>🔗 {m}</span>", unsafe_allow_html=True)
+            else:
+                st.info(f"Aucune matière commune entre {promo_a} et {promo_b}.")
+
+            with st.expander(f"📋 Matières exclusives à {promo_a}"):
+                for m in sorted(exclusives_a):
+                    st.markdown(f"• {m}")
+
+            with st.expander(f"📋 Matières exclusives à {promo_b}"):
+                for m in sorted(exclusives_b):
+                    st.markdown(f"• {m}")
+        else:
+            st.warning("⚠️ Veuillez sélectionner deux promotions différentes pour la comparaison.")
+
+        # Export des matières communes
+        buf_comm = io.BytesIO()
+        with pd.ExcelWriter(buf_comm, engine='xlsxwriter') as writer:
+            df_communes.to_excel(writer, index=False, sheet_name='Matieres_Communes')
+        st.download_button(
+            "📥 Exporter les matières communes (Excel)",
+            data=buf_comm.getvalue(),
+            file_name=f"Matieres_Communes_ELT_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="dl_matieres_communes"
+        )
+    else:
+        st.info("ℹ️ Aucune matière commune trouvée entre les promotions.")
+
+else:
+    st.warning("⚠️ Données EDT non disponibles pour le répertoire des matières.")
+```
+
+---
+
+**Instructions d'intégration :**
+
+1. Copiez ce bloc de code
+2. Collez-le **après** le bloc du répertoire étudiants (juste avant `if __name__ == "__main__":` ou à la fin de votre code principal)
+3. Assurez-vous que les imports `from collections import defaultdict` et `from pathlib import Path` sont bien présents en haut du fichier (ils le sont déjà dans votre code)
+
+**Fonctionnalités ajoutées :**
+
+- **Répertoire matières** : Sélection d'une matière → 6 afficheurs numériques (séances, cours, TD, TP, promotions, enseignants)
+- **Vue d'ensemble** : Tableau global de toutes les matières avec compteurs
+- **Matières communes** : Détection automatique des matières mutualisées entre promotions + comparaison croisée entre 2 promotions au choix
+- **Exports Excel** pour chaque section
                     st.write("Jours trouvés :", df_filtre["Jours"].unique().tolist())
 if __name__ == "__main__":
     run_edt_intelligent()
