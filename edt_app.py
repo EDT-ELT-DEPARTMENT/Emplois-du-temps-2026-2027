@@ -2293,7 +2293,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             if not is_enseignant_connecte and not is_admin_edt:
                 pwd_tab3 = st.text_input("🔑 Code d'accès Admin :", type="password", key="pwd_tab3")
                 if pwd_tab3 != CODE_ADMIN:
-                    if pwd_tab3 != "":
+                    if pwd_tab3 != "1234":
                         st.error("❌ Code incorrect.")
                     st.info("ℹ️ Veuillez saisir le code administrateur pour accéder aux bilans et exports.")
                     st.stop()
