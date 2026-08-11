@@ -2391,8 +2391,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         df_edt_etu["j_norm"] = df_edt_etu["Jours"].apply(_norm)
     
                         horaires_ref = [
-                            "08h00-09h30", "09h30-11h00", "11h00-12h30",
-                            "12h30-14h00", "14h00-15h30", "15h30-17h00"
+                            "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
                         ]
                         jours_ref = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
     
@@ -12037,15 +12036,12 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                             return s
 
                         horaires_ref_indiv = [
-                            "08h00-09h30", "09h30-11h00", "11h00-12h30",
-                            "12h30-14h00", "14h00-15h30", "15h30-17h00"
+                            "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
                         ]
                         jours_ref_indiv = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
 
                         map_h_labels_indiv = {
-                            "08h00-09h30": "8h - 9h30", "09h30-11h00": "9h30 - 11h",
-                            "11h00-12h30": "11h - 12h30", "12h30-14h00": "12h30 - 14h",
-                            "14h00-15h30": "14h - 15h30", "15h30-17h00": "15h30 - 17h"
+                            "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
                         }
                         map_j_labels_indiv = {
                             "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
