@@ -1910,760 +1910,374 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             if choix_vue == "Étudiant (Dépôt)":
                 ancre_depot = st.empty()
             st.subheader("📤 Soumettre une demande de réhabilitation")
-            # =============================================================================
-            # ONGLET 2 : GESTION DES JUSTIFICATIFS
-            # =============================================================================
-            if not is_enseignant_connecte:
-                with tab2:
-                    st.header("📩 Système de Gestion des Justificatifs")
-                    st.caption("Dépôt étudiant et validation administration")
-        
+            if section_choisie == "📩 Justificatifs — Dépôt":
+                st.scroll_to(ancre_depot, block="start")
+
+                col1, col2 = st.columns(2)
+                with col1:
                     if étudiant_connecte:
-                        # Mode étudiant connecté : accès direct au dépôt
-                        choix_vue = "Étudiant (Dépôt)"
-                        st.success(f"👤 Connecté en tant qu'étudiant : **{étudiant_connecte['nom']}** — Mat. BAC: {étudiant_connecte['mat_bac']}")
-                        if st.button("🚪 Se déconnecter", use_container_width=True):
-                            st.session_state.étudiant_auth = None
-                            st.rerun()
-                        st.divider()
+                        promo_sel = étudiant_connecte["promotion"]
+                        st.markdown(f"**🎓 Promotion :** `{promo_sel}`")
+                        df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
+                        étudiant_sel = étudiant_connecte["nom"]
+                        st.markdown(f"**👤 Nom :** `{étudiant_sel}`")
                     else:
-                        choix_vue = st.radio("Profil :", ["Étudiant (Dépôt)", "Administration (Décision)"], horizontal=True)
-                        st.divider()
-        
-                    if choix_vue == "Étudiant (Dépôt)":
-                        st.subheader("📤 Soumettre une demande de réhabilitation")
-        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if étudiant_connecte:
-                                promo_sel = étudiant_connecte["promotion"]
-                                st.markdown(f"**🎓 Promotion :** `{promo_sel}`")
-                                df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
-                                étudiant_sel = étudiant_connecte["nom"]
-                                st.markdown(f"**👤 Nom :** `{étudiant_sel}`")
-                            else:
-                                promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
-                                promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_dépôt")
-                                df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
-                                noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
-                                étudiant_sel = st.selectbox("Votre nom :", noms_dispo, key="etud_dépôt")
-                        with col2:
-                            st.markdown("**ℹ️ Informations**")
-                            st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
-                       
-                        st.divider()
-                        st.markdown("### 📋 Mes absences signalées")
-        
-                        absences_etu = get_absences_étudiant(étudiant_sel)
-        
-                        if absences_etu:
-                            data_display = []
-                            for abs_item in absences_etu:
-                                mat = abs_item.get("matiere", "")
-                                d_abs = abs_item.get("date_absence", "")
-                                j_abs = abs_item.get("jour_absence", "")
-                                h_abs = abs_item.get("horaire_absence", "")
-                                # Pour l'affichage : chercher la DERNIERE requete (tous statuts) pour CETTE séance
-                                req_affichage = trouver_derniere_requete(étudiant_sel, mat, d_abs, j_abs, h_abs)
-                                req_en_attente = trouver_requete_existante(étudiant_sel, mat, d_abs, j_abs, h_abs)
-                                is_justif = abs_item.get("justifie", False)
-        
-                                if is_justif:
-                                    statut_j = "🟢 justifiee (acceptée)"
-                                elif req_affichage:
-                                    statut_j = "🟡 " + req_affichage.get("statut", "En attente")
-                                else:
-                                    statut_j = "🔴 Non déposé"
-        
-                                date_dep = req_affichage.get("date_demande", "-") if req_affichage else "-"
-        
-                                data_display.append({
-                                    "matiere": mat,
-                                    "Date d'absence": abs_item.get("date_absence", ""),
-                                    "Jour": abs_item.get("jour_absence", ""),
-                                    "Horaire": abs_item.get("horaire_absence", ""),
-                                    "Motif initial": abs_item.get("cause_non_eligibilite", ""),
-                                    "Statut justificatif": statut_j,
-                                    "Date dépôt": date_dep
-                                })
-        
-                            df_disp = pd.DataFrame(data_display)
-                            st.dataframe(df_disp, use_container_width=True, hide_index=True)
-        
-                            
-                            st.markdown("### 📎 justifier vos absences (un justificatif par absence)")
-                            # 1. FILTRAGE : seules les absences vraiment justifiables
-                            absences_sans_justif = []   # Celles que l'étudiant PEUT justifier (Non déposé)
-                            absences_bloquees = []      # Celles qu'il NE PEUT PLUS justifier (Rejetées)
-            
-                            for a in absences_etu:
-                                mat = a.get("matiere", "")
-                                d_abs = a.get("date_absence")
-                                j_abs = a.get("jour_absence")
-                                h_abs = a.get("horaire_absence")
-            
-                                # A. Déjà justifiee dans la table absences → on saute
-                                if a.get("justifie", False):
-                                    continue
-            
-                                # B. Requête EN ATTENTE existante → on saute (déjà traité)
-                                existe_attente = trouver_requete_existante(
-                                    étudiant_sel, mat, d_abs, j_abs, h_abs
-                                )
-                                if existe_attente:
-                                    continue
-            
-                                # C. Dernière requête DEFAVORABLE → BLOQUÉ, on met de côté
-                                derniere_req = trouver_derniere_requete(
-                                    étudiant_sel, mat, d_abs, j_abs, h_abs
-                                )
-                                if derniere_req and derniere_req.get("statut") == "Defavorable":
-                                    absences_bloquees.append({
-                                        "absence": a,
-                                        "motif_rejet": derniere_req.get("motif", "Non précisé")
-                                    })
-                                    continue
-            
-                                # D. Sinon, c'est justifiable
-                                absences_sans_justif.append(a)
-            
-                            # 2. AFFICHAGE DES ABSENCES BLOQUÉES (Rejetées définitivement)
-                            if absences_bloquees:
-                                st.error("🔒 Les absences ci-dessous ont été **rejetées par l'administration** et ne peuvent plus être justifiees.")
-                                for item in absences_bloquees:
-                                    a = item["absence"]
-                                    st.markdown(
-                                        f"<div style='padding:10px;border-left:4px solid #dc2626;background:#fef2f2;border-radius:6px;margin-bottom:8px;'>"
-                                        f"<b>❌ {a['matiere']}</b> — {a.get('date_absence','')} ({a.get('jour_absence','')} {a.get('horaire_absence','')})<br>"
-                                        f"<span style='font-size:12px;color:#991b1b;'>Décision défavorable | Motif du justificatif rejeté : {item['motif_rejet']}</span>"
-                                        f"</div>",
-                                        unsafe_allow_html=True
-                                    )
-            
-                            # 3. FORMULAIRE DE DÉPÔT (uniquement pour les absences justifiables)
-                            if absences_sans_justif:
-                                st.info("Remplissez les champs ci-dessous pour chaque absence que vous souhaitez justifier, puis validez l'envoi global.")
-                                
-                                uploads = {}
-            
-                                for i, abs_item in enumerate(absences_sans_justif):
-                                    with st.container(border=True):
-                                        c1, c2, c3 = st.columns([2.5, 2, 3])
-                                        
-                                        with c1:
-                                            st.markdown(f"**📚 {abs_item['matiere']}**")
-                                            st.caption(f"📅 {abs_item.get('date_absence','')} | 🗓️ {abs_item.get('jour_absence','')} | 🕒 {abs_item.get('horaire_absence','')}")
-                                        
-                                        with c2:
-                                            motif_val = st.selectbox(
-                                                "Motif :", 
-                                                CAUSES_ABSENCES, 
-                                                key=f"motif_unique_{i}"
-                                            )
-                                        
-                                        with c3:
-                                            pdf_file = st.file_uploader(
-                                                "Joindre le justificatif (PDF)", 
-                                                type=["pdf"], 
-                                                key=f"pdf_unique_{i}"
-                                            )
-                                        
-                                        if pdf_file is not None:
-                                            uploads[i] = {
-                                                "absence": abs_item,
-                                                "motif": motif_val,
-                                                "pdf": pdf_file
-                                            }
-            
-                                st.divider()
-            
-                                if uploads:
-                                    st.success(f"📎 **{len(uploads)}** justificatif(s) prêt(s) à être envoyé(s).")
-                                    
-                                    if st.button("🚀 ENVOYER TOUTES LES JUSTIFICATIONS", type="primary", use_container_width=True):
-                                        succes_count = 0
-                                        erreurs_list = []
-                                        
-                                        for idx, data in uploads.items():
-                                            abs_conc = data["absence"]
-                                            
-                                            try:
-                                                pdf_bytes = data["pdf"].read()
-                                                pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
-                                                
-                                                payload = {
-                                                    "date_demande": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                                                    "nom_etudiant": étudiant_sel,
-                                                    "matiere": abs_conc["matiere"],
-                                                    "promotion": abs_conc.get("promotion", promo_sel),
-                                                    "motif": data["motif"],
-                                                    "justificatif_pdf": pdf_encoded,
-                                                    "statut": "En attente",
-                                                    "date_absence": abs_conc.get("date_absence", ""),
-                                                    "jour_absence": abs_conc.get("jour_absence", ""),
-                                                    "horaire_absence": abs_conc.get("horaire_absence", "")
-                                                }
-                                                
-                                                if MODE_SUPABASE:
-                                                    if enregistrer_requete_supabase(payload):
-                                                        succes_count += 1
-                                                    else:
-                                                        erreurs_list.append(f"❌ {abs_conc['matiere']} ({abs_conc.get('date_absence','')}) : échec d'enregistrement")
-                                                else:
-                                                    payload["id"] = len(st.session_state.requetes) + 1
-                                                    st.session_state.requetes.append(payload)
-                                                    succes_count += 1
-                                                    
-                                            except Exception as e:
-                                                erreurs_list.append(f"❌ {abs_conc['matiere']} : {e}")
-                                        
-                                        if succes_count > 0:
-                                            st.success(f"✅ **{succes_count}** demande(s) envoyée(s) avec succès ! Toutes sont maintenant **En attente** de validation.")
-                                            st.balloons()
-                                        if erreurs_list:
-                                            for err in erreurs_list:
-                                                st.error(err)
-                                        
-                                        time.sleep(1.5)
-                                        st.rerun()
-                                else:
-                                    st.warning("⚠️ Aucun justificatif PDF n'a été joint. Veuillez déposer au moins un fichier.")
-                            else:
-                                if not absences_bloquees:
-                                    st.info("✅ Toutes vos absences ont déjà un justificatif déposé ou une demande en cours de traitement.")
+                        promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
+                        promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_dépôt")
+                        df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
+                        noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
+                        étudiant_sel = st.selectbox("Votre nom :", noms_dispo, key="etud_dépôt")
+                with col2:
+                    st.markdown("**ℹ️ Informations**")
+                    st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
+               
+                st.divider()
+                st.markdown("### 📋 Mes absences signalées")
+
+                absences_etu = get_absences_étudiant(étudiant_sel)
+
+                if absences_etu:
+                    data_display = []
+                    for abs_item in absences_etu:
+                        mat = abs_item.get("matiere", "")
+                        d_abs = abs_item.get("date_absence", "")
+                        j_abs = abs_item.get("jour_absence", "")
+                        h_abs = abs_item.get("horaire_absence", "")
+                        # Pour l'affichage : chercher la DERNIERE requete (tous statuts) pour CETTE séance
+                        req_affichage = trouver_derniere_requete(étudiant_sel, mat, d_abs, j_abs, h_abs)
+                        req_en_attente = trouver_requete_existante(étudiant_sel, mat, d_abs, j_abs, h_abs)
+                        is_justif = abs_item.get("justifie", False)
+
+                        if is_justif:
+                            statut_j = "🟢 justifiee (acceptée)"
+                        elif req_affichage:
+                            statut_j = "🟡 " + req_affichage.get("statut", "En attente")
                         else:
-                            st.info("ℹ️ Aucune absence signalée pour vous actuellement.")
-                            st.caption("Si vous pensez qu'il s'agit d'une erreur, contactez l'enseignant de la matiere concernée.")
-        
-                    else:
-                        pwd_admin = st.text_input("🔑 Code Admin :", type="password", key="pwd_admin")
-        
-                        if pwd_admin == CODE_ADMIN:
-                            st.subheader("⚖️ Dossiers en attente")
-        
-                            if MODE_SUPABASE:
-                                resultats = charger_requetes_supabase(statut="En attente")
-                            else:
-                                resultats = [r for r in st.session_state.requetes if r.get("statut") == "En attente"]
-        
-                            if not resultats:
-                                st.info("📭 Aucun dossier en attente.")
-                            else:
-                                for req in resultats:
-                                    with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']} ({req.get('date_absence','')} | {req.get('jour_absence','')} {req.get('horaire_absence','')})"):
-                                        st.write(f"**Promotion :** {req['promotion']}")
-                                        st.write(f"**Séance concernée :** {req.get('jour_absence','')} {req.get('horaire_absence','')} — {req.get('date_absence','')}")
-                                        st.write(f"**Motif :** {req['motif']}")
-                                        st.write(f"**Date de dépôt :** {req['date_demande']}")
-        
-                                        pdf_decoded = base64.b64decode(req['justificatif_pdf'])
-                                        st.download_button(
-                                            label="👁️ Télécharger le PDF",
-                                            data=pdf_decoded,
-                                            file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
-                                            mime="application/pdf",
-                                            key=f"dl_{req['id']}"
-                                        )
-        
-                                        col_acc, col_rej = st.columns(2)
-                                        if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
-                                            d_abs = req.get("date_absence")
-                                            j_abs = req.get("jour_absence")
-                                            h_abs = req.get("horaire_absence")
-                                            if MODE_SUPABASE:
-                                                mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
-                                                rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'], d_abs, j_abs, h_abs)
-                                            else:
-                                                for r in st.session_state.requetes:
-                                                    if r["id"] == req["id"]:
-                                                        r["statut"] = "Favorable"
-                                                for a in st.session_state.absences:
-                                                    if (a.get("etud_non_eligible") == req['nom_etudiant']
-                                                            and a.get("matiere") == req['matiere']):
-                                                        if d_abs and a.get("date_absence") != d_abs: continue
-                                                        if j_abs and a.get("jour_absence") != j_abs: continue
-                                                        if h_abs and a.get("horaire_absence") != h_abs: continue
-                                                        a["justifie"] = True
-                                                        a["cause_non_eligibilite"] = "justifiee - " + str(a.get("cause_non_eligibilite", ""))
-        
-                                            # ═══ NOTIFICATIONS EMAIL ═══
-                                            # 1. Notification à l'étudiant
-                                            email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
-                                            if email_etu:
-                                                envoyer_notification_decision_etudiant(
-                                                    email_etu, req['nom_etudiant'], req['matiere'],
-                                                    "Favorable", req.get('motif', '')
-                                                )
-                                                st.info(f"📧 Notification envoyée à l'étudiant {req['nom_etudiant']}")
-        
-                                            # 2. Notification à l'enseignant responsable
-                                            ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
-                                            if ens_rows.empty:
-                                                ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
-                                            if not ens_rows.empty:
-                                                nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
-                                                if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                                    # Recherche email dans df_ens directement
-                                                    email_ens = None
-                                                    nom_fam_cible = extraire_nom_famille(nom_ens)
-                                                    for _, row_ens in df_ens.iterrows():
-                                                        nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
-                                                        if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
-                                                            email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                            if email_ens and "@" in email_ens:
-                                                                break
-                                                    if email_ens and "@" in str(email_ens):
-                                                        envoyer_notification_decision_enseignant(
-                                                            email_ens, nom_ens, req['nom_etudiant'],
-                                                            req['matiere'], "Favorable", req.get('promotion', '')
-                                                        )
-                                                        st.info(f"📧 Notification envoyée à l'enseignant {nom_ens}")
-                                                    else:
-                                                        st.caption(f"ℹ️ Email de l'enseignant {nom_ens} non trouvé dans le répertoire.")
-        
-                                            st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
-                                            time.sleep(0.5)
-                                            st.rerun()
-        
-                                        if col_rej.button("❌ REJETER", key=f"rej_{req['id']}", use_container_width=True):
-                                            if MODE_SUPABASE:
-                                                mettre_a_jour_statut_requete_supabase(req["id"], "Defavorable")
-                                            else:
-                                                for r in st.session_state.requetes:
-                                                    if r["id"] == req["id"]:
-                                                        r["statut"] = "Defavorable"
-        
-                                            # ═══ NOTIFICATIONS EMAIL (REJET) ═══
-                                            # 1. Notification à l'étudiant
-                                            email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
-                                            if email_etu:
-                                                envoyer_notification_decision_etudiant(
-                                                    email_etu, req['nom_etudiant'], req['matiere'],
-                                                    "Defavorable", req.get('motif', '')
-                                                )
-                                                st.info(f"📧 Notification de rejet envoyée à l'étudiant {req['nom_etudiant']}")
-        
-                                            # 2. Notification à l'enseignant responsable
-                                            ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
-                                            if ens_rows.empty:
-                                                ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
-                                            if not ens_rows.empty:
-                                                nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
-                                                if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                                    # Recherche email dans df_ens directement
-                                                    email_ens = None
-                                                    nom_fam_cible = extraire_nom_famille(nom_ens)
-                                                    for _, row_ens in df_ens.iterrows():
-                                                        nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
-                                                        if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
-                                                            email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                            if email_ens and "@" in email_ens:
-                                                                break
-                                                    if email_ens and "@" in str(email_ens):
-                                                        envoyer_notification_decision_enseignant(
-                                                            email_ens, nom_ens, req['nom_etudiant'],
-                                                            req['matiere'], "Defavorable", req.get('promotion', '')
-                                                        )
-                                                        st.info(f"📧 Notification de rejet envoyée à l'enseignant {nom_ens}")
-        
-                                            st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
-                                            time.sleep(0.5)
-                                            st.rerun()
-        
-                            with st.expander("🛠️ Zone maintenance"):
-                                st.write("Effacer toutes les requêtes de justificatifs.")
-                                if st.button("🔄 RÉINITIALISER", type="primary"):
-                                    st.session_state.confirm_reset = True
-        
-                                if st.session_state.get("confirm_reset", False):
-                                    st.error("⚠️ Cette action est IRRÉVERSIBLE !")
-                                    c_ok, c_cancel = st.columns(2)
-                                    if c_ok.button("🔥 CONFIRMER", type="primary"):
-                                        if MODE_SUPABASE:
-                                            reinitialiser_requetes_supabase()
-                                        else:
-                                            st.session_state.requetes = []
-                                        st.session_state.confirm_reset = False
-                                        st.success("✅ Base réinitialisée.")
-                                        time.sleep(0.5)
-                                        st.rerun()
-                                    if c_cancel.button("❌ ANNULER"):
-                                        st.session_state.confirm_reset = False
-                                        st.info("Action annulée.")
-                                        time.sleep(0.5)
-                                        st.rerun()
-        
-                        elif pwd_admin != "":
-                            st.error("❌ Code incorrect.")
-        
-                    if section_choisie == "📩 Justificatifs — Dépôt":
-                        st.scroll_to(ancre_depot, block="start")
-        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if étudiant_connecte:
-                                promo_sel = étudiant_connecte["promotion"]
-                                st.markdown(f"**🎓 Promotion :** `{promo_sel}`")
-                                df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
-                                étudiant_sel = étudiant_connecte["nom"]
-                                st.markdown(f"**👤 Nom :** `{étudiant_sel}`")
-                            else:
-                                promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
-                                promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_dépôt")
-                                df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
-                                noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
-                                étudiant_sel = st.selectbox("Votre nom :", noms_dispo, key="etud_dépôt")
-                        with col2:
-                            st.markdown("**ℹ️ Informations**")
-                            st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
-                       
-                        st.divider()
-                        st.markdown("### 📋 Mes absences signalées")
-        
-                        absences_etu = get_absences_étudiant(étudiant_sel)
-        
-                        if absences_etu:
-                            data_display = []
-                            for abs_item in absences_etu:
-                                mat = abs_item.get("matiere", "")
-                                d_abs = abs_item.get("date_absence", "")
-                                j_abs = abs_item.get("jour_absence", "")
-                                h_abs = abs_item.get("horaire_absence", "")
-                                # Pour l'affichage : chercher la DERNIERE requete (tous statuts) pour CETTE séance
-                                req_affichage = trouver_derniere_requete(étudiant_sel, mat, d_abs, j_abs, h_abs)
-                                req_en_attente = trouver_requete_existante(étudiant_sel, mat, d_abs, j_abs, h_abs)
-                                is_justif = abs_item.get("justifie", False)
-        
-                                if is_justif:
-                                    statut_j = "🟢 justifiee (acceptée)"
-                                elif req_affichage:
-                                    statut_j = "🟡 " + req_affichage.get("statut", "En attente")
-                                else:
-                                    statut_j = "🔴 Non déposé"
-        
-                                date_dep = req_affichage.get("date_demande", "-") if req_affichage else "-"
-        
-                                data_display.append({
-                                    "matiere": mat,
-                                    "Date d'absence": abs_item.get("date_absence", ""),
-                                    "Jour": abs_item.get("jour_absence", ""),
-                                    "Horaire": abs_item.get("horaire_absence", ""),
-                                    "Motif initial": abs_item.get("cause_non_eligibilite", ""),
-                                    "Statut justificatif": statut_j,
-                                    "Date dépôt": date_dep
-                                })
-        
-                            df_disp = pd.DataFrame(data_display)
-                            st.dataframe(df_disp, use_container_width=True, hide_index=True)
-        
-                            
-                            st.markdown("### 📎 justifier vos absences (un justificatif par absence)")
-                            # 1. FILTRAGE : seules les absences vraiment justifiables
-                            absences_sans_justif = []   # Celles que l'étudiant PEUT justifier (Non déposé)
-                            absences_bloquees = []      # Celles qu'il NE PEUT PLUS justifier (Rejetées)
-            
-                            for a in absences_etu:
-                                mat = a.get("matiere", "")
-                                d_abs = a.get("date_absence")
-                                j_abs = a.get("jour_absence")
-                                h_abs = a.get("horaire_absence")
-            
-                                # A. Déjà justifiee dans la table absences → on saute
-                                if a.get("justifie", False):
-                                    continue
-            
-                                # B. Requête EN ATTENTE existante → on saute (déjà traité)
-                                existe_attente = trouver_requete_existante(
-                                    étudiant_sel, mat, d_abs, j_abs, h_abs
-                                )
-                                if existe_attente:
-                                    continue
-            
-                                # C. Dernière requête DEFAVORABLE → BLOQUÉ, on met de côté
-                                derniere_req = trouver_derniere_requete(
-                                    étudiant_sel, mat, d_abs, j_abs, h_abs
-                                )
-                                if derniere_req and derniere_req.get("statut") == "Defavorable":
-                                    absences_bloquees.append({
-                                        "absence": a,
-                                        "motif_rejet": derniere_req.get("motif", "Non précisé")
-                                    })
-                                    continue
-            
-                                # D. Sinon, c'est justifiable
-                                absences_sans_justif.append(a)
-            
-                            # 2. AFFICHAGE DES ABSENCES BLOQUÉES (Rejetées définitivement)
-                            if absences_bloquees:
-                                st.error("🔒 Les absences ci-dessous ont été **rejetées par l'administration** et ne peuvent plus être justifiees.")
-                                for item in absences_bloquees:
-                                    a = item["absence"]
-                                    st.markdown(
-                                        f"<div style='padding:10px;border-left:4px solid #dc2626;background:#fef2f2;border-radius:6px;margin-bottom:8px;'>"
-                                        f"<b>❌ {a['matiere']}</b> — {a.get('date_absence','')} ({a.get('jour_absence','')} {a.get('horaire_absence','')})<br>"
-                                        f"<span style='font-size:12px;color:#991b1b;'>Décision défavorable | Motif du justificatif rejeté : {item['motif_rejet']}</span>"
-                                        f"</div>",
-                                        unsafe_allow_html=True
-                                    )
-            
-                            # 3. FORMULAIRE DE DÉPÔT (uniquement pour les absences justifiables)
-                            if absences_sans_justif:
-                                st.info("Remplissez les champs ci-dessous pour chaque absence que vous souhaitez justifier, puis validez l'envoi global.")
+                            statut_j = "🔴 Non déposé"
+
+                        date_dep = req_affichage.get("date_demande", "-") if req_affichage else "-"
+
+                        data_display.append({
+                            "matiere": mat,
+                            "Date d'absence": abs_item.get("date_absence", ""),
+                            "Jour": abs_item.get("jour_absence", ""),
+                            "Horaire": abs_item.get("horaire_absence", ""),
+                            "Motif initial": abs_item.get("cause_non_eligibilite", ""),
+                            "Statut justificatif": statut_j,
+                            "Date dépôt": date_dep
+                        })
+
+                    df_disp = pd.DataFrame(data_display)
+                    st.dataframe(df_disp, use_container_width=True, hide_index=True)
+
+                    
+                    st.markdown("### 📎 justifier vos absences (un justificatif par absence)")
+                    # 1. FILTRAGE : seules les absences vraiment justifiables
+                    absences_sans_justif = []   # Celles que l'étudiant PEUT justifier (Non déposé)
+                    absences_bloquees = []      # Celles qu'il NE PEUT PLUS justifier (Rejetées)
+    
+                    for a in absences_etu:
+                        mat = a.get("matiere", "")
+                        d_abs = a.get("date_absence")
+                        j_abs = a.get("jour_absence")
+                        h_abs = a.get("horaire_absence")
+    
+                        # A. Déjà justifiee dans la table absences → on saute
+                        if a.get("justifie", False):
+                            continue
+    
+                        # B. Requête EN ATTENTE existante → on saute (déjà traité)
+                        existe_attente = trouver_requete_existante(
+                            étudiant_sel, mat, d_abs, j_abs, h_abs
+                        )
+                        if existe_attente:
+                            continue
+    
+                        # C. Dernière requête DEFAVORABLE → BLOQUÉ, on met de côté
+                        derniere_req = trouver_derniere_requete(
+                            étudiant_sel, mat, d_abs, j_abs, h_abs
+                        )
+                        if derniere_req and derniere_req.get("statut") == "Defavorable":
+                            absences_bloquees.append({
+                                "absence": a,
+                                "motif_rejet": derniere_req.get("motif", "Non précisé")
+                            })
+                            continue
+    
+                        # D. Sinon, c'est justifiable
+                        absences_sans_justif.append(a)
+    
+                    # 2. AFFICHAGE DES ABSENCES BLOQUÉES (Rejetées définitivement)
+                    if absences_bloquees:
+                        st.error("🔒 Les absences ci-dessous ont été **rejetées par l'administration** et ne peuvent plus être justifiees.")
+                        for item in absences_bloquees:
+                            a = item["absence"]
+                            st.markdown(
+                                f"<div style='padding:10px;border-left:4px solid #dc2626;background:#fef2f2;border-radius:6px;margin-bottom:8px;'>"
+                                f"<b>❌ {a['matiere']}</b> — {a.get('date_absence','')} ({a.get('jour_absence','')} {a.get('horaire_absence','')})<br>"
+                                f"<span style='font-size:12px;color:#991b1b;'>Décision défavorable | Motif du justificatif rejeté : {item['motif_rejet']}</span>"
+                                f"</div>",
+                                unsafe_allow_html=True
+                            )
+    
+                    # 3. FORMULAIRE DE DÉPÔT (uniquement pour les absences justifiables)
+                    if absences_sans_justif:
+                        st.info("Remplissez les champs ci-dessous pour chaque absence que vous souhaitez justifier, puis validez l'envoi global.")
+                        
+                        uploads = {}
+    
+                        for i, abs_item in enumerate(absences_sans_justif):
+                            with st.container(border=True):
+                                c1, c2, c3 = st.columns([2.5, 2, 3])
                                 
-                                uploads = {}
-            
-                                for i, abs_item in enumerate(absences_sans_justif):
-                                    with st.container(border=True):
-                                        c1, c2, c3 = st.columns([2.5, 2, 3])
-                                        
-                                        with c1:
-                                            st.markdown(f"**📚 {abs_item['matiere']}**")
-                                            st.caption(f"📅 {abs_item.get('date_absence','')} | 🗓️ {abs_item.get('jour_absence','')} | 🕒 {abs_item.get('horaire_absence','')}")
-                                        
-                                        with c2:
-                                            motif_val = st.selectbox(
-                                                "Motif :", 
-                                                CAUSES_ABSENCES, 
-                                                key=f"motif_unique_{i}"
-                                            )
-                                        
-                                        with c3:
-                                            pdf_file = st.file_uploader(
-                                                "Joindre le justificatif (PDF)", 
-                                                type=["pdf"], 
-                                                key=f"pdf_unique_{i}"
-                                            )
-                                        
-                                        if pdf_file is not None:
-                                            uploads[i] = {
-                                                "absence": abs_item,
-                                                "motif": motif_val,
-                                                "pdf": pdf_file
-                                            }
-            
-                                st.divider()
-            
-                                if uploads:
-                                    st.success(f"📎 **{len(uploads)}** justificatif(s) prêt(s) à être envoyé(s).")
+                                with c1:
+                                    st.markdown(f"**📚 {abs_item['matiere']}**")
+                                    st.caption(f"📅 {abs_item.get('date_absence','')} | 🗓️ {abs_item.get('jour_absence','')} | 🕒 {abs_item.get('horaire_absence','')}")
+                                
+                                with c2:
+                                    motif_val = st.selectbox(
+                                        "Motif :", 
+                                        CAUSES_ABSENCES, 
+                                        key=f"motif_unique_{i}"
+                                    )
+                                
+                                with c3:
+                                    pdf_file = st.file_uploader(
+                                        "Joindre le justificatif (PDF)", 
+                                        type=["pdf"], 
+                                        key=f"pdf_unique_{i}"
+                                    )
+                                
+                                if pdf_file is not None:
+                                    uploads[i] = {
+                                        "absence": abs_item,
+                                        "motif": motif_val,
+                                        "pdf": pdf_file
+                                    }
+    
+                        st.divider()
+    
+                        if uploads:
+                            st.success(f"📎 **{len(uploads)}** justificatif(s) prêt(s) à être envoyé(s).")
+                            
+                            if st.button("🚀 ENVOYER TOUTES LES JUSTIFICATIONS", type="primary", use_container_width=True):
+                                succes_count = 0
+                                erreurs_list = []
+                                
+                                for idx, data in uploads.items():
+                                    abs_conc = data["absence"]
                                     
-                                    if st.button("🚀 ENVOYER TOUTES LES JUSTIFICATIONS", type="primary", use_container_width=True):
-                                        succes_count = 0
-                                        erreurs_list = []
+                                    try:
+                                        pdf_bytes = data["pdf"].read()
+                                        pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
                                         
-                                        for idx, data in uploads.items():
-                                            abs_conc = data["absence"]
-                                            
-                                            try:
-                                                pdf_bytes = data["pdf"].read()
-                                                pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
-                                                
-                                                payload = {
-                                                    "date_demande": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                                                    "nom_etudiant": étudiant_sel,
-                                                    "matiere": abs_conc["matiere"],
-                                                    "promotion": abs_conc.get("promotion", promo_sel),
-                                                    "motif": data["motif"],
-                                                    "justificatif_pdf": pdf_encoded,
-                                                    "statut": "En attente",
-                                                    "date_absence": abs_conc.get("date_absence", ""),
-                                                    "jour_absence": abs_conc.get("jour_absence", ""),
-                                                    "horaire_absence": abs_conc.get("horaire_absence", "")
-                                                }
-                                                
-                                                if MODE_SUPABASE:
-                                                    if enregistrer_requete_supabase(payload):
-                                                        succes_count += 1
-                                                    else:
-                                                        erreurs_list.append(f"❌ {abs_conc['matiere']} ({abs_conc.get('date_absence','')}) : échec d'enregistrement")
-                                                else:
-                                                    payload["id"] = len(st.session_state.requetes) + 1
-                                                    st.session_state.requetes.append(payload)
-                                                    succes_count += 1
-                                                    
-                                            except Exception as e:
-                                                erreurs_list.append(f"❌ {abs_conc['matiere']} : {e}")
+                                        payload = {
+                                            "date_demande": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                            "nom_etudiant": étudiant_sel,
+                                            "matiere": abs_conc["matiere"],
+                                            "promotion": abs_conc.get("promotion", promo_sel),
+                                            "motif": data["motif"],
+                                            "justificatif_pdf": pdf_encoded,
+                                            "statut": "En attente",
+                                            "date_absence": abs_conc.get("date_absence", ""),
+                                            "jour_absence": abs_conc.get("jour_absence", ""),
+                                            "horaire_absence": abs_conc.get("horaire_absence", "")
+                                        }
                                         
-                                        if succes_count > 0:
-                                            st.success(f"✅ **{succes_count}** demande(s) envoyée(s) avec succès ! Toutes sont maintenant **En attente** de validation.")
-                                            st.balloons()
-                                        if erreurs_list:
-                                            for err in erreurs_list:
-                                                st.error(err)
-                                        
-                                        time.sleep(1.5)
-                                        st.rerun()
-                                else:
-                                    st.warning("⚠️ Aucun justificatif PDF n'a été joint. Veuillez déposer au moins un fichier.")
-                            else:
-                                if not absences_bloquees:
-                                    st.info("✅ Toutes vos absences ont déjà un justificatif déposé ou une demande en cours de traitement.")
-                        else:
-                            st.info("ℹ️ Aucune absence signalée pour vous actuellement.")
-                            st.caption("Si vous pensez qu'il s'agit d'une erreur, contactez l'enseignant de la matiere concernée.")
-        
-                    else:
-                        pwd_admin = st.text_input("🔑 Code Admin :", type="password", key="pwd_admin")
-        
-                        if pwd_admin == CODE_ADMIN:
-                            ancre_admin_justif = st.empty()
-                        st.subheader("⚖️ Dossiers en attente")
-                        if section_choisie == "📩 Justificatifs — Admin":
-                            st.scroll_to(ancre_admin_justif, block="start")
-        
-                            if MODE_SUPABASE:
-                                resultats = charger_requetes_supabase(statut="En attente")
-                            else:
-                                resultats = [r for r in st.session_state.requetes if r.get("statut") == "En attente"]
-        
-                            if not resultats:
-                                st.info("📭 Aucun dossier en attente.")
-                            else:
-                                for req in resultats:
-                                    with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']} ({req.get('date_absence','')} | {req.get('jour_absence','')} {req.get('horaire_absence','')})"):
-                                        st.write(f"**Promotion :** {req['promotion']}")
-                                        st.write(f"**Séance concernée :** {req.get('jour_absence','')} {req.get('horaire_absence','')} — {req.get('date_absence','')}")
-                                        st.write(f"**Motif :** {req['motif']}")
-                                        st.write(f"**Date de dépôt :** {req['date_demande']}")
-        
-                                        pdf_decoded = base64.b64decode(req['justificatif_pdf'])
-                                        st.download_button(
-                                            label="👁️ Télécharger le PDF",
-                                            data=pdf_decoded,
-                                            file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
-                                            mime="application/pdf",
-                                            key=f"dl_{req['id']}"
-                                        )
-        
-                                        col_acc, col_rej = st.columns(2)
-                                        if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
-                                            d_abs = req.get("date_absence")
-                                            j_abs = req.get("jour_absence")
-                                            h_abs = req.get("horaire_absence")
-                                            if MODE_SUPABASE:
-                                                mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
-                                                rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'], d_abs, j_abs, h_abs)
-                                            else:
-                                                for r in st.session_state.requetes:
-                                                    if r["id"] == req["id"]:
-                                                        r["statut"] = "Favorable"
-                                                for a in st.session_state.absences:
-                                                    if (a.get("etud_non_eligible") == req['nom_etudiant']
-                                                            and a.get("matiere") == req['matiere']):
-                                                        if d_abs and a.get("date_absence") != d_abs: continue
-                                                        if j_abs and a.get("jour_absence") != j_abs: continue
-                                                        if h_abs and a.get("horaire_absence") != h_abs: continue
-                                                        a["justifie"] = True
-                                                        a["cause_non_eligibilite"] = "justifiee - " + str(a.get("cause_non_eligibilite", ""))
-        
-                                            # ═══ NOTIFICATIONS EMAIL ═══
-                                            # 1. Notification à l'étudiant
-                                            email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
-                                            if email_etu:
-                                                envoyer_notification_decision_etudiant(
-                                                    email_etu, req['nom_etudiant'], req['matiere'],
-                                                    "Favorable", req.get('motif', '')
-                                                )
-                                                st.info(f"📧 Notification envoyée à l'étudiant {req['nom_etudiant']}")
-        
-                                            # 2. Notification à l'enseignant responsable
-                                            ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
-                                            if ens_rows.empty:
-                                                ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
-                                            if not ens_rows.empty:
-                                                nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
-                                                if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                                    # Recherche email dans df_ens directement
-                                                    email_ens = None
-                                                    nom_fam_cible = extraire_nom_famille(nom_ens)
-                                                    for _, row_ens in df_ens.iterrows():
-                                                        nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
-                                                        if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
-                                                            email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                            if email_ens and "@" in email_ens:
-                                                                break
-                                                    if email_ens and "@" in str(email_ens):
-                                                        envoyer_notification_decision_enseignant(
-                                                            email_ens, nom_ens, req['nom_etudiant'],
-                                                            req['matiere'], "Favorable", req.get('promotion', '')
-                                                        )
-                                                        st.info(f"📧 Notification envoyée à l'enseignant {nom_ens}")
-                                                    else:
-                                                        st.caption(f"ℹ️ Email de l'enseignant {nom_ens} non trouvé dans le répertoire.")
-        
-                                            st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
-                                            time.sleep(0.5)
-                                            st.rerun()
-        
-                                        if col_rej.button("❌ REJETER", key=f"rej_{req['id']}", use_container_width=True):
-                                            if MODE_SUPABASE:
-                                                mettre_a_jour_statut_requete_supabase(req["id"], "Defavorable")
-                                            else:
-                                                for r in st.session_state.requetes:
-                                                    if r["id"] == req["id"]:
-                                                        r["statut"] = "Defavorable"
-        
-                                            # ═══ NOTIFICATIONS EMAIL (REJET) ═══
-                                            # 1. Notification à l'étudiant
-                                            email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
-                                            if email_etu:
-                                                envoyer_notification_decision_etudiant(
-                                                    email_etu, req['nom_etudiant'], req['matiere'],
-                                                    "Defavorable", req.get('motif', '')
-                                                )
-                                                st.info(f"📧 Notification de rejet envoyée à l'étudiant {req['nom_etudiant']}")
-        
-                                            # 2. Notification à l'enseignant responsable
-                                            ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
-                                            if ens_rows.empty:
-                                                ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
-                                            if not ens_rows.empty:
-                                                nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
-                                                if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                                    # Recherche email dans df_ens directement
-                                                    email_ens = None
-                                                    nom_fam_cible = extraire_nom_famille(nom_ens)
-                                                    for _, row_ens in df_ens.iterrows():
-                                                        nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
-                                                        if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
-                                                            email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                            if email_ens and "@" in email_ens:
-                                                                break
-                                                    if email_ens and "@" in str(email_ens):
-                                                        envoyer_notification_decision_enseignant(
-                                                            email_ens, nom_ens, req['nom_etudiant'],
-                                                            req['matiere'], "Defavorable", req.get('promotion', '')
-                                                        )
-                                                        st.info(f"📧 Notification de rejet envoyée à l'enseignant {nom_ens}")
-        
-                                            st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
-                                            time.sleep(0.5)
-                                            st.rerun()
-        
-                            with st.expander("🛠️ Zone maintenance"):
-                                st.write("Effacer toutes les requêtes de justificatifs.")
-                                if st.button("🔄 RÉINITIALISER", type="primary"):
-                                    st.session_state.confirm_reset = True
-        
-                                if st.session_state.get("confirm_reset", False):
-                                    st.error("⚠️ Cette action est IRRÉVERSIBLE !")
-                                    c_ok, c_cancel = st.columns(2)
-                                    if c_ok.button("🔥 CONFIRMER", type="primary"):
                                         if MODE_SUPABASE:
-                                            reinitialiser_requetes_supabase()
+                                            if enregistrer_requete_supabase(payload):
+                                                succes_count += 1
+                                            else:
+                                                erreurs_list.append(f"❌ {abs_conc['matiere']} ({abs_conc.get('date_absence','')}) : échec d'enregistrement")
                                         else:
-                                            st.session_state.requetes = []
-                                        st.session_state.confirm_reset = False
-                                        st.success("✅ Base réinitialisée.")
-                                        time.sleep(0.5)
-                                        st.rerun()
-                                    if c_cancel.button("❌ ANNULER"):
-                                        st.session_state.confirm_reset = False
-                                        st.info("Action annulée.")
-                                        time.sleep(0.5)
-                                        st.rerun()
-        
-                        elif pwd_admin != "":
-                            st.error("❌ Code incorrect.")
+                                            payload["id"] = len(st.session_state.requetes) + 1
+                                            st.session_state.requetes.append(payload)
+                                            succes_count += 1
+                                            
+                                    except Exception as e:
+                                        erreurs_list.append(f"❌ {abs_conc['matiere']} : {e}")
+                                
+                                if succes_count > 0:
+                                    st.success(f"✅ **{succes_count}** demande(s) envoyée(s) avec succès ! Toutes sont maintenant **En attente** de validation.")
+                                    st.balloons()
+                                if erreurs_list:
+                                    for err in erreurs_list:
+                                        st.error(err)
+                                
+                                time.sleep(1.5)
+                                st.rerun()
+                        else:
+                            st.warning("⚠️ Aucun justificatif PDF n'a été joint. Veuillez déposer au moins un fichier.")
+                    else:
+                        if not absences_bloquees:
+                            st.info("✅ Toutes vos absences ont déjà un justificatif déposé ou une demande en cours de traitement.")
+                else:
+                    st.info("ℹ️ Aucune absence signalée pour vous actuellement.")
+                    st.caption("Si vous pensez qu'il s'agit d'une erreur, contactez l'enseignant de la matiere concernée.")
+
+            else:
+                pwd_admin = st.text_input("🔑 Code Admin :", type="password", key="pwd_admin")
+
+                if pwd_admin == CODE_ADMIN:
+                    ancre_admin_justif = st.empty()
+                st.subheader("⚖️ Dossiers en attente")
+                if section_choisie == "📩 Justificatifs — Admin":
+                    st.scroll_to(ancre_admin_justif, block="start")
+
+                    if MODE_SUPABASE:
+                        resultats = charger_requetes_supabase(statut="En attente")
+                    else:
+                        resultats = [r for r in st.session_state.requetes if r.get("statut") == "En attente"]
+
+                    if not resultats:
+                        st.info("📭 Aucun dossier en attente.")
+                    else:
+                        for req in resultats:
+                            with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']} ({req.get('date_absence','')} | {req.get('jour_absence','')} {req.get('horaire_absence','')})"):
+                                st.write(f"**Promotion :** {req['promotion']}")
+                                st.write(f"**Séance concernée :** {req.get('jour_absence','')} {req.get('horaire_absence','')} — {req.get('date_absence','')}")
+                                st.write(f"**Motif :** {req['motif']}")
+                                st.write(f"**Date de dépôt :** {req['date_demande']}")
+
+                                pdf_decoded = base64.b64decode(req['justificatif_pdf'])
+                                st.download_button(
+                                    label="👁️ Télécharger le PDF",
+                                    data=pdf_decoded,
+                                    file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"dl_{req['id']}"
+                                )
+
+                                col_acc, col_rej = st.columns(2)
+                                if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
+                                    d_abs = req.get("date_absence")
+                                    j_abs = req.get("jour_absence")
+                                    h_abs = req.get("horaire_absence")
+                                    if MODE_SUPABASE:
+                                        mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
+                                        rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'], d_abs, j_abs, h_abs)
+                                    else:
+                                        for r in st.session_state.requetes:
+                                            if r["id"] == req["id"]:
+                                                r["statut"] = "Favorable"
+                                        for a in st.session_state.absences:
+                                            if (a.get("etud_non_eligible") == req['nom_etudiant']
+                                                    and a.get("matiere") == req['matiere']):
+                                                if d_abs and a.get("date_absence") != d_abs: continue
+                                                if j_abs and a.get("jour_absence") != j_abs: continue
+                                                if h_abs and a.get("horaire_absence") != h_abs: continue
+                                                a["justifie"] = True
+                                                a["cause_non_eligibilite"] = "justifiee - " + str(a.get("cause_non_eligibilite", ""))
+
+                                    # ═══ NOTIFICATIONS EMAIL ═══
+                                    # 1. Notification à l'étudiant
+                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
+                                    if email_etu:
+                                        envoyer_notification_decision_etudiant(
+                                            email_etu, req['nom_etudiant'], req['matiere'],
+                                            "Favorable", req.get('motif', '')
+                                        )
+                                        st.info(f"📧 Notification envoyée à l'étudiant {req['nom_etudiant']}")
+
+                                    # 2. Notification à l'enseignant responsable
+                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
+                                    if ens_rows.empty:
+                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
+                                    if not ens_rows.empty:
+                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
+                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
+                                            # Recherche email dans df_ens directement
+                                            email_ens = None
+                                            nom_fam_cible = extraire_nom_famille(nom_ens)
+                                            for _, row_ens in df_ens.iterrows():
+                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
+                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
+                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
+                                                    if email_ens and "@" in email_ens:
+                                                        break
+                                            if email_ens and "@" in str(email_ens):
+                                                envoyer_notification_decision_enseignant(
+                                                    email_ens, nom_ens, req['nom_etudiant'],
+                                                    req['matiere'], "Favorable", req.get('promotion', '')
+                                                )
+                                                st.info(f"📧 Notification envoyée à l'enseignant {nom_ens}")
+                                            else:
+                                                st.caption(f"ℹ️ Email de l'enseignant {nom_ens} non trouvé dans le répertoire.")
+
+                                    st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+                                if col_rej.button("❌ REJETER", key=f"rej_{req['id']}", use_container_width=True):
+                                    if MODE_SUPABASE:
+                                        mettre_a_jour_statut_requete_supabase(req["id"], "Defavorable")
+                                    else:
+                                        for r in st.session_state.requetes:
+                                            if r["id"] == req["id"]:
+                                                r["statut"] = "Defavorable"
+
+                                    # ═══ NOTIFICATIONS EMAIL (REJET) ═══
+                                    # 1. Notification à l'étudiant
+                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
+                                    if email_etu:
+                                        envoyer_notification_decision_etudiant(
+                                            email_etu, req['nom_etudiant'], req['matiere'],
+                                            "Defavorable", req.get('motif', '')
+                                        )
+                                        st.info(f"📧 Notification de rejet envoyée à l'étudiant {req['nom_etudiant']}")
+
+                                    # 2. Notification à l'enseignant responsable
+                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
+                                    if ens_rows.empty:
+                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
+                                    if not ens_rows.empty:
+                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
+                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
+                                            # Recherche email dans df_ens directement
+                                            email_ens = None
+                                            nom_fam_cible = extraire_nom_famille(nom_ens)
+                                            for _, row_ens in df_ens.iterrows():
+                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
+                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
+                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
+                                                    if email_ens and "@" in email_ens:
+                                                        break
+                                            if email_ens and "@" in str(email_ens):
+                                                envoyer_notification_decision_enseignant(
+                                                    email_ens, nom_ens, req['nom_etudiant'],
+                                                    req['matiere'], "Defavorable", req.get('promotion', '')
+                                                )
+                                                st.info(f"📧 Notification de rejet envoyée à l'enseignant {nom_ens}")
+
+                                    st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+                    with st.expander("🛠️ Zone maintenance"):
+                        st.write("Effacer toutes les requêtes de justificatifs.")
+                        if st.button("🔄 RÉINITIALISER", type="primary"):
+                            st.session_state.confirm_reset = True
+
+                        if st.session_state.get("confirm_reset", False):
+                            st.error("⚠️ Cette action est IRRÉVERSIBLE !")
+                            c_ok, c_cancel = st.columns(2)
+                            if c_ok.button("🔥 CONFIRMER", type="primary"):
+                                if MODE_SUPABASE:
+                                    reinitialiser_requetes_supabase()
+                                else:
+                                    st.session_state.requetes = []
+                                st.session_state.confirm_reset = False
+                                st.success("✅ Base réinitialisée.")
+                                time.sleep(0.5)
+                                st.rerun()
+                            if c_cancel.button("❌ ANNULER"):
+                                st.session_state.confirm_reset = False
+                                st.info("Action annulée.")
+                                time.sleep(0.5)
+                                st.rerun()
+
+                elif pwd_admin != "":
+                    st.error("❌ Code incorrect.")
 
     # =============================================================================
     # ONGLET 3 : BILANS ET EXPORTS
@@ -2679,7 +2293,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             if not is_enseignant_connecte and not is_admin_edt:
                 pwd_tab3 = st.text_input("🔑 Code d'accès Admin :", type="password", key="pwd_tab3")
                 if pwd_tab3 != CODE_ADMIN:
-                    if pwd_tab3 != "1234":
+                    if pwd_tab3 != "":
                         st.error("❌ Code incorrect.")
                     st.info("ℹ️ Veuillez saisir le code administrateur pour accéder aux bilans et exports.")
                     st.stop()
