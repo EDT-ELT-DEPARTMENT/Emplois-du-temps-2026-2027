@@ -127,6 +127,39 @@ with st.sidebar:
     st.markdown("---")
     st.caption("annee universitaire 2026-2027")
 
+    # ═══════════════════════════════════════════════════════
+    # 🧭 NAVIGATION RAPIDE
+    # ═══════════════════════════════════════════════════════
+    st.markdown("---")
+    st.subheader("🧭 Navigation rapide")
+
+    NAV_SECTIONS = {
+        "📝 Assiduité — Saisie": "ancre_saisie",
+        "📝 Assiduité — Liste": "ancre_liste",
+        "📝 Assiduité — Rapport": "ancre_rapport",
+        "📩 Justificatifs — Dépôt": "ancre_depot",
+        "📩 Justificatifs — Admin": "ancre_admin_justif",
+        "📊 Bilans & Exports": "ancre_bilan",
+        "👤 Infos Étudiant": "ancre_infos",
+        "📅 Mon EDT": "ancre_edt",
+        "📖 EDT Admin — Promotion": "ancre_edt_promo",
+        "📖 EDT Admin — Enseignant": "ancre_edt_ens",
+        "🏢 Planning Salles": "ancre_edt_salles",
+        "🚩 Vérificateur de conflits": "ancre_edt_conflits",
+        "👤 Mon Espace Enseignant": "ancre_mon_espace",
+        "📅 Surveillances Examens": "ancre_surv",
+        "🎓 Recherche Étudiant": "ancre_rech_etud",
+        "✍️ Éditeur de données": "ancre_editeur",
+        "📊 Bilan Heures Sup": "ancre_bilan_sup"
+    }
+
+    section_choisie = st.selectbox(
+        "Aller directement à :",
+        [""] + list(NAV_SECTIONS.keys()),
+        key="nav_rapide",
+        help="Sélectionnez une section pour y accéder instantanément"
+    )
+
 # =============================================================================
 # FONCTIONS UTILITAIRES COMMUNES
 # =============================================================================
@@ -1072,6 +1105,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports", "👤 Infos Étudiant", "📅 Mon EDT"])
     with tab1:
         st.header("📝 Suivi de l'Assiduité et Compteur d'Absences")
+        ancre_saisie = st.empty()
+        if section_choisie == "📝 Assiduité — Saisie":
+            st.scroll_to(ancre_saisie, block="start")
 
         sel_prof = ""
         sel_mat = ""
@@ -1159,6 +1195,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         break
 
                 st.markdown("#### 📥 Enregistrement d'une absence")
+                if section_choisie == "📝 Assiduité — Saisie":
+                    st.scroll_to(ancre_saisie, block="start")
                 cn1, cn2, cn3 = st.columns(3)
                 with cn1:
                     etud_non = st.selectbox("👤 Étudiant :", [""] + noms_e, key="ne_et_t1")
@@ -1366,8 +1404,11 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             except Exception as e:
                                 st.error(f"❌ Erreur lors de la suppression : {e}")
                 # LISTE GLOBALE DES ABSENCES
+                ancre_liste = st.empty()
                 st.divider()
                 st.subheader("📋 Liste globale des absences")
+                if section_choisie == "📝 Assiduité — Liste":
+                    st.scroll_to(ancre_liste, block="start")
 
                 if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
                     if "justifie" not in df_db_full.columns:
@@ -1550,8 +1591,11 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     else:
                         st.info("Vous n'avez signalé aucune absence pour cette matiere et cette promotion.")
 
+                ancre_rapport = st.empty()
                 st.divider()
                 st.subheader("📥 Rapport officiel Excel — Liste d'Éligibilité")
+                if section_choisie == "📝 Assiduité — Rapport":
+                    st.scroll_to(ancre_rapport, block="start")
 
                 toutes_promos = sorted(df_etu["Promotion"].dropna().unique().tolist())
                 promo_rapport = st.selectbox(
@@ -1700,7 +1744,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 st.divider()
 
             if choix_vue == "Étudiant (Dépôt)":
-                st.subheader("📤 Soumettre une demande de réhabilitation")
+                ancre_depot = st.empty()
+            st.subheader("📤 Soumettre une demande de réhabilitation")
+            if section_choisie == "📩 Justificatifs — Dépôt":
+                st.scroll_to(ancre_depot, block="start")
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1908,7 +1955,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 pwd_admin = st.text_input("🔑 Code Admin :", type="password", key="pwd_admin")
 
                 if pwd_admin == CODE_ADMIN:
-                    st.subheader("⚖️ Dossiers en attente")
+                    ancre_admin_justif = st.empty()
+                st.subheader("⚖️ Dossiers en attente")
+                if section_choisie == "📩 Justificatifs — Admin":
+                    st.scroll_to(ancre_admin_justif, block="start")
 
                     if MODE_SUPABASE:
                         resultats = charger_requetes_supabase(statut="En attente")
@@ -2071,6 +2121,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     if not is_enseignant_connecte:
         with tab3:
             st.header("📊 bilans d'assiduité")
+            ancre_bilan = st.empty()
+            if section_choisie == "📊 Bilans & Exports":
+                st.scroll_to(ancre_bilan, block="start")
 
             # Vérification code d'accès pour les bilans et exports
             if not is_enseignant_connecte and not is_admin_edt:
@@ -2239,6 +2292,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
  
         with tab4:
             st.header("👤 Informations détaillées d'un étudiant")
+            ancre_infos = st.empty()
+            if section_choisie == "👤 Infos Étudiant":
+                st.scroll_to(ancre_infos, block="start")
             
             # Accès réservé
             if not (is_enseignant_connecte or is_admin_edt):
@@ -2315,6 +2371,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         # =============================================================================
         with tab5:
             st.header("📅 Mon Emploi du Temps")
+            ancre_edt = st.empty()
+            if section_choisie == "📅 Mon EDT":
+                st.scroll_to(ancre_edt, block="start")
             st.caption("Consultation et téléchargement de votre EDT hebdomadaire")
     
             if not étudiant_connecte:
@@ -2762,6 +2821,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # PORTAIL : EMPLOI DU TEMPS (ADMIN)
     # ============================================================
     if portail == "📖 Emploi du Temps" and is_admin:
+        ancre_edt_ens = st.empty()
+        if section_choisie == "📖 EDT Admin — Enseignant":
+            st.scroll_to(ancre_edt_ens, block="start")
         if mode_view == "Enseignant":
             cible = st.selectbox("Sélectionner l'Enseignant :",
                                 sorted([e for e in df["Enseignants"].unique() if e and e != "Non défini"]))
@@ -3352,12 +3414,18 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 "application/pdf"
             )
                               
+        ancre_edt_salles = st.empty()
+        if section_choisie == "🏢 Planning Salles":
+            st.scroll_to(ancre_edt_salles, block="start")
         elif mode_view == "🏢 Planning Salles":
             s_sel = st.selectbox("Choisir Salle :", sorted([s for s in df["Lieu"].unique() if s and s != "Non défini"]))
             df_s = df[df["Lieu"] == s_sel]
             st.markdown(f"### 🏢 Planning : {s_sel}")
             st.dataframe(df_s[['Jours', 'Horaire', 'Enseignements', 'Enseignants', 'Promotion']], use_container_width=True, hide_index=True)
 
+        ancre_edt_conflits = st.empty()
+        if section_choisie == "🚩 Vérificateur de conflits":
+            st.scroll_to(ancre_edt_conflits, block="start")
         elif mode_view == "🚩 Vérificateur de conflits":
             st.subheader("🚩 Détection des Conflits")
             
@@ -3416,6 +3484,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # PORTAIL : MON ESPACE ENSEIGNANT
     # ============================================================
     elif portail == "👤 Mon Espace Enseignant":
+        ancre_mon_espace = st.empty()
+        if section_choisie == "👤 Mon Espace Enseignant":
+            st.scroll_to(ancre_mon_espace, block="start")
         cible = user['nom_officiel']
         nom_aff = repertoire_noms_complets.get(cible.strip().upper(), cible)
         
@@ -3744,6 +3815,9 @@ td{{word-wrap:break-word;}}
     # PORTAIL : SURVEILLANCES EXAMENS
     # ============================================================
     elif portail == "📅 Surveillances Examens":
+        ancre_surv = st.empty()
+        if section_choisie == "📅 Surveillances Examens":
+            st.scroll_to(ancre_surv, block="start")
         FILE_S = str(_BASE_DIR / "surveillances_2027.xlsx")
         if not os.path.exists(FILE_S):
             st.error("❌ Fichier 'surveillances_2027.xlsx' introuvable.")
@@ -3780,6 +3854,9 @@ td{{word-wrap:break-word;}}
     # PORTAIL : RECHERCHE ÉTUDIANT
     # ============================================================
     elif portail == "🎓 Recherche Étudiant":
+        ancre_rech_etud = st.empty()
+        if section_choisie == "🎓 Recherche Étudiant":
+            st.scroll_to(ancre_rech_etud, block="start")
         st.markdown("<h1 class='main-title'>🎓 Recherche d'Informations Étudiant</h1>", unsafe_allow_html=True)
         
         if df_etu_edt.empty:
@@ -6810,6 +6887,9 @@ with st.sidebar:
 # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
 # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
 if is_admin and mode_view == "✍️ Éditeur de données":
+    ancre_editeur = st.empty()
+    if section_choisie == "✍️ Éditeur de données":
+        st.scroll_to(ancre_editeur, block="start")
     st.divider()
     st.subheader("✍️ Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
 
