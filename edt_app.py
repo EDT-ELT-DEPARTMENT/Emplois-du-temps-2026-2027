@@ -62,32 +62,52 @@ footer {visibility: hidden;}
 #stDecoration {display:none;}
 </style>
 """
-st.markdown(hide_st_style, unsafe_allow_html=True)
+try:
+    st.markdown(hide_st_style, unsafe_allow_html=True)
+except Exception as e:
+    st.debug(f"Note: Style personnalisé non appliqué : {str(e)[:50]}")
 
 # =============================================================================
-# CONNEXION SUPABASE GLOBALE (partagée)
+# CONNEXION SUPABASE GLOBALE (partagée) - ROBUSTE
 # =============================================================================
 MODE_SUPABASE = False
 supabase = None
 
-if create_client:
+if create_client is not None:  # Plus robuste que "if create_client"
     try:
         SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
         SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
         if SUPABASE_URL and SUPABASE_KEY:
             supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
             MODE_SUPABASE = True
-    except Exception:
-        pass
+            st.info("✅ Supabase connecté")
+    except Exception as e:
+        st.warning(f"⚠️ Supabase non disponible : {str(e)[:100]}")
 
 # =============================================================================
-# CONSTANTES COMMUNES
+# CONSTANTES COMMUNES - GESTION ROBUSTE DES CHEMINS
 # =============================================================================
-_BASE_DIR = Path(__file__).parent.resolve()
+# Gestion robuste du répertoire de base (compatible Streamlit Cloud)
+try:
+    _BASE_DIR = Path(__file__).parent.resolve()
+except:
+    # Fallback pour Streamlit Cloud
+    _BASE_DIR = Path.cwd()
 
 FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
 FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
 FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
+
+# Vérifier les fichiers existants
+_fichiers_check = {
+    "Étudiants": FILE_ETUDIANTS,
+    "EDT": FILE_EDT,
+    "Enseignants": FILE_ENS
+}
+_fichiers_manquants = [nom for nom, chemin in _fichiers_check.items() if not Path(chemin).exists()]
+if _fichiers_manquants:
+    import warnings
+    warnings.warn(f"⚠️ Fichiers manquants : {', '.join(_fichiers_manquants)}")
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
