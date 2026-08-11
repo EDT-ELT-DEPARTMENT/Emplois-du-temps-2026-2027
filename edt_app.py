@@ -12617,5 +12617,436 @@ if df_etu_edt is not None and not df_etu_edt.empty:
         use_container_width=True,
         key=f"dl_etudiants_{filtre_actif_etu}_admin"
     )
+# =============================================================================
+# MODULE 3 : EDT INTELLIGENT — DÉTECTION & RÉSOLUTION DE CONFLITS
+# =============================================================================
 
+def run_edt_intelligent():
+    st.title("🧠 EDT Intelligent — Détection & Résolution de Conflits")
+    st.caption("Analyse avancée des chevauchements avec gestion des matières communes")
+
+    if df is None or df.empty:
+        st.error("❌ Données EDT non disponibles. Vérifiez le chargement du fichier source.")
+        return
+
+    # -------------------------------------------------------------------------
+    # PARAMÈTRES D'ANALYSE
+    # -------------------------------------------------------------------------
+    st.markdown("### ⚙️ Paramètres d'analyse")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.info("**Matière commune** = même enseignant + même matière + code **COURS** (cours magistral commun à plusieurs promotions/groupes). Ces séances ne sont pas considérées comme des conflits en mode standard.")
+    with c2:
+        mode_detection = st.radio(
+            "Niveau de détection :",
+            ["Strict (tout est conflit)", "Standard (exclure les communs)"],
+            index=1,
+            key="mode_detect_edt_intel"
+        )
+    with c3:
+        strategie = st.selectbox(
+            "Stratégie de résolution :",
+            ["Minimiser les déplacements", "Équilibrer la semaine", "Remplir d'abord le matin"],
+            index=0,
+            key="strat_edt_intel"
+        )
+
+    ignorer_communs = (mode_detection == "Standard (exclure les communs)")
+
+    # -------------------------------------------------------------------------
+    # FONCTIONS DE DÉTECTION
+    # -------------------------------------------------------------------------
+    def est_cours_commun(subset: pd.DataFrame) -> bool:
+        """Détermine si un groupe de lignes représente un cours commun."""
+        if len(subset) < 2:
+            return False
+        meme_ens = subset['Enseignants'].nunique() == 1
+        meme_mat = subset['Enseignements'].nunique() == 1
+        tous_cours = all('COURS' in str(c).upper() for c in subset['Code'])
+        return meme_ens and meme_mat and tous_cours
+
+    def detecter_conflits(df_source: pd.DataFrame, ignorer_communs: bool = True):
+        """Détecte les conflits de salle, enseignant et promotion."""
+        conflits = []
+        df_check = df_source.copy()
+
+        # 1. CONFLITS DE SALLE
+        grp_salle = df_check[
+            df_check["Lieu"].notna() & (df_check["Lieu"] != "Non défini") & (df_check["Lieu"] != "")
+        ].groupby(['Jours', 'Horaire', 'Lieu'])
+        for (jour, horaire, lieu), groupe in grp_salle:
+            if len(groupe) > 1:
+                if ignorer_communs and est_cours_commun(groupe):
+                    continue
+                conflits.append({
+                    "Type": "🏢 Salle",
+                    "Jour": jour,
+                    "Horaire": horaire,
+                    "Ressource": lieu,
+                    "Nb_Cours": len(groupe),
+                    "Détail": " | ".join(groupe['Enseignements'].unique()),
+                    "Lignes": groupe.index.tolist(),
+                    "Nature": "Salle occupée par plusieurs cours"
+                })
+
+        # 2. CONFLITS D'ENSEIGNANT
+        grp_prof = df_check[
+            df_check["Enseignants"].notna() & (df_check["Enseignants"] != "Non défini") & (df_check["Enseignants"] != "")
+        ].groupby(['Jours', 'Horaire', 'Enseignants'])
+        for (jour, horaire, prof), groupe in grp_prof:
+            if len(groupe) > 1:
+                if ignorer_communs and est_cours_commun(groupe):
+                    continue
+                conflits.append({
+                    "Type": "👤 Enseignant",
+                    "Jour": jour,
+                    "Horaire": horaire,
+                    "Ressource": prof,
+                    "Nb_Cours": len(groupe),
+                    "Détail": " | ".join(groupe['Enseignements'].unique()),
+                    "Lignes": groupe.index.tolist(),
+                    "Nature": "Double affectation enseignant"
+                })
+
+        # 3. CONFLITS DE PROMOTION (chevauchement interne)
+        grp_promo = df_check[
+            df_check["Promotion"].notna() & (df_check["Promotion"] != "Non défini") & (df_check["Promotion"] != "")
+        ].groupby(['Jours', 'Horaire', 'Promotion'])
+        for (jour, horaire, promo), groupe in grp_promo:
+            if len(groupe) > 1:
+                # Si ce sont des TD/TP de groupes différents (G1, G2...), ce n'est pas un conflit
+                codes = [str(c).upper() for c in groupe['Code']]
+                groupes_detectes = set()
+                for c in codes:
+                    m = re.search(r'G(\d+)', c)
+                    if m:
+                        groupes_detectes.add(m.group(1))
+                if len(groupes_detectes) > 1 and all(('TD' in c or 'TP' in c) for c in codes):
+                    continue
+                conflits.append({
+                    "Type": "🎓 Promotion",
+                    "Jour": jour,
+                    "Horaire": horaire,
+                    "Ressource": promo,
+                    "Nb_Cours": len(groupe),
+                    "Détail": " | ".join(groupe['Enseignements'].unique()),
+                    "Lignes": groupe.index.tolist(),
+                    "Nature": "Chevauchement interne promotion"
+                })
+
+        return conflits
+
+    # -------------------------------------------------------------------------
+    # AFFICHAGE DES CONFLITS ACTUELS
+    # -------------------------------------------------------------------------
+    st.divider()
+    st.markdown("### 🔍 Analyse des conflits dans l'EDT actuel")
+
+    conflits_actuels = detecter_conflits(df, ignorer_communs=ignorer_communs)
+
+    if not conflits_actuels:
+        st.success("✅ Aucun conflit détecté dans l'EDT actuel !")
+    else:
+        st.warning(f"⚠️ {len(conflits_actuels)} conflit(s) détecté(s) dans l'EDT actuel")
+        df_conf = pd.DataFrame(conflits_actuels)
+        st.dataframe(
+            df_conf[['Type', 'Jour', 'Horaire', 'Ressource', 'Nb_Cours', 'Détail', 'Nature']],
+            use_container_width=True,
+            hide_index=True
+        )
+
+    # -------------------------------------------------------------------------
+    # FONCTION DE RÉSOLUTION (ALGORITHME DE DÉPLACEMENT)
+    # -------------------------------------------------------------------------
+    def resoudre_conflits(df_source: pd.DataFrame, respecter_communs: bool):
+        """
+        Tente de résoudre tous les conflits en déplaçant les cours vers des créneaux libres.
+        Si respecter_communs=True, les cours communs ne sont jamais déplacés.
+        """
+        df_prop = df_source.copy().reset_index(drop=True)
+        # S'assurer que les colonnes norm existent
+        if 'h_norm' not in df_prop.columns:
+            df_prop['h_norm'] = df_prop['Horaire'].apply(normalize)
+        if 'j_norm' not in df_prop.columns:
+            df_prop['j_norm'] = df_prop['Jours'].apply(normalize)
+
+        modifications = []
+        jours_dispo = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+        horaires_dispo = [
+            "8h - 9h30", "9h30 - 11h", "11h - 12h30",
+            "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
+        ]
+
+        def score_creneau(jour, horaire, row):
+            """Attribut un score de préférence à un créneau alternatif."""
+            score = 100
+            if strategie == "Remplir d'abord le matin":
+                try:
+                    idx = horaires_dispo.index(horaire)
+                    score -= idx * 10
+                except ValueError:
+                    pass
+            elif strategie == "Équilibrer la semaine":
+                nb_ce_jour = len(df_prop[(df_prop['Promotion'] == row['Promotion']) & (df_prop['Jours'] == jour)])
+                score -= nb_ce_jour * 15
+            return score
+
+        def creneau_est_libre(df_check, jour, horaire, row):
+            """Vérifie qu'un créneau est libre pour la salle, l'enseignant et la promotion."""
+            occ_salle = ((df_check['Jours'] == jour) & (df_check['Horaire'] == horaire) & (df_check['Lieu'] == row['Lieu'])).any()
+            occ_prof = ((df_check['Jours'] == jour) & (df_check['Horaire'] == horaire) & (df_check['Enseignants'] == row['Enseignants'])).any()
+            occ_promo = ((df_check['Jours'] == jour) & (df_check['Horaire'] == horaire) & (df_check['Promotion'] == row['Promotion'])).any()
+            return not (occ_salle or occ_prof or occ_promo)
+
+        # Boucle principale : on itère jusqu'à épuisement des conflits ou limite atteinte
+        for iteration in range(100):
+            conflits_restants = detecter_conflits(df_prop, ignorer_communs=respecter_communs)
+            if not conflits_restants:
+                break
+
+            conflit = conflits_restants[0]
+            lignes = conflit['Lignes']
+            deplace = False
+
+            for idx_ligne in lignes:
+                row = df_prop.loc[idx_ligne]
+
+                # Si on respecte les communs et que cette ligne fait partie d'un commun, on saute
+                if respecter_communs:
+                    # Vérifier si cette ligne est dans un groupe commun
+                    subset_test = df_prop[
+                        (df_prop['Jours'] == row['Jours']) &
+                        (df_prop['Horaire'] == row['Horaire']) &
+                        (df_prop['Enseignants'] == row['Enseignants']) &
+                        (df_prop['Enseignements'] == row['Enseignements'])
+                    ]
+                    if est_cours_commun(subset_test):
+                        continue
+
+                # Recherche du meilleur créneau alternatif
+                candidats = []
+                for j in jours_dispo:
+                    for h in horaires_dispo:
+                        if j == row['Jours'] and h == row['Horaire']:
+                            continue
+                        if creneau_est_libre(df_prop, j, h, row):
+                            candidats.append((score_creneau(j, h, row), j, h))
+
+                if candidats:
+                    candidats.sort(reverse=True)
+                    _, nouveau_jour, nouvel_horaire = candidats[0]
+
+                    modifications.append({
+                        "Enseignement": row['Enseignements'],
+                        "Enseignant": row['Enseignants'],
+                        "Promotion": row['Promotion'],
+                        "Lieu": row['Lieu'],
+                        "Ancien": f"{row['Jours']} | {row['Horaire']}",
+                        "Nouveau": f"{nouveau_jour} | {nouvel_horaire}",
+                        "Type_Conflit": conflit['Type'],
+                        "Raison": conflit['Nature']
+                    })
+
+                    # Application du déplacement
+                    df_prop.at[idx_ligne, 'Jours'] = nouveau_jour
+                    df_prop.at[idx_ligne, 'Horaire'] = nouvel_horaire
+                    df_prop.at[idx_ligne, 'j_norm'] = normalize(nouveau_jour)
+                    df_prop.at[idx_ligne, 'h_norm'] = normalize(nouvel_horaire)
+
+                    deplace = True
+                    break  # On recalcule les conflits après chaque déplacement
+
+            if not deplace:
+                # Aucun déplacement possible pour ce conflit
+                break
+
+        conflits_finaux = detecter_conflits(df_prop, ignorer_communs=respecter_communs)
+        return df_prop, modifications, conflits_finaux
+
+    # -------------------------------------------------------------------------
+    # BOUTONS DE GÉNÉRATION
+    # -------------------------------------------------------------------------
+    st.divider()
+    st.markdown("### 🛠️ Génération des EDT proposés")
+
+    col_gen1, col_gen2 = st.columns(2)
+    with col_gen1:
+        st.markdown("**📋 EDT Strict — Aucun chevauchement**")
+        st.caption("Tous les conflits sont résolus. Les matières communes sont également séparées.")
+        if st.button("🚀 Générer EDT Strict", use_container_width=True, type="primary", key="gen_strict"):
+            with st.spinner("Analyse et résolution complète en cours..."):
+                df_s, mods_s, reste_s = resoudre_conflits(df, respecter_communs=False)
+                st.session_state['df_strict'] = df_s
+                st.session_state['mods_strict'] = mods_s
+                st.session_state['reste_strict'] = reste_s
+                st.rerun()
+
+    with col_gen2:
+        st.markdown("**📚 EDT avec Matières Communes**")
+        st.caption("Les cours communs (même enseignant + même matière) restent en place. Seuls les vrais conflits sont déplacés.")
+        if st.button("🚀 Générer EDT avec Communs", use_container_width=True, type="primary", key="gen_commun"):
+            with st.spinner("Analyse avec matières communes en cours..."):
+                df_c, mods_c, reste_c = resoudre_conflits(df, respecter_communs=True)
+                st.session_state['df_commun'] = df_c
+                st.session_state['mods_commun'] = mods_c
+                st.session_state['reste_commun'] = reste_c
+                st.rerun()
+
+    # -------------------------------------------------------------------------
+    # AFFICHAGE DES RÉSULTATS
+    # -------------------------------------------------------------------------
+    tab_strict, tab_commun, tab_comp = st.tabs(["📋 EDT Strict", "📚 EDT avec Communs", "📊 Comparatif"])
+
+    # --- Onglet 1 : EDT Strict ---
+    with tab_strict:
+        if 'df_strict' in st.session_state:
+            df_s = st.session_state['df_strict']
+            mods_s = st.session_state.get('mods_strict', [])
+            reste_s = st.session_state.get('reste_strict', [])
+
+            st.success(f"✅ EDT Strict généré — **{len(mods_s)}** déplacement(s) effectué(s)")
+            if reste_s:
+                st.error(f"❌ **{len(reste_s)}** conflit(s) n'ont pas pu être résolus automatiquement")
+                st.dataframe(pd.DataFrame(reste_s)[['Type', 'Jour', 'Horaire', 'Ressource', 'Nature']],
+                           use_container_width=True, hide_index=True)
+
+            if mods_s:
+                with st.expander("📜 Voir les déplacements effectués"):
+                    st.dataframe(pd.DataFrame(mods_s), use_container_width=True, hide_index=True)
+
+            # Grille visuelle
+            st.markdown("#### 🗓️ Grille EDT Proposée (Strict)")
+            def fmt_case(rows):
+                out = []
+                for _, r in rows.iterrows():
+                    code_up = str(r['Code']).upper()
+                    if 'COURS' in code_up: nat, color = '📘', '#1e40af'
+                    elif 'TD' in code_up: nat, color = '📗', '#166534'
+                    else: nat, color = '🔴', '#991b1b'
+                    out.append(
+                        f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;"
+                        f"background:#f8fafc;border-radius:4px;'>"
+                        f"<b>{nat} {r['Enseignements']}</b><br>"
+                        f"<small>👤 {r['Enseignants']} | 📍 {r['Lieu']} | 🎓 {r['Promotion']}</small>"
+                        f"</div>"
+                    )
+                return "".join(out)
+
+            grid_s = df_s.groupby(['h_norm', 'j_norm']).apply(fmt_case, include_groups=False).unstack('j_norm')
+            grid_s = grid_s.reindex(
+                index=[normalize(h) for h in horaires_list],
+                columns=[normalize(j) for j in jours_list]
+            ).fillna("")
+            grid_s = grid_s[grid_s.any(axis=1)]
+            grid_s.index = [map_h.get(i, i) for i in grid_s.index]
+            grid_s.columns = [map_j.get(c, c) for c in grid_s.columns]
+            st.write(grid_s.to_html(escape=False), unsafe_allow_html=True)
+
+            # Exports
+            cs1, cs2, cs3 = st.columns(3)
+            buf_xl_s = io.BytesIO()
+            with pd.ExcelWriter(buf_xl_s, engine='xlsxwriter') as w:
+                df_s.to_excel(w, index=False, sheet_name='EDT_Strict')
+            cs1.download_button("📥 Excel", buf_xl_s.getvalue(), "EDT_Strict_2027.xlsx",
+                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                              use_container_width=True, key="dl_xl_strict")
+
+            html_s = generate_pro_html(df_s, "EDT Strict 2027", "Sans chevauchement — département ELT")
+            cs2.download_button("🌐 HTML", html_s, "EDT_Strict_2027.html", "text/html",
+                               use_container_width=True, key="dl_html_strict")
+
+            pdf_s, err_s = generate_pro_pdf(df_s, "EDT Strict 2027", "Sans chevauchement")
+            if pdf_s:
+                cs3.download_button("📄 PDF", pdf_s, "EDT_Strict_2027.pdf", "application/pdf",
+                                   use_container_width=True, key="dl_pdf_strict")
+        else:
+            st.info("ℹ️ Cliquez sur **Générer EDT Strict** pour voir le résultat.")
+
+    # --- Onglet 2 : EDT avec Matières Communes ---
+    with tab_commun:
+        if 'df_commun' in st.session_state:
+            df_c = st.session_state['df_commun']
+            mods_c = st.session_state.get('mods_commun', [])
+            reste_c = st.session_state.get('reste_commun', [])
+
+            st.success(f"✅ EDT avec Communs généré — **{len(mods_c)}** déplacement(s) effectué(s)")
+            if reste_c:
+                st.error(f"❌ **{len(reste_c)}** conflit(s) n'ont pas pu être résolus")
+                st.dataframe(pd.DataFrame(reste_c)[['Type', 'Jour', 'Horaire', 'Ressource', 'Nature']],
+                           use_container_width=True, hide_index=True)
+
+            if mods_c:
+                with st.expander("📜 Voir les déplacements effectués"):
+                    st.dataframe(pd.DataFrame(mods_c), use_container_width=True, hide_index=True)
+
+            st.markdown("#### 🗓️ Grille EDT Proposée (Matières Communes autorisées)")
+            grid_c = df_c.groupby(['h_norm', 'j_norm']).apply(fmt_case, include_groups=False).unstack('j_norm')
+            grid_c = grid_c.reindex(
+                index=[normalize(h) for h in horaires_list],
+                columns=[normalize(j) for j in jours_list]
+            ).fillna("")
+            grid_c = grid_c[grid_c.any(axis=1)]
+            grid_c.index = [map_h.get(i, i) for i in grid_c.index]
+            grid_c.columns = [map_j.get(c, c) for c in grid_c.columns]
+            st.write(grid_c.to_html(escape=False), unsafe_allow_html=True)
+
+            cc1, cc2, cc3 = st.columns(3)
+            buf_xl_c = io.BytesIO()
+            with pd.ExcelWriter(buf_xl_c, engine='xlsxwriter') as w:
+                df_c.to_excel(w, index=False, sheet_name='EDT_Communs')
+            cc1.download_button("📥 Excel", buf_xl_c.getvalue(), "EDT_Communs_2027.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               use_container_width=True, key="dl_xl_commun")
+
+            html_c = generate_pro_html(df_c, "EDT avec Matières Communes 2027", "Cours communs autorisés — département ELT")
+            cc2.download_button("🌐 HTML", html_c, "EDT_Communs_2027.html", "text/html",
+                               use_container_width=True, key="dl_html_commun")
+
+            pdf_c, err_c = generate_pro_pdf(df_c, "EDT avec Matières Communes 2027", "Cours communs autorisés")
+            if pdf_c:
+                cc3.download_button("📄 PDF", pdf_c, "EDT_Communs_2027.pdf", "application/pdf",
+                                   use_container_width=True, key="dl_pdf_commun")
+        else:
+            st.info("ℹ️ Cliquez sur **Générer EDT avec Communs** pour voir le résultat.")
+
+    # --- Onglet 3 : Comparatif ---
+    with tab_comp:
+        st.markdown("#### 📊 Tableau comparatif des deux versions")
+        data_comp = []
+        if 'df_strict' in st.session_state:
+            data_comp.append({
+                "Version": "EDT Strict (sans aucun conflit)",
+                "Déplacements effectués": len(st.session_state.get('mods_strict', [])),
+                "Conflits restants": len(st.session_state.get('reste_strict', [])),
+                "Gestion des matières communes": "Séparées (déplacées comme des conflits normaux)",
+                "Usage recommandé": "Examens finaux, semaines de contrôle"
+            })
+        if 'df_commun' in st.session_state:
+            data_comp.append({
+                "Version": "EDT avec Matières Communes",
+                "Déplacements effectués": len(st.session_state.get('mods_commun', [])),
+                "Conflits restants": len(st.session_state.get('reste_commun', [])),
+                "Gestion des matières communes": "Conservées (autorisées)",
+                "Usage recommandé": "Semaine normale, cours magistraux communs"
+            })
+
+        if data_comp:
+            st.dataframe(pd.DataFrame(data_comp), use_container_width=True, hide_index=True)
+            st.caption("💡 **Conseil** : La version *avec Communs* est généralement plus proche de votre EDT actuel car elle préserve les cours magistraux communs (même enseignant, même matière, plusieurs promotions en même temps).")
+        else:
+            st.info("Générez les deux versions ci-dessus pour activer le comparatif.")
+
+
+# =============================================================================
+# ROUTAGE FINAL MIS À JOUR (remplacez le bloc existant à la fin du fichier)
+# =============================================================================
+if module_sel == "📊 Suivi d'Assiduite":
+    run_Assiduité()
+elif module_sel == "📅 Gestion des EDTs & Admin":
+    # Le module 2 (Gestion EDT) est déjà inclus dans le corps du fichier
+    pass
+elif module_sel == "🧠 EDT Intelligent":
+    run_edt_intelligent()
+else:
+    st.error(f"Module inconnu : {module_sel}")
 
