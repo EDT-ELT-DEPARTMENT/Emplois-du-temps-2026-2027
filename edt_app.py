@@ -12611,7 +12611,7 @@ if __name__ == "__main__":
 if df_contacts is not None and not df_contacts.empty:
     st.divider()
     st.markdown("""
-        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); 
+         
                     padding: 18px; border-radius: 14px; color: white; margin-bottom: 18px;
                     box-shadow: 0 8px 24px rgba(30,58,138,0.25);">
             <h3 style="margin:0; font-size: 20px;">👥 Répertoire du Personnel Enseignant</h3>
