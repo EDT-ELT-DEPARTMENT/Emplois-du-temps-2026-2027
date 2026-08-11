@@ -12174,7 +12174,8 @@ else:
 # MODULE 3 : EDT INTELLIGENT — DÉTECTION & RÉSOLUTION DE CONFLITS
 # =============================================================================
 
-def run_edt_intelligent():
+st.divider()
+st.markdown("""
     st.title("🧠 EDT Intelligent — Détection & Résolution de Conflits")
     st.caption("Analyse avancée des chevauchements avec gestion des matières communes")
 
