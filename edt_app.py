@@ -644,20 +644,20 @@ def run_Assiduité():
             return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]      
     
     def trouver_requete_existante(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
-    if MODE_SUPABASE:
-        try:
-            query = supabase.table("requetes_absences").select("id,statut")\
-                .eq("nom_etudiant", nom_etudiant)\
-                .eq("matiere", matiere)\
-                .eq("statut", "En attente")
-            if date_abs: query = query.eq("date_absence", date_abs)
-            if jour_abs: query = query.eq("jour_absence", jour_abs)
-            if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
-            res = query.limit(1).execute()
-            return res.data[0] if res.data else None
-        except Exception as e:
-            st.warning(f"⚠️ Vérification justificatif lente, réessayez : {e}")
-            return None
+        if MODE_SUPABASE:
+            try:
+                query = supabase.table("requetes_absences").select("id,statut")\
+                    .eq("nom_etudiant", nom_etudiant)\
+                    .eq("matiere", matiere)\
+                    .eq("statut", "En attente")
+                if date_abs: query = query.eq("date_absence", date_abs)
+                if jour_abs: query = query.eq("jour_absence", jour_abs)
+                if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
+                res = query.limit(1).execute()
+                return res.data[0] if res.data else None
+            except Exception as e:
+                st.warning(f"⚠️ Vérification justificatif lente, réessayez : {e}")
+                return None
     # Mode local
     for r in st.session_state.requetes:
         if (r.get("nom_etudiant") == nom_etudiant and 
