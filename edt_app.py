@@ -11804,23 +11804,7 @@ if not df_matieres_src.empty:
 
 else:
     st.warning("⚠️ Données EDT non disponibles pour le répertoire des matières.")
-```
-
----
-
-**Instructions d'intégration :**
-
-1. Copiez ce bloc de code
-2. Collez-le **après** le bloc du répertoire étudiants (juste avant `if __name__ == "__main__":` ou à la fin de votre code principal)
-3. Assurez-vous que les imports `from collections import defaultdict` et `from pathlib import Path` sont bien présents en haut du fichier (ils le sont déjà dans votre code)
-
-**Fonctionnalités ajoutées :**
-
-- **Répertoire matières** : Sélection d'une matière → 6 afficheurs numériques (séances, cours, TD, TP, promotions, enseignants)
-- **Vue d'ensemble** : Tableau global de toutes les matières avec compteurs
-- **Matières communes** : Détection automatique des matières mutualisées entre promotions + comparaison croisée entre 2 promotions au choix
-- **Exports Excel** pour chaque section
-                    st.write("Jours trouvés :", df_filtre["Jours"].unique().tolist())
+    st.write("Jours trouvés :", df_filtre["Jours"].unique().tolist())
 if __name__ == "__main__":
     run_edt_intelligent()
 # ═════════════════════════════════════════════════════════════════════════════
