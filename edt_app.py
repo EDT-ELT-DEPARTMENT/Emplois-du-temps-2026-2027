@@ -2115,168 +2115,152 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     st.caption("Si vous pensez qu'il s'agit d'une erreur, contactez l'enseignant de la matiere concernée.")
 
             else:
-                pwd_admin = st.text_input("🔑 Code Admin :", type="password", key="pwd_admin")
-
-                if pwd_admin == CODE_ADMIN:
-                    ancre_admin_justif = st.empty()
-                st.subheader("⚖️ Dossiers en attente")
-                if section_choisie == "📩 Justificatifs — Admin":
-                    st.scroll_to(ancre_admin_justif, block="start")
-
-                    if MODE_SUPABASE:
-                        resultats = charger_requetes_supabase(statut="En attente")
-                    else:
-                        resultats = [r for r in st.session_state.requetes if r.get("statut") == "En attente"]
-
-                    if not resultats:
-                        st.info("📭 Aucun dossier en attente.")
-                    else:
-                        for req in resultats:
-                            with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']} ({req.get('date_absence','')} | {req.get('jour_absence','')} {req.get('horaire_absence','')})"):
-                                st.write(f"**Promotion :** {req['promotion']}")
-                                st.write(f"**Séance concernée :** {req.get('jour_absence','')} {req.get('horaire_absence','')} — {req.get('date_absence','')}")
-                                st.write(f"**Motif :** {req['motif']}")
-                                st.write(f"**Date de dépôt :** {req['date_demande']}")
-
-                                pdf_decoded = base64.b64decode(req['justificatif_pdf'])
-                                st.download_button(
-                                    label="👁️ Télécharger le PDF",
-                                    data=pdf_decoded,
-                                    file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"dl_{req['id']}"
-                                )
-
-                                col_acc, col_rej = st.columns(2)
-                                if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
-                                    d_abs = req.get("date_absence")
-                                    j_abs = req.get("jour_absence")
-                                    h_abs = req.get("horaire_absence")
+                # ═══════════════════════════════════════════════════════
+                # ESPACE ADMINISTRATION (DÉCISION) — CODE REQUIS
+                # ═══════════════════════════════════════════════════════
+                st.divider()
+                with st.expander("🔐 Espace Administration — Décision sur les justificatifs"):
+                    pwd_admin = st.text_input("🔑 Code Admin :", type="password", key="pwd_admin")
+    
+                    if pwd_admin == CODE_ADMIN:
+                        ancre_admin_justif = st.empty()
+                        st.subheader("⚖️ Dossiers en attente")
+                        if section_choisie == "📩 Justificatifs — Admin":
+                            st.scroll_to(ancre_admin_justif, block="start")
+    
+                        if MODE_SUPABASE:
+                            resultats = charger_requetes_supabase(statut="En attente")
+                        else:
+                            resultats = [r for r in st.session_state.requetes if r.get("statut") == "En attente"]
+    
+                        if not resultats:
+                            st.info("📭 Aucun dossier en attente.")
+                        else:
+                            for req in resultats:
+                                with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']} ({req.get('date_absence','')} | {req.get('jour_absence','')} {req.get('horaire_absence','')})"):
+                                    st.write(f"**Promotion :** {req['promotion']}")
+                                    st.write(f"**Séance concernée :** {req.get('jour_absence','')} {req.get('horaire_absence','')} — {req.get('date_absence','')}")
+                                    st.write(f"**Motif :** {req['motif']}")
+                                    st.write(f"**Date de dépôt :** {req['date_demande']}")
+    
+                                    pdf_decoded = base64.b64decode(req['justificatif_pdf'])
+                                    st.download_button(
+                                        label="👁️ Télécharger le PDF",
+                                        data=pdf_decoded,
+                                        file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
+                                        mime="application/pdf",
+                                        key=f"dl_{req['id']}"
+                                    )
+    
+                                    col_acc, col_rej = st.columns(2)
+                                    if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
+                                        d_abs = req.get("date_absence")
+                                        j_abs = req.get("jour_absence")
+                                        h_abs = req.get("horaire_absence")
+                                        if MODE_SUPABASE:
+                                            mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
+                                            rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'], d_abs, j_abs, h_abs)
+                                        else:
+                                            for r in st.session_state.requetes:
+                                                if r["id"] == req["id"]:
+                                                    r["statut"] = "Favorable"
+                                            for a in st.session_state.absences:
+                                                if (a.get("etud_non_eligible") == req['nom_etudiant']
+                                                        and a.get("matiere") == req['matiere']):
+                                                    if d_abs and a.get("date_absence") != d_abs: continue
+                                                    if j_abs and a.get("jour_absence") != j_abs: continue
+                                                    if h_abs and a.get("horaire_absence") != h_abs: continue
+                                                    a["justifie"] = True
+                                                    a["cause_non_eligibilite"] = "justifiee - " + str(a.get("cause_non_eligibilite", ""))
+    
+                                        # Notifications email...
+                                        email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
+                                        if email_etu:
+                                            envoyer_notification_decision_etudiant(email_etu, req['nom_etudiant'], req['matiere'], "Favorable", req.get('motif', ''))
+                                            st.info(f"📧 Notification envoyée à l'étudiant {req['nom_etudiant']}")
+    
+                                        ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
+                                        if ens_rows.empty:
+                                            ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
+                                        if not ens_rows.empty:
+                                            nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
+                                            if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
+                                                email_ens = None
+                                                nom_fam_cible = extraire_nom_famille(nom_ens)
+                                                for _, row_ens in df_ens.iterrows():
+                                                    nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
+                                                    if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
+                                                        email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
+                                                        if email_ens and "@" in email_ens:
+                                                            break
+                                                if email_ens and "@" in str(email_ens):
+                                                    envoyer_notification_decision_enseignant(email_ens, nom_ens, req['nom_etudiant'], req['matiere'], "Favorable", req.get('promotion', ''))
+                                                    st.info(f"📧 Notification envoyée à l'enseignant {nom_ens}")
+    
+                                        st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
+                                        time.sleep(0.5)
+                                        st.rerun()
+    
+                                    if col_rej.button("❌ REJETER", key=f"rej_{req['id']}", use_container_width=True):
+                                        if MODE_SUPABASE:
+                                            mettre_a_jour_statut_requete_supabase(req["id"], "Defavorable")
+                                        else:
+                                            for r in st.session_state.requetes:
+                                                if r["id"] == req["id"]:
+                                                    r["statut"] = "Defavorable"
+    
+                                        email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
+                                        if email_etu:
+                                            envoyer_notification_decision_etudiant(email_etu, req['nom_etudiant'], req['matiere'], "Defavorable", req.get('motif', ''))
+                                            st.info(f"📧 Notification de rejet envoyée à l'étudiant {req['nom_etudiant']}")
+    
+                                        ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
+                                        if ens_rows.empty:
+                                            ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
+                                        if not ens_rows.empty:
+                                            nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
+                                            if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
+                                                email_ens = None
+                                                nom_fam_cible = extraire_nom_famille(nom_ens)
+                                                for _, row_ens in df_ens.iterrows():
+                                                    nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
+                                                    if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
+                                                        email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
+                                                        if email_ens and "@" in email_ens:
+                                                            break
+                                                if email_ens and "@" in str(email_ens):
+                                                    envoyer_notification_decision_enseignant(email_ens, nom_ens, req['nom_etudiant'], req['matiere'], "Defavorable", req.get('promotion', ''))
+                                                    st.info(f"📧 Notification de rejet envoyée à l'enseignant {nom_ens}")
+    
+                                        st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
+                                        time.sleep(0.5)
+                                        st.rerun()
+    
+                        with st.expander("🛠️ Zone maintenance"):
+                            st.write("Effacer toutes les requêtes de justificatifs.")
+                            if st.button("🔄 RÉINITIALISER", type="primary"):
+                                st.session_state.confirm_reset = True
+    
+                            if st.session_state.get("confirm_reset", False):
+                                st.error("⚠️ Cette action est IRRÉVERSIBLE !")
+                                c_ok, c_cancel = st.columns(2)
+                                if c_ok.button("🔥 CONFIRMER", type="primary"):
                                     if MODE_SUPABASE:
-                                        mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
-                                        rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'], d_abs, j_abs, h_abs)
+                                        reinitialiser_requetes_supabase()
                                     else:
-                                        for r in st.session_state.requetes:
-                                            if r["id"] == req["id"]:
-                                                r["statut"] = "Favorable"
-                                        for a in st.session_state.absences:
-                                            if (a.get("etud_non_eligible") == req['nom_etudiant']
-                                                    and a.get("matiere") == req['matiere']):
-                                                if d_abs and a.get("date_absence") != d_abs: continue
-                                                if j_abs and a.get("jour_absence") != j_abs: continue
-                                                if h_abs and a.get("horaire_absence") != h_abs: continue
-                                                a["justifie"] = True
-                                                a["cause_non_eligibilite"] = "justifiee - " + str(a.get("cause_non_eligibilite", ""))
-
-                                    # ═══ NOTIFICATIONS EMAIL ═══
-                                    # 1. Notification à l'étudiant
-                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
-                                    if email_etu:
-                                        envoyer_notification_decision_etudiant(
-                                            email_etu, req['nom_etudiant'], req['matiere'],
-                                            "Favorable", req.get('motif', '')
-                                        )
-                                        st.info(f"📧 Notification envoyée à l'étudiant {req['nom_etudiant']}")
-
-                                    # 2. Notification à l'enseignant responsable
-                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
-                                    if ens_rows.empty:
-                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
-                                    if not ens_rows.empty:
-                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
-                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                            # Recherche email dans df_ens directement
-                                            email_ens = None
-                                            nom_fam_cible = extraire_nom_famille(nom_ens)
-                                            for _, row_ens in df_ens.iterrows():
-                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
-                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
-                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                    if email_ens and "@" in email_ens:
-                                                        break
-                                            if email_ens and "@" in str(email_ens):
-                                                envoyer_notification_decision_enseignant(
-                                                    email_ens, nom_ens, req['nom_etudiant'],
-                                                    req['matiere'], "Favorable", req.get('promotion', '')
-                                                )
-                                                st.info(f"📧 Notification envoyée à l'enseignant {nom_ens}")
-                                            else:
-                                                st.caption(f"ℹ️ Email de l'enseignant {nom_ens} non trouvé dans le répertoire.")
-
-                                    st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
+                                        st.session_state.requetes = []
+                                    st.session_state.confirm_reset = False
+                                    st.success("✅ Base réinitialisée.")
                                     time.sleep(0.5)
                                     st.rerun()
-
-                                if col_rej.button("❌ REJETER", key=f"rej_{req['id']}", use_container_width=True):
-                                    if MODE_SUPABASE:
-                                        mettre_a_jour_statut_requete_supabase(req["id"], "Defavorable")
-                                    else:
-                                        for r in st.session_state.requetes:
-                                            if r["id"] == req["id"]:
-                                                r["statut"] = "Defavorable"
-
-                                    # ═══ NOTIFICATIONS EMAIL (REJET) ═══
-                                    # 1. Notification à l'étudiant
-                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
-                                    if email_etu:
-                                        envoyer_notification_decision_etudiant(
-                                            email_etu, req['nom_etudiant'], req['matiere'],
-                                            "Defavorable", req.get('motif', '')
-                                        )
-                                        st.info(f"📧 Notification de rejet envoyée à l'étudiant {req['nom_etudiant']}")
-
-                                    # 2. Notification à l'enseignant responsable
-                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
-                                    if ens_rows.empty:
-                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
-                                    if not ens_rows.empty:
-                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
-                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                            # Recherche email dans df_ens directement
-                                            email_ens = None
-                                            nom_fam_cible = extraire_nom_famille(nom_ens)
-                                            for _, row_ens in df_ens.iterrows():
-                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
-                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
-                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                    if email_ens and "@" in email_ens:
-                                                        break
-                                            if email_ens and "@" in str(email_ens):
-                                                envoyer_notification_decision_enseignant(
-                                                    email_ens, nom_ens, req['nom_etudiant'],
-                                                    req['matiere'], "Defavorable", req.get('promotion', '')
-                                                )
-                                                st.info(f"📧 Notification de rejet envoyée à l'enseignant {nom_ens}")
-
-                                    st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
+                                if c_cancel.button("❌ ANNULER"):
+                                    st.session_state.confirm_reset = False
+                                    st.info("Action annulée.")
                                     time.sleep(0.5)
                                     st.rerun()
-
-                    with st.expander("🛠️ Zone maintenance"):
-                        st.write("Effacer toutes les requêtes de justificatifs.")
-                        if st.button("🔄 RÉINITIALISER", type="primary"):
-                            st.session_state.confirm_reset = True
-
-                        if st.session_state.get("confirm_reset", False):
-                            st.error("⚠️ Cette action est IRRÉVERSIBLE !")
-                            c_ok, c_cancel = st.columns(2)
-                            if c_ok.button("🔥 CONFIRMER", type="primary"):
-                                if MODE_SUPABASE:
-                                    reinitialiser_requetes_supabase()
-                                else:
-                                    st.session_state.requetes = []
-                                st.session_state.confirm_reset = False
-                                st.success("✅ Base réinitialisée.")
-                                time.sleep(0.5)
-                                st.rerun()
-                            if c_cancel.button("❌ ANNULER"):
-                                st.session_state.confirm_reset = False
-                                st.info("Action annulée.")
-                                time.sleep(0.5)
-                                st.rerun()
-
-                elif pwd_admin != "":
-                    st.error("❌ Code incorrect.")
+    
+                    elif pwd_admin != "":
+                        st.error("❌ Code incorrect.")
 
     # =============================================================================
     # ONGLET 3 : BILANS ET EXPORTS
@@ -2532,54 +2516,88 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     
         # ONGLET 5 : MON EDT (ÉTUDIANT CONNECTÉ UNIQUEMENT)
         # =============================================================================
+        # =============================================================================
+        # ONGLET 5 : MON EDT (ÉTUDIANT) + CONSULTATION ADMIN
+        # =============================================================================
         with tab5:
             st.header("📅 Mon Emploi du Temps")
-            st.caption("Consultation et téléchargement de votre EDT hebdomadaire")
+            st.caption("Consultation et téléchargement de l'EDT hebdomadaire")
 
-            if not étudiant_connecte:
-                st.info("ℹ️ Cet onglet est réservé aux étudiants connectés. Retournez à l'onglet 📝 Suivi d'Assiduité pour vous authentifier.")
-            else:
+            # ═══════════════════════════════════════════════════════
+            # MODE SUPERVISION (Admin / Enseignant)
+            # ═══════════════════════════════════════════════════════
+            if is_admin_edt or is_enseignant_connecte:
+                st.success("👤 Mode supervision — Sélectionnez un étudiant pour consulter son EDT individuel")
+                if df_etu.empty:
+                    st.error("❌ Données étudiants non disponibles.")
+                else:
+                    if "Nom_Complet" not in df_etu.columns:
+                        col_n = next((c for c in df_etu.columns if c.strip().upper() == "NOM"), None)
+                        col_p = next((c for c in df_etu.columns if c.strip().upper() in ["PRÉNOM", "PRENOM"]), None)
+                        if col_n and col_p:
+                            df_etu["Nom_Complet"] = df_etu[col_n].astype(str).str.strip().str.upper() + " " + df_etu[col_p].astype(str).str.strip().str.title()
+                    
+                    liste_etudiants = sorted(df_etu["Nom_Complet"].dropna().unique())
+                    sel_etud_admin = st.selectbox("🔍 Sélectionner un étudiant :", [""] + liste_etudiants, key="sel_etud_admin_tab5")
+                    
+                    if sel_etud_admin:
+                        nom_etu = sel_etud_admin
+                        row_etu = df_etu[df_etu["Nom_Complet"] == nom_etu].iloc[0]
+                        promo_etu = str(row_etu.get("Promotion", "")).strip()
+                        groupe_etu = extraire_groupe_etudiant(df_etu, nom_etu)
+                    else:
+                        st.info("👆 Sélectionnez un étudiant dans la liste ci-dessus.")
+                        st.stop()
+            
+            # ═══════════════════════════════════════════════════════
+            # MODE ÉTUDIANT CONNECTÉ
+            # ═══════════════════════════════════════════════════════
+            elif étudiant_connecte:
                 promo_etu = str(étudiant_connecte.get("promotion", "")).strip()
                 nom_etu   = str(étudiant_connecte.get("nom", "Étudiant")).strip()
-
-                # ─── DÉTECTION DU GROUPE ───
                 groupe_etu = extraire_groupe_etudiant(df_etu, nom_etu)
+            
+            else:
+                st.info("ℹ️ Cet onglet est réservé aux étudiants connectés ou au personnel administratif.")
+                st.stop()
 
-                st.success(f"👤 **{nom_etu}** | 🎓 **{promo_etu}** | 👥 **{groupe_etu or 'Groupe non détecté'}**")
+            # ─── AFFICHAGE COMMUN (Admin & Étudiant) ───
+            st.success(f"👤 **{nom_etu}** | 🎓 **{promo_etu}** | 👥 **{groupe_etu or 'Groupe non détecté'}**")
 
-                if df_edt.empty:
-                    st.error("❌ Les données EDT ne sont pas disponibles.")
+            if df_edt.empty:
+                st.error("❌ Les données EDT ne sont pas disponibles.")
+            else:
+                # ─── FILTRAGE INTELLIGENT PAR GROUPE ───
+                df_edt_etu = filtrer_edt_par_groupe(df_edt, promo_etu, groupe_etu)
+
+                if df_edt_etu.empty:
+                    st.warning(f"⚠️ Aucun cours trouvé pour **{promo_etu}** / **{groupe_etu or 'tous groupes'}**.")
                 else:
-                    # ─── FILTRAGE INTELLIGENT PAR GROUPE ───
-                    df_edt_etu = filtrer_edt_par_groupe(df_edt, promo_etu, groupe_etu)
+                    # ─── COMPTEURS ───
+                    n_cours = len(df_edt_etu[df_edt_etu["Code"].astype(str).str.upper().str.contains("COURS", na=False)])
+                    n_td    = len(df_edt_etu[df_edt_etu["Code"].astype(str).str.upper().str.contains("TD", na=False)])
+                    n_tp    = len(df_edt_etu[df_edt_etu["Code"].astype(str).str.upper().str.contains("TP", na=False)])
 
-                    if df_edt_etu.empty:
-                        st.warning(f"⚠️ Aucun cours trouvé pour **{promo_etu}** / **{groupe_etu or 'tous groupes'}**.")
-                    else:
-                        # ─── COMPTEURS ───
-                        n_cours = len(df_edt_etu[df_edt_etu["Code"].astype(str).str.upper().str.contains("COURS", na=False)])
-                        n_td    = len(df_edt_etu[df_edt_etu["Code"].astype(str).str.upper().str.contains("TD", na=False)])
-                        n_tp    = len(df_edt_etu[df_edt_etu["Code"].astype(str).str.upper().str.contains("TP", na=False)])
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("📘 Cours", n_cours)
+                    c2.metric("📗 TD", n_td)
+                    c3.metric("🔴 TP", n_tp)
+                    c4.metric("Séances", len(df_edt_etu))
 
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("📘 Cours", n_cours)
-                        c2.metric("📗 TD", n_td)
-                        c3.metric("🔴 TP", n_tp)
-                        c4.metric("Séances", len(df_edt_etu))
+                    # ─── GRILLE EDT ───
+                    HORAIRES_ETU = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"]
+                    JOURS_ETU = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
-                        # ─── GRILLE EDT ───
-                        HORAIRES_ETU = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"]
-                        JOURS_ETU = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+                    grille_html, grille_text = construire_grille_edt(df_edt_etu, HORAIRES_ETU, JOURS_ETU)
 
-                        grille_html, grille_text = construire_grille_edt(df_edt_etu, HORAIRES_ETU, JOURS_ETU)
+                    if not grille_html.empty:
+                        st.markdown("### 📋 Emploi du temps hebdomadaire")
+                        st.write(grille_html.to_html(escape=False), unsafe_allow_html=True)
 
-                        if not grille_html.empty:
-                            st.markdown("### 📋 Votre emploi du temps hebdomadaire")
-                            st.write(grille_html.to_html(escape=False), unsafe_allow_html=True)
+                        groupe_suffix = f"_{groupe_etu}" if groupe_etu else ""
 
-                            # ─── EXPORT HTML ───
-                            groupe_suffix = f"_{groupe_etu}" if groupe_etu else ""
-                            html_doc = f"""<!DOCTYPE html>
+                        # ─── EXPORT HTML ───
+                        html_doc = f"""<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -2616,17 +2634,32 @@ tr:nth-child(even){{background-color:#f8fafc;}}
 </body>
 </html>"""
 
-                            st.download_button(
-                                label="🌐 Télécharger mon EDT (HTML)",
-                                data=html_doc,
-                                file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{groupe_suffix}.html",
-                                mime="text/html",
-                                use_container_width=True,
-                                key="dl_edt_etudiant_final"
-                            )
-                        else:
-                            st.info("ℹ️ Aucun cours sur les créneaux standards pour cette sélection.")
+                        st.download_button(
+                            label="🌐 Télécharger l'EDT (HTML)",
+                            data=html_doc,
+                            file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{groupe_suffix}.html",
+                            mime="text/html",
+                            use_container_width=True,
+                            key="dl_edt_etudiant_html"
+                        )
 
+                        # ─── EXPORT PDF ───
+                        if not grille_text.empty:
+                            try:
+                                pdf_bytes = generate_edt_etudiant_pdf(nom_etu, promo_etu, groupe_etu, grille_text)
+                                if pdf_bytes:
+                                    st.download_button(
+                                        label="📄 Télécharger l'EDT (PDF)",
+                                        data=pdf_bytes,
+                                        file_name=f"EDT_{nom_etu.replace(' ', '_')}_{promo_etu}{groupe_suffix}.pdf",
+                                        mime="application/pdf",
+                                        use_container_width=True,
+                                        key="dl_edt_etudiant_pdf"
+                                    )
+                            except Exception as e_pdf:
+                                st.warning(f"⚠️ Génération PDF indisponible : {e_pdf}")
+                    else:
+                        st.info("ℹ️ Aucun cours sur les créneaux standards pour cette sélection.")
     # --- CONNEXION BASE DE DONNÉES ---
     try:
         URL = st.secrets["SUPABASE_URL"]
