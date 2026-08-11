@@ -2733,20 +2733,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 "application/pdf"
             )
             
-        elif mode_view == "Promotion":
-            import io
-            from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
-            from reportlab.lib import colors
-            from reportlab.lib.pagesizes import landscape, A4
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.units import mm
-
-            p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
-            df_p = df[df["Promotion"] == p_sel].copy()
-
-            st.markdown(f"### 📚 EDT Promotion : {p_sel}")
-
+        
             # ═══════════════════════════════════════════════════════
             # 1) AFFICHAGE HTML (Streamlit) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
