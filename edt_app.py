@@ -11914,4 +11914,222 @@ if df_etu_edt is not None and not df_etu_edt.empty:
         key=f"dl_etudiants_{filtre_actif_etu}_admin"
     )
 
+# =============================================================================
+# SNIPPET : RÉPERTOIRE DES MATIÈRES PAR PROMOTION
+# À intégrer dans votre fichier Streamlit principal
+# =============================================================================
+
+def render_repertoire_matieres(df_edt):
+    """Affiche le répertoire des matières pour une promotion sélectionnée
+    avec détection des matières communes entre promotions."""
+
+    st.header("📚 Répertoire des Matières par Promotion")
+    st.caption("Consultation des enseignements et détection des matières communes entre promotions")
+
+    if df_edt is None or df_edt.empty:
+        st.error("❌ Les données EDT ne sont pas disponibles.")
+        return
+
+    df_rep = df_edt.copy()
+    df_rep = df_rep[
+        df_rep['Promotion'].notna() & 
+        (df_rep['Promotion'].astype(str).str.strip() != '') & 
+        (df_rep['Promotion'].astype(str).str.strip().str.lower() != 'non défini') &
+        (df_rep['Promotion'].astype(str).str.strip().str.lower() != 'non defini')
+    ]
+
+    promos = sorted(df_rep['Promotion'].unique())
+    if not promos:
+        st.warning("⚠️ Aucune promotion trouvée.")
+        return
+
+    promo_sel = st.selectbox("🎓 Sélectionner une promotion :", promos, key="rep_promo_sel")
+    df_promo = df_rep[df_rep['Promotion'] == promo_sel].copy()
+
+    if df_promo.empty:
+        st.info(f"ℹ️ Aucune matière enregistrée pour **{promo_sel}**.")
+        return
+
+    def get_type_enseignement(code):
+        c = str(code).upper()
+        if 'COURS' in c:
+            return 'Cours'
+        elif 'TD' in c:
+            return 'TD'
+        elif 'TP' in c:
+            return 'TP'
+        else:
+            return 'Autre'
+
+    df_promo['Type'] = df_promo['Code'].apply(get_type_enseignement)
+
+    # ─── AFFICHEURS NUMÉRIQUES ───
+    st.markdown("### 📊 Vue d'ensemble des enseignements")
+    matieres_cours = df_promo[df_promo['Type'] == 'Cours']['Enseignements'].dropna().unique()
+    matieres_td = df_promo[df_promo['Type'] == 'TD']['Enseignements'].dropna().unique()
+    matieres_tp = df_promo[df_promo['Type'] == 'TP']['Enseignements'].dropna().unique()
+    all_matieres = df_promo['Enseignements'].dropna().unique()
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(
+            f"<div style='background:linear-gradient(135deg,#1E3A8A,#3B82F6);padding:20px;border-radius:12px;text-align:center;color:white;'>"
+            f"<div style='font-size:32px;font-weight:800;'>📘 {len(matieres_cours)}</div>"
+            f"<div style='font-size:13px;opacity:0.9;margin-top:4px;'>Matières de Cours</div></div>",
+            unsafe_allow_html=True
+        )
+    with c2:
+        st.markdown(
+            f"<div style='background:linear-gradient(135deg,#15803d,#22c55e);padding:20px;border-radius:12px;text-align:center;color:white;'>"
+            f"<div style='font-size:32px;font-weight:800;'>📗 {len(matieres_td)}</div>"
+            f"<div style='font-size:13px;opacity:0.9;margin-top:4px;'>Matières de TD</div></div>",
+            unsafe_allow_html=True
+        )
+    with c3:
+        st.markdown(
+            f"<div style='background:linear-gradient(135deg,#b45309,#f59e0b);padding:20px;border-radius:12px;text-align:center;color:white;'>"
+            f"<div style='font-size:32px;font-weight:800;'>🔴 {len(matieres_tp)}</div>"
+            f"<div style='font-size:13px;opacity:0.9;margin-top:4px;'>Matières de TP</div></div>",
+            unsafe_allow_html=True
+        )
+    with c4:
+        st.markdown(
+            f"<div style='background:linear-gradient(135deg,#334155,#64748b);padding:20px;border-radius:12px;text-align:center;color:white;'>"
+            f"<div style='font-size:32px;font-weight:800;'>📚 {len(all_matieres)}</div>"
+            f"<div style='font-size:13px;opacity:0.9;margin-top:4px;'>Total Matières Uniques</div></div>",
+            unsafe_allow_html=True
+        )
+
+    st.divider()
+
+    # ─── TABLEAU DÉTAILLÉ ───
+    st.markdown("### 📋 Détail des enseignements")
+    df_detail = (
+        df_promo[['Enseignements', 'Type', 'Enseignants', 'Jours', 'Horaire', 'Lieu']]
+        .drop_duplicates()
+        .sort_values(['Enseignements', 'Type'])
+        .reset_index(drop=True)
+    )
+
+    def badge_type(t):
+        if t == 'Cours':
+            return "<span style='background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;'>📘 Cours</span>"
+        elif t == 'TD':
+            return "<span style='background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;'>📗 TD</span>"
+        elif t == 'TP':
+            return "<span style='background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;'>🔴 TP</span>"
+        else:
+            return "<span style='background:#f3f4f6;color:#374151;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;'>⚪ Autre</span>"
+
+    df_detail['Type_Badge'] = df_detail['Type'].apply(badge_type)
+
+    st.dataframe(
+        df_detail[['Enseignements', 'Type_Badge', 'Enseignants', 'Jours', 'Horaire', 'Lieu']]
+        .rename(columns={'Type_Badge': 'Type', 'Enseignements': 'Matière', 'Enseignants': 'Intervenant'}),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.divider()
+
+    # ─── MATIÈRES COMMUNES ───
+    st.markdown("### 🔗 Matières communes avec d'autres promotions")
+    matieres_promo = set(df_promo['Enseignements'].dropna().astype(str).str.strip().unique())
+    autres_promos = df_rep[df_rep['Promotion'] != promo_sel]
+
+    if autres_promos.empty:
+        st.info("ℹ️ Aucune autre promotion dans la base.")
+        return
+
+    communes_list = []
+    for p in sorted(autres_promos['Promotion'].unique()):
+        df_autre = autres_promos[autres_promos['Promotion'] == p]
+        matieres_autre = set(df_autre['Enseignements'].dropna().astype(str).str.strip().unique())
+        intersection = matieres_promo & matieres_autre
+        if intersection:
+            communes_list.append({
+                "Promotion": p,
+                "Matières communes": sorted(intersection),
+                "Nombre": len(intersection)
+            })
+
+    if communes_list:
+        st.success(
+            f"✅ **{len(communes_list)}** promotion(s) partagent des matières avec **{promo_sel}**."
+        )
+        df_comm = pd.DataFrame([
+            {"Promotion": c["Promotion"], 
+             "Matières communes": ", ".join(c["Matières communes"]), 
+             "Nombre": c["Nombre"]} 
+            for c in sorted(communes_list, key=lambda x: x["Nombre"], reverse=True)
+        ])
+        st.dataframe(df_comm, use_container_width=True, hide_index=True)
+
+        st.markdown("#### 📑 Détail par promotion partenaire")
+        for item in sorted(communes_list, key=lambda x: x["Nombre"], reverse=True):
+            with st.expander(f"🎓 {item['Promotion']} — {item['Nombre']} matière(s) commune(s)"):
+                for m in item["Matières communes"]:
+                    types_m = df_promo[df_promo['Enseignements'].astype(str).str.strip() == m]['Type'].unique()
+                    types_str = ", ".join(sorted(types_m)) if len(types_m) > 0 else "—"
+
+                    df_autre_type = df_rep[
+                        (df_rep['Promotion'] == item['Promotion']) & 
+                        (df_rep['Enseignements'].astype(str).str.strip() == m)
+                    ]
+                    types_autre = df_autre_type['Code'].apply(get_type_enseignement).unique()
+                    types_autre_str = ", ".join(sorted(types_autre)) if len(types_autre) > 0 else "—"
+
+                    st.markdown(
+                        f"<div style='padding:8px;border-left:3px solid #D4AF37;background:#fffbeb;border-radius:0 6px 6px 0;margin-bottom:6px;'>"
+                        f"<b style='color:#1E3A8A;'>{m}</b><br>"
+                        f"<span style='font-size:12px;color:#64748b;'>"
+                        f"Dans <b>{promo_sel}</b> : {types_str} &nbsp;|&nbsp; "
+                        f"Dans <b>{item['Promotion']}</b> : {types_autre_str}"
+                        f"</span></div>",
+                        unsafe_allow_html=True
+                    )
+    else:
+        st.info(f"ℹ️ Aucune matière commune trouvée pour **{promo_sel}**.")
+
+
+# =============================================================================
+# INSTRUCTIONS D'INTÉGRATION
+# =============================================================================
+# 1. COPIER la fonction `render_repertoire_matieres()` ci-dessus dans votre
+#    fichier principal Streamlit (par exemple juste avant le bloc final
+#    `if module_sel == ...`).
+#
+# 2. MODIFIER le radio de la sidebar (vers ligne ~85) :
+#
+#    module_sel = st.radio(
+#        "📂 Choix du module :",
+#        ["📊 Suivi d'Assiduite", "📅 Gestion des EDTs & Admin",
+#         "🧠 EDT Intelligent", "📚 Répertoire des Matières"],
+#        index=0,
+#        key="module_selector"
+#    )
+#
+# 3. MODIFIER le bloc de routage final (tout en bas du fichier) :
+#
+#    if module_sel == "📊 Suivi d'Assiduite":
+#        run_Assiduité()
+#    elif module_sel == "📅 Gestion des EDTs & Admin":
+#        st.info("Module Gestion des EDTs & Admin")
+#    elif module_sel == "📚 Répertoire des Matières":
+#        if 'df' not in globals() or df is None or df.empty:
+#            try:
+#                if os.path.exists(NOM_FICHIER_FIXE):
+#                    df = pd.read_excel(NOM_FICHIER_FIXE)
+#                    df.columns = [str(c).strip() for c in df.columns]
+#                    for col in ['Enseignements','Code','Enseignants','Horaire','Jours','Lieu','Promotion']:
+#                        if col in df.columns:
+#                            df[col] = df[col].fillna("Non défini").astype(str).str.strip()
+#                        else:
+#                            df[col] = "Non défini"
+#            except Exception as e:
+#                st.error(f"Erreur chargement EDT : {e}")
+#        render_repertoire_matieres(df)
+#    else:
+#        st.error(f"Module inconnu : {module_sel}")
+# =============================================================================
 
