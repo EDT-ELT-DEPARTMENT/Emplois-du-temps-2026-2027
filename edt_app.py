@@ -1870,18 +1870,17 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             st.header("📩 Système de Gestion des Justificatifs")
             st.caption("Dépôt étudiant et validation administration")
 
+                        # ═══════════════════════════════════════════════════════
+            # ACCÈS LIBRE AU DÉPÔT — AUCUN CODE REQUIS
+            # ═══════════════════════════════════════════════════════
             if étudiant_connecte:
-                # Mode étudiant connecté : accès direct au dépôt
-                choix_vue = "Étudiant (Dépôt)"
                 st.success(f"👤 Connecté en tant qu'étudiant : **{étudiant_connecte['nom']}** — Mat. BAC: {étudiant_connecte['mat_bac']}")
                 if st.button("🚪 Se déconnecter", use_container_width=True):
                     st.session_state.étudiant_auth = None
                     st.rerun()
                 st.divider()
 
-                # ═══════════════════════════════════════════════════════
-                # 📅 APERÇU RAPIDE DE MON EDT (depuis Justificatifs)
-                # ═══════════════════════════════════════════════════════
+                # Aperçu rapide EDT
                 with st.expander("📅 Voir mon Emploi du Temps (filtré par mon groupe)", expanded=False):
                     promo_etu_j = str(étudiant_connecte.get("promotion", "")).strip()
                     nom_etu_j   = str(étudiant_connecte.get("nom", "Étudiant")).strip()
@@ -1903,9 +1902,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             st.caption("ℹ️ Aucun cours trouvé pour votre groupe.")
                     else:
                         st.caption("ℹ️ Données EDT indisponibles.")
-            else:
-                choix_vue = st.radio("Profil :", ["Étudiant (Dépôt)", "Administration (Décision)"], horizontal=True)
-                st.divider()
+            
+            # Le dépôt est toujours accessible, connecté ou non
+            choix_vue = "Étudiant (Dépôt)"
 
             if choix_vue == "Étudiant (Dépôt)":
                 ancre_depot = st.empty()
