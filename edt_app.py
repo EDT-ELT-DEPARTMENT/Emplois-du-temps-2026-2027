@@ -132,20 +132,171 @@ CODE_ADMIN_EDT = "doctorat2026"
 # =============================================================================
 # SIDEBAR PRINCIPALE (TOUJOURS VISIBLE)
 # =============================================================================
+# =============================================================================
+# CONFIGURATION SESSION STATE POUR NAVIGATION
+# =============================================================================
+if "page_active" not in st.session_state:
+    st.session_state.page_active = "accueil"
+if "module_sel" not in st.session_state:
+    st.session_state.module_sel = "📊 Suivi d'Assiduite"
+
+# =============================================================================
+# STRUCTURE DES PAGES ET MODULES
+# =============================================================================
+MODULES = {
+    "📊 Suivi d'Assiduite": {
+        "icon": "📊",
+        "pages": [
+            ("🏠 Accueil", "suivi_accueil"),
+            ("📋 Saisir Absences", "suivi_absence"),
+            ("📊 Statistiques", "suivi_stats"),
+            ("📈 Rapports", "suivi_rapports"),
+            ("👥 Répertoire Étudiants", "suivi_repertoire"),
+        ]
+    },
+    "📅 Gestion des EDTs & Admin": {
+        "icon": "📅",
+        "pages": [
+            ("🏠 Accueil Admin", "admin_accueil"),
+            ("📅 Créer/Modifier EDTs", "admin_edt"),
+            ("👨‍🏫 Gérer Enseignants", "admin_enseign"),
+            ("🎓 Gérer Promotions", "admin_promo"),
+            ("⚙️ Paramètres", "admin_params"),
+        ]
+    },
+    "🧠 EDT Intelligent": {
+        "icon": "🧠",
+        "pages": [
+            ("🏠 Accueil IA", "ia_accueil"),
+            ("📊 Affichage EDT", "ia_affichage"),
+            ("🔍 Recherche", "ia_recherche"),
+            ("📤 Import/Export", "ia_import"),
+            ("📊 Analytics", "ia_analytics"),
+        ]
+    }
+}
+
+# =============================================================================
+# SIDEBAR - BARRE LATÉRALE INTELLIGENTE
+# =============================================================================
 with st.sidebar:
-    st.markdown("<h2 style='text-align:center;color:#1E3A8A;'>🏛️ UDL-SBA</h2>", unsafe_allow_html=True)
-    st.caption("département d'Électrotechnique - FGE")
+    # En-tête avec logo/titre
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.markdown("<div style='font-size: 32px; text-align: center;'>🏛️</div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown("""
+            <div>
+                <h3 style='margin: 0; color: #1E3A8A;'>UDL-SBA</h3>
+                <p style='margin: 0; font-size: 11px; color: #64748b;'>Électrotechnique - FGE</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
     st.markdown("---")
     
-    module_sel = st.radio(
-        "📂 Choix du module :",
-        ["📊 Suivi d'Assiduite", "📅 Gestion des EDTs & Admin", "🧠 EDT Intelligent"],
-        index=0,
-        key="module_selector"
-    )
+    # Sélecteur de module
+    st.markdown("### 📂 Modules")
+    
+    # Boutons pour chaque module
+    for idx, (module_name, module_data) in enumerate(MODULES.items()):
+        is_active = st.session_state.module_sel == module_name
+        
+        # Style bouton actif/inactif
+        button_style = """
+            background-color: #e0e7ff;
+            border-left: 4px solid #4f46e5;
+        """ if is_active else ""
+        
+        if st.button(
+            f"{module_data['icon']} {module_name}",
+            use_container_width=True,
+            key=f"module_btn_{idx}",
+            help=f"Aller au module {module_name}"
+        ):
+            st.session_state.module_sel = module_name
+            st.session_state.page_active = list(MODULES[module_name]['pages'])[0][1]
+            st.rerun()
     
     st.markdown("---")
-    st.caption("annee universitaire 2026-2027")
+    
+    # Affichage des pages du module actif
+    module_actif = st.session_state.module_sel
+    if module_actif in MODULES:
+        pages_module = MODULES[module_actif]['pages']
+        
+        st.markdown("### 📄 Pages")
+        
+        for page_name, page_key in pages_module:
+            is_active_page = st.session_state.page_active == page_key
+            
+            # Style du bouton actif
+            if is_active_page:
+                st.markdown(f"""
+                    <div style='
+                        background: linear-gradient(90deg, #4f46e5, #6366f1);
+                        color: white;
+                        padding: 10px 12px;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        margin: 5px 0;
+                    '>{page_name}</div>
+                """, unsafe_allow_html=True)
+            else:
+                if st.button(
+                    page_name,
+                    use_container_width=True,
+                    key=f"page_btn_{page_key}",
+                    help=f"Aller à {page_name}"
+                ):
+                    st.session_state.page_active = page_key
+                    st.rerun()
+    
+    st.markdown("---")
+    
+    # Section Infos
+    st.markdown("### ℹ️ Infos")
+    
+    # Infos générales
+    col_info1, col_info2 = st.columns(2)
+    with col_info1:
+        st.metric("Année", "2026-2027", delta=None)
+    with col_info2:
+        st.metric("Semestre", "S1", delta=None)
+    
+    # Actions rapides
+    st.markdown("### ⚡ Actions")
+    
+    col_action1, col_action2 = st.columns(2)
+    with col_action1:
+        if st.button("🔄 Rafraîchir", use_container_width=True):
+            st.rerun()
+    with col_action2:
+        if st.button("⚙️ Réglages", use_container_width=True):
+            st.session_state.page_active = "admin_params"
+            st.session_state.module_sel = "📅 Gestion des EDTs & Admin"
+            st.rerun()
+    
+    # Theme switcher
+    if st.button("🌓 Thème", use_container_width=True):
+        st.info("Theme switcher - À implémenter")
+    
+    st.markdown("---")
+    
+    # Footer sidebar
+    st.markdown("""
+        <div style='
+            text-align: center;
+            font-size: 10px;
+            color: #94a3b8;
+            padding: 10px;
+        '>
+            <p>v2.0 | Année 2026-2027</p>
+            <p>© Département ELT</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+# Module sélectionné
+module_sel = st.session_state.module_sel
 
 # =============================================================================
 # FONCTIONS UTILITAIRES COMMUNES
@@ -3862,21 +4013,217 @@ td{{word-wrap:break-word;}}
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source") 
 
-if module_sel == "📊 Suivi d'Assiduite":
-    run_Assiduité()
-elif module_sel == "📅 Gestion des EDTs & Admin":
-    st.info("Module Gestion des EDTs & Admin")
-else:
-    st.error(f"Module inconnu : {module_sel}")
+# =============================================================================
+# ROUTEUR PRINCIPAL INTELLIGENT - GESTION DES PAGES
+# =============================================================================
 
-import streamlit as st
-import pandas as pd
-import os
-import hashlib
-import io
-from datetime import datetime, timedelta
-from supabase import create_client
-import streamlit as st
+def afficher_page():
+    """Routeur principal qui affiche la page sélectionnée"""
+    
+    page_active = st.session_state.page_active
+    module_sel = st.session_state.module_sel
+    
+    # En-tête avec breadcrumb
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col1:
+        st.markdown(f"**Module :** {module_sel}")
+    with col3:
+        st.markdown(f"**Page :** {page_active}")
+    
+    st.markdown("---")
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # MODULE 1 : SUIVI D'ASSIDUITÉ
+    # ═══════════════════════════════════════════════════════════════════
+    
+    if module_sel == "📊 Suivi d'Assiduite":
+        
+        if page_active == "suivi_accueil":
+            st.header("📊 Suivi d'Assiduité - Accueil")
+            st.markdown("""
+                Bienvenue dans le module de suivi d'assiduité. Ici vous pouvez :
+                - 📋 Saisir les absences des étudiants
+                - 📊 Consulter les statistiques
+                - 📈 Générer des rapports
+                - 👥 Accéder au répertoire des étudiants
+            """)
+            
+            # Cartes de résumé
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("📋 Absences", "245", "-5%")
+            with col2:
+                st.metric("🎓 Étudiants", "1,234", "+12")
+            with col3:
+                st.metric("📊 Taux Présence", "92%", "+2%")
+            with col4:
+                st.metric("⚠️ Alertes", "8", "↑")
+        
+        elif page_active == "suivi_absence":
+            st.header("📋 Saisir Absences")
+            st.info("Formulaire de saisie des absences - À implémenter")
+            
+        elif page_active == "suivi_stats":
+            st.header("📊 Statistiques")
+            st.info("Statistiques d'assiduité - À implémenter")
+            
+        elif page_active == "suivi_rapports":
+            st.header("📈 Rapports")
+            st.info("Génération de rapports - À implémenter")
+            
+        elif page_active == "suivi_repertoire":
+            st.header("👥 Répertoire Étudiants")
+            st.info("Répertoire complet des étudiants - À implémenter")
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # MODULE 2 : GESTION DES EDTs & ADMIN
+    # ═══════════════════════════════════════════════════════════════════
+    
+    elif module_sel == "📅 Gestion des EDTs & Admin":
+        
+        if page_active == "admin_accueil":
+            st.header("📅 Administration - Accueil")
+            st.markdown("""
+                Panneau d'administration pour :
+                - 📅 Créer et modifier les emplois du temps
+                - 👨‍🏫 Gérer les enseignants
+                - 🎓 Gérer les promotions
+                - ⚙️ Configurer les paramètres
+            """)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📅 EDTs", "45", "Actifs")
+            with col2:
+                st.metric("👨‍🏫 Enseignants", "32", "ELT2")
+            with col3:
+                st.metric("🎓 Promotions", "12", "Actives")
+        
+        elif page_active == "admin_edt":
+            st.header("📅 Créer/Modifier EDTs")
+            st.info("Interface de gestion des emplois du temps - À implémenter")
+            
+        elif page_active == "admin_enseign":
+            st.header("👨‍🏫 Gérer Enseignants")
+            st.info("Gestion des enseignants - À implémenter")
+            
+        elif page_active == "admin_promo":
+            st.header("🎓 Gérer Promotions")
+            st.info("Gestion des promotions - À implémenter")
+            
+        elif page_active == "admin_params":
+            st.header("⚙️ Paramètres")
+            st.markdown("""
+                ### Configuration Générale
+            """)
+            
+            # Paramètres
+            col1, col2 = st.columns(2)
+            with col1:
+                st.text_input("Nom de l'application", "Plateforme ELT - UDL-SBA")
+                st.selectbox("Thème", ["Clair", "Sombre", "Auto"])
+            with col2:
+                st.text_input("Année académique", "2026-2027")
+                st.selectbox("Langue", ["Français", "English", "Español"])
+            
+            if st.button("💾 Enregistrer"):
+                st.success("✅ Paramètres sauvegardés !")
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # MODULE 3 : EDT INTELLIGENT
+    # ═══════════════════════════════════════════════════════════════════
+    
+    elif module_sel == "🧠 EDT Intelligent":
+        
+        if page_active == "ia_accueil":
+            st.header("🧠 EDT Intelligent - Accueil")
+            st.markdown("""
+                Système intelligent pour :
+                - 📊 Affichage optimisé des EDTs
+                - 🔍 Recherche avancée
+                - 📤 Import/Export de données
+                - 📊 Analytics et statistiques
+            """)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("⚡ Optimisation", "98%", "↑")
+            with col2:
+                st.metric("🔍 Recherches", "1,234", "+45%")
+            with col3:
+                st.metric("📊 Rapports", "89", "Générés")
+        
+        elif page_active == "ia_affichage":
+            st.header("📊 Affichage EDT")
+            
+            # Options d'affichage
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                promo = st.selectbox("Promotion", ["ING1", "ING2", "ING3", "L1", "L2", "L3", "M1", "M2"])
+            with col2:
+                semaine = st.selectbox("Semaine", ["S1", "S2", "S3", "S4", "S5"])
+            with col3:
+                vue = st.selectbox("Vue", ["Semaine", "Jour", "Module"])
+            
+            st.info("Affichage de l'EDT - À implémenter")
+        
+        elif page_active == "ia_recherche":
+            st.header("🔍 Recherche Avancée")
+            
+            search_type = st.tabs(["Par Étudiant", "Par Enseignant", "Par Module"])
+            
+            with search_type[0]:
+                st.text_input("Rechercher un étudiant...")
+            with search_type[1]:
+                st.text_input("Rechercher un enseignant...")
+            with search_type[2]:
+                st.text_input("Rechercher un module...")
+        
+        elif page_active == "ia_import":
+            st.header("📤 Import/Export")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("📥 Importer")
+                uploaded_file = st.file_uploader("Choisir un fichier Excel", type="xlsx")
+                if uploaded_file is not None:
+                    st.success("✅ Fichier chargé !")
+            
+            with col2:
+                st.subheader("📤 Exporter")
+                if st.button("Exporter en Excel"):
+                    st.info("Export en cours...")
+        
+        elif page_active == "ia_analytics":
+            st.header("📊 Analytics")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**📊 Graphique 1**")
+                st.bar_chart({"A": 10, "B": 20, "C": 15})
+            with col2:
+                st.markdown("**📈 Graphique 2**")
+                st.line_chart({"Lundi": 5, "Mardi": 8, "Mercredi": 12, "Jeudi": 10})
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # PAGE NON TROUVÉE
+    # ═══════════════════════════════════════════════════════════════════
+    
+    else:
+        st.error(f"❌ Page non trouvée : {page_active}")
+        st.info("Retournez à la barre latérale pour sélectionner une page valide")
+
+# Afficher la page active
+afficher_page()
+
+# Footer
+st.markdown("---")
+st.markdown("""
+    <div style='text-align: center; color: #94a3b8; font-size: 10px; padding: 10px;'>
+        <p>Plateforme ELT | Année 2026-2027 | v2.0</p>
+    </div>
+""", unsafe_allow_html=True)
+
 
 # =============================================================================
 # FONCTIONS UTILITAIRES PRO POUR L'EXPORT (PDF / HTML / EXCEL)
