@@ -11465,12 +11465,6 @@ def run_edt_intelligent():
                 st.write(f"Lignes filtrées : {len(df_filtre)}")
                 if not df_filtre.empty:
                     st.write("Horaires trouvés :", df_filtre["Horaire"].unique().tolist())
-Voici le code à ajouter à la fin de votre fichier principal (avant le bloc `if __name__ == "__main__":`). Ce code ajoute :
-
-1. **Un répertoire matières** avec sélection et afficheurs numériques
-2. **Les matières communes entre promotions**
-
-```python
 # =============================================================================
 # RÉPERTOIRE DES MATIÈRES — AFFICHEURS NUMÉRIQUES & MATIÈRES COMMUNES
 # =============================================================================
