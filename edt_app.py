@@ -2424,35 +2424,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     elif portail == "👤 Mon Espace Enseignant":
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
 
-    # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
     
-    # Constantes locales pour EDT
-    horaires_list = [
-        "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
-        "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
-    ]
-    jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-    map_h = {normalize(h): h for h in horaires_list}
-    map_j = {normalize(j): j for j in jours_list}
-
-    # En-tête harmonisé
-    col_logo, col_titre, col_date = st.columns([1, 5, 1.2])
-    with col_logo:
-        try:
-            st.image(str(_BASE_DIR / "logo.PNG"), width=90)
-        except:
-            st.markdown("🏛️")
-    with col_titre:
-        st.markdown("<h3 style='color:#1E3A8A;margin:0;'>Plateforme de gestion des EDTs 2026-2027</h3>", unsafe_allow_html=True)
-        st.caption("département d'Électrotechnique - Faculté de Génie Électrique - UDL-SBA")
-    with col_date:
-        st.markdown(f"<div style='background:#1E3A8A;color:white;padding:8px 12px;border-radius:8px;text-align:center;font-size:12px;'>📅 {nom_jour_fr}<br>{date_str}</div>", unsafe_allow_html=True)
-
-    st.markdown("<hr style='border:2px solid #D4AF37;margin:15px 0;'>", unsafe_allow_html=True)
-
-    if df is None or df.empty:
-        st.error("❌ Les données EDT ne sont pas disponibles. Vérifiez le fichier source.")
-        return
 
     # ============================================================
     # PORTAIL : EMPLOI DU TEMPS (ADMIN)
