@@ -3167,9 +3167,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     elif portail == "🎓 Recherche Étudiant":
         st.markdown("<h1 class='main-title'>🎓 Recherche d'Informations Étudiant</h1>", unsafe_allow_html=True)
         
-        if df_etu_edt.empty:
-            st.error("❌ Le fichier des étudiants n'est pas disponible.")
-        else:
+    
             liste_etudiants = sorted(df_etu_edt["Nom_Complet"].dropna().unique())
             
             c1, c2 = st.columns([3, 1])
