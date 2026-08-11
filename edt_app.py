@@ -644,7 +644,6 @@ def run_Assiduité():
             return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]      
     
     def trouver_requete_existante(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
-    """Retourne une requete EN ATTENTE existante pour empecher les doublons de depot."""
     if MODE_SUPABASE:
         try:
             query = supabase.table("requetes_absences").select("id,statut")\
