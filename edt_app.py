@@ -9944,11 +9944,8 @@ if is_admin:
                         <p>Dans le cadre de la préparation du semestre 1, je vous prie de bien vouloir procéder à la vérification de votre charge pédagogique.
 
 À cet effet, je vous invite à compléter le fichier Excel ci-joint. En cas de conformité, je vous remercie de m'en informer par retour de courriel en mentionnant "RAS".
-
-Veuillez également trouver, en pièce jointe, votre emploi du temps établi au format PDF, conformément à la norme ISO en vigueur.
-
 Je vous remercie de votre diligence et reste à votre disposition pour toute information complémentaire.</p>
-                        <p style="color: #1E3A8A; font-weight: bold;">📎 Vous trouverez également en pièce jointe votre EDT au format PDF selon la norme ISO.</p>
+                        <p style="color: #1E3A8A; font-weight: bold;">📎 Veuillez également trouver, en pièce jointe, votre emploi du temps établi au format PDF, conformément à la norme ISO en vigueur.</p>
                         <div style="background-color: white;">{table_html}</div>
                         <p>Cordialement.<br><b>Service d'enseignement</b></p>
                     </div>
