@@ -2895,8 +2895,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     if portail == "📖 Emploi du Temps" and is_admin:
         mode_view = st.radio("Vue Administration :", [
             "Promotion", "Enseignant", "🏢 Planning Salles", 
-            "🚩 Vérificateur de conflits"
+            "🚩 Vérificateur de conflits", "🔗 Matières communes entre Promotions"
         ], horizontal=True)
+    
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
     elif portail == "👤 Mon Espace Enseignant":
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
@@ -3584,7 +3585,109 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if 'df_admin' in st.session_state:
                     del st.session_state.df_admin
                 st.rerun()
-
+        elif mode_view == "🔗 Matières communes entre Promotions":
+            st.subheader("🔗 Matières communes entre Promotions")
+            st.caption("Détection des enseignements dispensés dans plusieurs promotions simultanément")
+        
+            if df is None or df.empty:
+                st.error("❌ Les données EDT ne sont pas disponibles.")
+            else:
+                # ─── DÉTECTION DES MATIÈRES COMMUNES ───
+                # On regroupe par Matière + Code + Enseignant et on compte les promotions distinctes
+                df_communs = df.groupby(['Enseignements', 'Code', 'Enseignants']).agg({
+                    'Promotion': lambda x: ', '.join(sorted(x.unique())),
+                    'Lieu': lambda x: ', '.join(sorted(x.unique())),
+                    'Jours': lambda x: ', '.join(sorted(x.unique())),
+                    'Horaire': lambda x: ', '.join(sorted(x.unique()))
+                }).reset_index()
+        
+                df_communs['Nb_Promotions'] = df_communs['Promotion'].apply(lambda x: len(x.split(', ')))
+                df_communs = df_communs[df_communs['Nb_Promotions'] > 1].sort_values(
+                    by=['Nb_Promotions', 'Enseignements'], ascending=[False, True]
+                )
+        
+                if df_communs.empty:
+                    st.info("✅ Aucune matière commune détectée entre les promotions.")
+                else:
+                    st.success(f"📊 **{len(df_communs)}** matière(s) commune(s) trouvée(s) entre plusieurs promotions.")
+        
+                    # ─── MÉTRIQUES RAPIDES ───
+                    m1, m2, m3 = st.columns(3)
+                    max_promo = df_communs['Nb_Promotions'].max()
+                    matiere_max = df_communs[df_communs['Nb_Promotions'] == max_promo].iloc[0]['Enseignements']
+                    ens_max = df_communs[df_communs['Nb_Promotions'] == max_promo].iloc[0]['Enseignants']
+        
+                    m1.metric("🔢 Matières communes", len(df_communs))
+                    m2.metric("📈 Max de promotions", max_promo, f"via {matiere_max[:20]}...")
+                    m3.metric("👤 Enseignant le plus sollicité", ens_max[:25] + "..." if len(ens_max) > 25 else ens_max)
+        
+                    st.divider()
+        
+                    # ─── PRÉPARATION DU DATAFRAME D'AFFICHAGE ───
+                    df_export = df_communs.rename(columns={
+                        'Enseignements': 'Matière',
+                        'Code': 'Type',
+                        'Enseignants': 'Enseignant',
+                        'Promotion': 'Promotions concernées',
+                        'Lieu': 'Salles',
+                        'Jours': 'Jours',
+                        'Horaire': 'Horaires',
+                        'Nb_Promotions': 'Nb Promo'
+                    })
+        
+                    st.dataframe(df_export, use_container_width=True, hide_index=True)
+        
+                    st.divider()
+                    st.markdown("#### 📥 Exports")
+        
+                    # ─── BOUTONS DE TÉLÉCHARGEMENT ───
+                    c1, c2, c3 = st.columns(3)
+        
+                    # PDF
+                    pdf_data, err = generate_pro_pdf(
+                        df_export,
+                        "Matières communes entre Promotions",
+                        f"Semestre 01 — 2026-2027 | {len(df_communs)} matière(s) commune(s)",
+                        orientation="L"
+                    )
+                    if pdf_data is not None:
+                        c1.download_button(
+                            "📄 PDF",
+                            pdf_data,
+                            "Matieres_Communes_Promotions_2027.pdf",
+                            "application/pdf",
+                            use_container_width=True
+                        )
+                    else:
+                        c1.button("📄 PDF", disabled=True, use_container_width=True)
+        
+                    # Excel
+                    xlsx_data = generate_pro_excel(
+                        df_export,
+                        "Matières communes entre Promotions",
+                        "Matieres_Communes"
+                    )
+                    c2.download_button(
+                        "📊 Excel",
+                        xlsx_data,
+                        "Matieres_Communes_Promotions_2027.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+        
+                    # HTML
+                    html_data = generate_pro_html(
+                        df_export,
+                        "Matières communes entre Promotions",
+                        "département d'Électrotechnique — FGE/UDL-SBA"
+                    )
+                    c3.download_button(
+                        "🌐 HTML",
+                        html_data,
+                        "Matieres_Communes_Promotions_2027.html",
+                        "text/html",
+                        use_container_width=True
+                    )
     # ============================================================
     # PORTAIL : MON ESPACE ENSEIGNANT
     # ============================================================
