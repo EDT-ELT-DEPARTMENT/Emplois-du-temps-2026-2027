@@ -198,15 +198,15 @@ with st.sidebar:
     
     # Boutons modules
     if st.button("📊 Suivi d'Assiduité", use_container_width=True, key="mod1"):
-        st.session_state.module = "suivi"
-        st.rerun()
-    
+    st.session_state.module_sel = "📊 Suivi d'Assiduite"
+    st.rerun()
+
     if st.button("📅 Gestion des EDTs", use_container_width=True, key="mod2"):
-        st.session_state.module = "admin"
+        st.session_state.module_sel = "📅 Gestion des EDTs & Admin"
         st.rerun()
     
     if st.button("🧠 EDT Intelligent", use_container_width=True, key="mod3"):
-        st.session_state.module = "smart"
+        st.session_state.module_sel = "🧠 EDT Intelligent"
         st.rerun()
     
     st.markdown("---")
@@ -4046,12 +4046,19 @@ td{{word-wrap:break-word;}}
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source") 
 
-if module_sel == "📊 Suivi d'Assiduite":
+# =============================================================================
+# ROUTEUR PRINCIPAL (Correction NameError + Sync Sidebar)
+# =============================================================================
+module_actif = st.session_state.get("module_sel", "📊 Suivi d'Assiduite")
+
+if module_actif == "📊 Suivi d'Assiduite":
     run_Assiduité()
-elif module_sel == "📅 Gestion des EDTs & Admin":
-    st.info("Module Gestion des EDTs & Admin")
+elif module_actif == "📅 Gestion des EDTs & Admin":
+    st.info("Module Gestion des EDTs & Admin — En cours d'intégration")
+elif module_actif == "🧠 EDT Intelligent":
+    st.info("Module EDT Intelligent — En cours d'intégration")
 else:
-    st.error(f"Module inconnu : {module_sel}")
+    st.error(f"Module inconnu : {module_actif}")
 
 import streamlit as st
 import pandas as pd
