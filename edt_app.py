@@ -2895,7 +2895,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     if portail == "📖 Emploi du Temps" and is_admin:
         mode_view = st.radio("Vue Administration :", [
             "Promotion", "Enseignant", "🏢 Planning Salles", 
-            "🚩 Vérificateur de conflits", "🔗 Matières communes entre Promotions"
+            "🚩 Vérificateur de conflits"
         ], horizontal=True)
     
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
