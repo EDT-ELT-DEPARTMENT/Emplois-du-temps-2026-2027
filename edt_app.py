@@ -62,52 +62,32 @@ footer {visibility: hidden;}
 #stDecoration {display:none;}
 </style>
 """
-try:
-    st.markdown(hide_st_style, unsafe_allow_html=True)
-except Exception as e:
-    st.debug(f"Note: Style personnalisé non appliqué : {str(e)[:50]}")
+st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # =============================================================================
-# CONNEXION SUPABASE GLOBALE (partagée) - ROBUSTE
+# CONNEXION SUPABASE GLOBALE (partagée)
 # =============================================================================
 MODE_SUPABASE = False
 supabase = None
 
-if create_client is not None:  # Plus robuste que "if create_client"
+if create_client:
     try:
         SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
         SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
         if SUPABASE_URL and SUPABASE_KEY:
             supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
             MODE_SUPABASE = True
-            st.info("✅ Supabase connecté")
-    except Exception as e:
-        st.warning(f"⚠️ Supabase non disponible : {str(e)[:100]}")
+    except Exception:
+        pass
 
 # =============================================================================
-# CONSTANTES COMMUNES - GESTION ROBUSTE DES CHEMINS
+# CONSTANTES COMMUNES
 # =============================================================================
-# Gestion robuste du répertoire de base (compatible Streamlit Cloud)
-try:
-    _BASE_DIR = Path(__file__).parent.resolve()
-except:
-    # Fallback pour Streamlit Cloud
-    _BASE_DIR = Path.cwd()
+_BASE_DIR = Path(__file__).parent.resolve()
 
 FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
 FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
 FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
-
-# Vérifier les fichiers existants
-_fichiers_check = {
-    "Étudiants": FILE_ETUDIANTS,
-    "EDT": FILE_EDT,
-    "Enseignants": FILE_ENS
-}
-_fichiers_manquants = [nom for nom, chemin in _fichiers_check.items() if not Path(chemin).exists()]
-if _fichiers_manquants:
-    import warnings
-    warnings.warn(f"⚠️ Fichiers manquants : {', '.join(_fichiers_manquants)}")
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
@@ -130,22 +110,195 @@ CODE_ADMIN = "1234"
 CODE_ADMIN_EDT = "doctorat2026"
 
 # =============================================================================
-# SIDEBAR PRINCIPALE (TOUJOURS VISIBLE)
+# CSS PERSONNALISÉ & STYLES
+# =============================================================================
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1e3a8a 0%, #3b82f6 100%);
+        min-height: 100vh;
+    }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] button {
+        width: 100%;
+        text-align: left;
+    }
+    .sidebar-active {
+        background: linear-gradient(90deg, #4f46e5, #6366f1) !important;
+        color: white !important;
+        border-radius: 8px !important;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 15px;
+        border-radius: 10px;
+        color: white;
+    }
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+# =============================================================================
+# SESSION STATE POUR NAVIGATION INTELLIGENTE
+# =============================================================================
+if "page_active" not in st.session_state:
+    st.session_state.page_active = "accueil_suivi"
+if "module_sel" not in st.session_state:
+    st.session_state.module_sel = "📊 Suivi d'Assiduite"
+
+# Structure de navigation intelligente
+MODULES_NAVIGATION = {
+    "📊 Suivi d'Assiduite": {
+        "icon": "📊",
+        "pages": [
+            ("🏠 Accueil", "accueil_suivi"),
+            ("📋 Saisir Absences", "saisir_abs"),
+            ("📊 Statistiques", "stats"),
+            ("📈 Rapports", "rapports"),
+            ("👥 Répertoire", "repertoire"),
+            ("🔔 Alertes", "alertes")
+        ]
+    },
+    "📅 Gestion des EDTs & Admin": {
+        "icon": "📅",
+        "pages": [
+            ("🏠 Accueil Admin", "accueil_admin"),
+            ("📅 Créer EDTs", "creer_edt"),
+            ("👨‍🏫 Enseignants", "gerer_ens"),
+            ("🎓 Promotions", "gerer_promo"),
+            ("⚙️ Paramètres", "parametres")
+        ]
+    },
+    "🧠 EDT Intelligent": {
+        "icon": "🧠",
+        "pages": [
+            ("🏠 Accueil IA", "accueil_ia"),
+            ("📊 Affichage EDT", "affichage"),
+            ("🔍 Recherche", "recherche"),
+            ("📤 Import/Export", "import_export"),
+            ("📊 Analytics", "analytics")
+        ]
+    }
+}
+
+# =============================================================================
+# SIDEBAR PRINCIPALE - BARRE LATÉRALE INTELLIGENTE
 # =============================================================================
 with st.sidebar:
-    st.markdown("<h2 style='text-align:center;color:#1E3A8A;'>🏛️ UDL-SBA</h2>", unsafe_allow_html=True)
-    st.caption("département d'Électrotechnique - FGE")
+    # En-tête
+    st.markdown("""
+    <div style='text-align: center; padding: 20px 0;'>
+        <h1 style='color: white; margin: 0; font-size: 36px;'>🏛️</h1>
+        <h2 style='color: white; margin: 10px 0 0 0; font-size: 24px;'>UDL-SBA</h2>
+        <p style='color: rgba(255,255,255,0.85); margin: 5px 0 0 0; font-size: 11px;'>
+            Département d'Électrotechnique - FGE
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.markdown("---")
     
-    module_sel = st.radio(
-        "📂 Choix du module :",
-        ["📊 Suivi d'Assiduite", "📅 Gestion des EDTs & Admin", "🧠 EDT Intelligent"],
-        index=0,
-        key="module_selector"
-    )
+    # Sélecteur de modules
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px; margin-top: 10px;'>📂 MODULES</p>
+    """, unsafe_allow_html=True)
+    
+    for module_name, module_info in MODULES_NAVIGATION.items():
+        is_active = st.session_state.module_sel == module_name
+        
+        if st.button(
+            f"{module_info['icon']} {module_name}",
+            use_container_width=True,
+            key=f"module_btn_{module_name.replace(' ', '_')}"
+        ):
+            st.session_state.module_sel = module_name
+            st.session_state.page_active = module_info['pages'][0][1]
+            st.rerun()
     
     st.markdown("---")
-    st.caption("annee universitaire 2026-2027")
+    
+    # Pages du module actif
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>📄 PAGES</p>
+    """, unsafe_allow_html=True)
+    
+    for module_name, module_info in MODULES_NAVIGATION.items():
+        if st.session_state.module_sel == module_name:
+            for page_name, page_key in module_info['pages']:
+                is_active_page = st.session_state.page_active == page_key
+                
+                if is_active_page:
+                    st.markdown(f"""
+                    <div style='
+                        background: linear-gradient(90deg, #4f46e5, #6366f1);
+                        color: white;
+                        padding: 10px 12px;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        margin: 5px 0;
+                        text-align: left;
+                    '>{page_name}</div>
+                    """, unsafe_allow_html=True)
+                else:
+                    if st.button(
+                        page_name,
+                        use_container_width=True,
+                        key=f"page_btn_{page_key}"
+                    ):
+                        st.session_state.page_active = page_key
+                        st.rerun()
+            break
+    
+    st.markdown("---")
+    
+    # Infos
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>ℹ️ INFOS</p>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Année", "2026-2027", label_visibility="collapsed")
+    with col2:
+        st.metric("Semestre", "S1", label_visibility="collapsed")
+    
+    st.markdown("---")
+    
+    # Actions rapides
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>⚡ ACTIONS</p>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("🔄", use_container_width=True, help="Rafraîchir"):
+            st.rerun()
+    with col2:
+        if st.button("🌓", use_container_width=True, help="Thème"):
+            st.info("🌓 Thème switcher - À implémenter")
+    with col3:
+        if st.button("⚙️", use_container_width=True, help="Paramètres"):
+            st.session_state.module_sel = "📅 Gestion des EDTs & Admin"
+            st.session_state.page_active = "parametres"
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Footer sidebar
+    st.markdown("""
+    <div style='text-align: center; color: rgba(255,255,255,0.7); font-size: 9px; padding: 15px 0 0 0;'>
+        <p style='margin: 0;'>v2.0 | Année 2026-2027</p>
+        <p style='margin: 0;'>© Département ELT</p>
+        <p style='margin: 5px 0 0 0; font-size: 8px;'>All rights reserved</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Récupérer le module sélectionné
+module_sel = st.session_state.module_sel
 
 # =============================================================================
 # FONCTIONS UTILITAIRES COMMUNES
