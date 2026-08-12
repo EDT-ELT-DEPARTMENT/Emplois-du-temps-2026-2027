@@ -198,8 +198,8 @@ with st.sidebar:
     
     # Boutons modules
     if st.button("📊 Suivi d'Assiduité", use_container_width=True, key="mod1"):
-    st.session_state.module_sel = "📊 Suivi d'Assiduite"
-    st.rerun()
+        st.session_state.module_sel = "📊 Suivi d'Assiduite"
+        st.rerun()
 
     if st.button("📅 Gestion des EDTs", use_container_width=True, key="mod2"):
         st.session_state.module_sel = "📅 Gestion des EDTs & Admin"
