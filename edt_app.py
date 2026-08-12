@@ -189,147 +189,116 @@ MODULES_NAVIGATION = {
 # SIDEBAR PRINCIPALE - BARRE LATÉRALE INTELLIGENTE
 # =============================================================================
 with st.sidebar:
-    st.markdown("# 🏛️ UDL-SBA")
-    st.markdown("**Département d'Électrotechnique - FGE**")
+    # En-tête
+    st.markdown("""
+    <div style='text-align: center; padding: 20px 0;'>
+        <h1 style='color: white; margin: 0; font-size: 36px;'>🏛️</h1>
+        <h2 style='color: white; margin: 10px 0 0 0; font-size: 24px;'>UDL-SBA</h2>
+        <p style='color: rgba(255,255,255,0.85); margin: 5px 0 0 0; font-size: 11px;'>
+            Département d'Électrotechnique - FGE
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.markdown("---")
     
-    # Titre modules
-    st.markdown("## 📂 Modules")
+    # Sélecteur de modules
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px; margin-top: 10px;'>📂 MODULES</p>
+    """, unsafe_allow_html=True)
     
-    # Boutons modules
-    if st.button("📊 Suivi d'Assiduité", use_container_width=True, key="mod1"):
-        st.session_state.module_sel = "📊 Suivi d'Assiduite"
-        st.rerun()
-
-    if st.button("📅 Gestion des EDTs", use_container_width=True, key="mod2"):
-        st.session_state.module_sel = "📅 Gestion des EDTs & Admin"
-        st.rerun()
+    for module_name, module_info in MODULES_NAVIGATION.items():
+        is_active = st.session_state.module_sel == module_name
+        
+        if st.button(
+            f"{module_info['icon']} {module_name}",
+            use_container_width=True,
+            key=f"module_btn_{module_name.replace(' ', '_')}"
+        ):
+            st.session_state.module_sel = module_name
+            st.session_state.page_active = module_info['pages'][0][1]
+            st.rerun()
     
-    if st.button("🧠 EDT Intelligent", use_container_width=True, key="mod3"):
-        st.session_state.module_sel = "🧠 EDT Intelligent"
-        st.rerun()
+    st.markdown("---")
+    
+    # Pages du module actif
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>📄 PAGES</p>
+    """, unsafe_allow_html=True)
+    
+    for module_name, module_info in MODULES_NAVIGATION.items():
+        if st.session_state.module_sel == module_name:
+            for page_name, page_key in module_info['pages']:
+                is_active_page = st.session_state.page_active == page_key
+                
+                if is_active_page:
+                    st.markdown(f"""
+                    <div style='
+                        background: linear-gradient(90deg, #4f46e5, #6366f1);
+                        color: white;
+                        padding: 10px 12px;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        margin: 5px 0;
+                        text-align: left;
+                    '>{page_name}</div>
+                    """, unsafe_allow_html=True)
+                else:
+                    if st.button(
+                        page_name,
+                        use_container_width=True,
+                        key=f"page_btn_{page_key}"
+                    ):
+                        st.session_state.page_active = page_key
+                        st.rerun()
+            break
     
     st.markdown("---")
     
     # Infos
-    st.markdown("## ℹ️ Infos")
-    st.markdown("**Année :** 2026-2027")
-    st.markdown("**Semestre :** S1")
-    
-    st.markdown("---")
-    
-    # Actions
-    st.markdown("## ⚡ Actions")
-    if st.button("🔄 Rafraîchir", use_container_width=True):
-        st.rerun()
-    
-    st.markdown("---")
-    st.markdown("<p style='text-align: center; font-size: 11px;'>v2.0 | © ELT</p>", unsafe_allow_html=True)
-
-# ═══════════════════════════════════════════════════════════════
-# CONTENU PRINCIPAL
-# ═══════════════════════════════════════════════════════════════
-
-st.title("🏛️ Plateforme ELT - UDL-SBA")
-st.markdown("**Système de gestion d'emploi du temps et suivi d'assiduité**")
-st.markdown("---")
-
-# Initialiser session state
-if "module" not in st.session_state:
-    st.session_state.module = "suivi"
-
-# Afficher le contenu selon le module
-if st.session_state.module == "suivi":
-    st.header("📊 Suivi d'Assiduité")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("📋 Absences", "245", "-5%")
-    with col2:
-        st.metric("🎓 Étudiants", "1,234", "+12")
-    with col3:
-        st.metric("✅ Présents", "989", "+2%")
-    with col4:
-        st.metric("⚠️ Alertes", "8", "↑")
-    
-    st.markdown("---")
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>ℹ️ INFOS</p>
+    """, unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("📈 Tendance présence")
-        import pandas as pd
-        data = pd.DataFrame({
-            "Jour": ["Lun", "Mar", "Mer", "Jeu"],
-            "Présence %": [94, 91, 93, 95]
-        })
-        st.line_chart(data.set_index("Jour"))
-    
+        st.metric("Année", "2026-2027", label_visibility="collapsed")
     with col2:
-        st.subheader("🎓 Par promotion")
-        promo_data = pd.DataFrame({
-            "Promotion": ["ING1", "ING2", "ING3", "L1", "L2"],
-            "Effectifs": [120, 140, 150, 110, 100]
-        })
-        st.bar_chart(promo_data.set_index("Promotion"))
-
-elif st.session_state.module == "admin":
-    st.header("📅 Gestion des EDTs & Administration")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("📅 EDTs", "45", "Actifs")
-    with col2:
-        st.metric("👨‍🏫 Enseignants", "32", "ELT2")
-    with col3:
-        st.metric("🎓 Promotions", "12", "Actives")
-    with col4:
-        st.metric("📚 Modules", "24", "Configurés")
+        st.metric("Semestre", "S1", label_visibility="collapsed")
     
     st.markdown("---")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("📅 EDTs par semestre")
-        import pandas as pd
-        edt_data = pd.DataFrame({
-            "Semestre": ["S1", "S2", "S3", "S4", "S5"],
-            "Nombre": [9, 9, 9, 9, 9]
-        })
-        st.bar_chart(edt_data.set_index("Semestre"))
-    
-    with col2:
-        st.subheader("👨‍🏫 Enseignants par diplôme")
-        ens_data = pd.DataFrame({
-            "Diplôme": ["Pr", "Dr", "Ingénieur"],
-            "Nombre": [8, 12, 12]
-        })
-        st.pie_chart(ens_data.set_index("Diplôme")["Nombre"])
-
-elif st.session_state.module == "smart":
-    st.header("🧠 EDT Intelligent")
+    # Actions rapides
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>⚡ ACTIONS</p>
+    """, unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("⚡ Optimisation", "98%")
+        if st.button("🔄", use_container_width=True, help="Rafraîchir"):
+            st.rerun()
     with col2:
-        st.metric("🔍 Recherches", "1,234")
+        if st.button("🌓", use_container_width=True, help="Thème"):
+            st.info("🌓 Thème switcher - À implémenter")
     with col3:
-        st.metric("📊 Rapports", "89")
+        if st.button("⚙️", use_container_width=True, help="Paramètres"):
+            st.session_state.module_sel = "📅 Gestion des EDTs & Admin"
+            st.session_state.page_active = "parametres"
+            st.rerun()
     
     st.markdown("---")
     
-    st.subheader("📊 Affichage EDT")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        promo = st.selectbox("Promotion", ["ING1", "ING2", "ING3", "L1", "L2"])
-    with col2:
-        semaine = st.selectbox("Semaine", ["S1", "S2", "S3", "S4", "S5"])
-    with col3:
-        vue = st.selectbox("Vue", ["Semaine", "Jour", "Module"])
-    
-    st.info("📊 Affichage de l'EDT sélectionné")
+    # Footer sidebar
+    st.markdown("""
+    <div style='text-align: center; color: rgba(255,255,255,0.7); font-size: 9px; padding: 15px 0 0 0;'>
+        <p style='margin: 0;'>v2.0 | Année 2026-2027</p>
+        <p style='margin: 0;'>© Département ELT</p>
+        <p style='margin: 5px 0 0 0; font-size: 8px;'>All rights reserved</p>
+    </div>
+    """, unsafe_allow_html=True)
 
+# Récupérer le module sélectionné
+module_sel = st.session_state.module_sel
 
 # =============================================================================
 # FONCTIONS UTILITAIRES COMMUNES
@@ -4046,19 +4015,12 @@ td{{word-wrap:break-word;}}
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source") 
 
-# =============================================================================
-# ROUTEUR PRINCIPAL (Correction NameError + Sync Sidebar)
-# =============================================================================
-module_actif = st.session_state.get("module_sel", "📊 Suivi d'Assiduite")
-
-if module_actif == "📊 Suivi d'Assiduite":
+if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
-elif module_actif == "📅 Gestion des EDTs & Admin":
-    st.info("Module Gestion des EDTs & Admin — En cours d'intégration")
-elif module_actif == "🧠 EDT Intelligent":
-    st.info("Module EDT Intelligent — En cours d'intégration")
+elif module_sel == "📅 Gestion des EDTs & Admin":
+    st.info("Module Gestion des EDTs & Admin")
 else:
-    st.error(f"Module inconnu : {module_actif}")
+    st.error(f"Module inconnu : {module_sel}")
 
 import streamlit as st
 import pandas as pd
