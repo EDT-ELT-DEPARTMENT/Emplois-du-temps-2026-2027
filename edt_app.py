@@ -9481,7 +9481,7 @@ if df is not None:
                             nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
 
                             msg = MIMEMultipart()
-                            msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {row['Enseignant']}"
+                            msg['Subject'] = f"Votre Emploi du Temps individuel du Semestre 01_2026-2027 - {row['Enseignant']}"
                             
                             # --- CORRECTION DES EN-TÊTES ---
                             msg['From'] = f"{nom_affichage} <{expediteur_email}>"
@@ -9927,7 +9927,7 @@ if is_admin:
                 nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
     
                 msg = MIMEMultipart()
-                msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {nom_ens}"
+                msg['Subject'] = f"Votre Emploi du Temps individuel du semestre 01_2006-2027 - {nom_ens}"
                 msg['From'] = f"département d'Électrotechnique <{EMAIL_EXPEDITEUR}>"
                 msg['To'] = email_ens
     
@@ -9940,7 +9940,7 @@ if is_admin:
                         <h2 style="color: #1E3A8A; text-align: center;">Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h2>
                         <p>Sallem M./Mme <b>{nom_ens}</b>,</p>
                         <p><b>Récapitulatif de votre charge :</b> {nb_cours} Cours, {nb_td} TD, {nb_tp} TP.</p>
-                        <p style="font-weight: bold; color: #b91c1c;">Objet : Urgent : Vérification de l'emploi du temps – Semestre 1</p>
+                        <p style="font-weight: bold; color: #b91c1c;">Objet : Urgent : Vérification de votre EDT du Semestre 1</p>
                         <p>Dans le cadre de la préparation du semestre 1, je vous prie de bien vouloir procéder à la vérification de votre charge pédagogique.
 
 À cet effet, je vous invite à compléter le fichier Excel ci-joint. En cas de conformité, je vous remercie de m'en informer par retour de courriel en mentionnant "RAS".
