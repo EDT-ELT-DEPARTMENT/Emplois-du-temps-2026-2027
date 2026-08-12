@@ -9481,7 +9481,7 @@ if df is not None:
                             nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
 
                             msg = MIMEMultipart()
-                            msg['Subject'] = f"Votre Emploi du Temps individuel du Semestre 01_2026-2027 - {row['Enseignant']}"
+                            msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {row['Enseignant']}"
                             
                             # --- CORRECTION DES EN-TÊTES ---
                             msg['From'] = f"{nom_affichage} <{expediteur_email}>"
@@ -9927,7 +9927,7 @@ if is_admin:
                 nb_tp = df_mail['Enseignements'].str.contains('TP', case=False).sum()
     
                 msg = MIMEMultipart()
-                msg['Subject'] = f"Votre Emploi du Temps individuel du semestre 01_2006-2027 - {nom_ens}"
+                msg['Subject'] = f"Votre Emploi du Temps S1-2027 - {nom_ens}"
                 msg['From'] = f"département d'Électrotechnique <{EMAIL_EXPEDITEUR}>"
                 msg['To'] = email_ens
     
@@ -9940,12 +9940,9 @@ if is_admin:
                         <h2 style="color: #1E3A8A; text-align: center;">Plateforme de gestion des EDTs-Semestre 01__2026-2027-département d'Électrotechnique-Faculté de génie électrique-UDL-SBA</h2>
                         <p>Sallem M./Mme <b>{nom_ens}</b>,</p>
                         <p><b>Récapitulatif de votre charge :</b> {nb_cours} Cours, {nb_td} TD, {nb_tp} TP.</p>
-                        <p style="font-weight: bold; color: #b91c1c;">Objet : Urgent : Vérification de votre EDT du Semestre 1</p>
-                        <p>Dans le cadre de la préparation du semestre 1, je vous prie de bien vouloir procéder à la vérification de votre charge pédagogique.
-
-À cet effet, je vous invite à compléter le fichier Excel ci-joint. En cas de conformité, je vous remercie de m'en informer par retour de courriel en mentionnant "RAS".
-Je vous remercie de votre diligence et reste à votre disposition pour toute information complémentaire.</p>
-                        <p style="color: #1E3A8A; font-weight: bold;">📎 Veuillez également trouver, en pièce jointe, votre emploi du temps établi au format PDF, conformément à la norme ISO en vigueur.</p>
+                        <p style="font-weight: bold; color: #b91c1c;">Objet : Urgent : Vérification de l'emploi du temps – Semestre 1</p>
+                        <p>Merci de bien renseigner le fichier Excel joint. Envoie RAS si c'est bon.</p>
+                        <p style="color: #1E3A8A; font-weight: bold;">📎 Vous trouverez également en pièce jointe votre EDT au format PDF selon la norme ISO.</p>
                         <div style="background-color: white;">{table_html}</div>
                         <p>Cordialement.<br><b>Service d'enseignement</b></p>
                     </div>
@@ -12902,3 +12899,200 @@ if df_etu_edt is not None and not df_etu_edt.empty:
     )
 
 
+
+
+# =============================================================================
+# PORTAIL ÉTUDIANT - FONCTIONS ET PAGES (NOUVEAU)
+# =============================================================================
+
+def generer_edt_pdf_iso(df_edt, promo, groupe, semestre="S1", nom_etudiant=""):
+    """Génère un EDT en PDF au format ISO - Horaires horizontal, Jours vertical"""
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Paragraph
+        from reportlab.lib import colors
+        
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=0.5*cm, leftMargin=0.5*cm, topMargin=0.8*cm, bottomMargin=0.8*cm)
+        
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Titre
+        title = Paragraph(f"EMPLOI DU TEMPS - {semestre}", styles['Heading1'])
+        story.append(title)
+        
+        info_text = f"Promotion: {promo} | Groupe: {groupe}"
+        if nom_etudiant:
+            info_text += f" | Étudiant: {nom_etudiant}"
+        info_text += f" | Généré le: {datetime.now().strftime('%d/%m/%Y à %H:%M')}"
+        
+        info = Paragraph(info_text, styles['Normal'])
+        story.append(info)
+        story.append(Spacer(1, 0.3*cm))
+        
+        # Table données
+        jours = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+        horaires = ["8h-9h30", "9h30-11h", "11h-12h30", "12h30-14h", "14h-15h30", "15h30-17h"]
+        
+        data = [["JOUR"] + horaires]
+        for jour in jours:
+            row = [jour] + ["" for _ in horaires]
+            data.append(row)
+        
+        table = Table(data, colWidths=[1.5*cm] + [2.5*cm]*len(horaires))
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#cbd5e1')),
+            ('ROWHEIGHTS', (0, 0), (-1, 0), 0.7*cm),
+            ('ROWHEIGHTS', (0, 1), (-1, -1), 1.2*cm),
+        ]))
+        
+        story.append(table)
+        story.append(Spacer(1, 0.5*cm))
+        story.append(Paragraph("Plateforme ELT - UDL-SBA | Département d'Électrotechnique", styles['Normal']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer.getvalue()
+        
+    except Exception as e:
+        st.error(f"Erreur PDF: {str(e)}")
+        return None
+
+
+def page_mon_compte():
+    """Page Mon Compte - Connexion étudiant"""
+    st.header("👤 Mon Compte")
+    
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.markdown('<div style="text-align: center; padding: 20px; background: #f0f4f8; border-radius: 10px;"><div style="font-size: 48px;">👤</div></div>', unsafe_allow_html=True)
+    
+    with col2:
+        with st.form("form_login"):
+            st.markdown("### Connexion")
+            mat = st.text_input("Matricule", placeholder="2026001")
+            pwd = st.text_input("Mot de passe", type="password")
+            if st.form_submit_button("Connexion", use_container_width=True):
+                if mat and pwd:
+                    st.session_state.etudiant = True
+                    st.success(f"✅ Connecté")
+                    st.rerun()
+    
+    st.markdown("---")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Promotion", "ING2")
+    col2.metric("Groupe", "G1")
+    col3.metric("Semestre", "S1")
+    col4.metric("Absences", "3")
+
+
+def page_mon_edt():
+    """Affiche l'EDT de l'étudiant"""
+    st.header("📅 Mon Emploi du Temps")
+    
+    col1, col2, col3 = st.columns(3)
+    col1.selectbox("Semestre", ["S1", "S2", "S3"])
+    col2.selectbox("Vue", ["Semaine", "Jour"])
+    col3.checkbox("Auto-refresh")
+    
+    st.markdown("---")
+    st.subheader("📊 Horaire")
+    
+    edt_data = {
+        "JOUR": ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"],
+        "8h-9h30": ["", "Électro", "", "", ""],
+        "9h30-11h": ["", "", "Automatique", "", ""],
+        "11h-12h30": ["", "", "", "Électronique", ""],
+        "12h30-14h": ["PAUSE"] * 5,
+        "14h-15h30": ["", "", "", "Info", "Électro"],
+        "15h30-17h": ["", "TD", "", "", ""],
+    }
+    
+    st.dataframe(pd.DataFrame(edt_data), use_container_width=True, hide_index=True)
+
+
+def page_download_edt_pdf():
+    """Télécharger EDT en PDF ISO"""
+    st.header("📥 Télécharger EDT (PDF)")
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.markdown("✅ Format paysage (A4)\n✅ Horaires horizontaux\n✅ Jours verticaux\n✅ Bien lisible")
+    with col2:
+        sem = st.selectbox("Semestre", ["S1", "S2", "S3"])
+        fmt = st.radio("Format", ["Paysage", "Portrait"])
+    
+    st.markdown("---")
+    if st.button("🔄 Générer PDF", use_container_width=True):
+        with st.spinner("Génération..."):
+            pdf = generer_edt_pdf_iso(None, "ING2", "G1", sem, "Dupont Jean")
+            if pdf:
+                st.success("✅ PDF généré!")
+                st.download_button("📥 Télécharger EDT.pdf", pdf, f"EDT_{sem}.pdf", "application/pdf", use_container_width=True)
+
+
+def page_mes_absences():
+    """Affiche les absences de l'étudiant"""
+    st.header("📋 Mes Absences")
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total", "3")
+    col2.metric("Justifiées", "2")
+    col3.metric("Non justifiées", "1")
+    
+    st.markdown("---")
+    
+    abs_data = {
+        "Date": ["01/02/2027", "15/02/2027", "22/02/2027"],
+        "Module": ["Électro", "Automatique", "Électronique"],
+        "Horaire": ["8h-9h30", "9h30-11h", "14h-15h30"],
+        "Justifiée": ["Non", "Oui", "Oui"],
+    }
+    
+    st.dataframe(pd.DataFrame(abs_data), use_container_width=True, hide_index=True)
+
+
+def page_messages():
+    """Messages étudiant"""
+    st.header("📧 Messages")
+    
+    tabs = st.tabs(["Reçus", "Envoyés", "Nouveau"])
+    
+    with tabs[0]:
+        st.subheader("Messages")
+        with st.expander("Admin - Correction EDT"):
+            st.write("L'EDT a été modifié pour la semaine 6...")
+    
+    with tabs[1]:
+        st.info("Aucun message")
+    
+    with tabs[2]:
+        with st.form("form_msg"):
+            st.selectbox("À", ["Admin", "Dept. ELT"])
+            st.text_input("Sujet")
+            st.text_area("Message", height=150)
+            st.form_submit_button("Envoyer", use_container_width=True)
+
+
+# Routeur Portail Étudiant
+if module_sel == "🔐 Portail Étudiant":
+    page_active = st.session_state.get("page_active", "mon_compte")
+    if page_active == "mon_compte":
+        page_mon_compte()
+    elif page_active == "mon_edt":
+        page_mon_edt()
+    elif page_active == "download_edt_pdf":
+        page_download_edt_pdf()
+    elif page_active == "mes_absences":
+        page_mes_absences()
+    elif page_active == "messages":
+        page_messages()
