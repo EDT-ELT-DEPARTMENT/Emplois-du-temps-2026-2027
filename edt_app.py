@@ -6844,11 +6844,11 @@ if is_admin:
                 st.warning("⚠️ Aucun enseignant trouvé dans les données EDT.")
 
 
-# 1. Définition précise de votre nouvelle liste d'horaires (14 créneaux)
+# 1. Définition précise de votre nouvelle liste d'horaires (16 créneaux)
 horaires_list = [
     "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
     "10h - 11h", "11h - 12h", "11h - 12h30", 
-    "12h - 13h", "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
 ]
 
 # 2. Définition des jours de la semaine
