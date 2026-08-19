@@ -6979,19 +6979,33 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                     (st.session_state.df_admin['Enseignants'] == n_prof)
                 ]
 
+                # ═══ DÉTECTION CONFLIT PROMOTION (NOUVEAU) ═══
+                conflit_promo = st.session_state.df_admin[
+                    (st.session_state.df_admin['Jours'] == n_jour) & 
+                    (st.session_state.df_admin['Horaire'] == n_horaire) & 
+                    (st.session_state.df_admin['Promotion'] == n_promo)
+                ]
+
                 if not conflit_salle.empty:
                     # On affiche quelle promotion occupe déjà la salle
                     promo_conflit = conflit_salle.iloc[0]['Promotion']
                     prof_conflit = conflit_salle.iloc[0]['Enseignants']
                     st.error(f"❌ CONFLIT SALLE : La salle {n_lieu} est déjà prise par **{prof_conflit}** pour la promotion **{promo_conflit}**.")
-                
+
                 elif not conflit_prof.empty:
                     # On affiche quelle promotion l'enseignant a déjà
                     promo_conflit = conflit_prof.iloc[0]['Promotion']
                     lieu_conflit = conflit_prof.iloc[0]['Lieu']
                     st.error(f"❌ CONFLIT ENSEIGNANT : M. {n_prof} a déjà un cours avec la promotion **{promo_conflit}** en salle {lieu_conflit}.")
-                
-                else:
+
+                elif not conflit_promo.empty:
+                    # On affiche quel cours occupe déjà ce créneau pour cette promotion
+                    prof_conflit = conflit_promo.iloc[0]['Enseignants']
+                    salle_conflit = conflit_promo.iloc[0]['Lieu']
+                    matiere_conflit = conflit_promo.iloc[0]['Enseignements']
+                    st.error(f"❌ CONFLIT PROMOTION : La promotion **{n_promo}** a déjà un cours (**{matiere_conflit}**) avec **{prof_conflit}** en salle **{salle_conflit}** à ce créneau ({n_jour} — {n_horaire}).")
+
+                                else:
                     # --- ÉTAPE 3 : INSERTION RÉELLE DANS LA TABLE SUPABASE ---
                     nouvelle_ligne_db = {
                         "Enseignements": n_ensg,
