@@ -3574,7 +3574,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         st.markdown("### 📥 Exporter mon EDT (Grille complète)")
 
         # --- Constantes locales ---
-        _HORAIRES = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"]
+        _HORAIRES = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"]
         _JOURS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
         def _norm_h(h):
@@ -4198,7 +4198,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     horaires_ordre = [
         "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
         "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+        "12h30 - 14h", "13h - 14h30", "14h - 15h","14h - 15h30", "14h - 16h","15h - 16h", "15h30 - 17h"
     ]
     
     def norm(x):
@@ -4461,7 +4461,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
     horaires_ordre = [
         "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
         "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+        "12h30 - 14h", "13h - 14h30", "14h - 15h","14h - 15h30", "14h - 16h","15h - 16h", "15h30 - 17h"
     ]
 
     def norm(x):
@@ -4734,7 +4734,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
     horaires_ordre = [
         "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
         "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+        "12h30 - 14h", "13h - 14h30", "14h - 15h","14h - 15h30", "14h - 16h","15h - 16h", "15h30 - 17h"
     ]
     
     def norm(x):
@@ -5007,7 +5007,7 @@ def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
     horaires_ordre = [
         "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
         "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+        "12h30 - 14h", "13h - 14h30", "14h - 15h","14h - 15h30", "14h - 16h","15h - 16h", "15h30 - 17h"
     ]
     
     def norm(x):
@@ -5279,7 +5279,7 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
     horaires_ordre = [
         "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
         "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+        "12h30 - 14h", "13h - 14h30", "14h - 15h","14h - 15h30", "14h - 16h","1h - 16h", "15h30 - 17h"
     ]
     
     def norm(x):
@@ -7057,7 +7057,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
         horaires_ordre = [
             "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
             "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-            "12h30 - 14h", "13h - 14h", "14h - 15h30", "14h - 16h", "15h30 - 17h"
+            "12h30 - 14h", "13h - 14h", "14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
         ]
         
         grid = pd.DataFrame("", index=horaires_ordre, columns=jours_ordre)
@@ -9461,7 +9461,7 @@ if is_admin:
         jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
         horaires_ordre = [
             "8h - 9h30", "9h30 - 11h", "11h - 12h30",
-            "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
+            "12h30 - 14h", "14h - 15h30","14h - 15h","15h - 16h", "15h30 - 17h"
         ]
     
         def _norm(x):
@@ -11091,7 +11091,7 @@ except ImportError:
 
 # --- Constantes ---
 HORAIRES_STD = [
-    "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
+    "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30","14h - 15h","15h - 16h", "15h30 - 17h"
 ]
 JOURS_STD = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
@@ -12750,7 +12750,7 @@ def generer_edt_pdf_iso(df_edt, promo, groupe, semestre="S1", nom_etudiant=""):
         
         # Table données
         jours = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-        horaires = ["8h-9h30", "9h30-11h", "11h-12h30", "12h30-14h", "14h-15h30", "15h30-17h"]
+        horaires = ["8h-9h30", "9h30-11h", "11h-12h30", "12h30-14h", "14h-15h","14h-15h30","15h-16h", "15h30-17h"]
         
         data = [["JOUR"] + horaires]
         for jour in jours:
