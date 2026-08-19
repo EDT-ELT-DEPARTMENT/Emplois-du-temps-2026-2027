@@ -2722,7 +2722,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # Constantes locales pour EDT
     horaires_list = [
         "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
-        "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
+        "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
     ]
     jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     map_h = {normalize(h): h for h in horaires_list}
