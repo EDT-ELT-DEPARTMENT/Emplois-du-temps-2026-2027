@@ -1242,7 +1242,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # ONGLETS
     # =============================================================================
     # Création des onglets (toujours 4 pour éviter UnboundLocalError)
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports", "👤 Infos Étudiant", "📅 Mon EDT"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports", "👤 Infos Étudiant"])
     with tab1:
         st.header("📝 Suivi de l'Assiduité et Compteur d'Absences")
 
