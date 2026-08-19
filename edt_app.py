@@ -381,6 +381,65 @@ def trouver_matiere_promo(nom_ens_complet, df_edt):
     df_filtre = df_filtre[df_filtre["Enseignants"].astype(str).str.strip().str.lower() != "non defini"]
     return df_filtre
 
+def trouver_toutes_promos_matiere(nom_matiere, df_edt, df_etu):
+    """
+    ✨ NOUVEAU: Trouve TOUTES les promotions qui ont une matière commune
+    Retourne: (promos_list, df_etudiants_tous, promo_primaire)
+    """
+    if df_edt.empty or nom_matiere.strip() == "":
+        return [], pd.DataFrame(), ""
+    
+    # 1. Trouver TOUTES les lignes de l'EDT avec cette matière
+    mask_matiere = df_edt["Enseignements"].astype(str).str.strip().str.lower() == nom_matiere.strip().lower()
+    df_mat = df_edt[mask_matiere].copy()
+    
+    if df_mat.empty:
+        return [], pd.DataFrame(), ""
+    
+    # 2. Extraire TOUTES les promotions uniques pour cette matière
+    promos_edt = []
+    for promo_brute in df_mat["Promotion"].dropna().unique():
+        promo_mapped = mapper_promotion(str(promo_brute).strip())
+        promos_edt.append(promo_mapped)
+    
+    promos_edt = list(set(promos_edt))  # Supprimer les doublons
+    
+    if not promos_edt:
+        return [], pd.DataFrame(), ""
+    
+    # 3. Chercher les correspondances dans df_etu
+    promos_etu_uniques = df_etu["Promotion"].dropna().astype(str).str.strip().unique()
+    promos_finales = []
+    
+    for p_edt in promos_edt:
+        p_edt_upper = p_edt.upper()
+        # Correspondance exacte
+        if p_edt_upper in promos_etu_uniques:
+            promos_finales.append(p_edt)
+        else:
+            # Correspondance partielle
+            for p_etu in promos_etu_uniques:
+                p_etu_upper = p_etu.upper()
+                if p_edt_upper == p_etu_upper or p_edt_upper in p_etu_upper or p_etu_upper in p_edt_upper:
+                    promos_finales.append(p_etu)  # Prendre la valeur exacte du fichier
+                    break
+    
+    promos_finales = list(set(promos_finales))  # Supprimer les doublons
+    
+    if not promos_finales:
+        return [], pd.DataFrame(), ""
+    
+    # 4. Récupérer TOUS les étudiants de CES promotions
+    df_etudiants_tous = pd.DataFrame()
+    for promo_final in promos_finales:
+        df_promo = df_etu[df_etu["Promotion"].astype(str).str.strip().str.upper() == promo_final.upper()]
+        df_etudiants_tous = pd.concat([df_etudiants_tous, df_promo], ignore_index=True)
+    
+    # Supprimer les doublons
+    df_etudiants_tous = df_etudiants_tous.drop_duplicates(subset=["Nom_Complet"])
+    
+    return promos_finales, df_etudiants_tous, promos_finales[0] if promos_finales else ""
+
 def Génerer_page_html(df_data, titre_bilan, colonnes, entetes):
     html_doc = f"""<!DOCTYPE html>
 <html lang="fr">
@@ -1284,35 +1343,26 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     sel_mat = st.selectbox("📚 Sélectionnez la matière :", [""] + liste_mats, key="mat_T1")
                 
                 if sel_mat:
-                    info_rows = df_matiere[df_matiere["Enseignements"] == sel_mat]
-                    if not info_rows.empty:
-                        # 1. Promotion brute dans l'EDT
-                        promo_edt_brut = str(info_rows.iloc[0]["Promotion"]).strip()
-                        # 2. Mapping standard (ING2RSE → ING2, etc.)
-                        promo_mapped = mapper_promotion(promo_edt_brut)
+                    # ✨ NOUVEAU: Récupérer TOUTES les promotions pour cette matière
+                    promos_toutes, df_etudiants_tous, promo_primaire = trouver_toutes_promos_matiere(sel_mat, df_edt, df_etu)
+                    
+                    if promos_toutes:
+                        promo_c = promo_primaire
                         
-                        # 3. Recherche intelligente dans le fichier ÉTUDIANTS
-                        promos_etu_uniques = df_etu["Promotion"].dropna().astype(str).str.strip().unique()
-                        promo_c = promo_mapped  # fallback
-                        
-                        # A. Correspondance exacte
-                        if promo_mapped in promos_etu_uniques:
-                            promo_c = promo_mapped
+                        # Affichage des promotions communes
+                        if len(promos_toutes) > 1:
+                            st.info(f"📍 Matière commune à **{len(promos_toutes)} promotions** : {', '.join(promos_toutes)}")
                         else:
-                            # B. Correspondance partielle (ex: ING2 dans ING2RSE ou inverse)
-                            pm_upper = promo_mapped.upper()
-                            for p in promos_etu_uniques:
-                                p_upper = p.upper()
-                                if pm_upper == p_upper or pm_upper in p_upper or p_upper in pm_upper:
-                                    promo_c = p  # On prend la valeur EXACTE du fichier étudiants
-                                    break
-                                 
+                            st.info(f"📍 Promotion détectée : **{promo_c}**")
+                    else:
+                        st.warning("⚠️ Aucune promotion trouvée pour cette matière.")
+                        promo_c = ""
+        
+        # ✨ MODIFICATION: Utiliser df_etudiants_tous au lieu de filtrer par une seule promotion
         if sel_mat and promo_c:
-            df_p = df_etu[df_etu["Promotion"].astype(str).str.strip().str.upper() == promo_c.upper()].copy()
-
-            if not df_p.empty:
-                noms_e = sorted(df_p["Nom_Complet"].tolist())
-                st.info(f"📍 Promotion détectée : **{promo_c}** | **{len(noms_e)}** étudiants")
+            if not df_etudiants_tous.empty:
+                noms_e = sorted(df_etudiants_tous["Nom_Complet"].tolist())
+                st.info(f"📍 **{len(noms_e)}** étudiants total(es) des promotion(s) concernée(s)")
 
                 if MODE_SUPABASE:
                     absences_filtrees = charger_absences_supabase(sel_mat, promo_c)
@@ -1325,7 +1375,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 # Détection automatique de la colonne Mat. BAC
                 col_mat_bac = None
-                for c in df_p.columns:
+                for c in df_etudiants_tous.columns:
                     c_up = str(c).strip().upper().replace(".", "").replace(" ", "").replace("_", "")
                     if "MAT" in c_up and "BAC" in c_up:
                         col_mat_bac = c
@@ -1336,7 +1386,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 with cn1:
                     etud_non = st.selectbox("👤 Étudiant :", [""] + noms_e, key="ne_et_t1")
                     if etud_non and col_mat_bac:
-                        mat_bac_val = df_p[df_p["Nom_Complet"] == etud_non][col_mat_bac]
+                        mat_bac_val = df_etudiants_tous[df_etudiants_tous["Nom_Complet"] == etud_non][col_mat_bac]
                         if not mat_bac_val.empty:
                             mat_bac_str = str(mat_bac_val.iloc[0])
                             st.markdown(f"<div style='background:linear-gradient(90deg,#1E3A8A,#3B82F6);color:white;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:600;text-align:center;margin-top:4px;'>🎓 Mat. BAC : {mat_bac_str}</div>", unsafe_allow_html=True)
