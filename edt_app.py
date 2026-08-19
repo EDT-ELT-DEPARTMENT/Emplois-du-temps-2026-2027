@@ -7005,7 +7005,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                     matiere_conflit = conflit_promo.iloc[0]['Enseignements']
                     st.error(f"❌ CONFLIT PROMOTION : La promotion **{n_promo}** a déjà un cours (**{matiere_conflit}**) avec **{prof_conflit}** en salle **{salle_conflit}** à ce créneau ({n_jour} — {n_horaire}).")
 
-                                else:
+                else:
                     # --- ÉTAPE 3 : INSERTION RÉELLE DANS LA TABLE SUPABASE ---
                     nouvelle_ligne_db = {
                         "Enseignements": n_ensg,
@@ -7035,7 +7035,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
 
    
 
-   # --- ÉDITEUR DE TABLEAU (VERSION CORRIGÉE 2027) ---
+    # --- ÉDITEUR DE TABLEAU (VERSION CORRIGÉE 2027) ---
     st.markdown("### 📝 Modification des données")
     
     # Changement de la clé pour éviter le conflit StreamlitDuplicateElementKey
