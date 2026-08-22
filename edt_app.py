@@ -3938,6 +3938,45 @@ td{{word-wrap:break-word;}}
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.metric("Total inscrits", len(liste_etudiants))
             
+            # ✨ NOUVEAU: Affichage numérique par promotion (excluant les en congé)
+            st.markdown("### 📊 Nombre d'Étudiants par Promotion")
+            
+            cols_map_temp = detecter_colonnes_etudiant(df_etu_edt)
+            
+            # Filtrer les étudiants ACTIFS (exclure congé académique)
+            df_actifs = df_etu_edt.copy()
+            if cols_map_temp.get('conge_acad'):
+                df_actifs = df_actifs[df_actifs[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() != 'OUI']
+            
+            # Compter par promotion
+            if cols_map_temp.get('promotion'):
+                comptage_promo = df_actifs[cols_map_temp['promotion']].value_counts().sort_index()
+                
+                if not comptage_promo.empty:
+                    # Afficher en colonnes
+                    cols_promo = st.columns(min(4, len(comptage_promo)))  # Max 4 colonnes
+                    for idx, (promo, count) in enumerate(comptage_promo.items()):
+                        with cols_promo[idx % len(cols_promo)]:
+                            st.metric(
+                                label=f"📚 {promo}",
+                                value=int(count),
+                                delta=f"Actifs (excl. congés)"
+                            )
+                else:
+                    st.info("ℹ️ Aucune promotion trouvée")
+            else:
+                st.warning("⚠️ Colonne 'Promotion' non détectée")
+            
+            st.divider()
+            
+            # Info globale
+            nb_total = len(df_etu_edt)
+            nb_conge = 0
+            if cols_map_temp.get('conge_acad'):
+                nb_conge = len(df_etu_edt[df_etu_edt[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() == 'OUI'])
+            
+            st.info(f"📋 **Total inscrits:** {nb_total} | **En congé académique:** {nb_conge} | **Actifs:** {nb_total - nb_conge}")
+            
             # ✨ NOUVEAU: Boutons de téléchargement Excel
             st.markdown("### 📥 Télécharger les Listes")
             db1, db2, db3 = st.columns(3)
