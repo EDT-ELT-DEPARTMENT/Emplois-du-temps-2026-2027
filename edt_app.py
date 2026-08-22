@@ -3937,7 +3937,7 @@ td{{word-wrap:break-word;}}
                 sel_etud = st.selectbox("🔍 Sélectionner un étudiant :", [""] + liste_etudiants, key="sel_etud_edt")
             with c2:
                 st.markdown("<br>", unsafe_allow_html=True)
-                st.metric("Total inscrits", len(liste_etudiants))
+                st.metric("Total étudiants (Y compris en congé Académique)", len(liste_etudiants))
             
             # ✨ Boutons de téléchargement Excel (AVANT les congés)
             st.markdown("### 📥 Télécharger les Listes")
