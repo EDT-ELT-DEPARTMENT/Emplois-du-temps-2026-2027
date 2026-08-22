@@ -4095,24 +4095,6 @@ td{{word-wrap:break-word;}}
                     st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
             
             if sel_etud:
-                # ✨ NOUVEAU: Affichage numérique du nombre d'étudiants inscrits (sans congé)
-                st.divider()
-                
-                cols_map = detecter_colonnes_etudiant(df_etu_edt)
-                
-                # Compter les étudiants ACTIFS (sans congé)
-                df_actifs_count = df_etu_edt.copy()
-                if cols_map.get('conge_acad'):
-                    df_actifs_count = df_actifs_count[df_actifs_count[cols_map['conge_acad']].astype(str).str.strip().str.upper() != 'OUI']
-                
-                nb_actifs = len(df_actifs_count)
-                
-                met1, met2 = st.columns(2)
-                with met1:
-                    st.metric("📚 Étudiants Inscrits", nb_actifs, delta="(sans congé académique)")
-                
-                st.divider()
-                
                 cols_map = detecter_colonnes_etudiant(df_etu_edt)
                 row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
                 
@@ -12791,23 +12773,6 @@ if df_etu_edt is not None and not df_etu_edt.empty:
             </p>
         </div>
     """, unsafe_allow_html=True)
-    
-    # ✨ NOUVEAU: Affichage numérique du nombre d'étudiants inscrits (sans congé)
-    # Détection préalable des colonnes
-    cols_map_repertoire = detecter_colonnes_etudiant(df_etu_edt)
-    
-    # Compter les étudiants ACTIFS (sans congé)
-    df_actifs_rep = df_etu_edt.copy()
-    if cols_map_repertoire.get('conge_acad'):
-        df_actifs_rep = df_actifs_rep[df_actifs_rep[cols_map_repertoire['conge_acad']].astype(str).str.strip().str.upper() != 'OUI']
-    
-    nb_actifs_rep = len(df_actifs_rep)
-    
-    rep_met1, rep_met2 = st.columns(2)
-    with rep_met1:
-        st.metric("📚 Étudiants Inscrits", nb_actifs_rep, delta="(sans congé académique)")
-    
-    st.divider()
 
     # ── Initialisation du filtre session state ──
     if "filtre_etudiants" not in st.session_state:
