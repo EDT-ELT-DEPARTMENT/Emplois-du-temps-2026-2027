@@ -3978,7 +3978,7 @@ td{{word-wrap:break-word;}}
             db1, db2, db3 = st.columns(3)
             
             with db1:
-                # Liste des étudiants Admis dette
+                # Liste des étudiants admis en dette
                 cols_map_temp = detecter_colonnes_etudiant(df_etu_edt)
                 if cols_map_temp.get('admis_dette'):
                     df_admis_dette = df_etu_edt[df_etu_edt[cols_map_temp['admis_dette']].astype(str).str.strip().str.upper() == 'OUI'].copy()
@@ -3992,12 +3992,12 @@ td{{word-wrap:break-word;}}
                             excel_buffer = io.BytesIO()
                             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                                 df_admis_dette[colonnes_export].to_excel(
-                                    writer, sheet_name='Admis dette', index=False
+                                    writer, sheet_name='Admis en Dette', index=False
                                 )
                             excel_buffer.seek(0)
                             
                             st.download_button(
-                                label=f"💾 Admis dette ({len(df_admis_dette)})",
+                                label=f"💾 Admis en Dette ({len(df_admis_dette)})",
                                 data=excel_buffer,
                                 file_name=f"Liste_Admis_Dette_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -4006,7 +4006,7 @@ td{{word-wrap:break-word;}}
                         except Exception as e:
                             st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
                     else:
-                        st.caption("❌ Aucun étudiant Admis dette")
+                        st.caption("❌ Aucun étudiant admis en dette")
                 else:
                     st.caption("⚠️ Colonne 'Admis dette' non trouvée")
             
@@ -4148,7 +4148,7 @@ td{{word-wrap:break-word;}}
                             is_admis_dette = str(admis_dette_val).strip().upper() == 'OUI'
                             status_icon = "✅" if is_admis_dette else "❌"
                             status_color = "#22c55e" if is_admis_dette else "#e5e7eb"
-                            status_text = "Admis dette" if is_admis_dette else "Non Admis dette"
+                            status_text = "Admis en Dette" if is_admis_dette else "Non admis en dette"
                             st.markdown(f"""
                             <div style="background:{status_color};padding:12px;border-radius:8px;border-left:4px solid {'#22c55e' if is_admis_dette else '#9ca3af'};text-align:center;">
                                 <div style="font-size:20px;font-weight:bold;color:{'#166534' if is_admis_dette else '#4b5563'};">{status_icon} {status_text}</div>
