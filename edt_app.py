@@ -3929,53 +3929,49 @@ td{{word-wrap:break-word;}}
         if df_etu_edt.empty:
             st.error("❌ Le fichier des étudiants n'est pas disponible.")
         else:
-            liste_etudiants = sorted(df_etu_edt["Nom_Complet"].dropna().unique())
-            
-            c1, c2 = st.columns([3, 1])
-            with c1:
-                sel_etud = st.selectbox("🔍 Sélectionner un étudiant :", [""] + liste_etudiants, key="sel_etud_edt")
-            with c2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.metric("Total inscrits", len(liste_etudiants))
-            
-            # ✨ NOUVEAU: Affichage numérique par promotion (excluant les en congé)
-            st.markdown("### 📊 Nombre d'Étudiants par Promotion")
-            
+            # ✨ Détecter les colonnes d'abord
             cols_map_temp = detecter_colonnes_etudiant(df_etu_edt)
             
-            # Filtrer les étudiants ACTIFS (exclure congé académique)
+            # Exclure les étudiants EN CONGÉ ACADÉMIQUE de la liste
             df_actifs = df_etu_edt.copy()
             if cols_map_temp.get('conge_acad'):
                 df_actifs = df_actifs[df_actifs[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() != 'OUI']
             
-            # Compter par promotion
-            if cols_map_temp.get('promotion'):
-                comptage_promo = df_actifs[cols_map_temp['promotion']].value_counts().sort_index()
+            # Créer la liste des étudiants ACTIFS UNIQUEMENT
+            liste_etudiants = sorted(df_actifs["Nom_Complet"].dropna().unique())
+            
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                sel_etud = st.selectbox("🔍 Sélectionner un étudiant :", [""] + liste_etudiants, key="sel_etud_edt")
+            
+            # ✨ NOUVEAU: Affichage numérique des CONGÉS par promotion
+            st.markdown("### 📊 Étudiants en Congé Académique par Promotion")
+            
+            # Filtrer les étudiants EN CONGÉ
+            df_conges = df_etu_edt.copy()
+            if cols_map_temp.get('conge_acad'):
+                df_conges = df_conges[df_conges[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() == 'OUI']
+            
+            # Compter les congés par promotion
+            if cols_map_temp.get('promotion') and not df_conges.empty:
+                comptage_conge = df_conges[cols_map_temp['promotion']].value_counts().sort_index()
                 
-                if not comptage_promo.empty:
-                    # Afficher en colonnes
-                    cols_promo = st.columns(min(4, len(comptage_promo)))  # Max 4 colonnes
-                    for idx, (promo, count) in enumerate(comptage_promo.items()):
+                if not comptage_conge.empty:
+                    # Afficher en colonnes (max 4 par ligne)
+                    cols_promo = st.columns(min(4, len(comptage_conge)))
+                    for idx, (promo, count) in enumerate(comptage_conge.items()):
                         with cols_promo[idx % len(cols_promo)]:
                             st.metric(
-                                label=f"📚 {promo}",
+                                label=f"🎓 {promo}",
                                 value=int(count),
-                                delta=f"Actifs (excl. congés)"
+                                delta="En congé académique"
                             )
                 else:
-                    st.info("ℹ️ Aucune promotion trouvée")
-            else:
+                    st.info("ℹ️ Aucun promotion avec étudiant en congé")
+            elif not df_conges.empty:
                 st.warning("⚠️ Colonne 'Promotion' non détectée")
-            
-            st.divider()
-            
-            # Info globale
-            nb_total = len(df_etu_edt)
-            nb_conge = 0
-            if cols_map_temp.get('conge_acad'):
-                nb_conge = len(df_etu_edt[df_etu_edt[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() == 'OUI'])
-            
-            st.info(f"📋 **Total inscrits:** {nb_total} | **En congé académique:** {nb_conge} | **Actifs:** {nb_total - nb_conge}")
+            else:
+                st.success("✅ Aucun étudiant en congé académique")
             
             # ✨ NOUVEAU: Boutons de téléchargement Excel
             st.markdown("### 📥 Télécharger les Listes")
