@@ -3940,6 +3940,64 @@ td{{word-wrap:break-word;}}
             # Créer la liste des étudiants ACTIFS UNIQUEMENT
             liste_etudiants = sorted(df_actifs["Nom_Complet"].dropna().unique())
             
+            # ✨ TITRE DE SECTION
+            st.markdown("""
+                <div style="background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%);
+                            padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+                    <div style="font-size: 12px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px;">
+                        Fiche Étudiant — département d'Électrotechnique
+                    </div>
+                    <div style="font-size: 20px; font-weight: bold; margin-top: 6px;">
+                        Recherche & Consultation des Informations
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # ✨ AFFICHAGE NUMÉRIQUE DES ÉTUDIANTS INSCRITS (SANS CONGÉ)
+            nb_actifs_rech = len(df_actifs)
+            nb_total_rech = len(df_etu_edt)
+            nb_conge_rech = nb_total_rech - nb_actifs_rech
+
+            met_r1, met_r2, met_r3 = st.columns(3)
+            with met_r1:
+                st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+                                padding: 16px; border-radius: 12px; text-align: center; color: white;
+                                box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 10px;">
+                        <div style="font-size: 32px; font-weight: 800;">{nb_actifs_rech}</div>
+                        <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
+                            📚 Étudiants Inscrits
+                        </div>
+                        <div style="font-size: 11px; opacity: 0.75; margin-top: 4px;">(sans congé académique)</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with met_r2:
+                st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #b45309 0%, #f59e0b 100%);
+                                padding: 16px; border-radius: 12px; text-align: center; color: white;
+                                box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 10px;">
+                        <div style="font-size: 32px; font-weight: 800;">{nb_total_rech}</div>
+                        <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
+                            📊 Total Base
+                        </div>
+                        <div style="font-size: 11px; opacity: 0.75; margin-top: 4px;">(tous les étudiants)</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with met_r3:
+                st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #be123c 0%, #fb7185 100%);
+                                padding: 16px; border-radius: 12px; text-align: center; color: white;
+                                box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 10px;">
+                        <div style="font-size: 32px; font-weight: 800;">{nb_conge_rech}</div>
+                        <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
+                            🚫 En Congé Académique
+                        </div>
+                        <div style="font-size: 11px; opacity: 0.75; margin-top: 4px;">(exclus de la liste)</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            st.divider()
+
             c1, c2 = st.columns([3, 1])
             with c1:
                 sel_etud = st.selectbox("🔍 Sélectionner un étudiant :", [""] + liste_etudiants, key="sel_etud_edt")
@@ -4105,13 +4163,7 @@ td{{word-wrap:break-word;}}
                 if cols_map.get('conge_acad'):
                     df_actifs_count = df_actifs_count[df_actifs_count[cols_map['conge_acad']].astype(str).str.strip().str.upper() != 'OUI']
                 
-                nb_actifs = len(df_actifs_count)
-                
-                met1, met2 = st.columns(2)
-                with met1:
-                    st.metric("📚 Étudiants Inscrits", nb_actifs, delta="(sans congé académique)")
-                
-                st.divider()
+                # ✨ NOUVEAU: Afficher les statuts spéciaux
                 
                 cols_map = detecter_colonnes_etudiant(df_etu_edt)
                 row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
