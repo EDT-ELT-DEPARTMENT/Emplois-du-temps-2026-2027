@@ -503,67 +503,32 @@ def Génerer_page_html(df_data, titre_bilan, colonnes, entetes):
     return html_doc
 
 def detecter_colonnes_etudiant(df):
-    """Détecte automatiquement les colonnes étudiantes avec tolérance maximale."""
     import unicodedata
-    
     def normalize_col(name):
-        if pd.isna(name):
-            return ""
+        if pd.isna(name): return ""
         s = str(name).strip().lower()
         s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII')
-        s = s.replace(' ', '').replace('-', '').replace('_', '').replace('.', '').replace('/', '')
-        return s
+        return s.replace(' ', '').replace('-', '').replace('_', '').replace('.', '').replace('/', '')
     
     cols_norm = {normalize_col(c): c for c in df.columns}
-    
     def find_col(variants):
-        """Cherche la MEILLEURE correspondance pour éviter les collisions (ex: N° vs Date de naiss.)."""
-        best_match = None
-        best_score = 0
-        MIN_LEN = 4  # Rejette les correspondances sur moins de 4 caractères
-        
         for v in variants:
             v_norm = normalize_col(v)
-            if not v_norm:
-                continue
-            
             for key, orig in cols_norm.items():
-                if not key:
-                    continue
-                score = 0
-                
-                # Correspondance exacte = score maximal
-                if v_norm == key:
-                    score = 1000 + len(key)
-                # Correspondance partielle : exige des chaînes suffisamment longues
-                elif len(v_norm) >= MIN_LEN and len(key) >= MIN_LEN:
-                    if v_norm in key:
-                        score = 500 + len(v_norm)
-                    elif key in v_norm:
-                        score = 200 + len(key)
-                
-                if score > best_score:
-                    best_score = score
-                    best_match = orig
-        
-        return best_match
+                if v_norm == key or (len(v_norm) >= 4 and v_norm in key):
+                    return orig
+        return None
     
-    mapping = {}
-    mapping['nom']           = find_col(['nom', 'name', 'familyname'])
-    mapping['prenom']        = find_col(['prenom', 'firstname', 'givenname'])
-    mapping['email']         = find_col(['email', 'e-mail', 'mail', 'courriel', 'adressemail'])
-    mapping['promotion']     = find_col(['promotion', 'promo', 'niveau', 'annee'])
-    mapping['mat_bac']       = find_col(['matbac', 'matriculebac', 'nombac', 'numbac', 'matriculedebac', 'mat.bac'])
-    mapping['mat_etud']      = find_col(['matetudiant', 'matriculeetudiant', 'numetudiant', 'netudiant', 'matetud', 'nometudiant', 'codeetudiant'])
-    mapping['groupe']        = find_col(['groupe', 'grp', 'group', 'section'])
-    mapping['sous_groupe']   = find_col(['sousgroupe', 'sousgrp', 'sg', 'subgroup', 'sousgroupe', 'sousgroupe'])
-    mapping['date_naiss']    = find_col(['datedenaissance', 'datenaiss', 'datenaissance', 'naissance', 'datenaiss.', 'datedenaiss.', 'birthdate', 'birth', 'daten'])
-    mapping['lieu_naiss']    = find_col(['lieudenaissance', 'lieunaiss', 'lieunaissance', 'lieunaiss.', 'lieudenaiss.', 'birthplace', 'lieu'])
-    # ✨ NOUVELLES COLONNES
-    mapping['admis_dette']   = find_col(['admisdette', 'admis_dette', 'admisdette', 'endette', 'en_dette', 'dette'])
-    mapping['conge_acad']    = find_col(['congeacademique', 'conge_academique', 'congeacad', 'conge_acad', 'congee', 'conge'])
-    
-    return mapping
+    return {
+        'nom': find_col(['nom', 'name']),
+        'prenom': find_col(['prenom', 'firstname']),
+        'promotion': find_col(['promotion', 'promo', 'niveau']),
+        'mat_bac': find_col(['matbac', 'matriculebac', 'nombac', 'mat.bac']),
+        'mat_etud': find_col(['matetudiant', 'matriculeetudiant', 'numetudiant']),
+        'groupe': find_col(['groupe', 'grp']),
+        'sous_groupe': find_col(['sousgroupe', 'sousgrp', 'sg']),
+        'conge_acad': find_col(['congeacademique', 'conge_academique', 'congeacad', 'conge'])
+    }
 
 
 def format_date_naissance(val):
