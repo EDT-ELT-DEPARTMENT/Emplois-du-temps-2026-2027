@@ -3948,21 +3948,28 @@ td{{word-wrap:break-word;}}
                 if cols_map_temp.get('admis_dette'):
                     df_admis_dette = df_etu_edt[df_etu_edt[cols_map_temp['admis_dette']].astype(str).str.strip().str.upper() == 'OUI'].copy()
                     if not df_admis_dette.empty:
-                        # Préparer le fichier Excel
-                        excel_buffer = io.BytesIO()
-                        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                            df_admis_dette[['Nom_Complet', 'Promotion', 'Mat. Étudiant', cols_map_temp.get('admis_dette', 'Admis dette')]].to_excel(
-                                writer, sheet_name='Admis en Dette', index=False
+                        try:
+                            # Préparer le fichier Excel avec colonnes valides
+                            colonnes_export = [c for c in ['Nom_Complet', cols_map_temp.get('promotion', ''), cols_map_temp.get('mat_etud', ''), cols_map_temp.get('admis_dette', '')] if c and c in df_admis_dette.columns]
+                            if not colonnes_export:
+                                colonnes_export = df_admis_dette.columns.tolist()[:4]  # Fallback: 4 premières colonnes
+                            
+                            excel_buffer = io.BytesIO()
+                            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                                df_admis_dette[colonnes_export].to_excel(
+                                    writer, sheet_name='Admis en Dette', index=False
+                                )
+                            excel_buffer.seek(0)
+                            
+                            st.download_button(
+                                label=f"💾 Admis en Dette ({len(df_admis_dette)})",
+                                data=excel_buffer,
+                                file_name=f"Liste_Admis_Dette_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key="dl_admis_dette"
                             )
-                        excel_buffer.seek(0)
-                        
-                        st.download_button(
-                            label="💾 Admis en Dette (Excel)",
-                            data=excel_buffer,
-                            file_name=f"Liste_Admis_Dette_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key="dl_admis_dette"
-                        )
+                        except Exception as e:
+                            st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
                     else:
                         st.caption("❌ Aucun étudiant admis en dette")
                 else:
@@ -3973,50 +3980,84 @@ td{{word-wrap:break-word;}}
                 if cols_map_temp.get('conge_acad'):
                     df_conge = df_etu_edt[df_etu_edt[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() == 'OUI'].copy()
                     if not df_conge.empty:
-                        # Préparer le fichier Excel
-                        excel_buffer2 = io.BytesIO()
-                        with pd.ExcelWriter(excel_buffer2, engine='openpyxl') as writer:
-                            df_conge[['Nom_Complet', 'Promotion', 'Mat. Étudiant', cols_map_temp.get('conge_acad', 'Congé académique')]].to_excel(
-                                writer, sheet_name='Congé Académique', index=False
+                        try:
+                            # Préparer le fichier Excel avec colonnes valides
+                            colonnes_export2 = [c for c in ['Nom_Complet', cols_map_temp.get('promotion', ''), cols_map_temp.get('mat_etud', ''), cols_map_temp.get('conge_acad', '')] if c and c in df_conge.columns]
+                            if not colonnes_export2:
+                                colonnes_export2 = df_conge.columns.tolist()[:4]  # Fallback
+                            
+                            excel_buffer2 = io.BytesIO()
+                            with pd.ExcelWriter(excel_buffer2, engine='openpyxl') as writer:
+                                df_conge[colonnes_export2].to_excel(
+                                    writer, sheet_name='Congé Académique', index=False
+                                )
+                            excel_buffer2.seek(0)
+                            
+                            st.download_button(
+                                label=f"💾 Congé Académique ({len(df_conge)})",
+                                data=excel_buffer2,
+                                file_name=f"Liste_Conge_Academique_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key="dl_conge_acad"
                             )
-                        excel_buffer2.seek(0)
-                        
-                        st.download_button(
-                            label="💾 Congé Académique (Excel)",
-                            data=excel_buffer2,
-                            file_name=f"Liste_Conge_Academique_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key="dl_conge_acad"
-                        )
+                        except Exception as e:
+                            st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
                     else:
                         st.caption("❌ Aucun étudiant en congé académique")
                 else:
                     st.caption("⚠️ Colonne 'Congé académique' non trouvée")
             
             with db3:
-                # Liste combinée
-                df_special = df_etu_edt.copy()
-                df_special['Admis_Dette'] = df_special.get(cols_map_temp.get('admis_dette', ''), '').astype(str).str.strip().str.upper() == 'OUI'
-                df_special['Conge_Acad'] = df_special.get(cols_map_temp.get('conge_acad', ''), '').astype(str).str.strip().str.upper() == 'OUI'
-                df_special_filtered = df_special[df_special['Admis_Dette'] | df_special['Conge_Acad']]
-                
-                if not df_special_filtered.empty:
-                    excel_buffer3 = io.BytesIO()
-                    with pd.ExcelWriter(excel_buffer3, engine='openpyxl') as writer:
-                        df_special_filtered[['Nom_Complet', 'Promotion', 'Mat. Étudiant', 'Admis_Dette', 'Conge_Acad']].to_excel(
-                            writer, sheet_name='Statuts Spéciaux', index=False
-                        )
-                    excel_buffer3.seek(0)
+                # Liste combinée (TOUS les statuts spéciaux)
+                try:
+                    df_special = df_etu_edt.copy()
+                    has_admis = cols_map_temp.get('admis_dette') is not None
+                    has_conge = cols_map_temp.get('conge_acad') is not None
                     
-                    st.download_button(
-                        label="💾 Tous Statuts Spéciaux (Excel)",
-                        data=excel_buffer3,
-                        file_name=f"Liste_Statuts_Speciaux_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="dl_tous_statuts"
-                    )
-                else:
-                    st.caption("❌ Aucun étudiant avec statut spécial")
+                    if has_admis:
+                        df_special['Admis_Dette'] = df_special[cols_map_temp['admis_dette']].astype(str).str.strip().str.upper() == 'OUI'
+                    if has_conge:
+                        df_special['Conge_Acad'] = df_special[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() == 'OUI'
+                    
+                    # Filtrer ceux qui ont au moins UN statut spécial
+                    if has_admis and has_conge:
+                        df_special_filtered = df_special[df_special['Admis_Dette'] | df_special['Conge_Acad']]
+                    elif has_admis:
+                        df_special_filtered = df_special[df_special['Admis_Dette']]
+                    elif has_conge:
+                        df_special_filtered = df_special[df_special['Conge_Acad']]
+                    else:
+                        df_special_filtered = pd.DataFrame()
+                    
+                    if not df_special_filtered.empty:
+                        # Sélectionner les colonnes valides
+                        colonnes_export3 = [c for c in ['Nom_Complet', cols_map_temp.get('promotion', ''), cols_map_temp.get('mat_etud', '')] if c and c in df_special_filtered.columns]
+                        if has_admis:
+                            colonnes_export3.append('Admis_Dette')
+                        if has_conge:
+                            colonnes_export3.append('Conge_Acad')
+                        
+                        if not colonnes_export3:
+                            colonnes_export3 = df_special_filtered.columns.tolist()[:4]
+                        
+                        excel_buffer3 = io.BytesIO()
+                        with pd.ExcelWriter(excel_buffer3, engine='openpyxl') as writer:
+                            df_special_filtered[colonnes_export3].to_excel(
+                                writer, sheet_name='Statuts Spéciaux', index=False
+                            )
+                        excel_buffer3.seek(0)
+                        
+                        st.download_button(
+                            label=f"💾 Tous Statuts ({len(df_special_filtered)})",
+                            data=excel_buffer3,
+                            file_name=f"Liste_Statuts_Speciaux_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="dl_tous_statuts"
+                        )
+                    else:
+                        st.caption("❌ Aucun étudiant avec statut spécial")
+                except Exception as e:
+                    st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
             
             if sel_etud:
                 cols_map = detecter_colonnes_etudiant(df_etu_edt)
