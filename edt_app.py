@@ -503,32 +503,67 @@ def Génerer_page_html(df_data, titre_bilan, colonnes, entetes):
     return html_doc
 
 def detecter_colonnes_etudiant(df):
+    """Détecte automatiquement les colonnes étudiantes avec tolérance maximale."""
     import unicodedata
+    
     def normalize_col(name):
-        if pd.isna(name): return ""
+        if pd.isna(name):
+            return ""
         s = str(name).strip().lower()
         s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII')
-        return s.replace(' ', '').replace('-', '').replace('_', '').replace('.', '').replace('/', '')
+        s = s.replace(' ', '').replace('-', '').replace('_', '').replace('.', '').replace('/', '')
+        return s
     
     cols_norm = {normalize_col(c): c for c in df.columns}
+    
     def find_col(variants):
+        """Cherche la MEILLEURE correspondance pour éviter les collisions (ex: N° vs Date de naiss.)."""
+        best_match = None
+        best_score = 0
+        MIN_LEN = 4  # Rejette les correspondances sur moins de 4 caractères
+        
         for v in variants:
             v_norm = normalize_col(v)
+            if not v_norm:
+                continue
+            
             for key, orig in cols_norm.items():
-                if v_norm == key or (len(v_norm) >= 4 and v_norm in key):
-                    return orig
-        return None
+                if not key:
+                    continue
+                score = 0
+                
+                # Correspondance exacte = score maximal
+                if v_norm == key:
+                    score = 1000 + len(key)
+                # Correspondance partielle : exige des chaînes suffisamment longues
+                elif len(v_norm) >= MIN_LEN and len(key) >= MIN_LEN:
+                    if v_norm in key:
+                        score = 500 + len(v_norm)
+                    elif key in v_norm:
+                        score = 200 + len(key)
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = orig
+        
+        return best_match
     
-    return {
-        'nom': find_col(['nom', 'name']),
-        'prenom': find_col(['prenom', 'firstname']),
-        'promotion': find_col(['promotion', 'promo', 'niveau']),
-        'mat_bac': find_col(['matbac', 'matriculebac', 'nombac', 'mat.bac']),
-        'mat_etud': find_col(['matetudiant', 'matriculeetudiant', 'numetudiant']),
-        'groupe': find_col(['groupe', 'grp']),
-        'sous_groupe': find_col(['sousgroupe', 'sousgrp', 'sg']),
-        'conge_acad': find_col(['congeacademique', 'conge_academique', 'congeacad', 'conge'])
-    }
+    mapping = {}
+    mapping['nom']           = find_col(['nom', 'name', 'familyname'])
+    mapping['prenom']        = find_col(['prenom', 'firstname', 'givenname'])
+    mapping['email']         = find_col(['email', 'e-mail', 'mail', 'courriel', 'adressemail'])
+    mapping['promotion']     = find_col(['promotion', 'promo', 'niveau', 'annee'])
+    mapping['mat_bac']       = find_col(['matbac', 'matriculebac', 'nombac', 'numbac', 'matriculedebac', 'mat.bac'])
+    mapping['mat_etud']      = find_col(['matetudiant', 'matriculeetudiant', 'numetudiant', 'netudiant', 'matetud', 'nometudiant', 'codeetudiant'])
+    mapping['groupe']        = find_col(['groupe', 'grp', 'group', 'section'])
+    mapping['sous_groupe']   = find_col(['sousgroupe', 'sousgrp', 'sg', 'subgroup', 'sousgroupe', 'sousgroupe'])
+    mapping['date_naiss']    = find_col(['datedenaissance', 'datenaiss', 'datenaissance', 'naissance', 'datenaiss.', 'datedenaiss.', 'birthdate', 'birth', 'daten'])
+    mapping['lieu_naiss']    = find_col(['lieudenaissance', 'lieunaiss', 'lieunaissance', 'lieunaiss.', 'lieudenaiss.', 'birthplace', 'lieu'])
+    # ✨ NOUVELLES COLONNES
+    mapping['admis_dette']   = find_col(['admisdette', 'admis_dette', 'admisdette', 'endette', 'en_dette', 'dette'])
+    mapping['conge_acad']    = find_col(['congeacademique', 'conge_academique', 'congeacad', 'conge_acad', 'congee', 'conge'])
+    
+    return mapping
 
 
 def format_date_naissance(val):
@@ -4060,6 +4095,24 @@ td{{word-wrap:break-word;}}
                     st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
             
             if sel_etud:
+                # ✨ NOUVEAU: Affichage numérique du nombre d'étudiants inscrits (sans congé)
+                st.divider()
+                
+                cols_map = detecter_colonnes_etudiant(df_etu_edt)
+                
+                # Compter les étudiants ACTIFS (sans congé)
+                df_actifs_count = df_etu_edt.copy()
+                if cols_map.get('conge_acad'):
+                    df_actifs_count = df_actifs_count[df_actifs_count[cols_map['conge_acad']].astype(str).str.strip().str.upper() != 'OUI']
+                
+                nb_actifs = len(df_actifs_count)
+                
+                met1, met2 = st.columns(2)
+                with met1:
+                    st.metric("📚 Étudiants Inscrits", nb_actifs, delta="(sans congé académique)")
+                
+                st.divider()
+                
                 cols_map = detecter_colonnes_etudiant(df_etu_edt)
                 row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
                 
@@ -12738,6 +12791,23 @@ if df_etu_edt is not None and not df_etu_edt.empty:
             </p>
         </div>
     """, unsafe_allow_html=True)
+    
+    # ✨ NOUVEAU: Affichage numérique du nombre d'étudiants inscrits (sans congé)
+    # Détection préalable des colonnes
+    cols_map_repertoire = detecter_colonnes_etudiant(df_etu_edt)
+    
+    # Compter les étudiants ACTIFS (sans congé)
+    df_actifs_rep = df_etu_edt.copy()
+    if cols_map_repertoire.get('conge_acad'):
+        df_actifs_rep = df_actifs_rep[df_actifs_rep[cols_map_repertoire['conge_acad']].astype(str).str.strip().str.upper() != 'OUI']
+    
+    nb_actifs_rep = len(df_actifs_rep)
+    
+    rep_met1, rep_met2 = st.columns(2)
+    with rep_met1:
+        st.metric("📚 Étudiants Inscrits", nb_actifs_rep, delta="(sans congé académique)")
+    
+    st.divider()
 
     # ── Initialisation du filtre session state ──
     if "filtre_etudiants" not in st.session_state:
