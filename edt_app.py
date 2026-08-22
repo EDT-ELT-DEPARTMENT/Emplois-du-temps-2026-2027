@@ -559,6 +559,9 @@ def detecter_colonnes_etudiant(df):
     mapping['sous_groupe']   = find_col(['sousgroupe', 'sousgrp', 'sg', 'subgroup', 'sousgroupe', 'sousgroupe'])
     mapping['date_naiss']    = find_col(['datedenaissance', 'datenaiss', 'datenaissance', 'naissance', 'datenaiss.', 'datedenaiss.', 'birthdate', 'birth', 'daten'])
     mapping['lieu_naiss']    = find_col(['lieudenaissance', 'lieunaiss', 'lieunaissance', 'lieunaiss.', 'lieudenaiss.', 'birthplace', 'lieu'])
+    # ✨ NOUVELLES COLONNES
+    mapping['admis_dette']   = find_col(['admisdette', 'admis_dette', 'admisdette', 'endette', 'en_dette', 'dette'])
+    mapping['conge_acad']    = find_col(['congeacademique', 'conge_academique', 'congeacad', 'conge_acad', 'congee', 'conge'])
     
     return mapping
 
@@ -3935,6 +3938,86 @@ td{{word-wrap:break-word;}}
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.metric("Total inscrits", len(liste_etudiants))
             
+            # ✨ NOUVEAU: Boutons de téléchargement Excel
+            st.markdown("### 📥 Télécharger les Listes")
+            db1, db2, db3 = st.columns(3)
+            
+            with db1:
+                # Liste des étudiants admis en dette
+                cols_map_temp = detecter_colonnes_etudiant(df_etu_edt)
+                if cols_map_temp.get('admis_dette'):
+                    df_admis_dette = df_etu_edt[df_etu_edt[cols_map_temp['admis_dette']].astype(str).str.strip().str.upper() == 'OUI'].copy()
+                    if not df_admis_dette.empty:
+                        # Préparer le fichier Excel
+                        excel_buffer = io.BytesIO()
+                        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                            df_admis_dette[['Nom_Complet', 'Promotion', 'Mat. Étudiant', cols_map_temp.get('admis_dette', 'Admis dette')]].to_excel(
+                                writer, sheet_name='Admis en Dette', index=False
+                            )
+                        excel_buffer.seek(0)
+                        
+                        st.download_button(
+                            label="💾 Admis en Dette (Excel)",
+                            data=excel_buffer,
+                            file_name=f"Liste_Admis_Dette_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="dl_admis_dette"
+                        )
+                    else:
+                        st.caption("❌ Aucun étudiant admis en dette")
+                else:
+                    st.caption("⚠️ Colonne 'Admis dette' non trouvée")
+            
+            with db2:
+                # Liste des étudiants en congé académique
+                if cols_map_temp.get('conge_acad'):
+                    df_conge = df_etu_edt[df_etu_edt[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() == 'OUI'].copy()
+                    if not df_conge.empty:
+                        # Préparer le fichier Excel
+                        excel_buffer2 = io.BytesIO()
+                        with pd.ExcelWriter(excel_buffer2, engine='openpyxl') as writer:
+                            df_conge[['Nom_Complet', 'Promotion', 'Mat. Étudiant', cols_map_temp.get('conge_acad', 'Congé académique')]].to_excel(
+                                writer, sheet_name='Congé Académique', index=False
+                            )
+                        excel_buffer2.seek(0)
+                        
+                        st.download_button(
+                            label="💾 Congé Académique (Excel)",
+                            data=excel_buffer2,
+                            file_name=f"Liste_Conge_Academique_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="dl_conge_acad"
+                        )
+                    else:
+                        st.caption("❌ Aucun étudiant en congé académique")
+                else:
+                    st.caption("⚠️ Colonne 'Congé académique' non trouvée")
+            
+            with db3:
+                # Liste combinée
+                df_special = df_etu_edt.copy()
+                df_special['Admis_Dette'] = df_special.get(cols_map_temp.get('admis_dette', ''), '').astype(str).str.strip().str.upper() == 'OUI'
+                df_special['Conge_Acad'] = df_special.get(cols_map_temp.get('conge_acad', ''), '').astype(str).str.strip().str.upper() == 'OUI'
+                df_special_filtered = df_special[df_special['Admis_Dette'] | df_special['Conge_Acad']]
+                
+                if not df_special_filtered.empty:
+                    excel_buffer3 = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer3, engine='openpyxl') as writer:
+                        df_special_filtered[['Nom_Complet', 'Promotion', 'Mat. Étudiant', 'Admis_Dette', 'Conge_Acad']].to_excel(
+                            writer, sheet_name='Statuts Spéciaux', index=False
+                        )
+                    excel_buffer3.seek(0)
+                    
+                    st.download_button(
+                        label="💾 Tous Statuts Spéciaux (Excel)",
+                        data=excel_buffer3,
+                        file_name=f"Liste_Statuts_Speciaux_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_tous_statuts"
+                    )
+                else:
+                    st.caption("❌ Aucun étudiant avec statut spécial")
+            
             if sel_etud:
                 cols_map = detecter_colonnes_etudiant(df_etu_edt)
                 row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
@@ -3975,6 +4058,39 @@ td{{word-wrap:break-word;}}
                             lieu = 'N/A'
                         st.write(f"**Date de naiss. :** {naiss_str}")
                         st.write(f"**Lieu de naissance :** {lieu}")
+                
+                st.divider()
+                
+                # ✨ NOUVEAU: Afficher les statuts spéciaux
+                if cols_map.get('admis_dette') or cols_map.get('conge_acad'):
+                    st.markdown("### 📌 Statuts Spéciaux")
+                    sc1, sc2 = st.columns(2)
+                    
+                    with sc1:
+                        if cols_map.get('admis_dette'):
+                            admis_dette_val = row.get(cols_map['admis_dette'], '')
+                            is_admis_dette = str(admis_dette_val).strip().upper() == 'OUI'
+                            status_icon = "✅" if is_admis_dette else "❌"
+                            status_color = "#22c55e" if is_admis_dette else "#e5e7eb"
+                            status_text = "Admis en Dette" if is_admis_dette else "Non admis en dette"
+                            st.markdown(f"""
+                            <div style="background:{status_color};padding:12px;border-radius:8px;border-left:4px solid {'#22c55e' if is_admis_dette else '#9ca3af'};text-align:center;">
+                                <div style="font-size:20px;font-weight:bold;color:{'#166534' if is_admis_dette else '#4b5563'};">{status_icon} {status_text}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    with sc2:
+                        if cols_map.get('conge_acad'):
+                            conge_val = row.get(cols_map['conge_acad'], '')
+                            is_conge = str(conge_val).strip().upper() == 'OUI'
+                            status_icon = "✅" if is_conge else "❌"
+                            status_color = "#3b82f6" if is_conge else "#e5e7eb"
+                            status_text = "Congé Académique" if is_conge else "Pas de congé académique"
+                            st.markdown(f"""
+                            <div style="background:{status_color}15;padding:12px;border-radius:8px;border-left:4px solid {'#3b82f6' if is_conge else '#9ca3af'};text-align:center;">
+                                <div style="font-size:20px;font-weight:bold;color:{'#1e40af' if is_conge else '#4b5563'};">{status_icon} {status_text}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
                 
                 st.divider()
                 email_val = row.get(cols_map['email'], '')
