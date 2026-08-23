@@ -6372,35 +6372,43 @@ if "activation_token" in query_params and query_params["activation_token"]:
     
     st.stop()
 # --- SYSTÈME D'AUTH ---
+
+    
 if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
 
 if not st.session_state["user_data"]:
     st.markdown("<h1 class='main-title'>🏛️ Espace enseignant & Administration</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
-    
+
+    # ═══════════════════════════════════════════════════════════════
+    # ONGLET CONNEXION
+    # ═══════════════════════════════════════════════════════════════
     with t_conn:
         email_input = st.text_input("Adresse Email", key="login_email")
         pass_input = st.text_input("Mot de passe", type="password", key="login_pass")
+        
         if st.button("Se connecter au portail", use_container_width=True):
-            result = supabase.table("enseignants_auth").select("*").eq("email", email_input).eq("password_hash", hash_pw(pass_input)).execute()
+            email_clean = str(email_input).strip().lower()
+            result = supabase.table("enseignants_auth").select("*")\
+                .ilike("email", email_clean)\
+                .eq("password_hash", hash_pw(pass_input)).execute()
             if result.data:
                 st.session_state["user_data"] = result.data[0]
                 st.rerun()
             else:
                 st.error("Email ou mot de passe incorrect.")
-        
+
         # ═══════════════════════════════════════════════════════════════
-        # 🔒 RÉCUPÉRATION DE MOT DE PASSE
+        # MOT DE PASSE OUBLIÉ (CORRECTION COMPLÈTE)
         # ═══════════════════════════════════════════════════════════════
         st.divider()
-        
         with st.expander("🔒 Mot de passe oublié ?"):
-            email_reset = st.text_input("Votre email enregistré", key="reset_email")
+            email_reset = st.text_input("Votre email enregistré", key="reset_email_global")
             
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("📧 Envoyer le lien de réinitialisation", use_container_width=True, key="btn_gen_token"):
+                if st.button("📧 Envoyer le lien de réinitialisation", use_container_width=True, key="btn_send_reset"):
                     import secrets
                     from datetime import timezone, timedelta
                     
@@ -6408,28 +6416,24 @@ if not st.session_state["user_data"]:
                     if not email_clean or "@" not in email_clean:
                         st.error("Veuillez saisir un email valide.")
                     else:
-                        # Recherche insensible à la casse
-                        check = supabase.table("enseignants_auth").select("id,email,nom_officiel").ilike("email", email_clean).execute()
+                        check = supabase.table("enseignants_auth").select("id,email,nom_officiel")\
+                            .ilike("email", email_clean).execute()
                         if check.data:
                             user_row = check.data[0]
                             token = secrets.token_urlsafe(32)
                             expiration = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
                             
-                            # Mise à jour en base
                             supabase.table("enseignants_auth").update({
                                 "reset_token": token,
                                 "reset_expires": expiration
                             }).eq("id", user_row['id']).execute()
                             
-                            # ═══════════════════════════════════════════════════════
-                            # ENVOI EMAIL SMTP (CORRECTION CRITIQUE)
-                            # ═══════════════════════════════════════════════════════
+                            # Envoi SMTP
                             try:
                                 import smtplib
                                 from email.mime.text import MIMEText
                                 from email.mime.multipart import MIMEMultipart
                                 
-                                # Lien direct vers votre app (à adapter si l'URL change)
                                 BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
                                 lien_reset = f"{BASE_URL}/?reset_token={token}"
                                 
@@ -6439,57 +6443,52 @@ if not st.session_state["user_data"]:
                                 msg["To"] = email_clean
                                 
                                 body_html = f"""<!DOCTYPE html>
-        <html><head><meta charset="UTF-8"></head>
-        <body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
-        <div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-        <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-        <h2 style="margin:0;font-size:20px;">département d'Électrotechnique - UDL-SBA</h2>
-        <p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de gestion des EDTs</p>
-        </div>
-        <div style="padding:30px;">
-        <p style="color:#334155;">Salem <b>{user_row.get('nom_officiel', 'Enseignant')}</b>,</p>
-        <p style="color:#64748b;font-size:14px;">Une demande de réinitialisation de mot de passe a été effectuée pour votre compte.</p>
-        <div style="background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:15px;margin:20px 0;color:#1e40af;font-size:13px;">
-        <b>🔑 Votre token de réinitialisation :</b><br>
-        <code style="background:#dbeafe;padding:4px 8px;border-radius:4px;font-size:14px;word-break:break-all;">{token}</code>
-        </div>
-        <p style="color:#64748b;font-size:14px;">Ou cliquez sur le lien ci-dessous :</p>
-        <div style="text-align:center;margin:25px 0;">
-        <a href="{lien_reset}" style="background:#1E3A8A;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
-        Réinitialiser mon mot de passe
-        </a>
-        </div>
-        <p style="color:#64748b;font-size:13px;"><i>Ce lien et ce token sont valables 1 heure.</i></p>
-        <hr style="border:none;border-top:1px solid #e2e8f0;">
-        <p style="font-size:12px;color:#94a3b8;">Faculté de Génie Électrique - UDL-SBA<br>Cet email est généré automatiquement.</p>
-        </div>
-        </div>
-        </body></html>"""
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
+<h2 style="margin:0;font-size:20px;">département d'Électrotechnique - UDL-SBA</h2>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de gestion des EDTs</p>
+</div>
+<div style="padding:30px;">
+<p style="color:#334155;">Salem <b>{user_row.get('nom_officiel', 'Enseignant')}</b>,</p>
+<p style="color:#64748b;font-size:14px;">Une demande de réinitialisation a été effectuée.</p>
+<div style="background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:15px;margin:20px 0;color:#1e40af;font-size:13px;">
+<b>🔑 Votre token :</b><br>
+<code style="background:#dbeafe;padding:4px 8px;border-radius:4px;font-size:14px;word-break:break-all;">{token}</code>
+</div>
+<p style="color:#64748b;font-size:14px;">Ou cliquez sur le lien :</p>
+<div style="text-align:center;margin:25px 0;">
+<a href="{lien_reset}" style="background:#1E3A8A;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
+Réinitialiser mon mot de passe
+</a>
+</div>
+<p style="color:#64748b;font-size:13px;"><i>Valable 1 heure.</i></p>
+</div>
+</div>
+</body></html>"""
                                 
                                 msg.attach(MIMEText(body_html, "html"))
-                                
                                 server = smtplib.SMTP('smtp.gmail.com', 587)
                                 server.starttls()
                                 server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
                                 server.send_message(msg)
                                 server.quit()
                                 
-                                st.success("✅ Email envoyé ! Consultez votre boîte mail (et vos spams).")
-                                st.info(f"📧 Destinataire : `{email_clean}`")
-                                
+                                st.success("✅ Email envoyé ! Consultez votre boîte et vos spams.")
                             except Exception as e:
-                                st.warning(f"⚠️ Email non envoyé (erreur SMTP) : {e}")
-                                st.info("💡 Mode secours : copiez le token ci-dessous et collez-le dans le champ 'Token reçu'.")
+                                st.warning(f"⚠️ Email non envoyé : {e}")
+                                st.info("💡 Copiez ce token et collez-le dans le champ 'Token reçu' :")
                                 st.code(token, language="text")
                         else:
-                            st.error("❌ Cet email n'est pas enregistré dans la base.")
+                            st.error("❌ Cet email n'est pas enregistré.")
             
             with c2:
-                token_input = st.text_input("Token reçu", type="password", key="token_input")
-                new_pass_reset = st.text_input("Nouveau mot de passe", type="password", key="new_pass_reset")
-                confirm_pass_reset = st.text_input("Confirmer le mot de passe", type="password", key="confirm_pass_reset")
+                token_input = st.text_input("Token reçu", type="password", key="token_input_global")
+                new_pass_reset = st.text_input("Nouveau mot de passe", type="password", key="new_pass_reset_global")
+                confirm_pass_reset = st.text_input("Confirmer le mot de passe", type="password", key="confirm_pass_reset_global")
                 
-                if st.button("🔄 Valider la réinitialisation", use_container_width=True, key="btn_reset_pass"):
+                if st.button("🔄 Valider la réinitialisation", use_container_width=True, key="btn_valid_reset"):
                     email_clean = str(email_reset).strip().lower()
                     token_clean = str(token_input).strip()
                     
@@ -6521,51 +6520,69 @@ if not st.session_state["user_data"]:
                                         "reset_token": None,
                                         "reset_expires": None
                                     }).eq("id", user_row['id']).execute()
-                                    
-                                    st.success("✅ Mot de passe mis à jour ! Vous pouvez maintenant vous connecter.")
+                                    st.success("✅ Mot de passe mis à jour ! Connectez-vous avec le nouvel onglet.")
                                 else:
                                     st.error("⏰ Token expiré. Générez-en un nouveau.")
                             except Exception as e:
                                 st.error(f"Erreur de validation : {e}")
                         else:
                             st.error("❌ Token invalide ou email incorrect.")
-        # ═══════════════════════════════════════════════════════════════
-        # ÉTAPE 2 : AFFICHAGE DU FORMULAIRE PRÉ-REMPLI (SI IDENTITÉ VÉRIFIÉE)
-        # ═══════════════════════════════════════════════════════════════
+
+    # ═══════════════════════════════════════════════════════════════
+    # ONGLET INSCRIPTION (CORRECTION NameError)
+    # ═══════════════════════════════════════════════════════════════
+    with t_ins:
+        st.subheader("📝 Demande d'activation de compte")
+        st.info("Saisissez votre email professionnel. Vos informations se rempliront automatiquement.")
         
+        # Initialisation défensive pour éviter NameError
+        email_verif = st.text_input(
+            "📧 Saisissez votre email professionnel",
+            key="verif_email_insc_v2",
+            placeholder="ex: nom.prenom@univ-sba.dz"
+        )
+        email_verif_clean = str(email_verif).strip().lower()
+        
+        if "contact_match" not in st.session_state:
+            st.session_state.contact_match = None
+        if "last_verified_email" not in st.session_state:
+            st.session_state.last_verified_email = ""
+
+        col_verif, _ = st.columns([1, 3])
+        with col_verif:
+            verifier = st.button("🔍 Vérifier mon identité", use_container_width=True, key="btn_verif_id_v2")
+
+        if verifier and email_verif_clean:
+            if df_contacts is not None and not df_contacts.empty and 'Email' in df_contacts.columns:
+                match = df_contacts[df_contacts["Email"].astype(str).str.strip().str.lower() == email_verif_clean]
+                if not match.empty:
+                    st.session_state.contact_match = match.iloc[0]
+                    st.session_state.last_verified_email = email_verif_clean
+                    st.success("✅ Identité confirmée.")
+                else:
+                    st.session_state.contact_match = None
+                    st.error("❌ Email non reconnu dans le répertoire officiel.")
+            else:
+                st.error("⚠️ Fichier répertoire introuvable.")
+
+        # Réinitialisation si l'email change
+        if st.session_state.last_verified_email and st.session_state.last_verified_email != email_verif_clean:
+            st.session_state.contact_match = None
+            st.session_state.last_verified_email = ""
+
         if st.session_state.contact_match is not None:
             row = st.session_state.contact_match
-            
-            # Extraction sécurisée des données
             nom_brut = str(row.get('NOM', '')).strip().upper()
             prenom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
             email_brut = str(row.get('Email', '')).strip()
             qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
             tel_brut = str(row.get('N°/TEL', '')).strip()
-            
-            # Nettoyage strict : uniquement les chiffres
             tel_nettoye = ''.join([c for c in tel_brut if c.isdigit()])
-            
-            nom_complet = f"{nom_brut} {prenom_brut}"
-            
-            # ═══════════════════════════════════════════════════════════════
-            # CORRECTION CRITIQUE : Forcer la réinitialisation du widget 
-            # téléphone quand on change d'enseignant
-            # ═══════════════════════════════════════════════════════════════
-            contact_id = f"{nom_brut}_{email_brut}"
-            if st.session_state.get("last_verified_contact") != contact_id:
-                if "tel_insc_modifiable" in st.session_state:
-                    del st.session_state["tel_insc_modifiable"]
-                st.session_state["last_verified_contact"] = contact_id
-            
-            st.divider()
-            st.markdown("### 👤 Votre fiche enseignant")
-            
-            # Affichage du nom (LECTURE SEULE)
+            nom_complet = f"{nom_brut} {prenom_brut}".strip()
+
             st.markdown(f"""
             <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
-                        padding: 15px; border-radius: 10px; color: white; margin-bottom: 15px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        padding: 15px; border-radius: 10px; color: white; margin-bottom: 15px;">
                 <div style="font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
                     Enseignant identifié
                 </div>
@@ -6576,63 +6593,48 @@ if not st.session_state["user_data"]:
             """, unsafe_allow_html=True)
             
             c1, c2 = st.columns(2)
-            
             with c1:
                 st.markdown(f"""
                 <div style="background-color:#f0f2f6;padding:12px;border-radius:8px;border-left:4px solid #22c55e;margin-bottom:10px;">
-                    <span style="font-size:11px;color:#64748b;">📧 Adresse Email</span><br>
+                    <span style="font-size:11px;color:#64748b;">📧 Email</span><br>
                     <span style="font-weight:bold;color:#1E3A8A;font-size:14px;">{email_brut}</span>
                 </div>
                 """, unsafe_allow_html=True)
-            
             with c2:
                 st.markdown(f"""
                 <div style="background-color:#f0f2f6;padding:12px;border-radius:8px;border-left:4px solid #D4AF37;margin-bottom:10px;">
-                    <span style="font-size:11px;color:#64748b;">🏷️ Qualité (auto-détectée)</span><br>
+                    <span style="font-size:11px;color:#64748b;">🏷️ Qualité</span><br>
                     <span style="font-weight:bold;color:#1E3A8A;font-size:14px;">{qualite_brute}</span>
                 </div>
                 """, unsafe_allow_html=True)
             
-            # Téléphone : pré-rempli avec le numéro nettoyé depuis le fichier source
             default_phone = tel_nettoye if len(tel_nettoye) == 10 else ""
             new_phone = st.text_input(
-                "📱 Numéro de téléphone (Obligatoire — 10 chiffres)",
+                "📱 Numéro de téléphone (10 chiffres)",
                 value=default_phone,
-                key="tel_insc_modifiable",
-                help="Format strict : exactement 10 chiffres, sans espaces ni tirets (ex: 0555123456)",
+                key="tel_insc_v2",
                 max_chars=10
             )
             
             st.divider()
-            
-            # ═══════════════════════════════════════════════════════════════
-            # ÉTAPE 3 : ENVOI DU LIEN D'ACTIVATION
-            # ═══════════════════════════════════════════════════════════════
             BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
             
-            if st.button("📧 Envoyer le lien d'activation à votre adresse Email", use_container_width=True, type="primary"):
-                # Validation...
-                phone_clean = new_phone.strip()
-                
-                if not new_phone:
+            if st.button("📧 Envoyer le lien d'activation", use_container_width=True, type="primary"):
+                phone_clean = str(new_phone).strip()
+                if not phone_clean:
                     st.error("📱 Le numéro de téléphone est obligatoire.")
-                elif not phone_clean.isdigit():
-                    st.error("📱 Le numéro ne doit contenir que des chiffres.")
-                elif len(phone_clean) != 10:
-                    st.error(f"📱 Le numéro doit contenir exactement 10 chiffres (actuellement {len(phone_clean)}).")
-                elif not email_brut or "@" not in email_brut:
-                    st.error("❌ L'adresse email récupérée est invalide. Contactez l'administrateur.")
-                elif not qualite_brute or qualite_brute.lower() == "non défini":
-                    st.error("❌ La qualité n'est pas reconnue dans le fichier source. Contactez l'administrateur.")
+                elif not phone_clean.isdigit() or len(phone_clean) != 10:
+                    st.error("📱 Le numéro doit contenir exactement 10 chiffres.")
+                elif "@" not in email_brut:
+                    st.error("❌ Email invalide.")
                 else:
-                    # Vérifier si un compte actif existe déjà
-                    check = supabase.table("enseignants_auth").select("email,activation_token").eq("email", email_brut).execute()
+                    check = supabase.table("enseignants_auth").select("email,activation_token").ilike("email", email_brut).execute()
                     if check.data and not check.data[0].get('activation_token'):
-                        st.error("❌ Cet email est déjà associé à un compte actif. Utilisez l'onglet **Connexion**.")
+                        st.error("❌ Compte déjà actif. Utilisez l'onglet Connexion.")
                     else:
                         import secrets
                         token = secrets.token_urlsafe(32)
-                        expiration = (datetime.now().replace(microsecond=0) + timedelta(hours=24)).isoformat() + "+01:00"
+                        expiration = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
                         
                         data_upsert = {
                             "nom_officiel": nom_brut,
@@ -6644,73 +6646,66 @@ if not st.session_state["user_data"]:
                             "activation_token": token,
                             "activation_expires": expiration
                         }
-                        
                         try:
                             if check.data:
-                                supabase.table("enseignants_auth").update(data_upsert).eq("email", email_brut).execute()
+                                supabase.table("enseignants_auth").update(data_upsert).ilike("email", email_brut).execute()
                             else:
                                 supabase.table("enseignants_auth").insert(data_upsert).execute()
                             
-                            # ─── ENVOI EMAIL SMTP ───
-                            import smtplib
-                            from email.mime.text import MIMEText
-                            from email.mime.multipart import MIMEMultipart
-                            
-                            lien_activation = f"{BASE_URL}/?activation_token={token}"
-                            
-                            msg = MIMEMultipart()
-                            msg['Subject'] = "Activation de votre compte EDT - département ELT"
-                            msg['From'] = "chef.department.elt.fge@gmail.com"
-                            msg['To'] = email_brut
-                            
-                            body_html = f"""
-                            <html>
-                            <body style="font-family:Arial,sans-serif;color:#333;">
-                                <div style="max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
-                                    <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);padding:20px;color:white;text-align:center;">
-                                        <h2 style="margin:0;">département d'Électrotechnique - UDL SBA</h2>
-                                    </div>
-                                    <div style="padding:25px;background:#fff;">
-                                        <p>Sallem Aleykoum <b>{nom_complet}</b>,</p>
-                                        <p>Votre demande d'inscription a été enregistrée dans la <b>Plateforme de gestion des EDTs du département d'électrotechnique</b>.</p>
-                                        <p><b>Qualité détectée :</b> {qualite_brute}<br>
-                                        <b>Téléphone :</b> {phone_clean}</p>
-                                        <p>Cliquez sur le bouton ci-dessous pour définir votre mot de passe :</p>
-                                        <div style="text-align:center;margin:25px 0;">
-                                            <a href="{lien_activation}" style="background:#1E3A8A;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
-                                                Activer mon compte
-                                            </a>
-                                        </div>
-                                        <p>Ou copiez ce lien dans votre navigateur :<br>
-                                        <code style="background:#f1f5f9;padding:8px;border-radius:4px;display:block;word-break:break-all;">{lien_activation}</code></p>
-                                        <p style="color:#64748b;font-size:13px;"><i>Ce lien est valable 24 heures.</i></p>
-                                        <hr style="border:none;border-top:1px solid #e2e8f0;">
-                                        <p style="font-size:12px;color:#94a3b8;">Faculté de Génie Électrique - UDL SBA</p>
-                                    </div>
-                                </div>
-                            </body>
-                            </html>
-                            """
-                            msg.attach(MIMEText(body_html, 'html'))
-                            
-                            server = smtplib.SMTP('smtp.gmail.com', 587)
-                            server.starttls()
-                            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
-                            server.send_message(msg)
-                            server.quit()
-                            
-                            st.success("✅ Lien d'activation envoyé ! Consultez votre boîte mail (et vos spams).")
-                            st.info(f"📧 Email envoyé à : `{email_brut}`")
-                            st.balloons()
-                            
+                            # Email SMTP
+                            try:
+                                import smtplib
+                                from email.mime.text import MIMEText
+                                from email.mime.multipart import MIMEMultipart
+                                
+                                lien_activation = f"{BASE_URL}/?activation_token={token}"
+                                msg = MIMEMultipart()
+                                msg['Subject'] = "Activation compte EDT - département ELT"
+                                msg['From'] = "chef.department.elt.fge@gmail.com"
+                                msg['To'] = email_brut
+                                
+                                body_html = f"""<html><body style="font-family:Arial,sans-serif;color:#333;">
+<div style="max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);padding:20px;color:white;text-align:center;">
+<h2 style="margin:0;">département d'Électrotechnique - UDL SBA</h2>
+</div>
+<div style="padding:25px;background:#fff;">
+<p>Sallem Aleykoum <b>{nom_complet}</b>,</p>
+<p>Votre demande d'inscription est enregistrée.</p>
+<p><b>Qualité :</b> {qualite_brute}<br><b>Téléphone :</b> {phone_clean}</p>
+<div style="text-align:center;margin:25px 0;">
+<a href="{lien_activation}" style="background:#1E3A8A;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
+Activer mon compte
+</a>
+</div>
+<p style="color:#64748b;font-size:13px;"><i>Ce lien est valable 24 heures.</i></p>
+</div>
+</div>
+</body></html>"""
+                                msg.attach(MIMEText(body_html, 'html'))
+                                server = smtplib.SMTP('smtp.gmail.com', 587)
+                                server.starttls()
+                                server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+                                server.send_message(msg)
+                                server.quit()
+                                st.success("✅ Lien envoyé ! Consultez votre boîte mail.")
+                            except Exception as e:
+                                st.warning(f"⚠️ Email non envoyé : {e}")
+                                st.info(f"Lien d'activation (24h) :")
+                                st.code(f"{BASE_URL}/?activation_token={token}", language="text")
                         except Exception as e:
-                            st.error(f"❌ Erreur lors de l'envoi : {e}")
+                            st.error(f"❌ Erreur : {e}")
         else:
-            if not email_verif:
-                st.info("👆 Saisissez votre email professionnel et cliquez sur **Vérifier mon identité** pour commencer.")
-            # Si email saisi mais pas de match, le message d'erreur est déjà affiché ci-dessus                    
+            if not email_verif_clean:
+                st.info("👆 Saisissez votre email et cliquez sur **Vérifier mon identité**.")
+            elif not verifier:
+                st.info("👆 Cliquez sur **Vérifier mon identité** pour continuer.")
+
+    # ═══════════════════════════════════════════════════════════════
+    # ONGLET ADMIN
+    # ═══════════════════════════════════════════════════════════════
     with t_adm:
-        code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code")
+        code_admin = st.text_input("Code de sécurité Administration", type="password", key="admin_code_v2")
         if st.button("Accès Administration", use_container_width=True):
             if code_admin == "doctorat2026":
                 st.session_state["user_data"] = {
@@ -6721,6 +6716,8 @@ if not st.session_state["user_data"]:
                 st.rerun()
             else:
                 st.error("Code administrateur incorrect.")
+    
+    st.stop()
 
 # --- GARDIEN DE SESSION ---
 user = st.session_state.get("user_data")
