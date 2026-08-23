@@ -6302,6 +6302,75 @@ else:
 # ACTIVATION DE COMPTE PAR TOKEN (depuis lien email)
 # =============================================================================
 # =============================================================================
+# RÉINITIALISATION DE MOT DE PASSE PAR TOKEN (depuis lien email)
+# =============================================================================
+query_params = st.query_params
+if "reset_token" in query_params and query_params["reset_token"]:
+    st.markdown("<h1 class='main-title'>🔑 RÉINITIALISATION DE MOT DE PASSE</h1>", unsafe_allow_html=True)
+    
+    token = str(query_params["reset_token"]).strip()
+    
+    # Vérification du token
+    res = supabase.table("enseignants_auth").select("id,email,nom_officiel,reset_token,reset_expires").eq("reset_token", token).execute()
+    
+    if not res.data:
+        st.error("❌ Lien de réinitialisation invalide ou déjà utilisé.")
+        st.stop()
+    
+    user_row = res.data[0]
+    expires_str = user_row.get('reset_expires')
+    
+    # Vérification expiration
+    if expires_str:
+        from datetime import timezone
+        expires = datetime.fromisoformat(str(expires_str).replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) > expires:
+            st.error("⏰ Ce lien de réinitialisation a expiré (validité: 1 heure). Veuillez refaire une demande.")
+            st.stop()
+    
+    st.success(f"✅ Bienvenue **{user_row['nom_officiel']}**, définissez votre nouveau mot de passe.")
+    
+    # ═══════════════════════════════════════════════════════════════
+    # FORMULAIRE DE RÉINITIALISATION (100% AUTOMATIQUE)
+    # ═══════════════════════════════════════════════════════════════
+    with st.form("form_reset_password"):
+        new_pass = st.text_input("Nouveau mot de passe", type="password")
+        confirm_pass = st.text_input("Confirmer le mot de passe", type="password")
+        submitted = st.form_submit_button("🔐 Réinitialiser le mot de passe", use_container_width=True, type="primary")
+        
+        if submitted:
+            if not new_pass or not confirm_pass:
+                st.error("Veuillez remplir les deux champs.")
+            elif len(new_pass) < 6:
+                st.error("Le mot de passe doit contenir au moins 6 caractères.")
+            elif new_pass != confirm_pass:
+                st.error("Les mots de passe ne correspondent pas.")
+            else:
+                try:
+                    supabase.table("enseignants_auth").update({
+                        "password_hash": hash_pw(new_pass),
+                        "reset_token": None,
+                        "reset_expires": None
+                    }).eq("id", user_row['id']).execute()
+                    
+                    st.session_state['reset_success'] = True
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"❌ Erreur: {str(e)[:150]}")
+    
+    # ═══════════════════════════════════════════════════════════════
+    # BOUTON DE NAVIGATION (HORS DU FORMULAIRE)
+    # ═══════════════════════════════════════════════════════════════
+    if st.session_state.get('reset_success'):
+        st.success("✅ Mot de passe réinitialisé avec succès ! Vous pouvez maintenant vous connecter.")
+        if st.button("🔑 Aller à la connexion", use_container_width=True, type="primary"):
+            st.session_state['reset_success'] = False
+            st.query_params.clear()
+            st.rerun()
+    
+    st.stop()
+
 # ACTIVATION DE COMPTE PAR TOKEN (depuis lien email)
 # =============================================================================
 query_params = st.query_params
@@ -6404,22 +6473,129 @@ if not st.session_state["user_data"]:
         # ═══════════════════════════════════════════════════════════════
         st.divider()
         with st.expander("🔒 Mot de passe oublié ?"):
-            st.info("""
-            ### 📧 Réinitialisation de Mot de Passe
+            email_reset = st.text_input("Votre email enregistré", key="reset_email_global")
             
-            Pour des raisons de sécurité, veuillez contacter directement :
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("📧 Envoyer le lien de réinitialisation", use_container_width=True, key="btn_send_reset"):
+                    import secrets
+                    from datetime import timezone, timedelta
+                    
+                    email_clean = str(email_reset).strip().lower()
+                    if not email_clean or "@" not in email_clean:
+                        st.error("Veuillez saisir un email valide.")
+                    else:
+                        check = supabase.table("enseignants_auth").select("id,email,nom_officiel")\
+                            .ilike("email", email_clean).execute()
+                        if check.data:
+                            user_row = check.data[0]
+                            token = secrets.token_urlsafe(32)
+                            expiration = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+                            
+                            supabase.table("enseignants_auth").update({
+                                "reset_token": token,
+                                "reset_expires": expiration
+                            }).eq("id", user_row['id']).execute()
+                            
+                            # Envoi SMTP
+                            try:
+                                import smtplib
+                                from email.mime.text import MIMEText
+                                from email.mime.multipart import MIMEMultipart
+                                
+                                BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
+                                lien_reset = f"{BASE_URL}/?reset_token={token}"
+                                
+                                msg = MIMEMultipart("alternative")
+                                msg["Subject"] = "Réinitialisation de mot de passe - Plateforme EDT"
+                                msg["From"] = "chef.department.elt.fge@gmail.com"
+                                msg["To"] = email_clean
+                                
+                                body_html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
+<h2 style="margin:0;font-size:20px;">département d'Électrotechnique - UDL-SBA</h2>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de gestion des EDTs</p>
+</div>
+<div style="padding:30px;">
+<p style="color:#334155;">Salem <b>{user_row.get('nom_officiel', 'Enseignant')}</b>,</p>
+<p style="color:#64748b;font-size:14px;">Une demande de réinitialisation a été effectuée.</p>
+<div style="background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:15px;margin:20px 0;color:#1e40af;font-size:13px;">
+<b>🔑 Votre token :</b><br>
+<code style="background:#dbeafe;padding:4px 8px;border-radius:4px;font-size:14px;word-break:break-all;">{token}</code>
+</div>
+<p style="color:#64748b;font-size:14px;">Ou cliquez sur le lien :</p>
+<div style="text-align:center;margin:25px 0;">
+<a href="{lien_reset}" style="background:#1E3A8A;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
+Réinitialiser mon mot de passe
+</a>
+</div>
+<p style="color:#64748b;font-size:13px;"><i>Valable 1 heure.</i></p>
+</div>
+</div>
+</body></html>"""
+                                
+                                msg.attach(MIMEText(body_html, "html"))
+                                server = smtplib.SMTP('smtp.gmail.com', 587)
+                                server.starttls()
+                                server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+                                server.send_message(msg)
+                                server.quit()
+                                
+                                st.success("✅ Email envoyé ! Consultez votre boîte et vos spams.")
+                            except Exception as e:
+                                st.warning(f"⚠️ Email non envoyé : {e}")
+                                st.info("💡 Copiez ce token et collez-le dans le champ 'Token reçu' :")
+                                st.code(token, language="text")
+                        else:
+                            st.error("❌ Cet email n'est pas enregistré.")
             
-            **📬 Secrétariat pédagogique**
-            - Email: secretariat.elt@univ-fr
-            - Tél: +213 XXX XXX XXX
-            
-            **⚠️ À fournir:**
-            - Votre email professionnel
-            - Votre nom complet
-            - Votre numéro de matricule
-            
-            *Délai: réponse sous 24h*
-            """)
+            with c2:
+                token_input = st.text_input("Token reçu", type="password", key="token_input_global")
+                new_pass_reset = st.text_input("Nouveau mot de passe", type="password", key="new_pass_reset_global")
+                confirm_pass_reset = st.text_input("Confirmer le mot de passe", type="password", key="confirm_pass_reset_global")
+                
+                if st.button("🔄 Valider la réinitialisation", use_container_width=True, key="btn_valid_reset"):
+                    email_clean = str(email_reset).strip().lower()
+                    token_clean = str(token_input).strip()
+                    
+                    if not email_clean or not token_clean or not new_pass_reset:
+                        st.error("Veuillez remplir tous les champs.")
+                    elif new_pass_reset != confirm_pass_reset:
+                        st.error("Les mots de passe ne correspondent pas.")
+                    elif len(new_pass_reset) < 6:
+                        st.error("Le mot de passe doit contenir au moins 6 caractères.")
+                    else:
+                        res = supabase.table("enseignants_auth").select("*")\
+                            .ilike("email", email_clean)\
+                            .eq("reset_token", token_clean).execute()
+                        
+                        if res.data:
+                            user_row = res.data[0]
+                            try:
+                                expires_raw = user_row['reset_expires']
+                                if isinstance(expires_raw, str):
+                                    expires = datetime.fromisoformat(expires_raw.replace("Z", "+00:00"))
+                                else:
+                                    expires = expires_raw
+                                    if expires.tzinfo is None:
+                                        expires = expires.replace(tzinfo=timezone.utc)
+                                
+                                if datetime.now(timezone.utc) < expires:
+                                    supabase.table("enseignants_auth").update({
+                                        "password_hash": hash_pw(new_pass_reset),
+                                        "reset_token": None,
+                                        "reset_expires": None
+                                    }).eq("id", user_row['id']).execute()
+                                    st.success("✅ Mot de passe mis à jour ! Connectez-vous avec le nouvel onglet.")
+                                else:
+                                    st.error("⏰ Token expiré. Générez-en un nouveau.")
+                            except Exception as e:
+                                st.error(f"Erreur de validation : {e}")
+                        else:
+                            st.error("❌ Token invalide ou email incorrect.")
 
     # ═══════════════════════════════════════════════════════════════
     # ONGLET INSCRIPTION (CORRECTION NameError)
