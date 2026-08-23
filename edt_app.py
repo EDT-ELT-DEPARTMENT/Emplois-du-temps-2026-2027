@@ -4057,6 +4057,7 @@ td{{word-wrap:break-word;}}
             # ═══════════════════════════════════════════════════════════════
             # ✅ NOUVEAU : Bouton "Actifs par Promotion" (sans congé académique)
             # ═══════════════════════════════════════════════════════════════
+            
             with db4:
                 if cols_map_temp.get('promotion'):
                     # Filtrer : garder uniquement les étudiants NON en congé académique
@@ -4067,50 +4068,76 @@ td{{word-wrap:break-word;}}
                         ]
                     
                     if not df_actifs.empty:
+                        # ═══ LISTE DÉROULANTE : Toutes ou une promotion spécifique ═══
+                        promos_list = sorted(df_actifs[cols_map_temp['promotion']].dropna().astype(str).unique())
+                        promo_choix = st.selectbox(
+                            "🎓 Promotion :",
+                            options=["Toutes"] + promos_list,
+                            key="sel_promo_dl_actifs"
+                        )
+                        
+                        # Filtrer selon le choix
+                        if promo_choix != "Toutes":
+                            df_export = df_actifs[df_actifs[cols_map_temp['promotion']].astype(str) == promo_choix].copy()
+                            nom_fichier = f"Liste_Actifs_{promo_choix}_{datetime.now().strftime('%d_%m_%Y')}.xlsx"
+                            sheet_principal = str(promo_choix)[:31]
+                            label_btn = f"💾 Télécharger {promo_choix} ({len(df_export)} étudiants)"
+                        else:
+                            df_export = df_actifs.copy()
+                            nom_fichier = f"Liste_Actifs_Toutes_Promotions_{datetime.now().strftime('%d_%m_%Y')}.xlsx"
+                            sheet_principal = "Tous_Actifs"
+                            label_btn = f"💾 Télécharger Toutes ({len(df_export)} étudiants)"
+                        
+                        # Colonnes à exporter
+                        colonnes_export4 = [c for c in [
+                            'Nom_Complet', 
+                            cols_map_temp.get('promotion', ''), 
+                            cols_map_temp.get('mat_etud', ''), 
+                            cols_map_temp.get('mat_bac', ''),
+                            cols_map_temp.get('groupe', ''),
+                            cols_map_temp.get('sous_groupe', '')
+                        ] if c and c in df_export.columns]
+                        
+                        if not colonnes_export4:
+                            colonnes_export4 = df_export.columns.tolist()[:6]
+                        
                         try:
-                            # Colonnes à exporter
-                            colonnes_export4 = [c for c in [
-                                'Nom_Complet', 
-                                cols_map_temp.get('promotion', ''), 
-                                cols_map_temp.get('mat_etud', ''), 
-                                cols_map_temp.get('mat_bac', ''),
-                                cols_map_temp.get('groupe', ''),
-                                cols_map_temp.get('sous_groupe', '')
-                            ] if c and c in df_actifs.columns]
-                            
-                            if not colonnes_export4:
-                                colonnes_export4 = df_actifs.columns.tolist()[:6]
-                            
                             excel_buffer4 = io.BytesIO()
                             with pd.ExcelWriter(excel_buffer4, engine='openpyxl') as writer:
-                                # Onglet 1 : Tous les étudiants actifs regroupés par promotion
-                                df_actifs_sorted = df_actifs.sort_values(
-                                    by=[cols_map_temp['promotion'], 'Nom_Complet'] 
-                                    if cols_map_temp['promotion'] in df_actifs.columns else ['Nom_Complet']
-                                )
-                                df_actifs_sorted[colonnes_export4].to_excel(
-                                    writer, sheet_name='Tous_Actifs', index=False
-                                )
-                                
-                                # Onglets séparés : un par promotion
-                                if cols_map_temp.get('promotion'):
-                                    promo_col = cols_map_temp['promotion']
-                                    for promo in sorted(df_actifs[promo_col].dropna().unique()):
-                                        df_promo = df_actifs[df_actifs[promo_col] == promo].sort_values('Nom_Complet')
-                                        # Nom de l'onglet limité à 31 caractères pour Excel
-                                        sheet_name = str(promo)[:31]
-                                        df_promo[colonnes_export4].to_excel(
-                                            writer, sheet_name=sheet_name, index=False
-                                        )
+                                if promo_choix == "Toutes":
+                                    # Onglet 1 : Tous les actifs regroupés
+                                    df_export_sorted = df_export.sort_values(
+                                        by=[cols_map_temp['promotion'], 'Nom_Complet'] 
+                                        if cols_map_temp['promotion'] in df_export.columns else ['Nom_Complet']
+                                    )
+                                    df_export_sorted[colonnes_export4].to_excel(
+                                        writer, sheet_name='Tous_Actifs', index=False
+                                    )
+                                    # Onglets séparés : un par promotion
+                                    if cols_map_temp.get('promotion'):
+                                        promo_col = cols_map_temp['promotion']
+                                        for promo in sorted(df_export[promo_col].dropna().unique()):
+                                            df_promo = df_export[df_export[promo_col] == promo].sort_values('Nom_Complet')
+                                            sheet_name = str(promo)[:31]  # Excel limite à 31 caractères
+                                            df_promo[colonnes_export4].to_excel(
+                                                writer, sheet_name=sheet_name, index=False
+                                            )
+                                else:
+                                    # Une seule promotion sélectionnée
+                                    df_export_sorted = df_export.sort_values('Nom_Complet')
+                                    df_export_sorted[colonnes_export4].to_excel(
+                                        writer, sheet_name=sheet_principal, index=False
+                                    )
                             
                             excel_buffer4.seek(0)
                             
                             st.download_button(
-                                label=f"💾 Actifs par Promo ({len(df_actifs)})",
+                                label=label_btn,
                                 data=excel_buffer4,
-                                file_name=f"Liste_Etudiants_Actifs_Par_Promotion_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                                file_name=nom_fichier,
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key="dl_actifs_par_promo"
+                                use_container_width=True,
+                                key=f"dl_actifs_{promo_choix.replace(' ', '_').replace('/', '_')}"
                             )
                         except Exception as e:
                             st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
