@@ -6394,34 +6394,37 @@ if not st.session_state["user_data"]:
         # 🔒 RÉCUPÉRATION DE MOT DE PASSE
         # ═══════════════════════════════════════════════════════════════
         st.divider()
+        
         with st.expander("🔒 Mot de passe oublié ?"):
             email_reset = st.text_input("Votre email enregistré", key="reset_email")
             
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("📧 Générer un token de réinitialisation", use_container_width=True, key="btn_gen_token"):
-                    # ✨ CORRECTION: Vérifier que email_reset n'est pas vide
-                    if not email_reset or not email_reset.strip():
-                        st.error("❌ Veuillez entrer votre email.")
+                    import secrets
+                    from datetime import timezone, timedelta
+                    
+                    email_clean = str(email_reset).strip().lower()
+                    if not email_clean:
+                        st.error("Veuillez saisir votre email.")
                     else:
-                        import secrets
-                        try:
-                            check = supabase.table("enseignants_auth").select("email").eq("email", email_reset.strip()).execute()
-                            if check.data:
-                                token = secrets.token_urlsafe(32)
-                                # Expiration dans 1 heure (format ISO pour Supabase)
-                                expiration = (datetime.now().replace(microsecond=0)).isoformat() + "+01:00"
-                                supabase.table("enseignants_auth").update({
-                                    "reset_token": token,
-                                    "reset_expires": expiration
-                                }).eq("email", email_reset.strip()).execute()
-                                st.success("✅ Token généré (valable 1h) :")
-                                st.code(token, language="text")
-                                st.caption("💡 Dans un système en production, ce token serait envoyé par email automatiquement.")
-                            else:
-                                st.error("❌ Cet email n'est pas enregistré dans la base.")
-                        except Exception as e:
-                            st.error(f"❌ Erreur lors de la génération du token: {str(e)[:100]}")
+                        # ilike = insensible à la casse
+                        check = supabase.table("enseignants_auth").select("id,email").ilike("email", email_clean).execute()
+                        if check.data:
+                            token = secrets.token_urlsafe(32)
+                            # Expiration UTC correcte (1h)
+                            expiration = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+                            
+                            supabase.table("enseignants_auth").update({
+                                "reset_token": token,
+                                "reset_expires": expiration
+                            }).ilike("email", email_clean).execute()
+                            
+                            st.success("✅ Token généré (valable 1h) :")
+                            st.code(token, language="text")
+                            st.caption("💡 Copiez ce token exactement, sans espace avant/après.")
+                        else:
+                            st.error("❌ Cet email n'est pas enregistré dans la base.")
             
             with c2:
                 token_input = st.text_input("Token reçu", type="password", key="token_input")
@@ -6429,41 +6432,47 @@ if not st.session_state["user_data"]:
                 confirm_pass_reset = st.text_input("Confirmer le mot de passe", type="password", key="confirm_pass_reset")
                 
                 if st.button("🔄 Valider la réinitialisation", use_container_width=True, key="btn_reset_pass"):
-                    # ✨ CORRECTION: Vérifier que email_reset n'est pas vide
-                    if not email_reset or not email_reset.strip():
-                        st.error("❌ Veuillez entrer votre email.")
-                    elif not token_input or not new_pass_reset:
+                    email_clean = str(email_reset).strip().lower()
+                    token_clean = str(token_input).strip()
+                    
+                    if not email_clean or not token_clean or not new_pass_reset:
                         st.error("Veuillez remplir tous les champs.")
                     elif new_pass_reset != confirm_pass_reset:
                         st.error("Les mots de passe ne correspondent pas.")
                     elif len(new_pass_reset) < 6:
                         st.error("Le mot de passe doit contenir au moins 6 caractères.")
                     else:
-                        try:
-                            res = supabase.table("enseignants_auth").select("*")\
-                                .eq("email", email_reset.strip())\
-                                .eq("reset_token", token_input).execute()
-                            if res.data:
-                                # Vérification de l'expiration
-                                try:
-                                    from datetime import timezone
-                                    expires_str = res.data[0]['reset_expires'].replace("Z", "+00:00")
-                                    expires = datetime.fromisoformat(expires_str)
-                                    if datetime.now(timezone.utc) < expires:
-                                        supabase.table("enseignants_auth").update({
-                                            "password_hash": hash_pw(new_pass_reset),
-                                            "reset_token": None,
-                                            "reset_expires": None
-                                        }).eq("email", email_reset.strip()).execute()
-                                        st.success("✅ Mot de passe mis à jour avec succès ! Vous pouvez maintenant vous connecter.")
-                                    else:
-                                        st.error("⏰ Token expiré. Veuillez en générer un nouveau.")
-                                except Exception as e:
-                                    st.error(f"Erreur de validation du token : {e}")
-                            else:
-                                st.error("❌ Token invalide ou email incorrect.")
-                        except Exception as e:
-                            st.error(f"❌ Erreur lors de la réinitialisation : {str(e)[:100]}")
+                        res = supabase.table("enseignants_auth").select("*")\
+                            .ilike("email", email_clean)\
+                            .eq("reset_token", token_clean).execute()
+                        
+                        if res.data:
+                            user_row = res.data[0]
+                            try:
+                                expires_raw = user_row['reset_expires']
+                                
+                                # Gère à la fois string et datetime selon la version de supabase-py
+                                if isinstance(expires_raw, str):
+                                    expires = datetime.fromisoformat(expires_raw.replace("Z", "+00:00"))
+                                else:
+                                    expires = expires_raw
+                                    if expires.tzinfo is None:
+                                        expires = expires.replace(tzinfo=timezone.utc)
+                                
+                                if datetime.now(timezone.utc) < expires:
+                                    supabase.table("enseignants_auth").update({
+                                        "password_hash": hash_pw(new_pass_reset),
+                                        "reset_token": None,
+                                        "reset_expires": None
+                                    }).eq("id", user_row['id']).execute()
+                                    
+                                    st.success("✅ Mot de passe mis à jour ! Connectez-vous avec le nouvel onglet.")
+                                else:
+                                    st.error("⏰ Token expiré. Générez-en un nouveau.")
+                            except Exception as e:
+                                st.error(f"Erreur de validation : {e}")
+                        else:
+                            st.error("❌ Token invalide ou email incorrect.")
                     
     
     
