@@ -3941,7 +3941,7 @@ td{{word-wrap:break-word;}}
             
             # ✨ Boutons de téléchargement Excel (AVANT les congés)
             st.markdown("### 📥 Télécharger les Listes")
-            db1, db2, db3 = st.columns(3)
+            db1, db2, db3, db4 = st.columns(4)
             
             cols_map_temp = detecter_colonnes_etudiant(df_etu_edt)
             
@@ -3950,10 +3950,9 @@ td{{word-wrap:break-word;}}
                     df_admis_dette = df_etu_edt[df_etu_edt[cols_map_temp['admis_dette']].astype(str).str.strip().str.upper() == 'OUI'].copy()
                     if not df_admis_dette.empty:
                         try:
-                            # Préparer le fichier Excel avec colonnes valides
                             colonnes_export = [c for c in ['Nom_Complet', cols_map_temp.get('promotion', ''), cols_map_temp.get('mat_etud', ''), cols_map_temp.get('admis_dette', '')] if c and c in df_admis_dette.columns]
                             if not colonnes_export:
-                                colonnes_export = df_admis_dette.columns.tolist()[:4]  # Fallback: 4 premières colonnes
+                                colonnes_export = df_admis_dette.columns.tolist()[:4]
                             
                             excel_buffer = io.BytesIO()
                             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
@@ -3977,15 +3976,13 @@ td{{word-wrap:break-word;}}
                     st.caption("⚠️ Colonne 'Admis dette' non trouvée")
             
             with db2:
-                # Liste des étudiants en congé académique
                 if cols_map_temp.get('conge_acad'):
                     df_conge = df_etu_edt[df_etu_edt[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() == 'OUI'].copy()
                     if not df_conge.empty:
                         try:
-                            # Préparer le fichier Excel avec colonnes valides
                             colonnes_export2 = [c for c in ['Nom_Complet', cols_map_temp.get('promotion', ''), cols_map_temp.get('mat_etud', ''), cols_map_temp.get('conge_acad', '')] if c and c in df_conge.columns]
                             if not colonnes_export2:
-                                colonnes_export2 = df_conge.columns.tolist()[:4]  # Fallback
+                                colonnes_export2 = df_conge.columns.tolist()[:4]
                             
                             excel_buffer2 = io.BytesIO()
                             with pd.ExcelWriter(excel_buffer2, engine='openpyxl') as writer:
@@ -4009,7 +4006,6 @@ td{{word-wrap:break-word;}}
                     st.caption("⚠️ Colonne 'Congé académique' non trouvée")
             
             with db3:
-                # Liste combinée (TOUS les statuts spéciaux)
                 try:
                     df_special = df_etu_edt.copy()
                     has_admis = cols_map_temp.get('admis_dette') is not None
@@ -4020,7 +4016,6 @@ td{{word-wrap:break-word;}}
                     if has_conge:
                         df_special['Conge_Acad'] = df_special[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() == 'OUI'
                     
-                    # Filtrer ceux qui ont au moins UN statut spécial
                     if has_admis and has_conge:
                         df_special_filtered = df_special[df_special['Admis_Dette'] | df_special['Conge_Acad']]
                     elif has_admis:
@@ -4031,7 +4026,6 @@ td{{word-wrap:break-word;}}
                         df_special_filtered = pd.DataFrame()
                     
                     if not df_special_filtered.empty:
-                        # Sélectionner les colonnes valides
                         colonnes_export3 = [c for c in ['Nom_Complet', cols_map_temp.get('promotion', ''), cols_map_temp.get('mat_etud', '')] if c and c in df_special_filtered.columns]
                         if has_admis:
                             colonnes_export3.append('Admis_Dette')
@@ -4059,6 +4053,71 @@ td{{word-wrap:break-word;}}
                         st.caption("❌ Aucun étudiant avec statut spécial")
                 except Exception as e:
                     st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
+            
+            # ═══════════════════════════════════════════════════════════════
+            # ✅ NOUVEAU : Bouton "Actifs par Promotion" (sans congé académique)
+            # ═══════════════════════════════════════════════════════════════
+            with db4:
+                if cols_map_temp.get('promotion'):
+                    # Filtrer : garder uniquement les étudiants NON en congé académique
+                    df_actifs = df_etu_edt.copy()
+                    if cols_map_temp.get('conge_acad'):
+                        df_actifs = df_actifs[
+                            df_actifs[cols_map_temp['conge_acad']].astype(str).str.strip().str.upper() != 'OUI'
+                        ]
+                    
+                    if not df_actifs.empty:
+                        try:
+                            # Colonnes à exporter
+                            colonnes_export4 = [c for c in [
+                                'Nom_Complet', 
+                                cols_map_temp.get('promotion', ''), 
+                                cols_map_temp.get('mat_etud', ''), 
+                                cols_map_temp.get('mat_bac', ''),
+                                cols_map_temp.get('groupe', ''),
+                                cols_map_temp.get('sous_groupe', '')
+                            ] if c and c in df_actifs.columns]
+                            
+                            if not colonnes_export4:
+                                colonnes_export4 = df_actifs.columns.tolist()[:6]
+                            
+                            excel_buffer4 = io.BytesIO()
+                            with pd.ExcelWriter(excel_buffer4, engine='openpyxl') as writer:
+                                # Onglet 1 : Tous les étudiants actifs regroupés par promotion
+                                df_actifs_sorted = df_actifs.sort_values(
+                                    by=[cols_map_temp['promotion'], 'Nom_Complet'] 
+                                    if cols_map_temp['promotion'] in df_actifs.columns else ['Nom_Complet']
+                                )
+                                df_actifs_sorted[colonnes_export4].to_excel(
+                                    writer, sheet_name='Tous_Actifs', index=False
+                                )
+                                
+                                # Onglets séparés : un par promotion
+                                if cols_map_temp.get('promotion'):
+                                    promo_col = cols_map_temp['promotion']
+                                    for promo in sorted(df_actifs[promo_col].dropna().unique()):
+                                        df_promo = df_actifs[df_actifs[promo_col] == promo].sort_values('Nom_Complet')
+                                        # Nom de l'onglet limité à 31 caractères pour Excel
+                                        sheet_name = str(promo)[:31]
+                                        df_promo[colonnes_export4].to_excel(
+                                            writer, sheet_name=sheet_name, index=False
+                                        )
+                            
+                            excel_buffer4.seek(0)
+                            
+                            st.download_button(
+                                label=f"💾 Actifs par Promo ({len(df_actifs)})",
+                                data=excel_buffer4,
+                                file_name=f"Liste_Etudiants_Actifs_Par_Promotion_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key="dl_actifs_par_promo"
+                            )
+                        except Exception as e:
+                            st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
+                    else:
+                        st.caption("❌ Aucun étudiant actif")
+                else:
+                    st.caption("⚠️ Colonne 'Promotion' non trouvée")
             
             if sel_etud:
                 st.divider()
