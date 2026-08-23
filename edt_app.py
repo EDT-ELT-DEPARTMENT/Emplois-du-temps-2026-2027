@@ -6400,29 +6400,87 @@ if not st.session_state["user_data"]:
             
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("📧 Générer un token de réinitialisation", use_container_width=True, key="btn_gen_token"):
+                if st.button("📧 Envoyer le lien de réinitialisation", use_container_width=True, key="btn_gen_token"):
                     import secrets
                     from datetime import timezone, timedelta
                     
                     email_clean = str(email_reset).strip().lower()
-                    if not email_clean:
-                        st.error("Veuillez saisir votre email.")
+                    if not email_clean or "@" not in email_clean:
+                        st.error("Veuillez saisir un email valide.")
                     else:
-                        # ilike = insensible à la casse
-                        check = supabase.table("enseignants_auth").select("id,email").ilike("email", email_clean).execute()
+                        # Recherche insensible à la casse
+                        check = supabase.table("enseignants_auth").select("id,email,nom_officiel").ilike("email", email_clean).execute()
                         if check.data:
+                            user_row = check.data[0]
                             token = secrets.token_urlsafe(32)
-                            # Expiration UTC correcte (1h)
                             expiration = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
                             
+                            # Mise à jour en base
                             supabase.table("enseignants_auth").update({
                                 "reset_token": token,
                                 "reset_expires": expiration
-                            }).ilike("email", email_clean).execute()
+                            }).eq("id", user_row['id']).execute()
                             
-                            st.success("✅ Token généré (valable 1h) :")
-                            st.code(token, language="text")
-                            st.caption("💡 Copiez ce token exactement, sans espace avant/après.")
+                            # ═══════════════════════════════════════════════════════
+                            # ENVOI EMAIL SMTP (CORRECTION CRITIQUE)
+                            # ═══════════════════════════════════════════════════════
+                            try:
+                                import smtplib
+                                from email.mime.text import MIMEText
+                                from email.mime.multipart import MIMEMultipart
+                                
+                                # Lien direct vers votre app (à adapter si l'URL change)
+                                BASE_URL = "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
+                                lien_reset = f"{BASE_URL}/?reset_token={token}"
+                                
+                                msg = MIMEMultipart("alternative")
+                                msg["Subject"] = "Réinitialisation de mot de passe - Plateforme EDT"
+                                msg["From"] = "chef.department.elt.fge@gmail.com"
+                                msg["To"] = email_clean
+                                
+                                body_html = f"""<!DOCTYPE html>
+        <html><head><meta charset="UTF-8"></head>
+        <body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+        <div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+        <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
+        <h2 style="margin:0;font-size:20px;">département d'Électrotechnique - UDL-SBA</h2>
+        <p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de gestion des EDTs</p>
+        </div>
+        <div style="padding:30px;">
+        <p style="color:#334155;">Salem <b>{user_row.get('nom_officiel', 'Enseignant')}</b>,</p>
+        <p style="color:#64748b;font-size:14px;">Une demande de réinitialisation de mot de passe a été effectuée pour votre compte.</p>
+        <div style="background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:15px;margin:20px 0;color:#1e40af;font-size:13px;">
+        <b>🔑 Votre token de réinitialisation :</b><br>
+        <code style="background:#dbeafe;padding:4px 8px;border-radius:4px;font-size:14px;word-break:break-all;">{token}</code>
+        </div>
+        <p style="color:#64748b;font-size:14px;">Ou cliquez sur le lien ci-dessous :</p>
+        <div style="text-align:center;margin:25px 0;">
+        <a href="{lien_reset}" style="background:#1E3A8A;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
+        Réinitialiser mon mot de passe
+        </a>
+        </div>
+        <p style="color:#64748b;font-size:13px;"><i>Ce lien et ce token sont valables 1 heure.</i></p>
+        <hr style="border:none;border-top:1px solid #e2e8f0;">
+        <p style="font-size:12px;color:#94a3b8;">Faculté de Génie Électrique - UDL-SBA<br>Cet email est généré automatiquement.</p>
+        </div>
+        </div>
+        </body></html>"""
+                                
+                                msg.attach(MIMEText(body_html, "html"))
+                                
+                                server = smtplib.SMTP('smtp.gmail.com', 587)
+                                server.starttls()
+                                server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+                                server.send_message(msg)
+                                server.quit()
+                                
+                                st.success("✅ Email envoyé ! Consultez votre boîte mail (et vos spams).")
+                                st.info(f"📧 Destinataire : `{email_clean}`")
+                                
+                            except Exception as e:
+                                st.warning(f"⚠️ Email non envoyé (erreur SMTP) : {e}")
+                                st.info("💡 Mode secours : copiez le token ci-dessous et collez-le dans le champ 'Token reçu'.")
+                                st.code(token, language="text")
                         else:
                             st.error("❌ Cet email n'est pas enregistré dans la base.")
             
@@ -6450,8 +6508,6 @@ if not st.session_state["user_data"]:
                             user_row = res.data[0]
                             try:
                                 expires_raw = user_row['reset_expires']
-                                
-                                # Gère à la fois string et datetime selon la version de supabase-py
                                 if isinstance(expires_raw, str):
                                     expires = datetime.fromisoformat(expires_raw.replace("Z", "+00:00"))
                                 else:
@@ -6466,50 +6522,13 @@ if not st.session_state["user_data"]:
                                         "reset_expires": None
                                     }).eq("id", user_row['id']).execute()
                                     
-                                    st.success("✅ Mot de passe mis à jour ! Connectez-vous avec le nouvel onglet.")
+                                    st.success("✅ Mot de passe mis à jour ! Vous pouvez maintenant vous connecter.")
                                 else:
                                     st.error("⏰ Token expiré. Générez-en un nouveau.")
                             except Exception as e:
                                 st.error(f"Erreur de validation : {e}")
                         else:
                             st.error("❌ Token invalide ou email incorrect.")
-                    
-    
-    
-    with t_ins:
-        st.subheader("📝 Demande d'activation de compte")
-        st.info("NB : Saisissez votre email professionnel tel qu'envoyé au service d'enseignement. Vos informations personnelles se rempliront automatiquement. Une fois inscrit, veuillez accéder à votre compte via la page de connexion.")
-
-        # ═══════════════════════════════════════════════════════════════
-        # ÉTAPE 1 : AUTHENTIFICATION PAR EMAIL (Filtrage de l'identité)
-        # ═══════════════════════════════════════════════════════════════
-        email_verif = st.text_input(
-            "📧 Saisissez votre email (celui envoyé au service d'enseignement du département)",
-            key="verif_email_insc",
-            placeholder="ex: nom.prenom@univ-sba.dz"
-        )
-
-        # Initialisation des variables de session pour l'inscription
-        if "contact_match" not in st.session_state:
-            st.session_state.contact_match = None
-
-        # Bouton de vérification
-        col_verif, _ = st.columns([1, 3])
-        with col_verif:
-            verifier = st.button("🔍 Vérifier mon identité", use_container_width=True, key="btn_verif_id")
-
-        if verifier and email_verif:
-            if df_contacts is not None and not df_contacts.empty and 'Email' in df_contacts.columns:
-                match = df_contacts[df_contacts["Email"].astype(str).str.strip().str.lower() == email_verif.strip().lower()]
-                if not match.empty:
-                    st.session_state.contact_match = match.iloc[0]
-                    st.success("✅ Identité confirmée. Vos coordonnées ont été récupérées.")
-                else:
-                    st.session_state.contact_match = None
-                    st.error("❌ Cet email n'est pas reconnu dans le répertoire officiel du département. Veuillez contacter l'administrateur.")
-            else:
-                st.error("⚠️ Le fichier répertoire des contacts est introuvable ou corrompu.")
-
         # ═══════════════════════════════════════════════════════════════
         # ÉTAPE 2 : AFFICHAGE DU FORMULAIRE PRÉ-REMPLI (SI IDENTITÉ VÉRIFIÉE)
         # ═══════════════════════════════════════════════════════════════
