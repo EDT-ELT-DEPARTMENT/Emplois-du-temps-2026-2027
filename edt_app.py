@@ -132,24 +132,6 @@ def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_clien
     except Exception as e:
         return False, f"❌ Erreur critique : {str(e)[:150]}", None
         
-            # Mode hors-ligne : stockage dans session_state
-            if "demandes_edt_local" not in st.session_state:
-                st.session_state.demandes_edt_local = []
-            
-            st.session_state.demandes_edt_local.append({
-                "id": len(st.session_state.demandes_edt_local) + 1,
-                "enseignant_email": email_prof,
-                "enseignant_nom": nom_prof,
-                "fichier_data": fichier_data,
-                "statut": "En attente",
-                "date_demande": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                "excel_bytes": fichier_bytes
-            })
-            return True, "✅ Demande enregistrée (mode local). L'administration va l'examiner.", fichier_bytes
-            
-    except Exception as e:
-        return False, f"❌ Erreur : {str(e)[:150]}", None
-
 
 def generer_excel_demande_edt(donnees_lignes, nom_enseignant=""):
     """
