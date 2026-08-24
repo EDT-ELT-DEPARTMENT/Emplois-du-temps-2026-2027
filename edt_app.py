@@ -42,6 +42,123 @@ try:
 except ImportError:
     Document = None
 
+# ═══════════════════════════════════════════════════════════════════════════
+# FONCTIONS : Demande de Mise à Jour EDT
+# ═══════════════════════════════════════════════════════════════════════════
+
+def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_client):
+    """
+    Sauvegarde une demande de mise à jour EDT dans Supabase.
+    Retourne : (succès: bool, message: str, fichier_bytes: bytes)
+    """
+    import io, pandas as pd
+    from datetime import datetime
+    
+    try:
+        # 1. Générer le fichier Excel
+        df_demande = pd.DataFrame(donnees_lignes)
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df_demande.to_excel(writer, sheet_name='Demande EDT', index=False)
+        excel_buffer.seek(0)
+        fichier_bytes = excel_buffer.getvalue()
+        
+        # 2. Préparer les données JSON pour Supabase
+        fichier_data = {
+            "enseignant_email": email_prof,
+            "enseignant_nom": nom_prof,
+            "lignes": donnees_lignes,
+            "date_generation": datetime.now().strftime("%d/%m/%Y %H:%M")
+        }
+        
+        # 3. Insérer dans Supabase (si disponible)
+        if supabase_client:
+            try:
+                supabase_client.table("edt_update_requests").insert({
+                    "enseignant_id": email_prof,  # ou l'ID réel si vous l'avez
+                    "enseignant_email": email_prof,
+                    "enseignant_nom": nom_prof,
+                    "fichier_data": fichier_data,
+                    "statut": "En attente",
+                    "date_demande": datetime.now().isoformat()
+                }).execute()
+                return True, "✅ Demande envoyée avec succès ! L'administration va l'examiner.", fichier_bytes
+            except Exception as e:
+                return False, f"⚠️ Excel généré mais erreur Supabase : {str(e)[:150]}", fichier_bytes
+        else:
+            # Mode hors-ligne : stockage dans session_state
+            if "demandes_edt_local" not in st.session_state:
+                st.session_state.demandes_edt_local = []
+            
+            st.session_state.demandes_edt_local.append({
+                "id": len(st.session_state.demandes_edt_local) + 1,
+                "enseignant_email": email_prof,
+                "enseignant_nom": nom_prof,
+                "fichier_data": fichier_data,
+                "statut": "En attente",
+                "date_demande": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "excel_bytes": fichier_bytes
+            })
+            return True, "✅ Demande enregistrée (mode local). L'administration va l'examiner.", fichier_bytes
+            
+    except Exception as e:
+        return False, f"❌ Erreur : {str(e)[:150]}", None
+
+
+def generer_excel_demande_edt(donnees_lignes, nom_enseignant=""):
+    """
+    Génère un fichier Excel à partir des données de demande.
+    Retourne un BytesIO prêt pour st.download_button
+    """
+    import io, pandas as pd
+    from datetime import datetime
+    
+    try:
+        df = pd.DataFrame(donnees_lignes)
+        
+        # Réordonner les colonnes pour un affichage pro
+        ordre_cols = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+        cols_presentes = [c for c in ordre_cols if c in df.columns]
+        df = df[cols_presentes]
+        
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Demande EDT', index=False)
+            ws = writer.sheets['Demande EDT']
+            
+            # Mise en forme professionnelle
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+            header_font = Font(color="FFFFFF", bold=True, size=11)
+            thin_border = Border(
+                left=Side(style='thin'), right=Side(style='thin'),
+                top=Side(style='thin'), bottom=Side(style='thin')
+            )
+            
+            for cell in ws[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.border = thin_border
+            
+            # Ajustement auto des largeurs
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if cell.value:
+                            max_length = max(max_length, len(str(cell.value)))
+                    except:
+                        pass
+                ws.column_dimensions[column_letter].width = min(max_length + 4, 40)
+        
+        excel_buffer.seek(0)
+        return excel_buffer
+        
+    except Exception as e:
+        st.error(f"Erreur génération Excel : {e}")
+        return None
 # =============================================================================
 # CONFIGURATION STREAMLIT (UNIQUE)
 # =============================================================================
@@ -3559,6 +3676,192 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # ============================================================
     # PORTAIL : MON ESPACE ENSEIGNANT
     # ============================================================
+            # ═══════════════════════════════════════════════════════════════════════════
+        # SECTION: Demande de Mise à Jour EDT (Enseignant)
+        # ═══════════════════════════════════════════════════════════════════════════
+        st.divider()
+        st.markdown("""
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
+                        padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+                <h2 style="margin:0;">📝 Demande de Mise à Jour EDT</h2>
+                <p style="margin:8px 0 0 0; opacity:0.9;">Sélectionnez les créneaux à modifier dans les listes déroulantes</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        # ─── RÉCUPÉRATION DES LISTES DÉROULANTES DEPUIS LES DONNÉES RÉELLES ───
+        # On récupère les valeurs uniques du DataFrame principal 'df' (chargé au début)
+        liste_enseignants = [""] + sorted([e for e in df["Enseignants"].unique() 
+                                          if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+        liste_matières = [""] + sorted([m for m in df["Enseignements"].unique() 
+                                       if m and str(m).strip() not in ["", "nan", "None", "Non defini"]])
+        liste_salles = [""] + sorted([s for s in df["Lieu"].unique() 
+                                     if s and str(s).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+        liste_promos = [""] + sorted([p for p in df["Promotion"].unique() 
+                                     if p and str(p).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
+        
+        horaires_list = [
+            "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", 
+            "14h - 15h30", "15h30 - 17h"
+        ]
+        jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+        codes_list = ["", "COURS", "TD", "TP"]
+        
+        # ─── INITIALISATION SESSION STATE ───
+        if "lignes_edt" not in st.session_state:
+            st.session_state.lignes_edt = [{
+                "Enseignements": "", "Code": "", "Enseignants": "", 
+                "Horaire": "", "Jours": "", "Lieu": "", "Promotion": ""
+            }]
+        
+        # ─── AFFICHAGE DES LIGNES DYNAMIQUES ───
+        st.markdown("### 📋 Proposition de nouveaux créneaux")
+        
+        for idx, ligne in enumerate(st.session_state.lignes_edt):
+            with st.container(border=True):
+                st.markdown(f"**Ligne {idx + 1}**")
+                
+                col1, col2, col3 = st.columns(3)
+                col4, col5, col6 = st.columns(3)
+                col7, col_del = st.columns([3, 1])
+                
+                with col1:
+                    val = st.selectbox(
+                        "📚 Enseignement",
+                        options=liste_matières,
+                        index=liste_matières.index(ligne.get("Enseignements", "")) if ligne.get("Enseignements", "") in liste_matières else 0,
+                        key=f"ens_{idx}_v2"
+                    )
+                    st.session_state.lignes_edt[idx]["Enseignements"] = val
+                
+                with col2:
+                    val = st.selectbox(
+                        "🔑 Code",
+                        options=codes_list,
+                        index=codes_list.index(ligne.get("Code", "")) if ligne.get("Code", "") in codes_list else 0,
+                        key=f"code_{idx}_v2"
+                    )
+                    st.session_state.lignes_edt[idx]["Code"] = val
+                
+                with col3:
+                    val = st.selectbox(
+                        "👤 Enseignant",
+                        options=liste_enseignants,
+                        index=liste_enseignants.index(ligne.get("Enseignants", "")) if ligne.get("Enseignants", "") in liste_enseignants else 0,
+                        key=f"prof_{idx}_v2"
+                    )
+                    st.session_state.lignes_edt[idx]["Enseignants"] = val
+                
+                with col4:
+                    val = st.selectbox(
+                        "🕒 Horaire",
+                        options=[""] + horaires_list,
+                        index=([""] + horaires_list).index(ligne.get("Horaire", "")) if ligne.get("Horaire", "") in ([""] + horaires_list) else 0,
+                        key=f"horaire_{idx}_v2"
+                    )
+                    st.session_state.lignes_edt[idx]["Horaire"] = val
+                
+                with col5:
+                    val = st.selectbox(
+                        "📅 Jour",
+                        options=[""] + jours_list,
+                        index=([""] + jours_list).index(ligne.get("Jours", "")) if ligne.get("Jours", "") in ([""] + jours_list) else 0,
+                        key=f"jour_{idx}_v2"
+                    )
+                    st.session_state.lignes_edt[idx]["Jours"] = val
+                
+                with col6:
+                    val = st.selectbox(
+                        "🏢 Lieu (Salle/Amphi)",
+                        options=liste_salles,
+                        index=liste_salles.index(ligne.get("Lieu", "")) if ligne.get("Lieu", "") in liste_salles else 0,
+                        key=f"lieu_{idx}_v2"
+                    )
+                    st.session_state.lignes_edt[idx]["Lieu"] = val
+                
+                with col7:
+                    val = st.selectbox(
+                        "🎓 Promotion",
+                        options=liste_promos,
+                        index=liste_promos.index(ligne.get("Promotion", "")) if ligne.get("Promotion", "") in liste_promos else 0,
+                        key=f"promo_{idx}_v2"
+                    )
+                    st.session_state.lignes_edt[idx]["Promotion"] = val
+                
+                with col_del:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🗑️ Supprimer", key=f"del_{idx}_v2", use_container_width=True):
+                        st.session_state.lignes_edt.pop(idx)
+                        st.rerun()
+        
+        # ─── BOUTONS D'ACTION ───
+        col_add, col_reset = st.columns(2)
+        with col_add:
+            if st.button("➕ Ajouter une ligne", use_container_width=True):
+                st.session_state.lignes_edt.append({
+                    "Enseignements": "", "Code": "", "Enseignants": "", 
+                    "Horaire": "", "Jours": "", "Lieu": "", "Promotion": ""
+                })
+                st.rerun()
+        
+        with col_reset:
+            if st.button("🔄 Tout effacer", use_container_width=True):
+                st.session_state.lignes_edt = [{
+                    "Enseignements": "", "Code": "", "Enseignants": "", 
+                    "Horaire": "", "Jours": "", "Lieu": "", "Promotion": ""
+                }]
+                st.rerun()
+        
+        st.divider()
+        
+        # ─── ENVOI DE LA DEMANDE ───
+        col_envoyer, col_preview = st.columns([2, 1])
+        
+        with col_envoyer:
+            if st.button("📤 ENVOYER LA DEMANDE À L'ADMINISTRATION", use_container_width=True, type="primary"):
+                # Vérification des données
+                donnees_valides = [l for l in st.session_state.lignes_edt 
+                                  if l.get("Enseignements") and l.get("Enseignants")]
+                
+                if not donnees_valides:
+                    st.error("❌ Veuillez remplir au moins une ligne complète (Enseignement + Enseignant minimum).")
+                else:
+                    # Récupération email/nom depuis la session
+                    email_ens = user.get('email', 'non-renseigne@udl-sba.dz')
+                    nom_ens = user.get('nom_officiel', 'Enseignant')
+                    
+                    success, msg, fichier_bytes = sauvegarder_demande_edt(
+                        email_ens, nom_ens, donnees_valides, supabase
+                    )
+                    
+                    if success:
+                        st.success(msg)
+                        st.balloons()
+                        
+                        # Bouton de téléchargement immédiat
+                        st.download_button(
+                            label="💾 Télécharger ma demande (Excel)",
+                            data=fichier_bytes,
+                            file_name=f"Demande_EDT_{nom_ens.replace(' ', '_')}_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+                        
+                        # Reset du formulaire
+                        st.session_state.lignes_edt = [{
+                            "Enseignements": "", "Code": "", "Enseignants": "", 
+                            "Horaire": "", "Jours": "", "Lieu": "", "Promotion": ""
+                        }]
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+        
+        with col_preview:
+            # Aperçu avant envoi
+            df_preview = pd.DataFrame([l for l in st.session_state.lignes_edt if l.get("Enseignements")])
+            if not df_preview.empty:
+                with st.expander("👁️ Aperçu avant envoi"):
+                    st.dataframe(df_preview, use_container_width=True, hide_index=True)
     elif portail == "👤 Mon Espace Enseignant":
         cible = user['nom_officiel']
         nom_aff = repertoire_noms_complets.get(cible.strip().upper(), cible)
@@ -6165,6 +6468,145 @@ def render_download_hub(df_global, user_data, is_admin):
         cg4.download_button("🗜️ Pack ZIP", zip_buffer.getvalue(), "Pack_EDT_GLOBAL_S1_2027.zip", "application/zip", use_container_width=True)
 
     st.divider()
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION ADMIN : Gestion des Demandes de Mise à Jour EDT
+# ═══════════════════════════════════════════════════════════════════════════
+
+elif admin_choice == "📝 Demandes de Mise à Jour EDT":
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%); 
+                    padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+            <h2 style="margin:0;">📊 Demandes de Mise à Jour EDT</h2>
+            <p style="margin:8px 0 0 0; opacity:0.9;">Réception et traitement des propositions d'enseignants</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # ─── RÉCUPÉRATION DES DEMANDES ───
+    demandes = []
+    
+    # 1. Depuis Supabase
+    if supabase:
+        try:
+            res = supabase.table("edt_update_requests").select("*")\
+                .order("date_demande", desc=True).execute()
+            if res.data:
+                demandes = res.data
+        except Exception as e:
+            st.warning(f"⚠️ Connexion Supabase : {e}")
+    
+    # 2. Fallback : demandes locales (mode hors-ligne)
+    if not demandes and "demandes_edt_local" in st.session_state:
+        demandes = st.session_state.demandes_edt_local
+    
+    # ─── FILTRES ───
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        filtre_statut = st.selectbox("Statut", ["Tous", "En attente", "Approuvée", "Rejetée"])
+    with col_f2:
+        filtre_ens = st.text_input("Rechercher un enseignant", placeholder="Nom ou email...")
+    with col_f3:
+        st.metric("Total demandes", len(demandes))
+    
+    # Application filtres
+    demandes_filtrees = demandes
+    if filtre_statut != "Tous":
+        demandes_filtrees = [d for d in demandes_filtrees if d.get('statut') == filtre_statut]
+    if filtre_ens:
+        filtre_lower = filtre_ens.lower()
+        demandes_filtrees = [d for d in demandes_filtrees 
+                           if filtre_lower in d.get('enseignant_nom', '').lower() 
+                           or filtre_lower in d.get('enseignant_email', '').lower()]
+    
+    st.divider()
+    
+    # ─── AFFICHAGE DES DEMANDES ───
+    if not demandes_filtrees:
+        st.info("📭 Aucune demande reçue pour le moment.")
+    else:
+        st.markdown(f"### 📋 {len(demandes_filtrees)} demande(s) trouvée(s)")
+        
+        for demande in demandes_filtrees:
+            nom_ens = demande.get('enseignant_nom', 'Inconnu')
+            email_ens = demande.get('enseignant_email', 'N/A')
+            date_dem = demande.get('date_demande', 'Date inconnue')[:16].replace('T', ' ')
+            statut = demande.get('statut', 'En attente')
+            
+            # Couleur selon statut
+            if statut == "En attente":
+                couleur = "#F59E0B"
+                icone = "⏳"
+            elif statut == "Approuvée":
+                couleur = "#22C55E"
+                icone = "✅"
+            else:
+                couleur = "#EF4444"
+                icone = "❌"
+            
+            with st.expander(f"{icone} **{nom_ens}** — {email_ens} — *{date_dem}*"):
+                col_g, col_d = st.columns([3, 1])
+                
+                with col_g:
+                    st.markdown(f"**Statut :** <span style='color:{couleur};font-weight:bold;'>{statut}</span>", unsafe_allow_html=True)
+                    st.markdown(f"**Email :** `{email_ens}`")
+                    
+                    # Affichage du tableau des lignes demandées
+                    fichier_data = demande.get('fichier_data', {})
+                    lignes = fichier_data.get('lignes', []) if isinstance(fichier_data, dict) else []
+                    
+                    if lignes:
+                        df_demande = pd.DataFrame(lignes)
+                        st.markdown("**📋 Créneaux proposés :**")
+                        st.dataframe(df_demande, use_container_width=True, hide_index=True)
+                    else:
+                        st.warning("Aucune donnée de ligne trouvée.")
+                
+                with col_d:
+                    st.markdown("**Actions**")
+                    
+                    # Téléchargement Excel
+                    if lignes:
+                        excel_buf = generer_excel_demande_edt(lignes, nom_ens)
+                        if excel_buf:
+                            st.download_button(
+                                label="📥 Télécharger Excel",
+                                data=excel_buf.getvalue(),
+                                file_name=f"Demande_{nom_ens.replace(' ', '_')}_{date_dem.replace(' ', '_')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key=f"dl_admin_{demande.get('id', hash(nom_ens))}"
+                            )
+                    
+                    # Boutons de décision
+                    if statut == "En attente":
+                        if st.button("✅ Approuver", use_container_width=True, key=f"app_{demande.get('id', 0)}"):
+                            if supabase:
+                                supabase.table("edt_update_requests").update({
+                                    "statut": "Approuvée"
+                                }).eq("id", demande.get('id')).execute()
+                            else:
+                                # Mise à jour locale
+                                for d in st.session_state.demandes_edt_local:
+                                    if d.get('id') == demande.get('id'):
+                                        d['statut'] = "Approuvée"
+                            st.success("Demande approuvée")
+                            st.rerun()
+                        
+                        if st.button("❌ Rejeter", use_container_width=True, key=f"rej_{demande.get('id', 0)}"):
+                            if supabase:
+                                supabase.table("edt_update_requests").update({
+                                    "statut": "Rejetée"
+                                }).eq("id", demande.get('id')).execute()
+                            else:
+                                for d in st.session_state.demandes_edt_local:
+                                    if d.get('id') == demande.get('id'):
+                                        d['statut'] = "Rejetée"
+                            st.error("Demande rejetée")
+                            st.rerun()
+                
+                # Commentaire admin
+                commentaire = demande.get('commentaire_admin', '')
+                if commentaire:
+                    st.info(f"💬 **Commentaire :** {commentaire}")
 # =============================================================================
 # Masquer les éléments du menu supérieur (Share, Star, Edit, etc.)
 hide_st_style = """
