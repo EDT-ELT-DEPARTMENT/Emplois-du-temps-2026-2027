@@ -4755,6 +4755,17 @@ elif module_sel == "📅 Gestion des EDTs & Admin":
     st.info("Module Gestion des EDTs & Admin")
 else:
     st.error(f"Module inconnu : {module_sel}")
+
+    
+import streamlit as st
+import pandas as pd
+import os
+import hashlib
+import io
+from datetime import datetime, timedelta
+from supabase import create_client
+import streamlit as st
+
 # PORTAIL : DEMANDES DE MISE À JOUR EDT (ADMIN)
     # ============================================================
 elif portail == "📝 Demandes de Mise à Jour EDT":
@@ -4826,16 +4837,6 @@ elif portail == "📝 Demandes de Mise à Jour EDT":
                                 supabase.table("edt_update_requests").update({"statut": "Rejetée"}).eq("id", demande.get('id')).execute()
                             st.rerun()    
 # ============================================================
-    
-import streamlit as st
-import pandas as pd
-import os
-import hashlib
-import io
-from datetime import datetime, timedelta
-from supabase import create_client
-import streamlit as st
-
 # =============================================================================
 # FONCTIONS UTILITAIRES PRO POUR L'EXPORT (PDF / HTML / EXCEL)
 # =============================================================================
