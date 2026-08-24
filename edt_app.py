@@ -48,10 +48,11 @@ except ImportError:
 
 def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_client):
     """
-    Sauvegarde une demande de mise à jour EDT dans Supabase.
-    Retourne : (succès: bool, message: str, fichier_bytes: bytes)
+    Sauvegarde une demande EDT. Si Supabase échoue (table manquante, etc.),
+    bascule automatiquement sur le stockage local sans bloquer l'utilisateur.
     """
-    import io, pandas as pd
+    import io
+    import pandas as pd
     from datetime import datetime
     
     try:
@@ -63,28 +64,73 @@ def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_clien
         excel_buffer.seek(0)
         fichier_bytes = excel_buffer.getvalue()
         
-        # 2. Préparer les données JSON pour Supabase
+        date_now = datetime.now()
         fichier_data = {
             "enseignant_email": email_prof,
             "enseignant_nom": nom_prof,
             "lignes": donnees_lignes,
-            "date_generation": datetime.now().strftime("%d/%m/%Y %H:%M")
+            "date_generation": date_now.strftime("%d/%m/%Y %H:%M")
         }
         
-        # 3. Insérer dans Supabase (si disponible)
+        # 2. Tentative Supabase (silencieuse si échec)
+        supabase_ok = False
         if supabase_client:
             try:
                 supabase_client.table("edt_update_requests").insert({
-                    "enseignant_id": email_prof,  # ou l'ID réel si vous l'avez
+                    "enseignant_id": email_prof,
                     "enseignant_email": email_prof,
                     "enseignant_nom": nom_prof,
                     "fichier_data": fichier_data,
                     "statut": "En attente",
-                    "date_demande": datetime.now().isoformat()
+                    "date_demande": date_now.isoformat()
                 }).execute()
-                return True, "✅ Demande envoyée avec succès ! L'administration va l'examiner.", fichier_bytes
+                supabase_ok = True
             except Exception as e:
-                return False, f"⚠️ Excel généré mais erreur Supabase : {str(e)[:150]}", fichier_bytes
+                # On loggue silencieusement, on ne bloque PAS l'utilisateur
+                print(f"[SUPABASE] Table indisponible ou erreur : {e}")
+        
+        # 3. Fallback local si Supabase a échoué
+        if not supabase_ok:
+            if "demandes_edt_local" not in st.session_state:
+                st.session_state.demandes_edt_local = []
+            
+            st.session_state.demandes_edt_local.append({
+                "id": len(st.session_state.demandes_edt_local) + 1,
+                "enseignant_email": email_prof,
+                "enseignant_nom": nom_prof,
+                "fichier_data": fichier_data,
+                "statut": "En attente",
+                "date_demande": date_now.strftime("%d/%m/%Y %H:%M"),
+                "excel_bytes": fichier_bytes
+            })
+            mode = "local"
+        else:
+            mode = "supabase"
+        
+        # 4. Email admin (toujours exécuté, indépendamment de Supabase)
+        demande_info = {
+            "enseignant_nom": nom_prof,
+            "enseignant_email": email_prof,
+            "date_demande": date_now.strftime("%d/%m/%Y %H:%M"),
+            "lignes": donnees_lignes
+        }
+        email_envoye = envoyer_email_notification_admin(demande_info, fichier_bytes)
+        
+        # 5. Message de confirmation
+        if mode == "supabase":
+            msg = "✅ Demande enregistrée en ligne et envoyée à l'administration."
+        else:
+            msg = "✅ Demande enregistrée (mode local) et envoyée à l'administration."
+        
+        if email_envoye:
+            msg += " 📧 Notification admin envoyée."
+        else:
+            msg += " (Notification email non transmise, mais la demande est sauvegardée.)"
+            
+        return True, msg, fichier_bytes
+            
+    except Exception as e:
+        return False, f"❌ Erreur critique : {str(e)[:150]}", None
         else:
             # Mode hors-ligne : stockage dans session_state
             if "demandes_edt_local" not in st.session_state:
