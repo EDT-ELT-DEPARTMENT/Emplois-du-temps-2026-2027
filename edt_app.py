@@ -61,7 +61,7 @@ def envoyer_email_notification_admin(demande_info, fichier_bytes=None):
         SMTP_PORT = 587
         SMTP_USER = "chef.department.elt.fge@gmail.com"
         SMTP_PASS = "gkzs pdza yodb icvd"
-        EMAIL_ADMIN = "milouafarid@gmail.com"
+        EMAIL_ADMIN = "chef.department.elt.fge@gmail.com"
 
         nom_ens = demande_info.get('enseignant_nom', 'Inconnu')
         email_ens = demande_info.get('enseignant_email', 'N/A')
