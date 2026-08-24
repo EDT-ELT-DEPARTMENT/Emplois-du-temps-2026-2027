@@ -4748,7 +4748,14 @@ td{{word-wrap:break-word;}}
                     st.info(f"📧 **Email :** `{email_val}`")
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source") 
-    # ============================================================
+    
+if module_sel == "📊 Suivi d'Assiduite":
+    run_Assiduité()
+elif module_sel == "📅 Gestion des EDTs & Admin":
+    st.info("Module Gestion des EDTs & Admin")
+else:
+    st.error(f"Module inconnu : {module_sel}")
+# ============================================================
     # PORTAIL : DEMANDES DE MISE À JOUR EDT (ADMIN)
     # ============================================================
     elif portail == "📝 Demandes de Mise à Jour EDT":
@@ -4819,13 +4826,6 @@ td{{word-wrap:break-word;}}
                                 if supabase:
                                     supabase.table("edt_update_requests").update({"statut": "Rejetée"}).eq("id", demande.get('id')).execute()
                                 st.rerun()
-if module_sel == "📊 Suivi d'Assiduite":
-    run_Assiduité()
-elif module_sel == "📅 Gestion des EDTs & Admin":
-    st.info("Module Gestion des EDTs & Admin")
-else:
-    st.error(f"Module inconnu : {module_sel}")
-
 import streamlit as st
 import pandas as pd
 import os
