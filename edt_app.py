@@ -43,27 +43,129 @@ except ImportError:
     Document = None
 
 # ═══════════════════════════════════════════════════════════════════════════
-# FONCTIONS : Demande de Mise à Jour EDT
+# FONCTIONS UTILITAIRES : Demande EDT + Email Admin
 # ═══════════════════════════════════════════════════════════════════════════
+
+def envoyer_email_notification_admin(demande_info, fichier_bytes=None):
+    """
+    Notifie l'admin par email qu'une nouvelle demande EDT est arrivée.
+    """
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.base import MIMEBase
+        from email import encoders
+
+        SMTP_SERVER = 'smtp.gmail.com'
+        SMTP_PORT = 587
+        SMTP_USER = "chef.department.elt.fge@gmail.com"
+        SMTP_PASS = "gkzs pdza yodb icvd"
+        EMAIL_ADMIN = "milouafarid@gmail.com"
+
+        nom_ens = demande_info.get('enseignant_nom', 'Inconnu')
+        email_ens = demande_info.get('enseignant_email', 'N/A')
+        date_dem = demande_info.get('date_demande', datetime.now().strftime("%d/%m/%Y %H:%M"))
+        nb_lignes = len(demande_info.get('lignes', []))
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"📬 Nouvelle demande EDT — {nom_ens}"
+        msg["From"] = SMTP_USER
+        msg["To"] = EMAIL_ADMIN
+
+        html_body = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+<div style="background:linear-gradient(135deg,#DC2626 0%,#EF4444 100%);color:white;padding:25px;text-align:center;">
+<h2 style="margin:0;font-size:20px;">🔔 Plateforme EDT — Nouvelle Demande</h2>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">département d'Électrotechnique - FGE/UDL-SBA</p>
+</div>
+<div style="padding:30px;">
+<p style="color:#334155;font-size:15px;">Salem Admin,</p>
+<p style="color:#64748b;font-size:14px;">
+    L'enseignant <strong style="color:#1E3A8A;">{nom_ens}</strong> vient de soumettre 
+    une demande de mise à jour de son emploi du temps.
+</p>
+<div style="background:#fef2f2;border-left:5px solid #DC2626;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;">
+    <p style="margin:0 0 8px 0;color:#991b1b;font-weight:600;">📋 Récapitulatif</p>
+    <table style="width:100%;font-size:13px;color:#334155;">
+        <tr><td style="padding:4px 0;"><b>Enseignant :</b></td><td>{nom_ens}</td></tr>
+        <tr><td style="padding:4px 0;"><b>Email :</b></td><td>{email_ens}</td></tr>
+        <tr><td style="padding:4px 0;"><b>Date :</b></td><td>{date_dem}</td></tr>
+        <tr><td style="padding:4px 0;"><b>Créneaux proposés :</b></td><td><strong style="color:#DC2626;">{nb_lignes}</strong> ligne(s)</td></tr>
+    </table>
+</div>
+<div style="background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:15px;margin:20px 0;color:#1e40af;font-size:13px;">
+    <strong>⚡ Action requise :</strong><br>
+    Connectez-vous à la plateforme, rubrique <strong>"📝 Demandes de Mise à Jour EDT"</strong>.
+</div>
+<p style="color:#64748b;font-size:13px;"><i>Cet email est généré automatiquement. Le fichier Excel est joint.</i></p>
+</div>
+<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
+    Faculté de Génie Electrique - Université Djillali Liabes - Sidi Bel Abbes
+</div>
+</div>
+</body></html>"""
+
+        msg.attach(MIMEText(html_body, "html"))
+
+        if fichier_bytes:
+            part = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            part.set_payload(fichier_bytes)
+            encoders.encode_base64(part)
+            part.add_header(
+                "Content-Disposition",
+                f"attachment; filename=Demande_EDT_{nom_ens.replace(' ', '_')}.xlsx"
+            )
+            msg.attach(part)
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.send_message(msg)
+        server.quit()
+        return True
+
+    except Exception as e:
+        print(f"[EMAIL ADMIN] Erreur : {e}")
+        return False
+
+
+def generer_excel_demande_edt(donnees_lignes, nom_enseignant=""):
+    """
+    Génère un fichier Excel à partir des données de demande.
+    Retourne un BytesIO.
+    """
+    try:
+        df = pd.DataFrame(donnees_lignes)
+        ordre_cols = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+        cols_presentes = [c for c in ordre_cols if c in df.columns]
+        df = df[cols_presentes]
+
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Demande EDT', index=False)
+        excel_buffer.seek(0)
+        return excel_buffer
+
+    except Exception as e:
+        st.error(f"Erreur génération Excel : {e}")
+        return None
+
 
 def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_client):
     """
-    Sauvegarde une demande EDT. Si Supabase échoue (table manquante, etc.),
-    bascule automatiquement sur le stockage local sans bloquer l'utilisateur.
+    Sauvegarde une demande EDT. Si Supabase échoue, bascule en local.
     """
-    import io
-    import pandas as pd
-    from datetime import datetime
-    
     try:
-        # 1. Générer le fichier Excel
         df_demande = pd.DataFrame(donnees_lignes)
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_demande.to_excel(writer, sheet_name='Demande EDT', index=False)
         excel_buffer.seek(0)
         fichier_bytes = excel_buffer.getvalue()
-        
+
         date_now = datetime.now()
         fichier_data = {
             "enseignant_email": email_prof,
@@ -71,8 +173,7 @@ def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_clien
             "lignes": donnees_lignes,
             "date_generation": date_now.strftime("%d/%m/%Y %H:%M")
         }
-        
-        # 2. Tentative Supabase (silencieuse si échec)
+
         supabase_ok = False
         if supabase_client:
             try:
@@ -86,14 +187,11 @@ def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_clien
                 }).execute()
                 supabase_ok = True
             except Exception as e:
-                # On loggue silencieusement, on ne bloque PAS l'utilisateur
-                print(f"[SUPABASE] Table indisponible ou erreur : {e}")
-        
-        # 3. Fallback local si Supabase a échoué
+                print(f"[SUPABASE] Erreur : {e}")
+
         if not supabase_ok:
             if "demandes_edt_local" not in st.session_state:
                 st.session_state.demandes_edt_local = []
-            
             st.session_state.demandes_edt_local.append({
                 "id": len(st.session_state.demandes_edt_local) + 1,
                 "enseignant_email": email_prof,
@@ -103,11 +201,7 @@ def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_clien
                 "date_demande": date_now.strftime("%d/%m/%Y %H:%M"),
                 "excel_bytes": fichier_bytes
             })
-            mode = "local"
-        else:
-            mode = "supabase"
-        
-        # 4. Email admin (toujours exécuté, indépendamment de Supabase)
+
         demande_info = {
             "enseignant_nom": nom_prof,
             "enseignant_email": email_prof,
@@ -115,22 +209,21 @@ def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_clien
             "lignes": donnees_lignes
         }
         email_envoye = envoyer_email_notification_admin(demande_info, fichier_bytes)
-        
-        # 5. Message de confirmation
-        if mode == "supabase":
-            msg = "✅ Demande enregistrée en ligne et envoyée à l'administration."
+
+        if supabase_ok:
+            msg = "✅ Demande enregistrée en ligne."
         else:
-            msg = "✅ Demande enregistrée (mode local) et envoyée à l'administration."
-        
+            msg = "✅ Demande enregistrée (mode local)."
+
         if email_envoye:
-            msg += " 📧 Notification admin envoyée."
+            msg += " 📧 Admin notifié."
         else:
-            msg += " (Notification email non transmise, mais la demande est sauvegardée.)"
-            
+            msg += " (Email non transmis.)"
+
         return True, msg, fichier_bytes
-            
+
     except Exception as e:
-        return False, f"❌ Erreur critique : {str(e)[:150]}", None
+        return False, f"❌ Erreur : {str(e)[:150]}", None
         
 
 def generer_excel_demande_edt(donnees_lignes, nom_enseignant=""):
