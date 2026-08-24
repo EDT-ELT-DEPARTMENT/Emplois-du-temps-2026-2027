@@ -21,7 +21,61 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
+# ═══════════════════════════════════════════════════════════════════════════
+# FONCTION: Sauvegarder Demande EDT
+# ═══════════════════════════════════════════════════════════════════════════
 
+def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase):
+    """
+    Sauvegarde une demande de mise à jour EDT dans Supabase
+    """
+    try:
+        # Récupérer l'ID du professeur
+        prof_check = supabase.table("enseignants_auth").select("id").eq("email", email_prof).execute()
+        
+        if not prof_check.data:
+            return False, "Professeur non trouvé"
+        
+        prof_id = prof_check.data[0]['id']
+        
+        # Préparer les données JSON
+        fichier_data = {
+            "enseignant_email": email_prof,
+            "enseignant_nom": nom_prof,
+            "lignes": donnees_lignes
+        }
+        
+        # Insérer dans Supabase
+        result = supabase.table("edt_update_requests").insert({
+            "enseignant_id": prof_id,
+            "enseignant_email": email_prof,
+            "enseignant_nom": nom_prof,
+            "fichier_data": fichier_data,
+            "statut": "En attente"
+        }).execute()
+        
+        return True, "Demande envoyée avec succès!"
+    
+    except Exception as e:
+        return False, f"Erreur: {str(e)[:150]}"
+
+def generer_excel_demande_edt(donnees_lignes):
+    """
+    Génère un fichier Excel à partir des données de demande
+    """
+    try:
+        df = pd.DataFrame(donnees_lignes)
+        
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Demande EDT', index=False)
+        
+        excel_buffer.seek(0)
+        return excel_buffer
+    
+    except Exception as e:
+        st.error(f"Erreur génération Excel: {e}")
+        return None
 try:
     from supabase import create_client, Client
 except ImportError:
@@ -3882,8 +3936,203 @@ td{{word-wrap:break-word;}}
             c3.button("📄 PDF (Grille)", disabled=True, use_container_width=True)
 
         if grille_text.empty:
-            st.info("ℹ️ Aucun cours sur les créneaux standards (08h00-17h00) pour cette sélection.")
-
+                    st.info("ℹ️ Aucun cours sur les créneaux standards (08h00-17h00) pour cette sélection.")
+            # ═══════════════════════════════════════════════════════════════════════════
+        # SECTION: Demande de Mise à Jour EDT (Enseignant)
+        # ═══════════════════════════════════════════════════════════════════════════
+        
+        if st.session_state.get('role') == 'enseignant':
+            
+            tab1, tab2 = st.tabs(["📝 Nouvelle Demande", "📋 Historique"])
+            
+            # TAB 1: NOUVELLE DEMANDE
+            with tab1:
+                st.markdown("""
+                    <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); 
+                                padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+                        <h2 style="margin:0;">📝 Demande de Mise à Jour EDT</h2>
+                        <p style="margin:8px 0 0 0; opacity:0.9;">Remplissez le formulaire ci-dessous pour demander une mise à jour de votre EDT</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                # Récupérer les enseignants et salles disponibles
+                enseignants_list = [""] + sorted(df_ens["Nom"].unique().tolist()) if not df_ens.empty else [""]
+                salles_list = SALLES + AMPHIS  # Défini ailleurs dans le code
+                promos_list = [""] + sorted(df_edt["Promotion"].unique().tolist()) if not df_edt.empty else [""]
+                
+                horaires_list = [
+                    "08:00 - 09:30", "09:30 - 11:00", "11:00 - 12:30",
+                    "14:00 - 15:30", "15:30 - 17:00", "17:00 - 18:30", "18:30 - 20:00"
+                ]
+                
+                jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+                
+                # Initialiser la liste de lignes
+                if "lignes_edt" not in st.session_state:
+                    st.session_state.lignes_edt = [{}]
+                
+                # Afficher les lignes
+                st.markdown("### 📋 Détails de l'EDT")
+                
+                for idx, ligne in enumerate(st.session_state.lignes_edt):
+                    col1, col2, col3, col4 = st.columns(4)
+                    col5, col6, col7, col_del = st.columns([2, 2, 2, 1])
+                    
+                    with col1:
+                        enseignement = st.text_input(
+                            "Enseignement",
+                            value=ligne.get("enseignements", ""),
+                            placeholder="Ex: Cours-Systèmes...",
+                            key=f"ens_{idx}"
+                        )
+                        st.session_state.lignes_edt[idx]["enseignements"] = enseignement
+                    
+                    with col2:
+                        code = st.text_input(
+                            "Code",
+                            value=ligne.get("code", ""),
+                            placeholder="01, 02...",
+                            key=f"code_{idx}"
+                        )
+                        st.session_state.lignes_edt[idx]["code"] = code
+                    
+                    with col3:
+                        prof = st.selectbox(
+                            "Enseignant",
+                            enseignants_list,
+                            index=0 if not ligne.get("enseignants") else (enseignants_list.index(ligne.get("enseignants")) if ligne.get("enseignants") in enseignants_list else 0),
+                            key=f"prof_{idx}"
+                        )
+                        st.session_state.lignes_edt[idx]["enseignants"] = prof
+                    
+                    with col4:
+                        horaire = st.selectbox(
+                            "Horaire",
+                            horaires_list,
+                            index=0 if not ligne.get("horaire") else (horaires_list.index(ligne.get("horaire")) if ligne.get("horaire") in horaires_list else 0),
+                            key=f"horaire_{idx}"
+                        )
+                        st.session_state.lignes_edt[idx]["horaire"] = horaire
+                    
+                    with col5:
+                        jour = st.selectbox(
+                            "Jour",
+                            jours_list,
+                            index=0 if not ligne.get("jours") else (jours_list.index(ligne.get("jours")) if ligne.get("jours") in jours_list else 0),
+                            key=f"jour_{idx}"
+                        )
+                        st.session_state.lignes_edt[idx]["jours"] = jour
+                    
+                    with col6:
+                        lieu = st.selectbox(
+                            "Lieu",
+                            [""] + salles_list,
+                            index=0 if not ligne.get("lieu") else (([""] + salles_list).index(ligne.get("lieu")) if ligne.get("lieu") in ([""] + salles_list) else 0),
+                            key=f"lieu_{idx}"
+                        )
+                        st.session_state.lignes_edt[idx]["lieu"] = lieu
+                    
+                    with col7:
+                        promo = st.selectbox(
+                            "Promotion",
+                            promos_list,
+                            index=0 if not ligne.get("promotion") else (promos_list.index(ligne.get("promotion")) if ligne.get("promotion") in promos_list else 0),
+                            key=f"promo_{idx}"
+                        )
+                        st.session_state.lignes_edt[idx]["promotion"] = promo
+                    
+                    with col_del:
+                        if st.button("🗑️", key=f"del_{idx}", help="Supprimer cette ligne"):
+                            st.session_state.lignes_edt.pop(idx)
+                            st.rerun()
+                
+                # Bouton Ajouter ligne
+                if st.button("➕ Ajouter une ligne", use_container_width=True):
+                    st.session_state.lignes_edt.append({})
+                    st.rerun()
+                
+                st.divider()
+                
+                # Boutons d'action
+                col_envoyer, col_export, col_clear = st.columns(3)
+                
+                with col_envoyer:
+                    if st.button("📤 Envoyer la Demande", use_container_width=True, type="primary"):
+                        # Vérifier qu'il y a des données
+                        donnees_valides = [l for l in st.session_state.lignes_edt if l.get("enseignements")]
+                        
+                        if not donnees_valides:
+                            st.error("❌ Veuillez remplir au moins une ligne")
+                        else:
+                            # Sauvegarder
+                            success, msg = sauvegarder_demande_edt(
+                                st.session_state.email,
+                                st.session_state.nom,
+                                donnees_valides,
+                                supabase
+                            )
+                            
+                            if success:
+                                st.success(msg)
+                                st.balloons()
+                                st.session_state.lignes_edt = [{}]
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                
+                with col_export:
+                    if st.button("💾 Télécharger Excel", use_container_width=True):
+                        donnees_valides = [l for l in st.session_state.lignes_edt if l.get("enseignements")]
+                        if donnees_valides:
+                            excel_buf = generer_excel_demande_edt(donnees_valides)
+                            if excel_buf:
+                                st.download_button(
+                                    label="⬇️ Télécharger",
+                                    data=excel_buf,
+                                    file_name=f"Demande_EDT_{st.session_state.nom}_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
+                
+                with col_clear:
+                    if st.button("🔄 Réinitialiser", use_container_width=True):
+                        st.session_state.lignes_edt = [{}]
+                        st.rerun()
+            
+            # TAB 2: HISTORIQUE
+            with tab2:
+                st.markdown("### 📋 Historique de Vos Demandes")
+                
+                try:
+                    historique = supabase.table("edt_update_requests").select("*")\
+                        .eq("enseignant_email", st.session_state.email)\
+                        .order("date_demande", desc=True)\
+                        .execute()
+                    
+                    if historique.data:
+                        for req in historique.data:
+                            with st.expander(f"📌 {req['date_demande'][:10]} - Statut: {req['statut']}"):
+                                col_status, col_date = st.columns(2)
+                                with col_status:
+                                    if req['statut'] == 'En attente':
+                                        st.warning(f"⏳ {req['statut']}")
+                                    elif req['statut'] == 'Approuvée':
+                                        st.success(f"✅ {req['statut']}")
+                                    else:
+                                        st.error(f"❌ {req['statut']}")
+                                
+                                with col_date:
+                                    st.caption(f"Envoyée le: {req['date_demande']}")
+                                
+                                if req.get('commentaire_admin'):
+                                    st.info(f"💬 Admin: {req['commentaire_admin']}")
+                                
+                                if st.button("📥 Voir Détails", key=f"hist_{req['id']}"):
+                                    st.json(req['fichier_data'])
+                    else:
+                        st.info("ℹ️ Aucune demande envoyée pour le moment")
+                
+                except Exception as e:
+                    st.error(f"❌ Erreur: {str(e)[:100]}")
     # ============================================================
     # PORTAIL : SURVEILLANCES EXAMENS
     # ============================================================
@@ -7099,7 +7348,137 @@ if user is None:
     st.stop() 
 
 is_admin = user.get("role") == "admin"
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTION: Gestion Demandes EDT (Admin)
+# ═══════════════════════════════════════════════════════════════════════════
 
+elif admin_choice == "📝 Demandes de Mise à Jour EDT":
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%); 
+                    padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+            <h2 style="margin:0;">📊 Gestion des Demandes de Mise à Jour EDT</h2>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    try:
+        # Récupérer toutes les demandes
+        demandes = supabase.table("edt_update_requests").select("*")\
+            .order("date_demande", desc=True)\
+            .execute()
+        
+        if demandes.data:
+            # Filtres
+            col_filter1, col_filter2, col_filter3 = st.columns(3)
+            
+            with col_filter1:
+                filtre_statut = st.selectbox(
+                    "Filtrer par statut",
+                    ["Tous", "En attente", "En révision", "Approuvée", "Rejetée"]
+                )
+            
+            with col_filter2:
+                filtre_enseignant = st.text_input("Chercher enseignant (email):")
+            
+            with col_filter3:
+                filtre_date = st.date_input("Depuis la date:", value=None)
+            
+            # Appliquer les filtres
+            demandes_filtrees = demandes.data
+            
+            if filtre_statut != "Tous":
+                demandes_filtrees = [d for d in demandes_filtrees if d['statut'] == filtre_statut]
+            
+            if filtre_enseignant:
+                demandes_filtrees = [d for d in demandes_filtrees if filtre_enseignant.lower() in d['enseignant_email'].lower()]
+            
+            st.divider()
+            
+            # Afficher les demandes
+            st.markdown(f"### 📋 Demandes ({len(demandes_filtrees)})")
+            
+            for demande in demandes_filtrees:
+                with st.expander(
+                    f"{'⏳' if demande['statut']=='En attente' else '✅' if demande['statut']=='Approuvée' else '❌'} " +
+                    f"{demande['enseignant_nom']} - {demande['enseignant_email']} - {demande['date_demande'][:10]}"
+                ):
+                    
+                    col_info, col_status = st.columns([3, 1])
+                    
+                    with col_info:
+                        st.markdown(f"**Enseignant:** {demande['enseignant_nom']}")
+                        st.markdown(f"**Email:** {demande['enseignant_email']}")
+                        st.markdown(f"**Date:** {demande['date_demande']}")
+                        st.markdown(f"**Statut:** {demande['statut']}")
+                    
+                    with col_status:
+                        if demande['statut'] == 'En attente':
+                            st.warning(demande['statut'])
+                        elif demande['statut'] == 'Approuvée':
+                            st.success(demande['statut'])
+                        else:
+                            st.error(demande['statut'])
+                    
+                    st.divider()
+                    
+                    # Afficher les données
+                    if demande.get('fichier_data'):
+                        st.markdown("**📋 Lignes de l'EDT:**")
+                        
+                        df_demande = pd.DataFrame(demande['fichier_data'].get('lignes', []))
+                        st.dataframe(df_demande, use_container_width=True)
+                    
+                    # Commentaire admin
+                    if demande.get('commentaire_admin'):
+                        st.info(f"💬 Commentaire: {demande['commentaire_admin']}")
+                    
+                    # Actions admin
+                    col_approve, col_reject, col_review, col_download = st.columns(4)
+                    
+                    with col_approve:
+                        if st.button("✅ Approuver", key=f"approve_{demande['id']}", use_container_width=True):
+                            supabase.table("edt_update_requests").update({
+                                "statut": "Approuvée",
+                                "date_traitement": datetime.now().isoformat()
+                            }).eq("id", demande['id']).execute()
+                            st.success("✅ Demande approuvée!")
+                            st.rerun()
+                    
+                    with col_reject:
+                        if st.button("❌ Rejeter", key=f"reject_{demande['id']}", use_container_width=True):
+                            commentaire = st.text_input("Commentaire (raison du rejet):", key=f"comment_{demande['id']}")
+                            if st.button("Confirmer rejet"):
+                                supabase.table("edt_update_requests").update({
+                                    "statut": "Rejetée",
+                                    "commentaire_admin": commentaire,
+                                    "date_traitement": datetime.now().isoformat()
+                                }).eq("id", demande['id']).execute()
+                                st.error("❌ Demande rejetée!")
+                                st.rerun()
+                    
+                    with col_review:
+                        if st.button("👁️ En révision", key=f"review_{demande['id']}", use_container_width=True):
+                            supabase.table("edt_update_requests").update({
+                                "statut": "En révision"
+                            }).eq("id", demande['id']).execute()
+                            st.info("👁️ Marquée en révision")
+                            st.rerun()
+                    
+                    with col_download:
+                        if st.button("⬇️ Télécharger", key=f"download_{demande['id']}", use_container_width=True):
+                            if demande.get('fichier_data'):
+                                excel_buf = generer_excel_demande_edt(demande['fichier_data'].get('lignes', []))
+                                if excel_buf:
+                                    st.download_button(
+                                        label="Excel",
+                                        data=excel_buf,
+                                        file_name=f"EDT_{demande['enseignant_nom']}_{demande['id']}.xlsx",
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                    )
+        else:
+            st.info("ℹ️ Aucune demande pour le moment")
+    
+    except Exception as e:
+        st.error(f"❌ Erreur: {str(e)[:150]}")
 # =============================================================================
 # >>>>> HUB DE TELECHARGEMENT RAPIDE (CENTRE DE TELECHARGEMENT) <<<<<
 # =============================================================================
