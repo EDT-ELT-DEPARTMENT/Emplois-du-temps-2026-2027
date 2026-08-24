@@ -131,7 +131,7 @@ def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_clien
             
     except Exception as e:
         return False, f"❌ Erreur critique : {str(e)[:150]}", None
-        else:
+        
             # Mode hors-ligne : stockage dans session_state
             if "demandes_edt_local" not in st.session_state:
                 st.session_state.demandes_edt_local = []
