@@ -849,22 +849,64 @@ def format_date_naissance(val):
 # =============================================================================
 # FONCTION DE LECTURE EXCEL ROBUSTE
     # =============================================================================
+
+def filtrer_edt_etudiant(df_edt, promo_etudiant, groupe_etudiant, sous_groupe_etudiant):
+    """
+    Filtre l'EDT pour un étudiant spécifique en respectant la logique :
+    - Cours : commun à toute la promotion.
+    - TD / TP : filtré via la colonne 'Lieu' après le '/' (ex: A09/G5, A08/SG11),
+      ou si la ligne correspond au groupe/sous-groupe de l'étudiant.
+    """
+    if df_edt.empty:
+        return pd.DataFrame()
+    
+    df_promo = df_edt[df_edt["Promotion"].astype(str).str.strip().str.upper() == str(promo_etudiant).strip().upper()].copy()
+    if df_promo.empty:
+        df_promo = df_edt[df_edt["Promotion"].astype(str).str.strip().str.upper().str.contains(str(promo_etudiant).strip().upper(), na=False)].copy()
+    
+    if df_promo.empty:
+        return pd.DataFrame()
+    
+    lignes_retenues = []
+    groupe_clean = str(groupe_etudiant).strip().upper()
+    sg_clean = str(sous_groupe_etudiant).strip().upper()
+    
+    for _, row in df_promo.iterrows():
+        enseignement = str(row.get("Enseignements", "")).strip().lower()
+        lieu = str(row.get("Lieu", "")).strip()
+        
+        is_cours = "cours" in enseignement or "/" not in lieu
+        
+        if is_cours:
+            lignes_retenues.append(row)
+        else:
+            parts = lieu.split('/')
+            if len(parts) > 1:
+                spec_groupe = parts[1].strip().upper()
+                match_g = groupe_clean and (groupe_clean in spec_groupe or spec_groupe in groupe_clean)
+                match_sg = sg_clean and (sg_clean in spec_groupe or spec_groupe in sg_clean)
+                
+                if match_g or match_sg or spec_groupe in ["TOUS", "ALL"]:
+                    lignes_retenues.append(row)
+            else:
+                lignes_retenues.append(row)
+                
+    if not lignes_retenues:
+        return pd.DataFrame()
+        
+    return pd.DataFrame(lignes_retenues)
+
 def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
-    """Lit un fichier Excel en essayant plusieurs engines (.xlsx, .xls, .xlsb)."""
     if chemin_ou_fichier is None:
         return None
-    
     if hasattr(chemin_ou_fichier, 'seek'):
         chemin_ou_fichier.seek(0)
-    
-    # Détection prioritaire selon l'extension
     nom = ""
     if hasattr(chemin_ou_fichier, 'name'):
         nom = chemin_ou_fichier.name.lower()
     elif isinstance(chemin_ou_fichier, str):
         nom = os.path.basename(chemin_ou_fichier).lower()
     
-    # Ordre des engines : xlrd prioritaire pour les .xls anciens
     engines = ['openpyxl', 'xlrd', 'pyxlsb']
     if nom.endswith('.xls') and not nom.endswith('.xlsx'):
         engines = ['xlrd', 'openpyxl', 'pyxlsb']
@@ -878,9 +920,9 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
         except Exception as e:
             last_err = e
             continue
-            
-    raise ValueError(f"❌ Format non reconnu. Utilisez un fichier Excel valide (.xlsx, .xls, .xlsb). Erreur : {last_err}")
+    raise ValueError(f"❌ Format non reconnu. Erreur : {last_err}")
 
+print("Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA initialisée.")
 
 def run_Assiduité():
     import io
