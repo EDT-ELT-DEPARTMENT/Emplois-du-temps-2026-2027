@@ -13185,25 +13185,56 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                     ].copy()
 
                 if not df_edt_etu_filtre.empty:
-                    # 2. Extraire le groupe depuis les colonnes Code et Lieu de l'EDT
-                    def extraire_groupe_from_edt(val):
-                        if pd.isna(val):
+                    # ═══════════════════════════════════════════════════════
+                    # FILTRAGE INTELLIGENT: COURS (tous) + TD/TP (par groupe)
+                    # ═══════════════════════════════════════════════════════
+                    
+                    def determiner_type_enseignement(code_val):
+                        """Détermine le type: COURS, TD, TP"""
+                        if pd.isna(code_val):
+                            return "AUTRE"
+                        code_str = str(code_val).strip().upper()
+                        if "COURS" in code_str:
+                            return "COURS"
+                        elif "TD" in code_str:
+                            return "TD"
+                        elif "TP" in code_str:
+                            return "TP"
+                        return "AUTRE"
+                    
+                    def extraire_groupe_from_lieu(lieu_val):
+                        """Extrait le groupe du Lieu au format 'A09/G5' → 'G5'"""
+                        if pd.isna(lieu_val):
                             return None
-                        m = re.search(r'G(\d+)', str(val).upper())
-                        return f"G{m.group(1)}" if m else None
-
-                    df_edt_etu_filtre["Groupe_Code"] = df_edt_etu_filtre["Code"].apply(extraire_groupe_from_edt)
-                    df_edt_etu_filtre["Groupe_Lieu"] = df_edt_etu_filtre["Lieu"].apply(extraire_groupe_from_edt)
-                    df_edt_etu_filtre["Groupe_EDT"] = df_edt_etu_filtre["Groupe_Code"].fillna(df_edt_etu_filtre["Groupe_Lieu"])
-
-                    # 3. Filtrer : cours communs (sans groupe) + cours du groupe de l'étudiant
+                        lieu_str = str(lieu_val).strip().upper()
+                        if "/" in lieu_str:
+                            parties = lieu_str.split("/")
+                            if len(parties) >= 2:
+                                groupe = parties[1].strip()
+                                # Vérifier que c'est au format Gn
+                                if groupe.startswith("G") and groupe[1:].isdigit():
+                                    return groupe
+                        return None
+                    
+                    # Ajouter colonnes de type et groupe
+                    df_edt_etu_filtre["Type_Ens"] = df_edt_etu_filtre["Code"].apply(determiner_type_enseignement)
+                    df_edt_etu_filtre["Groupe_From_Lieu"] = df_edt_etu_filtre["Lieu"].apply(extraire_groupe_from_lieu)
+                    
+                    # ── FILTRAGE ──
+                    # COURS: Afficher pour tous les groupes
+                    df_cours = df_edt_etu_filtre[df_edt_etu_filtre["Type_Ens"] == "COURS"].copy()
+                    
+                    # TD/TP: Filtrer par groupe
+                    df_td_tp = df_edt_etu_filtre[df_edt_etu_filtre["Type_Ens"].isin(["TD", "TP"])].copy()
+                    
                     if groupe_etu:
-                        mask_commun = df_edt_etu_filtre["Groupe_EDT"].isna()
-                        mask_mon_groupe = df_edt_etu_filtre["Groupe_EDT"] == groupe_etu
-                        df_edt_final = df_edt_etu_filtre[mask_commun | mask_mon_groupe].copy()
-                    else:
-                        df_edt_final = df_edt_etu_filtre.copy()
-
+                        # Si l'étudiant a un groupe, filtrer TD/TP par Lieu/groupe
+                        # Format Lieu: "A09/G5" → Extraire "G5" et comparer avec groupe_etu
+                        df_td_tp = df_td_tp[df_td_tp["Groupe_From_Lieu"] == groupe_etu].copy()
+                    
+                    # Combiner: Cours + TD/TP filtrés
+                    df_edt_final = pd.concat([df_cours, df_td_tp], ignore_index=True)
+                    
                     if not df_edt_final.empty:
                         # ── Afficheurs numériques ──
                         nb_seances_etu = len(df_edt_final)
