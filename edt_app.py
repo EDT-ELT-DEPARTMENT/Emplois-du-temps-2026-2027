@@ -13185,6 +13185,25 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                     ].copy()
 
                 if not df_edt_etu_filtre.empty:
+                    # 2. Extraire le groupe depuis les colonnes Code et Lieu de l'EDT
+                    def extraire_groupe_from_edt(val):
+                        if pd.isna(val):
+                            return None
+                        m = re.search(r'G(\d+)', str(val).upper())
+                        return f"G{m.group(1)}" if m else None
+
+                    df_edt_etu_filtre["Groupe_Code"] = df_edt_etu_filtre["Code"].apply(extraire_groupe_from_edt)
+                    df_edt_etu_filtre["Groupe_Lieu"] = df_edt_etu_filtre["Lieu"].apply(extraire_groupe_from_edt)
+                    df_edt_etu_filtre["Groupe_EDT"] = df_edt_etu_filtre["Groupe_Code"].fillna(df_edt_etu_filtre["Groupe_Lieu"])
+
+                    # 3. Filtrer : cours communs (sans groupe) + cours du groupe de l'étudiant
+                    if groupe_etu:
+                        mask_commun = df_edt_etu_filtre["Groupe_EDT"].isna()
+                        mask_mon_groupe = df_edt_etu_filtre["Groupe_EDT"] == groupe_etu
+                        df_edt_final = df_edt_etu_filtre[mask_commun | mask_mon_groupe].copy()
+                    else:
+                        df_edt_final = df_edt_etu_filtre.copy()
+
                     # ═══════════════════════════════════════════════════════
                     # FILTRAGE INTELLIGENT: COURS (tous) + TD/TP (par groupe)
                     # ═══════════════════════════════════════════════════════
@@ -13211,8 +13230,10 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                             parties = lieu_str.split("/")
                             if len(parties) >= 2:
                                 groupe = parties[1].strip()
-                                # Vérifier que c'est au format Gn
+                                # Vérifier que c'est au format Gn ou SGn
                                 if groupe.startswith("G") and groupe[1:].isdigit():
+                                    return groupe
+                                elif groupe.startswith("SG") and groupe[2:].isdigit():
                                     return groupe
                         return None
                     
@@ -13221,19 +13242,38 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                     df_edt_etu_filtre["Groupe_From_Lieu"] = df_edt_etu_filtre["Lieu"].apply(extraire_groupe_from_lieu)
                     
                     # ── FILTRAGE ──
-                    # COURS: Afficher pour tous les groupes
+                    # Séparer COURS et TD/TP
                     df_cours = df_edt_etu_filtre[df_edt_etu_filtre["Type_Ens"] == "COURS"].copy()
-                    
-                    # TD/TP: Filtrer par groupe
                     df_td_tp = df_edt_etu_filtre[df_edt_etu_filtre["Type_Ens"].isin(["TD", "TP"])].copy()
                     
+                    # Filtrer TD/TP par groupe si l'étudiant en a un
                     if groupe_etu:
-                        # Si l'étudiant a un groupe, filtrer TD/TP par Lieu/groupe
-                        # Format Lieu: "A09/G5" → Extraire "G5" et comparer avec groupe_etu
-                        df_td_tp = df_td_tp[df_td_tp["Groupe_From_Lieu"] == groupe_etu].copy()
+                        df_td_tp_filtre = df_td_tp[df_td_tp["Groupe_From_Lieu"] == groupe_etu].copy()
+                        # Si aucun TD/TP ne correspond au groupe, afficher tous les TD/TP
+                        if df_td_tp_filtre.empty:
+                            df_td_tp_filtre = df_td_tp.copy()
+                    else:
+                        df_td_tp_filtre = df_td_tp.copy()
                     
                     # Combiner: Cours + TD/TP filtrés
-                    df_edt_final = pd.concat([df_cours, df_td_tp], ignore_index=True)
+                    df_edt_final = pd.concat([df_cours, df_td_tp_filtre], ignore_index=True)
+                    
+                    # Vérifier que les données horaires existent
+                    if not df_edt_final.empty:
+                        # S'assurer que toutes les colonnes requises existent
+                        colonnes_requises = ["Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion"]
+                        for col in colonnes_requises:
+                            if col not in df_edt_final.columns:
+                                st.error(f"❌ Colonne manquante: {col}")
+                                df_edt_final = pd.DataFrame()
+                                break
+                        
+                        # Vérifier que Horaire et Jours ne sont pas vides
+                        df_edt_final = df_edt_final.dropna(subset=["Horaire", "Jours"])
+                        df_edt_final = df_edt_final[
+                            (df_edt_final["Horaire"].astype(str).str.strip() != "") &
+                            (df_edt_final["Jours"].astype(str).str.strip() != "")
+                        ]
                     
                     if not df_edt_final.empty:
                         # ── Afficheurs numériques ──
