@@ -4191,12 +4191,13 @@ td{{word-wrap:break-word;}}
                 else:
                     df_upload = df_upload[[c for c in colonnes_attendues if c in df_upload.columns]]
                     
+                    # Définir email_ens et nom_ens AVANT de les utiliser
+                    email_ens = user.get('email', 'non-renseigne@udl-sba.dz')
+                    nom_ens = user.get('nom_officiel', 'Enseignant')
+                    
                     col1, col2 = st.columns(2)
                     with col1:
                         if st.button("📤 ENVOYER LE FICHIER À L'ADMINISTRATION", use_container_width=True, type="primary", key="btn_upload_send_ens"):
-                            email_ens = user.get('email', 'non-renseigne@udl-sba.dz')
-                            nom_ens = user.get('nom_officiel', 'Enseignant')
-                            
                             donnees_lignes = df_upload.to_dict('records')
                             
                             excel_buffer = generer_excel_demande_edt(donnees_lignes, nom_ens)
