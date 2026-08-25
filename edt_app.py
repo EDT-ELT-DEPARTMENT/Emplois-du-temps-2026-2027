@@ -849,64 +849,22 @@ def format_date_naissance(val):
 # =============================================================================
 # FONCTION DE LECTURE EXCEL ROBUSTE
     # =============================================================================
-
-def filtrer_edt_etudiant(df_edt, promo_etudiant, groupe_etudiant, sous_groupe_etudiant):
-    """
-    Filtre l'EDT pour un étudiant spécifique en respectant la logique :
-    - Cours : commun à toute la promotion.
-    - TD / TP : filtré via la colonne 'Lieu' après le '/' (ex: A09/G5, A08/SG11),
-      ou si la ligne correspond au groupe/sous-groupe de l'étudiant.
-    """
-    if df_edt.empty:
-        return pd.DataFrame()
-    
-    df_promo = df_edt[df_edt["Promotion"].astype(str).str.strip().str.upper() == str(promo_etudiant).strip().upper()].copy()
-    if df_promo.empty:
-        df_promo = df_edt[df_edt["Promotion"].astype(str).str.strip().str.upper().str.contains(str(promo_etudiant).strip().upper(), na=False)].copy()
-    
-    if df_promo.empty:
-        return pd.DataFrame()
-    
-    lignes_retenues = []
-    groupe_clean = str(groupe_etudiant).strip().upper()
-    sg_clean = str(sous_groupe_etudiant).strip().upper()
-    
-    for _, row in df_promo.iterrows():
-        enseignement = str(row.get("Enseignements", "")).strip().lower()
-        lieu = str(row.get("Lieu", "")).strip()
-        
-        is_cours = "cours" in enseignement or "/" not in lieu
-        
-        if is_cours:
-            lignes_retenues.append(row)
-        else:
-            parts = lieu.split('/')
-            if len(parts) > 1:
-                spec_groupe = parts[1].strip().upper()
-                match_g = groupe_clean and (groupe_clean in spec_groupe or spec_groupe in groupe_clean)
-                match_sg = sg_clean and (sg_clean in spec_groupe or spec_groupe in sg_clean)
-                
-                if match_g or match_sg or spec_groupe in ["TOUS", "ALL"]:
-                    lignes_retenues.append(row)
-            else:
-                lignes_retenues.append(row)
-                
-    if not lignes_retenues:
-        return pd.DataFrame()
-        
-    return pd.DataFrame(lignes_retenues)
-
 def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
+    """Lit un fichier Excel en essayant plusieurs engines (.xlsx, .xls, .xlsb)."""
     if chemin_ou_fichier is None:
         return None
+    
     if hasattr(chemin_ou_fichier, 'seek'):
         chemin_ou_fichier.seek(0)
+    
+    # Détection prioritaire selon l'extension
     nom = ""
     if hasattr(chemin_ou_fichier, 'name'):
         nom = chemin_ou_fichier.name.lower()
     elif isinstance(chemin_ou_fichier, str):
         nom = os.path.basename(chemin_ou_fichier).lower()
     
+    # Ordre des engines : xlrd prioritaire pour les .xls anciens
     engines = ['openpyxl', 'xlrd', 'pyxlsb']
     if nom.endswith('.xls') and not nom.endswith('.xlsx'):
         engines = ['xlrd', 'openpyxl', 'pyxlsb']
@@ -920,9 +878,9 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
         except Exception as e:
             last_err = e
             continue
-    raise ValueError(f"❌ Format non reconnu. Erreur : {last_err}")
+            
+    raise ValueError(f"❌ Format non reconnu. Utilisez un fichier Excel valide (.xlsx, .xls, .xlsb). Erreur : {last_err}")
 
-print("Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA initialisée.")
 
 def run_Assiduité():
     import io
@@ -13246,77 +13204,6 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                     else:
                         df_edt_final = df_edt_etu_filtre.copy()
 
-                    # ═══════════════════════════════════════════════════════
-                    # FILTRAGE INTELLIGENT: COURS (tous) + TD/TP (par groupe)
-                    # ═══════════════════════════════════════════════════════
-                    
-                    def determiner_type_enseignement(code_val):
-                        """Détermine le type: COURS, TD, TP"""
-                        if pd.isna(code_val):
-                            return "AUTRE"
-                        code_str = str(code_val).strip().upper()
-                        if "COURS" in code_str:
-                            return "COURS"
-                        elif "TD" in code_str:
-                            return "TD"
-                        elif "TP" in code_str:
-                            return "TP"
-                        return "AUTRE"
-                    
-                    def extraire_groupe_from_lieu(lieu_val):
-                        """Extrait le groupe du Lieu au format 'A09/G5' → 'G5'"""
-                        if pd.isna(lieu_val):
-                            return None
-                        lieu_str = str(lieu_val).strip().upper()
-                        if "/" in lieu_str:
-                            parties = lieu_str.split("/")
-                            if len(parties) >= 2:
-                                groupe = parties[1].strip()
-                                # Vérifier que c'est au format Gn ou SGn
-                                if groupe.startswith("G") and groupe[1:].isdigit():
-                                    return groupe
-                                elif groupe.startswith("SG") and groupe[2:].isdigit():
-                                    return groupe
-                        return None
-                    
-                    # Ajouter colonnes de type et groupe
-                    df_edt_etu_filtre["Type_Ens"] = df_edt_etu_filtre["Code"].apply(determiner_type_enseignement)
-                    df_edt_etu_filtre["Groupe_From_Lieu"] = df_edt_etu_filtre["Lieu"].apply(extraire_groupe_from_lieu)
-                    
-                    # ── FILTRAGE ──
-                    # Séparer COURS et TD/TP
-                    df_cours = df_edt_etu_filtre[df_edt_etu_filtre["Type_Ens"] == "COURS"].copy()
-                    df_td_tp = df_edt_etu_filtre[df_edt_etu_filtre["Type_Ens"].isin(["TD", "TP"])].copy()
-                    
-                    # Filtrer TD/TP par groupe si l'étudiant en a un
-                    if groupe_etu:
-                        df_td_tp_filtre = df_td_tp[df_td_tp["Groupe_From_Lieu"] == groupe_etu].copy()
-                        # Si aucun TD/TP ne correspond au groupe, afficher tous les TD/TP
-                        if df_td_tp_filtre.empty:
-                            df_td_tp_filtre = df_td_tp.copy()
-                    else:
-                        df_td_tp_filtre = df_td_tp.copy()
-                    
-                    # Combiner: Cours + TD/TP filtrés
-                    df_edt_final = pd.concat([df_cours, df_td_tp_filtre], ignore_index=True)
-                    
-                    # Vérifier que les données horaires existent
-                    if not df_edt_final.empty:
-                        # S'assurer que toutes les colonnes requises existent
-                        colonnes_requises = ["Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion"]
-                        for col in colonnes_requises:
-                            if col not in df_edt_final.columns:
-                                st.error(f"❌ Colonne manquante: {col}")
-                                df_edt_final = pd.DataFrame()
-                                break
-                        
-                        # Vérifier que Horaire et Jours ne sont pas vides
-                        df_edt_final = df_edt_final.dropna(subset=["Horaire", "Jours"])
-                        df_edt_final = df_edt_final[
-                            (df_edt_final["Horaire"].astype(str).str.strip() != "") &
-                            (df_edt_final["Jours"].astype(str).str.strip() != "")
-                        ]
-                    
                     if not df_edt_final.empty:
                         # ── Afficheurs numériques ──
                         nb_seances_etu = len(df_edt_final)
