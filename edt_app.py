@@ -13185,23 +13185,41 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                     ].copy()
 
                 if not df_edt_etu_filtre.empty:
-                    # 2. Extraire le groupe depuis les colonnes Code et Lieu de l'EDT
-                    def extraire_groupe_from_edt(val):
+                    # 2. Chercher le groupe dans la colonne Lieu de l'EDT
+                    def extraire_groupe_from_lieu(val):
+                        """Extrait le groupe du Lieu au format: A09/G1, Salle G1/G2, etc."""
                         if pd.isna(val):
                             return None
-                        m = re.search(r'G(\d+)', str(val).upper())
-                        return f"G{m.group(1)}" if m else None
+                        val_str = str(val).upper().strip()
+                        
+                        # Chercher SG (sous-groupe)
+                        m_sg = re.search(r'SG(\d+)', val_str)
+                        if m_sg:
+                            return f"SG{m_sg.group(1)}"
+                        
+                        # Chercher G (groupe)
+                        m_g = re.search(r'G(\d+)', val_str)
+                        if m_g:
+                            return f"G{m_g.group(1)}"
+                        
+                        return None
 
-                    df_edt_etu_filtre["Groupe_Code"] = df_edt_etu_filtre["Code"].apply(extraire_groupe_from_edt)
-                    df_edt_etu_filtre["Groupe_Lieu"] = df_edt_etu_filtre["Lieu"].apply(extraire_groupe_from_edt)
-                    df_edt_etu_filtre["Groupe_EDT"] = df_edt_etu_filtre["Groupe_Code"].fillna(df_edt_etu_filtre["Groupe_Lieu"])
-
-                    # 3. Filtrer : cours communs (sans groupe) + cours du groupe de l'étudiant
-                    if groupe_etu:
-                        mask_commun = df_edt_etu_filtre["Groupe_EDT"].isna()
-                        mask_mon_groupe = df_edt_etu_filtre["Groupe_EDT"] == groupe_etu
-                        df_edt_final = df_edt_etu_filtre[mask_commun | mask_mon_groupe].copy()
+                    df_edt_etu_filtre["Groupe_Lieu"] = df_edt_etu_filtre["Lieu"].apply(extraire_groupe_from_lieu)
+                    
+                    # 3. Déterminer si l'EDT contient des informations de groupe
+                    groupes_dans_edt = df_edt_etu_filtre["Groupe_Lieu"].dropna().unique()
+                    a_des_groupes = len(groupes_dans_edt) > 0
+                    
+                    # 4. Filtrer selon le groupe de l'étudiant (du fichier étudiants)
+                    if groupe_etu and a_des_groupes:
+                        # L'EDT contient des groupes: filtrer
+                        mask_cours = df_edt_etu_filtre["Code"].astype(str).str.contains("COURS", case=False, na=False)
+                        mask_mon_groupe = df_edt_etu_filtre["Groupe_Lieu"] == groupe_etu
+                        df_edt_final = df_edt_etu_filtre[mask_cours | mask_mon_groupe].copy()
                     else:
+                        # L'EDT ne contient pas de groupes: afficher tous les cours
+                        if groupe_etu and not a_des_groupes:
+                            st.info(f"ℹ️ Les données EDT pour **{promo_sel_indiv}** ne contiennent pas d'information de groupe. Affichage de tous les cours.")
                         df_edt_final = df_edt_etu_filtre.copy()
 
                     if not df_edt_final.empty:
@@ -13331,12 +13349,6 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                                 )
                             return "".join(items)
 
-                        # Créer les colonnes normalisées s'il elles n'existent pas
-                        if "h_norm" not in df_edt_final.columns:
-                            df_edt_final["h_norm"] = df_edt_final["Horaire"].apply(_norm_edt)
-                        if "j_norm" not in df_edt_final.columns:
-                            df_edt_final["j_norm"] = df_edt_final["Jours"].apply(_norm_edt)
-                        
                         grouped_indiv = df_edt_final.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv, include_groups=False)
                         grid_indiv = grouped_indiv.unstack("j_norm") if not grouped_indiv.empty else pd.DataFrame()
 
@@ -13418,13 +13430,15 @@ tr:nth-child(even){{background-color:#f8fafc;}}
                             )
                         else:
                             st.warning("⚠️ Impossible de construire la grille (données horaires incomplètes).")
-                            with st.expander("🔍 DEBUG - Données filtrées"):
-                                st.write(f"Nombre de lignes: {len(df_edt_final)}")
-                                st.write(f"Colonnes: {list(df_edt_final.columns)}")
-                                st.dataframe(df_edt_final[["Enseignements", "Horaire", "Jours"]].head(15))
+                            with st.expander("🔍 DEBUG - Informations détaillées"):
+                                st.write(f"**Promotion:** {promo_sel_indiv}")
+                                st.write(f"**Groupe étudiant:** {groupe_etu}")
+                                st.write(f"**Nombre de séances:** {len(df_edt_final)}")
+                                st.write(f"**Colonnes disponibles:** {list(df_edt_final.columns)}")
+                                st.write(f"**Premiers cours:**")
+                                st.dataframe(df_edt_final[["Enseignements", "Horaire", "Jours", "Lieu"]].head(10))
                     else:
-                        # Fallback: afficher tous les cours de la promotion
-                        st.info(f"ℹ️ Aucun cours trouvé pour le groupe **{groupe_etu or 'non détecté'}**. Affichage de tous les cours de la promotion **{promo_sel_indiv}**.")
+                        st.warning(f"⚠️ Aucun cours trouvé pour le groupe **{groupe_etu or 'non détecté'}** dans la promotion **{promo_sel_indiv}**.")
                 else:
                     st.error(f"❌ Aucun enseignement trouvé pour la promotion **{promo_sel_indiv}** dans le fichier EDT.")
         else:
