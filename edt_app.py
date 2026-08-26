@@ -13187,10 +13187,22 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                 if not df_edt_etu_filtre.empty:
                     # 2. Extraire le groupe depuis les colonnes Code et Lieu de l'EDT
                     def extraire_groupe_from_edt(val):
+                        """Extrait le groupe du format: G1, G2, SG1, SG11, A09/G5, etc."""
                         if pd.isna(val):
                             return None
-                        m = re.search(r'G(\d+)', str(val).upper())
-                        return f"G{m.group(1)}" if m else None
+                        val_str = str(val).upper().strip()
+                        
+                        # Chercher SG (sous-groupe): SG1, SG2, ..., SG11, etc.
+                        m_sg = re.search(r'SG(\d+)', val_str)
+                        if m_sg:
+                            return f"SG{m_sg.group(1)}"
+                        
+                        # Chercher G (groupe): G1, G2, ..., G99, etc.
+                        m_g = re.search(r'G(\d+)', val_str)
+                        if m_g:
+                            return f"G{m_g.group(1)}"
+                        
+                        return None
 
                     df_edt_etu_filtre["Groupe_Code"] = df_edt_etu_filtre["Code"].apply(extraire_groupe_from_edt)
                     df_edt_etu_filtre["Groupe_Lieu"] = df_edt_etu_filtre["Lieu"].apply(extraire_groupe_from_edt)
@@ -13198,9 +13210,16 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
 
                     # 3. Filtrer : cours communs (sans groupe) + cours du groupe de l'étudiant
                     if groupe_etu:
+                        # D'abord essayer avec le groupe exact
                         mask_commun = df_edt_etu_filtre["Groupe_EDT"].isna()
                         mask_mon_groupe = df_edt_etu_filtre["Groupe_EDT"] == groupe_etu
                         df_edt_final = df_edt_etu_filtre[mask_commun | mask_mon_groupe].copy()
+                        
+                        # Si aucun cours du groupe, essayer un fallback intelligent
+                        if df_edt_final.empty or len(df_edt_final[df_edt_final["Groupe_EDT"] == groupe_etu]) == 0:
+                            # Afficher tous les cours de la promotion
+                            st.info(f"ℹ️ Pas de TD/TP trouvés pour le groupe **{groupe_etu}**. Affichage de tous les cours de la promotion.")
+                            df_edt_final = df_edt_etu_filtre.copy()
                     else:
                         df_edt_final = df_edt_etu_filtre.copy()
 
@@ -13273,14 +13292,12 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                             
                             s = str(x).strip().lower()
                             
-                            # Normaliser les espaces autour du tiret
-                            s = re.sub(r'\s*[-–à]\s*', '-', s)  # Préserver le tiret!
+                            # ✅ Normaliser les espaces AUTOUR du tiret - PRÉSERVER LE TIRET!
+                            s = re.sub(r'\s*[-–à]\s*', '-', s)
                             s = s.replace(' ', '')  # Supprimer autres espaces
                             
-                            # Normaliser les format d'heures
-                            # 8h → 8h00, 8:00 → 8h00, 8 → 8h00
-                            s = re.sub(r'(\d{1,2}):00', r'\1h00', s)  # 8:00 → 8h00
-                            s = re.sub(r'(\d{1,2})(?!h|:)', r'\1h00', s)  # 8 → 8h00 (si pas suivi de h ou :)
+                            # Normaliser les formats d'heures
+                            s = re.sub(r'(\d{1,2}):00', r'\1h00', s)   # 8:00 → 8h00
                             s = re.sub(r'(\d{1,2})h(?!00)', r'\1h00', s)  # 8h → 8h00
                             
                             return s
@@ -13415,7 +13432,8 @@ tr:nth-child(even){{background-color:#f8fafc;}}
                         else:
                             st.warning("⚠️ Impossible de construire la grille (données horaires incomplètes).")
                     else:
-                        st.warning(f"⚠️ Aucun cours trouvé pour le groupe **{groupe_etu or 'non détecté'}** dans la promotion **{promo_sel_indiv}**.")
+                        # Fallback: afficher tous les cours de la promotion
+                        st.info(f"ℹ️ Aucun cours trouvé pour le groupe **{groupe_etu or 'non détecté'}**. Affichage de tous les cours de la promotion **{promo_sel_indiv}**.")
                 else:
                     st.error(f"❌ Aucun enseignement trouvé pour la promotion **{promo_sel_indiv}** dans le fichier EDT.")
         else:
