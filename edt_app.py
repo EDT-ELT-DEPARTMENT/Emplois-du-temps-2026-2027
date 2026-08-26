@@ -13267,10 +13267,22 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                         st.markdown("### 📋 Emploi du Temps Individuel")
 
                         def _norm_edt(x):
-                            if not x or str(x).strip().lower() in ["non defini", "nan", "none", ""]:
-                                return "vide"
-                            s = str(x).strip().lower().replace(" ", "").replace("-", "").replace("–", "")
-                            s = s.replace(":00", "").replace("h00", "h")
+                            """Normalise les horaires et jours - PRÉSERVER LE TIRET!"""
+                            if not x or str(x).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
+                                return ""
+                            
+                            s = str(x).strip().lower()
+                            
+                            # Normaliser les espaces autour du tiret
+                            s = re.sub(r'\s*[-–à]\s*', '-', s)  # Préserver le tiret!
+                            s = s.replace(' ', '')  # Supprimer autres espaces
+                            
+                            # Normaliser les format d'heures
+                            # 8h → 8h00, 8:00 → 8h00, 8 → 8h00
+                            s = re.sub(r'(\d{1,2}):00', r'\1h00', s)  # 8:00 → 8h00
+                            s = re.sub(r'(\d{1,2})(?!h|:)', r'\1h00', s)  # 8 → 8h00 (si pas suivi de h ou :)
+                            s = re.sub(r'(\d{1,2})h(?!00)', r'\1h00', s)  # 8h → 8h00
+                            
                             return s
 
                         horaires_ref_indiv = [
