@@ -13219,9 +13219,7 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                     # Combiner: COURS (tous) + TD/TP (filtrés)
                     df_edt_final = pd.concat([df_cours, df_td_tp_filtered], ignore_index=True)
                     
-                    # Trier par jour et heure
-                    df_edt_final["h_norm"] = df_edt_final["Horaire"].apply(_norm_edt)
-                    df_edt_final["j_norm"] = df_edt_final["Jours"].apply(_norm_edt)
+                    
 
                     if not df_edt_final.empty:
                         # ── Afficheurs numériques ──
