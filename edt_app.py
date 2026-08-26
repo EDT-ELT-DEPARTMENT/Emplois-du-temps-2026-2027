@@ -4399,6 +4399,388 @@ td{{word-wrap:break-word;}}
     # ============================================================
     # PORTAIL : RECHERCHE ÉTUDIANT
     # ============================================================
+    """
+=============================================================
+CORRECTION : EDT Individuel Étudiant - Module robuste
+À intégrer dans votre edt_app__12__FULLY_CORRECTED.py
+Remplace la section "EDT Individuel Étudiant" ou "🎓 Recherche Étudiant"
+=============================================================
+"""
+
+import streamlit as st
+import pandas as pd
+import io
+from datetime import datetime
+
+# ---------------------------------------------------------------------------
+# CONSTANTES
+# ---------------------------------------------------------------------------
+HORAIRES_STD = [
+    "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h",
+    "14h - 15h", "14h - 15h30", "15h - 16h", "15h30 - 17h"
+]
+JOURS_STD = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+
+# ---------------------------------------------------------------------------
+# FONCTIONS DE NORMALISATION ROBUSTES
+# ---------------------------------------------------------------------------
+def _norm_horaire(h):
+    """Normalise un horaire avec tolérance maximale."""
+    if pd.isna(h):
+        return None
+    s = str(h).strip().lower()
+    s = s.replace(" ", "").replace("–", "-").replace(":", "h")
+    s = s.replace("h00", "h").replace("h30", "h30")
+    # Mapping très souple pour capturer toutes les variantes
+    mapping = {
+        "8h-9h": "8h - 9h30", "8h-9h30": "8h - 9h30", "8h-10h": "8h - 9h30",
+        "9h-10h": "9h30 - 11h", "9h30-11h": "9h30 - 11h", "9h30-11": "9h30 - 11h",
+        "10h-11h": "9h30 - 11h", "11h-12h": "11h - 12h30", "11h-12h30": "11h - 12h30",
+        "12h-13h": "12h30 - 14h", "12h30-14h": "12h30 - 14h", "12h30-14": "12h30 - 14h",
+        "13h-14h30": "12h30 - 14h", "14h-15h": "14h - 15h", "14h-15h30": "14h - 15h30",
+        "14h-16h": "14h - 15h30", "15h-16h": "15h - 16h", "15h30-17h": "15h30 - 17h",
+        "15h30-17": "15h30 - 17h", "15h-16h": "15h - 16h", "16h-17h": "15h30 - 17h",
+    }
+    return mapping.get(s, str(h).strip())
+
+def _norm_jour(j):
+    """Normalise un jour avec tolérance maximale."""
+    if pd.isna(j):
+        return None
+    s = str(j).strip().lower()
+    for jr in ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]:
+        if jr in s:
+            return jr.capitalize()
+    return str(j).strip().capitalize()
+
+# ---------------------------------------------------------------------------
+# CONSTRUCTION DE LA GRILLE EDT ÉTUDIANT
+# ---------------------------------------------------------------------------
+def build_student_edt_grid(df_edt, df_etu, student_name,
+                           promo_col='Promotion',
+                           groupe_col='Groupe',
+                           sg_col='Sous_groupe'):
+    """
+    Construit la grille EDT pour un étudiant donné.
+    Retourne: (grid_html, grid_text, stats, info_msg, error_msg)
+    """
+    # --- 1. Récupération infos étudiant ---
+    nom_cc = 'Nom_Complet'
+    if nom_cc not in df_etu.columns:
+        # Fallback : construction Nom + Prénom
+        cols = list(df_etu.columns)
+        col_n = next((c for c in cols if c.strip().upper() == 'NOM'), None)
+        col_p = next((c for c in cols if c.strip().upper() in ['PRÉNOM', 'PRENOM']), None)
+        if col_n and col_p:
+            df_etu = df_etu.copy()
+            df_etu[nom_cc] = df_etu[col_n].astype(str).str.strip().str.upper() + " " + df_etu[col_p].astype(str).str.strip().str.title()
+        else:
+            return None, None, None, None, "Colonnes Nom/Prénom introuvables"
+
+    etu_row = df_etu[df_etu[nom_cc].astype(str).str.strip() == str(student_name).strip()]
+    if etu_row.empty:
+        return None, None, None, None, f"Étudiant '{student_name}' non trouvé"
+
+    promo = str(etu_row[promo_col].iloc[0]).strip() if promo_col in etu_row.columns else ""
+    groupe = str(etu_row[groupe_col].iloc[0]).strip() if (groupe_col in etu_row.columns and pd.notna(etu_row[groupe_col].iloc[0])) else ""
+    sg = str(etu_row[sg_col].iloc[0]).strip() if (sg_col in etu_row.columns and pd.notna(etu_row[sg_col].iloc[0])) else ""
+
+    # --- 2. Filtrage EDT par promotion ---
+    df_edt = df_edt.copy()
+    for c in ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']:
+        if c not in df_edt.columns:
+            df_edt[c] = "Non défini"
+        else:
+            df_edt[c] = df_edt[c].fillna("Non défini").astype(str).str.strip()
+
+    df_p = df_edt[df_edt['Promotion'].str.upper() == promo.upper()].copy()
+
+    # --- 3. Filtrage par Groupe / Sous-groupe si disponible ---
+    info_msg = ""
+    has_groupe = groupe_col in df_edt.columns and df_edt[groupe_col].notna().any() and (df_edt[groupe_col] != "").any()
+    has_sg = sg_col in df_edt.columns and df_edt[sg_col].notna().any() and (df_edt[sg_col] != "").any()
+
+    if has_groupe and groupe and groupe.lower() not in ['nan', 'none', '']:
+        df_p = df_p[df_p[groupe_col].astype(str).str.strip().str.upper() == groupe.upper()]
+    elif groupe and groupe.lower() not in ['nan', 'none', '']:
+        info_msg = f"ℹ️ Les données EDT pour {promo} ne contiennent pas d'information de groupe. Affichage de tous les cours."
+
+    if has_sg and sg and sg.lower() not in ['nan', 'none', '']:
+        df_p = df_p[df_p[sg_col].astype(str).str.strip().str.upper() == sg.upper()]
+
+    if df_p.empty:
+        return None, None, None, info_msg, f"Aucun cours trouvé pour {promo} (groupe: {groupe}, sg: {sg})"
+
+    # --- 4. Normalisation ---
+    df_p['h_norm'] = df_p['Horaire'].apply(_norm_horaire)
+    df_p['j_norm'] = df_p['Jours'].apply(_norm_jour)
+
+    # Supprimer les lignes non reconnues
+    df_valid = df_p.dropna(subset=['h_norm', 'j_norm']).copy()
+
+    if df_valid.empty:
+        # Dernière chance : affichage brut sans grille
+        stats = {
+            'total': len(df_p), 'cours': 0, 'td': 0, 'tp': 0,
+            'jours': df_p['Jours'].nunique(), 'profs': df_p['Enseignants'].nunique()
+        }
+        return None, None, stats, info_msg, "Créneaux horaires non standardisés dans le fichier source"
+
+    # --- 5. Formatage des cellules ---
+    def fmt_html(rows):
+        items = []
+        for _, r in rows.iterrows():
+            code = str(r.get('Code', '')).upper()
+            if 'COURS' in code:
+                color, emoji, bg = '#1e40af', '📘', '#dbeafe'
+            elif 'TD' in code:
+                color, emoji, bg = '#166534', '📗', '#dcfce7'
+            else:
+                color, emoji, bg = '#991b1b', '🔴', '#fee2e2'
+            items.append(
+                f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;"
+                f"background:{bg};border-radius:4px;font-size:11px;line-height:1.3;'>"
+                f"<b>{emoji} {r.get('Enseignements', '')}</b><br>"
+                f"<span style='color:#64748b;font-size:10px;'>👤 {r.get('Enseignants', '')}</span><br>"
+                f"<span style='color:#64748b;font-size:10px;'>📍 {r.get('Lieu', '')}</span>"
+                f"</div>"
+            )
+        return "".join(items)
+
+    def fmt_text(rows):
+        items = []
+        for _, r in rows.iterrows():
+            code = str(r.get('Code', '')).upper()
+            t = 'COURS' if 'COURS' in code else ('TD' if 'TD' in code else 'TP')
+            items.append(f"{t} – {r.get('Enseignements','')}\n👤 {r.get('Enseignants','')}\n📍 {r.get('Lieu','')}")
+        return "\n────────\n".join(items)
+
+    # --- 6. Construction pivot ---
+    try:
+        g_html = df_valid.groupby(['j_norm', 'h_norm']).apply(fmt_html, include_groups=False).unstack(fill_value="")
+        g_text = df_valid.groupby(['j_norm', 'h_norm']).apply(fmt_text, include_groups=False).unstack(fill_value="")
+    except Exception as e:
+        return None, None, None, info_msg, f"Erreur pivot: {str(e)}"
+
+    # --- 7. Réindexation propre ---
+    jours_ok = [j for j in JOURS_STD if j in g_html.index]
+    h_ok = [h for h in HORAIRES_STD if h in g_html.columns]
+
+    # Si aucun match exact, on prend ce qui existe
+    if not jours_ok:
+        jours_ok = list(g_html.index)
+    if not h_ok:
+        h_ok = list(g_html.columns)
+
+    g_html = g_html.reindex(index=jours_ok, columns=h_ok).fillna("")
+    g_text = g_text.reindex(index=jours_ok, columns=h_ok).fillna("")
+
+    # --- 8. Statistiques ---
+    df_p['Type'] = df_p['Code'].apply(
+        lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
+    )
+    stats = {
+        'total': len(df_p),
+        'cours': len(df_p[df_p['Type'] == 'COURS']),
+        'td': len(df_p[df_p['Type'] == 'TD']),
+        'tp': len(df_p[df_p['Type'] == 'TP']),
+        'jours': df_p['Jours'].nunique(),
+        'profs': df_p['Enseignants'].nunique()
+    }
+
+    return g_html, g_text, stats, info_msg, None
+
+
+# ---------------------------------------------------------------------------
+# AFFICHAGE STREAMLIT COMPLET (à insérer dans votre app)
+# ---------------------------------------------------------------------------
+def render_student_edt_tab(df_edt, df_etu):
+    """
+    Onglet complet : Recherche Étudiant + EDT Individuel
+    Appelez cette fonction dans votre bloc principal.
+    """
+    st.markdown("<h1 class='main-title'>🎓 Recherche d'Informations Étudiant</h1>", unsafe_allow_html=True)
+
+    if df_etu.empty or df_edt.empty:
+        st.error("❌ Données manquantes (étudiants ou EDT)")
+        return
+
+    # Préparation Nom_Complet
+    if 'Nom_Complet' not in df_etu.columns:
+        col_n = next((c for c in df_etu.columns if c.strip().upper() == 'NOM'), None)
+        col_p = next((c for c in df_etu.columns if c.strip().upper() in ['PRÉNOM', 'PRENOM']), None)
+        if col_n and col_p:
+            df_etu = df_etu.copy()
+            df_etu['Nom_Complet'] = df_etu[col_n].astype(str).str.strip().str.upper() + " " + df_etu[col_p].astype(str).str.strip().str.title()
+
+    liste_etudiants = sorted(df_etu['Nom_Complet'].dropna().unique())
+
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        sel_etud = st.selectbox("🔍 Sélectionner un étudiant :", [""] + liste_etudiants, key="sel_etudiant_edt")
+    with c2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.metric("Total étudiants", len(liste_etudiants))
+
+    if not sel_etud:
+        st.info("👆 Sélectionnez un étudiant pour afficher son EDT individuel")
+        return
+
+    # --- Récupération infos ---
+    etu_row = df_etu[df_etu['Nom_Complet'] == sel_etud].iloc[0]
+
+    # Détection colonnes
+    cols_map = {}
+    for c in df_etu.columns:
+        cu = c.strip().upper()
+        if cu == 'PROMOTION' or cu == 'PROMO':
+            cols_map['promo'] = c
+        if 'GROUPE' in cu and 'SOUS' not in cu:
+            cols_map['groupe'] = c
+        if 'SOUS' in cu and 'GROUPE' in cu:
+            cols_map['sg'] = c
+        if 'MAT' in cu and 'BAC' in cu:
+            cols_map['mat_bac'] = c
+
+    promo = str(etu_row.get(cols_map.get('promo', 'Promotion'), 'N/A'))
+    groupe = str(etu_row.get(cols_map.get('groupe', 'Groupe'), 'N/A'))
+    sg = str(etu_row.get(cols_map.get('sg', 'Sous_groupe'), 'N/A'))
+    mat_bac = str(etu_row.get(cols_map.get('mat_bac', 'Mat. BAC'), 'N/A'))
+
+    # --- Construction EDT ---
+    g_html, g_text, stats, info_msg, error_msg = build_student_edt_grid(
+        df_edt, df_etu, sel_etud,
+        promo_col=cols_map.get('promo', 'Promotion'),
+        groupe_col=cols_map.get('groupe', 'Groupe'),
+        sg_col=cols_map.get('sg', 'Sous_groupe')
+    )
+
+    # --- Fiche identité ---
+    st.markdown(f"""
+        <div style="background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); 
+                    padding: 20px; border-radius: 12px; color: white; margin: 15px 0;">
+            <div style="font-size: 12px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px;">
+                Fiche Étudiant — EDT Individuel
+            </div>
+            <div style="font-size: 24px; font-weight: bold; margin-top: 6px;">
+                {sel_etud}
+            </div>
+            <div style="margin-top: 10px; font-size: 14px; opacity: 0.9;">
+                🎓 {promo} &nbsp;|&nbsp; 👥 Groupe : {groupe} &nbsp;|&nbsp; Sous-groupe : {sg} &nbsp;|&nbsp; 🎫 Mat. BAC : {mat_bac}
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    if info_msg:
+        st.info(info_msg)
+    if error_msg:
+        st.warning(f"⚠️ {error_msg}")
+
+    # --- Métriques ---
+    if stats:
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("📅 Séances", stats['total'])
+        m2.metric("📘 Cours", stats['cours'])
+        m3.metric("📗 TD", stats['td'])
+        m4.metric("🔴 TP", stats['tp'])
+        m5.metric("👤 Enseignants", stats['profs'])
+
+    # --- Affichage Grille ---
+    st.divider()
+    st.subheader("📋 Emploi du Temps Individuel")
+
+    if g_html is not None and not g_html.empty:
+        # Affichage HTML stylisé
+        thead = "<tr><th style='background:#1E3A8A;color:white;padding:10px;width:100px;'>JOUR</th>"
+        for h in g_html.columns:
+            thead += f"<th style='background:#1E3A8A;color:white;padding:10px;font-size:12px;'>{h}</th>"
+        thead += "</tr>"
+
+        tbody = ""
+        for jour, row in g_html.iterrows():
+            tbody += f"<tr><td style='background:#f1f5f9;font-weight:bold;text-align:center;padding:10px;'>{jour}</td>"
+            for val in row:
+                tbody += f"<td style='border:1px solid #e2e8f0;padding:6px;vertical-align:top;'>{val}</td>"
+            tbody += "</tr>"
+
+        html_table = f"""<table style='width:100%;border-collapse:collapse;table-layout:fixed;'>
+            <thead>{thead}</thead><tbody>{tbody}</tbody></table>"""
+
+        st.write(html_table, unsafe_allow_html=True)
+
+        # --- EXPORTS ---
+        st.divider()
+        st.markdown("### 📥 Exports")
+        e1, e2, e3 = st.columns(3)
+
+        # Excel
+        if g_text is not None:
+            buf_xl = io.BytesIO()
+            with pd.ExcelWriter(buf_xl, engine='xlsxwriter') as writer:
+                g_text.to_excel(writer, sheet_name='EDT_Etudiant', startrow=2)
+                wb = writer.book
+                ws = writer.sheets['EDT_Etudiant']
+                title_fmt = wb.add_format({'bold': True, 'font_size': 14, 'font_color': '#1E3A8A', 'align': 'center'})
+                ws.merge_range(0, 0, 0, len(g_text.columns), f"EDT Individuel — {sel_etud}", title_fmt)
+                ws.merge_range(1, 0, 1, len(g_text.columns), f"{promo} — Généré le {datetime.now().strftime('%d/%m/%Y')}",
+                               wb.add_format({'italic': True, 'align': 'center', 'font_size': 10, 'font_color': '#64748b'}))
+                hdr_fmt = wb.add_format({'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1, 'align': 'center'})
+                cell_fmt = wb.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10})
+                alt_fmt = wb.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10, 'bg_color': '#F8FAFC'})
+
+                ws.write(2, 0, "JOUR", hdr_fmt)
+                for col_num, val in enumerate(g_text.columns, start=1):
+                    ws.write(2, col_num, val, hdr_fmt)
+
+                for row_num, (jour, row) in enumerate(g_text.iterrows(), start=3):
+                    fmt = alt_fmt if row_num % 2 == 0 else cell_fmt
+                    ws.write(row_num, 0, jour, wb.add_format({'bold': True, 'bg_color': '#f1f5f9', 'border': 1, 'align': 'center'}))
+                    for col_num, val in enumerate(row, start=1):
+                        ws.write(row_num, col_num, val, fmt)
+                    ws.set_row(row_num, 60)
+
+                ws.set_column(0, 0, 16)
+                ws.set_column(1, len(g_text.columns), 28)
+                ws.freeze_panes(3, 1)
+
+            e1.download_button("📊 Excel", buf_xl.getvalue(),
+                            f"EDT_{sel_etud.replace(' ','_')}_{promo}.xlsx",
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True, key="dl_etud_xl")
+
+        # HTML
+        html_doc = f"""<!DOCTYPE html>
+<html lang='fr'><head><meta charset='UTF-8'><title>EDT {sel_etud}</title>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;margin:0;color:#1e293b;}}
+.container{{max-width:1200px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
+.header{{background:linear-gradient(135deg,#1E3A8A,#3B82F6);color:white;padding:20px;text-align:center;}}
+.header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
+.content{{padding:20px;}} table{{width:100%;border-collapse:collapse;table-layout:fixed;}} th{{position:sticky;top:0;z-index:10;}}
+.footer{{text-align:center;padding:15px;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;}}
+</style></head><body>
+<div class='container'><div class='header'><h1>📅 EDT Individuel — {sel_etud}</h1>
+<p>{promo} — Groupe {groupe} — Sous-groupe {sg}</p></div>
+<div class='content'>{html_table}</div>
+<div class='footer'>Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</div></div></body></html>"""
+
+        e2.download_button("🌐 HTML", html_doc,
+                          f"EDT_{sel_etud.replace(' ','_')}_{promo}.html",
+                          "text/html", use_container_width=True, key="dl_etud_html")
+
+        # Données brutes
+        e3.download_button("📋 Données brutes (CSV)", df_edt[df_edt['Promotion'].str.upper() == promo.upper()].to_csv(index=False),
+                          f"Donnees_EDT_{promo}.csv", "text/csv", use_container_width=True, key="dl_etud_csv")
+    else:
+        # Fallback : affichage en tableau simple si grille impossible
+        st.warning("⚠️ Affichage en liste (grille non constructible)")
+        df_fallback = df_edt[df_edt['Promotion'].str.upper() == promo.upper()].copy()
+        st.dataframe(df_fallback[['Jours', 'Horaire', 'Enseignements', 'Code', 'Enseignants', 'Lieu']].sort_values(['Jours', 'Horaire']),
+                    use_container_width=True, hide_index=True)
+
+
+
+
     # ============================================================
     # PORTAIL : RECHERCHE ÉTUDIANT
     # ============================================================
