@@ -13185,42 +13185,43 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                     ].copy()
 
                 if not df_edt_etu_filtre.empty:
-                    # 2. Chercher le groupe dans la colonne Lieu de l'EDT
-                    def extraire_groupe_from_lieu(val):
-                        """Extrait le groupe du Lieu au format: A09/G1, Salle G1/G2, etc."""
-                        if pd.isna(val):
+                    # LOGIQUE SIMPLIFIÉE:
+                    # 1. COURS: Afficher pour tous
+                    # 2. TD/TP: Chercher groupe dans Lieu, filtrer si trouvé
+                    
+                    # Séparer COURS et TD/TP
+                    df_cours = df_edt_etu_filtre[
+                        df_edt_etu_filtre["Code"].astype(str).str.contains("COURS", case=False, na=False)
+                    ].copy()
+                    
+                    df_td_tp = df_edt_etu_filtre[
+                        df_edt_etu_filtre["Code"].astype(str).str.contains("TD|TP", case=False, na=False)
+                    ].copy()
+                    
+                    # Extraire groupe du Lieu pour TD/TP
+                    def extraire_groupe_simple(lieu):
+                        """Extrait G1, G2, G3, etc. du Lieu"""
+                        if pd.isna(lieu):
                             return None
-                        val_str = str(val).upper().strip()
-                        
-                        # Chercher SG (sous-groupe)
-                        m_sg = re.search(r'SG(\d+)', val_str)
-                        if m_sg:
-                            return f"SG{m_sg.group(1)}"
-                        
-                        # Chercher G (groupe)
-                        m_g = re.search(r'G(\d+)', val_str)
-                        if m_g:
-                            return f"G{m_g.group(1)}"
-                        
-                        return None
-
-                    df_edt_etu_filtre["Groupe_Lieu"] = df_edt_etu_filtre["Lieu"].apply(extraire_groupe_from_lieu)
+                        m = re.search(r'G(\d+)', str(lieu).upper())
+                        return f"G{m.group(1)}" if m else None
                     
-                    # 3. Déterminer si l'EDT contient des informations de groupe
-                    groupes_dans_edt = df_edt_etu_filtre["Groupe_Lieu"].dropna().unique()
-                    a_des_groupes = len(groupes_dans_edt) > 0
+                    df_td_tp["groupe_lieu"] = df_td_tp["Lieu"].apply(extraire_groupe_simple)
                     
-                    # 4. Filtrer selon le groupe de l'étudiant (du fichier étudiants)
-                    if groupe_etu and a_des_groupes:
-                        # L'EDT contient des groupes: filtrer
-                        mask_cours = df_edt_etu_filtre["Code"].astype(str).str.contains("COURS", case=False, na=False)
-                        mask_mon_groupe = df_edt_etu_filtre["Groupe_Lieu"] == groupe_etu
-                        df_edt_final = df_edt_etu_filtre[mask_cours | mask_mon_groupe].copy()
+                    # Filtrer TD/TP par groupe si groupe trouvé dans Lieu
+                    if groupe_etu:
+                        # Garder seulement les TD/TP du groupe de l'étudiant
+                        df_td_tp_filtered = df_td_tp[df_td_tp["groupe_lieu"] == groupe_etu].copy()
                     else:
-                        # L'EDT ne contient pas de groupes: afficher tous les cours
-                        if groupe_etu and not a_des_groupes:
-                            st.info(f"ℹ️ Les données EDT pour **{promo_sel_indiv}** ne contiennent pas d'information de groupe. Affichage de tous les cours.")
-                        df_edt_final = df_edt_etu_filtre.copy()
+                        # Pas de groupe pour l'étudiant: ne pas afficher TD/TP
+                        df_td_tp_filtered = pd.DataFrame()
+                    
+                    # Combiner: COURS (tous) + TD/TP (filtrés)
+                    df_edt_final = pd.concat([df_cours, df_td_tp_filtered], ignore_index=True)
+                    
+                    # Trier par jour et heure
+                    df_edt_final["h_norm"] = df_edt_final["Horaire"].apply(_norm_edt)
+                    df_edt_final["j_norm"] = df_edt_final["Jours"].apply(_norm_edt)
 
                     if not df_edt_final.empty:
                         # ── Afficheurs numériques ──
@@ -13285,20 +13286,16 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                         st.markdown("### 📋 Emploi du Temps Individuel")
 
                         def _norm_edt(x):
-                            """Normalise les horaires et jours - PRÉSERVER LE TIRET!"""
+                            """Normalise horaires et jours - PRÉSERVER TIRET!"""
                             if not x or str(x).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
                                 return ""
-                            
                             s = str(x).strip().lower()
-                            
-                            # ✅ Normaliser les espaces AUTOUR du tiret - PRÉSERVER LE TIRET!
+                            # ✅ Préserver tiret: normaliser espaces autour
                             s = re.sub(r'\s*[-–à]\s*', '-', s)
-                            s = s.replace(' ', '')  # Supprimer autres espaces
-                            
-                            # Normaliser les formats d'heures
-                            s = re.sub(r'(\d{1,2}):00', r'\1h00', s)   # 8:00 → 8h00
-                            s = re.sub(r'(\d{1,2})h(?!00)', r'\1h00', s)  # 8h → 8h00
-                            
+                            s = s.replace(' ', '')
+                            # Normaliser heures
+                            s = re.sub(r'(\d{1,2}):00', r'\1h00', s)
+                            s = re.sub(r'(\d{1,2})h(?!00)', r'\1h00', s)
                             return s
 
                         horaires_ref_indiv = [
@@ -13430,13 +13427,6 @@ tr:nth-child(even){{background-color:#f8fafc;}}
                             )
                         else:
                             st.warning("⚠️ Impossible de construire la grille (données horaires incomplètes).")
-                            with st.expander("🔍 DEBUG - Informations détaillées"):
-                                st.write(f"**Promotion:** {promo_sel_indiv}")
-                                st.write(f"**Groupe étudiant:** {groupe_etu}")
-                                st.write(f"**Nombre de séances:** {len(df_edt_final)}")
-                                st.write(f"**Colonnes disponibles:** {list(df_edt_final.columns)}")
-                                st.write(f"**Premiers cours:**")
-                                st.dataframe(df_edt_final[["Enseignements", "Horaire", "Jours", "Lieu"]].head(10))
                     else:
                         st.warning(f"⚠️ Aucun cours trouvé pour le groupe **{groupe_etu or 'non détecté'}** dans la promotion **{promo_sel_indiv}**.")
                 else:
