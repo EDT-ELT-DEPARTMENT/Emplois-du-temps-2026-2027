@@ -991,6 +991,30 @@ def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant, df_index=None, mode_deb
         pass
 
     return None, None, None
+
+# =============================================================================
+# APERÇU VISUEL D'UNE CARTE ÉTUDIANT
+# =============================================================================
+def rendre_apercu_carte_pdf(pdf_bytes, dpi=150):
+    """Convertit la première page du PDF extrait en image PNG."""
+    if not pdf_bytes:
+        return None
+    try:
+        import fitz
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        if len(doc) == 0:
+            doc.close()
+            return None
+        page = doc.load_page(0)
+        zoom = dpi / 72
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+        image_bytes = pix.tobytes("png")
+        doc.close()
+        return image_bytes
+    except Exception as e:
+        print(f"[APERÇU CARTE] Erreur conversion PDF -> image : {e}")
+        return None
+
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
 # FONCTION DE LECTURE EXCEL ROBUSTE
@@ -4779,98 +4803,167 @@ td{{word-wrap:break-word;}}
                 
                 
                 # ═══════════════════════════════════════════════════════════════
-                # 🪪 CARTE ÉTUDIANT
+                # 🪪 CARTE ÉTUDIANT — APERÇU AUTOMATIQUE AU CLIC
                 # ═══════════════════════════════════════════════════════════════
                 st.markdown("### 🪪 Carte d'Étudiant")
 
-                # ─── Fichier d'index optionnel ───
                 with st.expander("🔧 Fichier d'index (optionnel — recommandé pour PDF scannés)"):
                     st.markdown("""
-                    Si la recherche automatique échoue, créez un fichier Excel/CSV avec 2 colonnes :
-                    - `Nom_Complet` (exactement comme dans le fichier étudiants, ex: **AISSANI Abassia**)
-                    - `Page` (numéro de page dans le PDF, ex: **42**)
+                    Si la recherche automatique échoue, utilisez un fichier Excel/CSV
+                    contenant 2 colonnes :
+                    - `Nom_Complet` : exactement comme dans le fichier étudiants
+                    - `Page` : numéro de page correspondant dans le PDF
                     """)
-                    idx_file = st.file_uploader("📤 Fichier d'index", type=["xlsx", "csv"], key="index_cartes")
+                    idx_file = st.file_uploader(
+                        "📤 Fichier d'index",
+                        type=["xlsx", "csv"],
+                        key="index_cartes"
+                    )
                     df_index = None
                     if idx_file:
                         try:
-                            if idx_file.name.endswith('.csv'):
+                            if idx_file.name.lower().endswith(".csv"):
                                 df_index = pd.read_csv(idx_file)
                             else:
                                 df_index = pd.read_excel(idx_file)
+                            df_index.columns = [str(c).strip() for c in df_index.columns]
                             st.success(f"✅ Index chargé : {len(df_index)} entrées")
                         except Exception as e:
                             st.error(f"❌ Erreur lecture index : {e}")
-                            
 
+                # Le selectbox provoque un rerun : la carte est recherchée
+                # et affichée automatiquement dès qu'un étudiant est sélectionné.
                 if os.path.exists(FILE_CARTES):
-                    col_cartes, col_dl = st.columns([3, 1])
+                    with st.spinner(f"🔍 Recherche de la carte de {sel_etud}..."):
+                        pdf_page, num_page, methode = extraire_page_etudiant_pdf(
+                            FILE_CARTES, sel_etud, df_index
+                        )
 
-                    with col_cartes:
-                        if st.button("🪪 Afficher la carte de cet étudiant", use_container_width=True, type="primary"):
-                            with st.spinner("🔍 Recherche dans le PDF..."):
-                                pdf_page, num_page, methode = extraire_page_etudiant_pdf(FILE_CARTES, sel_etud, df_index)
+                    if pdf_page and isinstance(pdf_page, bytes):
+                        st.success(
+                            f"✅ Carte d'étudiant trouvée — page {num_page}"
+                            + (f" · méthode : {methode}" if methode else "")
+                        )
 
-                                if pdf_page and isinstance(pdf_page, bytes):
-                                    st.success(f"✅ Carte d'étudiant trouvée (page {num_page})")
+                        apercu_carte = rendre_apercu_carte_pdf(pdf_page, dpi=160)
 
-                                    st.download_button(
-                                        label="📥 Télécharger cette carte (PDF)",
-                                        data=pdf_page,
-                                        file_name=f"Carte_{sel_etud.replace(' ', '_')}.pdf",
-                                        mime="application/pdf",
-                                        key=f"dl_carte_{sel_etud.replace(' ', '_')}"
-                                    )
+                        if apercu_carte:
+                            st.markdown("""
+                            <div style="
+                                background:#f8fafc;
+                                border:1px solid #cbd5e1;
+                                border-radius:14px;
+                                padding:16px;
+                                margin:10px 0 18px 0;
+                                text-align:center;
+                            ">
+                                <div style="
+                                    font-size:14px;
+                                    font-weight:700;
+                                    color:#1e3a8a;
+                                    margin-bottom:12px;
+                                ">
+                                    👁️ Aperçu de la carte d'étudiant
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
 
-                                    b64 = base64.b64encode(pdf_page).decode('utf-8')
-                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500px" type="application/pdf"></iframe>'
-                                    st.markdown(pdf_display, unsafe_allow_html=True)
-
-                                else:
-                                    st.warning("⚠️ Carte non localisée automatiquement")
-
-                                    with st.expander("🔧 Diagnostic & solutions"):
-                                        st.markdown(f"""
-                                        **Nom recherché :** `{sel_etud}`  
-                                        **Nom de famille :** `{sel_etud.split()[0] if sel_etud.split() else 'N/A'}`  
-                                        **Prénom :** `{' '.join(sel_etud.split()[1:]) if len(sel_etud.split()) > 1 else 'N/A'}`
-
-                                        **Causes probables :**
-                                        1. **PDF scanné/image** : le texte n'est pas extractible par un ordinateur
-                                        2. **Nom sur plusieurs lignes** : le PDF contient `AISSANI` puis `Abassia` sur deux lignes séparées (notre recherche gère ce cas, mais le PDF pourrait être une image)
-                                        3. **PDF en arabe** : le nom est écrit en arabe (عيساني) — seul l'index manuel fonctionnera
-
-                                        **Solutions :**
-                                        - **Solution A** : Utilisez le **fichier d'index** ci-dessus (100%% fiable)
-                                        - **Solution B** : Uploadez un nouveau PDF avec du texte sélectionnable (pas un scan)
-                                        """)
-
-                                    with open(FILE_CARTES, "rb") as f:
-                                        full_pdf = f.read()
-                                    b64 = base64.b64encode(full_pdf).decode('utf-8')
-                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}#page=1" width="100%" height="600px" type="application/pdf"></iframe>'
-                                    st.markdown(pdf_display, unsafe_allow_html=True)
-
-                    with col_dl:
-                        with open(FILE_CARTES, "rb") as f:
-                            st.download_button(
-                                label="📥 Toutes les cartes (PDF)",
-                                data=f.read(),
-                                file_name="Fichier_cartes.pdf",
-                                mime="application/pdf",
-                                key="dl_all_cartes"
+                            st.image(
+                                apercu_carte,
+                                caption=f"Carte de {sel_etud} — page {num_page}",
+                                use_container_width=True
                             )
+                        else:
+                            b64 = base64.b64encode(pdf_page).decode("utf-8")
+                            st.markdown(f"""
+                            <iframe
+                                src="data:application/pdf;base64,{b64}"
+                                width="100%"
+                                height="650"
+                                style="border:1px solid #cbd5e1;border-radius:12px;"
+                                type="application/pdf">
+                            </iframe>
+                            """, unsafe_allow_html=True)
+
+                        st.download_button(
+                            label="📥 Télécharger cette carte (PDF)",
+                            data=pdf_page,
+                            file_name=f"Carte_{sel_etud.replace(' ', '_')}.pdf",
+                            mime="application/pdf",
+                            key=f"dl_carte_{hashlib.md5(sel_etud.encode('utf-8')).hexdigest()}",
+                            use_container_width=True
+                        )
+
+                    else:
+                        st.warning(
+                            f"⚠️ Carte de **{sel_etud}** non localisée automatiquement."
+                        )
+
+                        with st.expander("🔧 Diagnostic & solutions", expanded=True):
+                            morceaux = sel_etud.split()
+                            st.markdown(f"""
+                            **Nom recherché :** `{sel_etud}`
+
+                            **Nom de famille :** `{morceaux[0] if morceaux else 'N/A'}`
+
+                            **Prénom :** `{' '.join(morceaux[1:]) if len(morceaux) > 1 else 'N/A'}`
+
+                            **Solutions possibles :**
+                            1. Si le PDF est scanné/image, utilisez le **fichier d'index** ci-dessus.
+                            2. Vérifiez que le numéro de page indiqué dans l'index est correct.
+                            3. Vérifiez que `Nom_Complet` correspond exactement au nom affiché dans la liste.
+                            4. Si le PDF contient des noms en arabe ou sous forme d'image, l'index manuel est recommandé.
+                            """)
+
+                        try:
+                            with open(FILE_CARTES, "rb") as f:
+                                full_pdf = f.read()
+                            b64 = base64.b64encode(full_pdf).decode("utf-8")
+                            st.markdown(f"""
+                            <iframe
+                                src="data:application/pdf;base64,{b64}#page=1"
+                                width="100%"
+                                height="600"
+                                style="border:1px solid #cbd5e1;border-radius:12px;"
+                                type="application/pdf">
+                            </iframe>
+                            """, unsafe_allow_html=True)
+                        except Exception as e:
+                            st.error(f"❌ Impossible d'afficher le PDF complet : {e}")
+
+                    with st.expander("📦 Télécharger le fichier complet des cartes"):
+                        try:
+                            with open(FILE_CARTES, "rb") as f:
+                                st.download_button(
+                                    label="📥 Toutes les cartes (PDF)",
+                                    data=f.read(),
+                                    file_name="Fichier_cartes.pdf",
+                                    mime="application/pdf",
+                                    key="dl_all_cartes"
+                                )
+                        except Exception as e:
+                            st.error(f"❌ Erreur téléchargement PDF : {e}")
+
                 else:
-                    st.warning("⚠️ Fichier 'Fichier_cartes.pdf' introuvable dans le dossier de l'application.")
+                    st.warning(
+                        "⚠️ Fichier 'Fichier_cartes.pdf' introuvable dans le dossier de l'application."
+                    )
                     uploaded_cartes = st.file_uploader(
-                        "📤 Uploader le fichier des cartes étudiants (PDF)", 
-                        type=["pdf"], 
+                        "📤 Uploader le fichier des cartes étudiants (PDF)",
+                        type=["pdf"],
                         key="upload_cartes"
                     )
+
                     if uploaded_cartes:
-                        with open(FILE_CARTES, "wb") as f:
-                            f.write(uploaded_cartes.getvalue())
-                        st.success("✅ Fichier enregistré. Rafraîchissez la page pour afficher les cartes.")
+                        try:
+                            with open(FILE_CARTES, "wb") as f:
+                                f.write(uploaded_cartes.getvalue())
+                            st.success(
+                                "✅ Fichier enregistré. La carte sera recherchée automatiquement."
+                            )
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Impossible d'enregistrer le PDF : {e}")
 
                 st.divider()
                 # 1️⃣ FICHE ÉTUDIANT D'ABORD
