@@ -14113,23 +14113,21 @@ if module_sel == "🔐 Portail Étudiant":
 # EXTRACTION ET OCR DES CARTES D'ÉTUDIANT DEPUIS PLUSIEURS PDF
 # ════════════════════════════════════════════════════════════════
 
+import os
+import re
+import io
+import json
+from pathlib import Path
 import streamlit as st
 import pandas as pd
-from pdf2image import convert_from_path
 from PIL import Image
-# --- Début du fichier edt_app.py ---
-import os
-import streamlit as st
+from pdf2image import convert_from_path
 
 # Importation sécurisée de pytesseract
 try:
     import pytesseract
 except ImportError:
     pytesseract = None
-import os
-import re
-from pathlib import Path
-import json
 
 # ════════════════════════════════════════════════════════════════
 # 1. CONFIGURATION
