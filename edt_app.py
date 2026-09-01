@@ -4812,7 +4812,7 @@ td{{word-wrap:break-word;}}
                                 pdf_page, num_page, methode = extraire_page_etudiant_pdf(FILE_CARTES, sel_etud, df_index)
 
                                 if pdf_page and isinstance(pdf_page, bytes):
-                                    st.success(f"✅ Carte trouvée (page {num_page}) — méthode : {methode}")
+                                    st.success(f"✅ Carte d'étudiant trouvée (page {num_page})")
 
                                     st.download_button(
                                         label="📥 Télécharger cette carte (PDF)",
