@@ -14117,7 +14117,15 @@ import streamlit as st
 import pandas as pd
 from pdf2image import convert_from_path
 from PIL import Image
-import pytesseract
+# --- Début du fichier edt_app.py ---
+import os
+import streamlit as st
+
+# Importation sécurisée de pytesseract
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
 import os
 import re
 from pathlib import Path
