@@ -847,6 +847,639 @@ def format_date_naissance(val):
     
     return str(val)
 # =============================================================================
+# MODULE : SUIVI DE L'ASSIDUITÉ DES ÉTUDIANTS (CODE INTÉGRAL SANS CONDENSATION)
+# =============================================================================
+
+import os
+import time
+import io
+import random
+from datetime import datetime
+import pandas as pd
+import streamlit as st
+
+def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant):
+    """Extrait la page du PDF contenant le nom de l'étudiant."""
+    try:
+        import pdfplumber
+        from io import BytesIO
+        try:
+            from pypdf import PdfReader, PdfWriter
+        except ImportError:
+            from PyPDF2 import PdfReader, PdfWriter
+        
+        nom_clean = str(nom_etudiant).strip().upper()
+        
+        with pdfplumber.open(chemin_pdf) as pdf:
+            for i, page in enumerate(pdf.pages):
+                text = page.extract_text() or ""
+                if nom_clean in text.upper():
+                    reader = PdfReader(chemin_pdf)
+                    writer = PdfWriter()
+                    writer.add_page(reader.pages[i])
+                    output = BytesIO()
+                    writer.write(output)
+                    output.seek(0)
+                    return output.getvalue(), i + 1
+        return None, None
+    except Exception:
+        return None, None
+
+def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
+    """Lit un fichier Excel en essayant plusieurs engines (.xlsx, .xls, .xlsb)."""
+    if chemin_ou_fichier is None:
+        return None
+    
+    if hasattr(chemin_ou_fichier, 'seek'):
+        chemin_ou_fichier.seek(0)
+    
+    nom = ""
+    if hasattr(chemin_ou_fichier, 'name'):
+        nom = chemin_ou_fichier.name.lower()
+    elif isinstance(chemin_ou_fichier, str):
+        nom = os.path.basename(chemin_ou_fichier).lower()
+    
+    engines = ['openpyxl', 'xlrd', 'pyxlsb']
+    if nom.endswith('.xls') and not nom.endswith('.xlsx'):
+        engines = ['xlrd', 'openpyxl', 'pyxlsb']
+    
+    last_err = None
+    for engine in engines:
+        try:
+            if hasattr(chemin_ou_fichier, 'seek'):
+                chemin_ou_fichier.seek(0)
+            return pd.read_excel(chemin_ou_fichier, sheet_name=sheet_name, engine=engine)
+        except Exception as e:
+            last_err = e
+            continue
+            
+    raise ValueError(f"❌ Format non reconnu. Utilisez un fichier Excel valide (.xlsx, .xls, .xlsb). Erreur : {last_err}")
+
+
+def run_Assiduité():
+    import io
+    from fpdf import FPDF
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib.units import mm
+    from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
+
+    # Titre officiel rappelé à chaque considération
+    st.title("Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA")
+    st.caption("Département d'Électrotechnique - Faculté de Génie Électrique - UDL-SBA - Année 2026-2027")
+    
+    # =============================================================================
+    # CHARGEMENT DES DONNÉES (UNIFIÉ)
+    # =============================================================================
+    fichiers_locaux_ok = all(os.path.exists(c) for c in [FILE_ETUDIANTS, FILE_EDT, FILE_ENS])
+    
+    df_etu, df_edt, df_ens = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
+    if not fichiers_locaux_ok:
+        st.warning("⚠️ Fichiers locaux manquants. Veuillez uploader les 3 fichiers Excel :")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            up_etu = st.file_uploader("Liste des étudiants", type=["xlsx", "xls", "xlsb"], key="up_etu")
+        with c2:
+            up_edt = st.file_uploader("Données EDT", type=["xlsx", "xls", "xlsb"], key="up_edt")
+        with c3:
+            up_ens = st.file_uploader("Liste enseignants", type=["xlsx", "xls", "xlsb"], key="up_ens")
+        
+        if not all([up_etu, up_edt, up_ens]):
+            st.info("📤 En attente des fichiers...")
+            return
+        
+        try:
+            df_etu = lire_excel_robuste(up_etu)
+            df_etu.columns = df_etu.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de lecture étudiants : {e}")
+            return
+        try:
+            df_edt = lire_excel_robuste(up_edt)
+            df_edt.columns = df_edt.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de lecture EDT : {e}")
+            return
+        try:
+            df_ens = lire_excel_robuste(up_ens, sheet_name=0)
+            df_ens.columns = df_ens.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de lecture enseignants : {e}")
+            return
+    else:
+        try:
+            df_etu = lire_excel_robuste(FILE_ETUDIANTS)
+            df_etu.columns = df_etu.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de chargement étudiants : {e}")
+            return
+        try:
+            df_edt = lire_excel_robuste(FILE_EDT)
+            df_edt.columns = df_edt.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de chargement EDT : {e}")
+            return
+        try:
+            df_ens = lire_excel_robuste(FILE_ENS, sheet_name=0)
+            df_ens.columns = df_ens.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de chargement enseignants : {e}")
+            return
+
+    if df_etu.empty or df_edt.empty or df_ens.empty:
+        st.error("❌ Données incomplètes après chargement. Vérifiez vos fichiers source.")
+        return
+    
+    # --- Détection intelligente des colonnes du fichier Étudiants ---
+    cols_map = detecter_colonnes_etudiant(df_etu)
+    
+    # --- Préparation des listes d'enseignants ---
+    if "NOM" in df_ens.columns and "PRÉNOM" in df_ens.columns:
+        df_ens["Nom_Complet"] = df_ens["NOM"].astype(str).str.strip().str.upper() + " " + df_ens["PRÉNOM"].astype(str).str.strip().str.title()
+        LISTE_PROFS = sorted(df_ens["Nom_Complet"].dropna().unique().tolist())
+    elif "Nom" in df_ens.columns and "Prénom" in df_ens.columns:
+        df_ens["Nom_Complet"] = df_ens["Nom"].astype(str).str.strip().str.upper() + " " + df_ens["Prénom"].astype(str).str.strip().str.title()
+        LISTE_PROFS = sorted(df_ens["Nom_Complet"].dropna().unique().tolist())
+    else:
+        LISTE_PROFS = []
+
+    # Détection automatique des colonnes Nom/Prénom (insensible à la casse)
+    col_nom = cols_map.get('nom')
+    col_prenom = cols_map.get('prenom')
+
+    if not col_nom or not col_prenom:
+        for c in df_etu.columns:
+            if c.strip().upper() == "NOM":
+                col_nom = c
+            if c.strip().upper() in ["PRÉNOM", "PRENOM"]:
+                col_prenom = c
+
+    if col_nom and col_prenom:
+        df_etu["Nom_Complet"] = df_etu[col_nom].astype(str).str.strip().str.upper() + " " + df_etu[col_prenom].astype(str).str.strip().str.title()
+    else:
+        st.error(f"❌ Colonnes 'Nom' et 'Prénom' introuvables dans le fichier étudiants. Colonnes trouvées : {list(df_etu.columns)}")
+        return
+
+    # =============================================================================
+    # INITIALISATION SESSION STATE
+    # =============================================================================
+    if "absences" not in st.session_state:
+        st.session_state.absences = []
+    if "requetes" not in st.session_state:
+        st.session_state.requetes = []
+    if "confirm_reset" not in st.session_state:
+        st.session_state.confirm_reset = False
+    if "confirm_reset_abs" not in st.session_state:
+        st.session_state.confirm_reset_abs = False
+    if 'étudiant_auth' not in st.session_state:
+        st.session_state.étudiant_auth = None
+    if 'étudiant_otp' not in st.session_state:
+        st.session_state.étudiant_otp = None
+    if 'étudiant_otp_email' not in st.session_state:
+        st.session_state.étudiant_otp_email = None
+
+    # =============================================================================
+    # FONCTIONS SUPABASE ET UTILITAIRES INTERNES
+    # =============================================================================
+    def charger_absences_supabase(matiere=None, promotion=None):
+        if not MODE_SUPABASE:
+            return []
+        try:
+            query = supabase.table("suivi_assiduite_2026").select("*")
+            if matiere:
+                query = query.eq("matiere", matiere)
+            if promotion:
+                query = query.eq("promotion", promotion)
+            res = query.execute()
+            return res.data if res.data else []
+        except Exception as e:
+            st.error(f"Erreur Supabase (charger absences) : {e}")
+            return []
+
+    def enregistrer_absence_supabase(payload):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            supabase.table("suivi_assiduite_2026").insert(payload).execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (enregistrer) : {e}")
+            return False
+
+    def supprimer_absences_supabase(matiere, promotion):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            supabase.table("suivi_assiduite_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (supprimer) : {e}")
+            return False
+
+    def rehabiliter_absences_etudiant_supabase(etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            query = supabase.table("suivi_assiduite_2026").update({"justifie": True})\
+                .eq("etud_non_eligible", etudiant).eq("matiere", matiere)
+            if date_abs: query = query.eq("date_absence", date_abs)
+            if jour_abs: query = query.eq("jour_absence", jour_abs)
+            if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
+            query.execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (rehabilitation) : {e}")
+            return False
+
+    def charger_requetes_supabase(statut=None, promotion=None):
+        if not MODE_SUPABASE:
+            return []
+        try:
+            query = supabase.table("requetes_absences").select("*")
+            if statut:
+                query = query.eq("statut", statut)
+            if promotion:
+                query = query.eq("promotion", promotion)
+            res = query.execute()
+            return res.data if res.data else []
+        except Exception as e:
+            st.error(f"Erreur Supabase (charger requetes) : {e}")
+            return []
+
+    def enregistrer_requete_supabase(payload):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            supabase.table("requetes_absences").insert(payload).execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (requete) : {e}")
+            return False
+
+    def mettre_a_jour_statut_requete_supabase(req_id, statut):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            supabase.table("requetes_absences").update({"statut": statut}).eq("id", req_id).execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (maj statut) : {e}")
+            return False
+
+    def reinitialiser_requetes_supabase():
+        if not MODE_SUPABASE:
+            return False
+        try:
+            supabase.table("requetes_absences").delete().neq("id", -1).execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (reset) : {e}")
+            return False
+
+    def get_absences_étudiant(nom_etudiant):
+        if MODE_SUPABASE:
+            try:
+                res = supabase.table("suivi_assiduite_2026")\
+                    .select("id,etud_non_eligible,matiere,promotion,date_absence,jour_absence,horaire_absence,cause_non_eligibilite,justifie")\
+                    .eq("etud_non_eligible", nom_etudiant)\
+                    .order("id", desc=True)\
+                    .limit(50)\
+                    .execute()
+                return res.data if res.data else []
+            except Exception as e:
+                st.error(f"Erreur de chargement absences : {e}")
+                return []
+        else:
+            return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]    
+
+    def trouver_requete_existante(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
+        """Retourne une requete EN ATTENTE existante pour empecher les doublons de depot."""
+        if MODE_SUPABASE:
+            try:
+                query = supabase.table("requetes_absences").select("id,statut")\
+                    .eq("nom_etudiant", nom_etudiant)\
+                    .eq("matiere", matiere)\
+                    .eq("statut", "En attente")
+                if date_abs: query = query.eq("date_absence", date_abs)
+                if jour_abs: query = query.eq("jour_absence", jour_abs)
+                if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
+                res = query.limit(1).execute()
+                return res.data[0] if res.data else None
+            except Exception as e:
+                st.warning(f"⚠️ Vérification justificatif lente, réessayez : {e}")
+                return None
+        for r in st.session_state.requetes:
+            if (r.get("nom_etudiant") == nom_etudiant and 
+                r.get("matiere") == matiere and 
+                r.get("statut") == "En attente"):
+                if date_abs and r.get("date_absence") != date_abs: continue
+                if jour_abs and r.get("jour_absence") != jour_abs: continue
+                if horaire_abs and r.get("horaire_absence") != horaire_abs: continue
+                return r
+        return None
+
+    def trouver_derniere_requete(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
+        """Retourne la DERNIERE requete (tous statuts) pour affichage du statut final."""
+        if MODE_SUPABASE:
+            try:
+                query = supabase.table("requetes_absences").select("id,statut,motif,date_demande")\
+                    .eq("nom_etudiant", nom_etudiant)\
+                    .eq("matiere", matiere)
+                if date_abs: query = query.eq("date_absence", date_abs)
+                if jour_abs: query = query.eq("jour_absence", jour_abs)
+                if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
+                res = query.order("id", desc=True).limit(1).execute()
+                return res.data[0] if res.data else None
+            except Exception as e:
+                st.warning(f"⚠️ Chargement statut justificatif lent : {e}")
+                return None
+        candidates = [r for r in st.session_state.requetes
+                      if r.get("nom_etudiant") == nom_etudiant 
+                      and r.get("matiere") == matiere]
+        filtered = []
+        for r in candidates:
+            if date_abs and r.get("date_absence") != date_abs: continue
+            if jour_abs and r.get("jour_absence") != jour_abs: continue
+            if horaire_abs and r.get("horaire_absence") != horaire_abs: continue
+            filtered.append(r)
+        return filtered[-1] if filtered else None
+
+    def supprimer_derniere_absence_supabase(etudiant, matiere, promotion):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            res = supabase.table("suivi_assiduite_2026").select("*")\
+                .eq("etud_non_eligible", etudiant)\
+                .eq("matiere", matiere)\
+                .eq("promotion", promotion)\
+                .order("id", desc=True).limit(1).execute()
+            if res.data:
+                last_id = res.data[0]["id"]
+                supabase.table("suivi_assiduite_2026").delete().eq("id", last_id).execute()
+                return True
+            return False
+        except Exception as e:
+            st.error(f"Erreur Supabase (annulation) : {e}")
+            return False
+
+    def supprimer_derniere_absence_locale(etudiant, matiere, promotion):
+        candidates = [
+            (idx, a) for idx, a in enumerate(st.session_state.absences)
+            if a.get("etud_non_eligible") == etudiant
+            and a.get("matiere") == matiere
+            and a.get("promotion") == promotion
+        ]
+        if candidates:
+            last_idx = candidates[-1][0]
+            st.session_state.absences.pop(last_idx)
+            return True
+        return False
+
+    def envoyer_otp_étudiant(email_dest, nom_etud, code_otp):
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            body = f"Bonjour {nom_etud},\n\nVotre code d'accès à la Plateforme de Suivi d'Assiduité est : {code_otp}\n\nCe code est valable 10 minutes.\n\nDépartement d'Électrotechnique - FGE/UDL-SBA"
+            msg = MIMEText(body)
+            msg["Subject"] = "Code d'accès - Plateforme Assiduité"
+            msg["From"] = "chef.department.elt.fge@gmail.com"
+            msg["To"] = str(email_dest).strip()
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+            server.send_message(msg)
+            server.quit()
+            return True
+        except Exception as e:
+            st.error(f"Erreur envoi email : {e}")
+            return False
+
+    # =============================================================================
+    # AUTHENTIFICATION ÉTUDIANT (MATRICULE BAC + OTP)
+    # =============================================================================
+    user = st.session_state.get("user_data")
+    is_enseignant_connecte = user is not None and user.get("role") != "admin"
+    is_admin_edt = user is not None and user.get("role") == "admin"
+
+    étudiant_connecte = st.session_state.get("étudiant_auth")
+
+    if not is_enseignant_connecte and not étudiant_connecte and not is_admin_edt:
+        st.markdown("<h3 style='text-align:center;color:#1E3A8A;'>🔐 Portail Étudiant</h3>", unsafe_allow_html=True)
+        st.info("Accédez à votre espace pour consulter vos absences et déposer des justificatifs.")
+
+        mat_bac_input = st.text_input("🎓 Numéro de Matricule BAC :", key="mat_bac_auth", placeholder="Ex: 12345678")
+
+        if mat_bac_input:
+            mat_bac_clean = str(mat_bac_input).strip().upper().replace(" ", "").replace("-", "")
+            df_match = pd.DataFrame()
+            
+            col_mat_bac = cols_map.get('mat_bac')
+
+            if col_mat_bac and col_mat_bac in df_etu.columns:
+                mask_mat = df_etu[col_mat_bac].astype(str).str.strip().str.upper().str.replace(' ', '').str.replace('-', '') == mat_bac_clean
+                df_match = df_etu[mask_mat]
+            else:
+                for c in df_etu.columns:
+                    vals = df_etu[c].astype(str).str.strip().str.upper().str.replace(' ', '').str.replace('-', '')
+                    if vals.eq(mat_bac_clean).any():
+                        df_match = df_etu[vals == mat_bac_clean]
+                        break
+
+            if not df_match.empty:
+                row = df_match.iloc[0]
+                etud_nom = str(row.get('Nom_Complet', 'N/A')).strip()
+                
+                # Utilisation sécurisée de cols_map sans UnboundLocalError
+                col_promo_detected = cols_map.get('promotion')
+                val_promo_brute = row.get(col_promo_detected, 'N/A') if col_promo_detected else row.get('Promotion', 'N/A')
+                etud_promo = mapper_promotion(val_promo_brute)
+                
+                # Affichage des informations de l'étudiant
+                st.markdown(f"**Promotion :** `{etud_promo}`")
+                st.success(f"✅ Étudiant trouvé : **{etud_nom}** ({etud_promo})")
+
+                email_input = st.text_input("📧 Votre adresse email :", key="email_etud_auth", placeholder="ex: nom@email.com")
+
+                if email_input and "@" in str(email_input):
+                    if st.button("📧 Recevoir mon code d'accès", use_container_width=True, key="btn_otp"):
+                        otp_code = str(random.randint(100000, 999999))
+                        st.session_state.étudiant_otp = otp_code
+                        st.session_state.étudiant_otp_email = str(email_input).strip()
+
+                        sent = envoyer_otp_étudiant(email_input, etud_nom, otp_code)
+                        if sent:
+                            st.success(f"✅ Code envoyé à : `{email_input}` — Vérifiez votre boîte mail (et les spams).")
+                        else:
+                            st.warning(f"⚠️ Impossible d'envoyer l'email. Votre code (mode démo) : `{otp_code}`")
+
+                if st.session_state.get("étudiant_otp"):
+                    otp_input = st.text_input("🔑 Saisissez le code reçu par email :", type="password", key="otp_input_auth")
+                    if st.button("✅ Valider mon accès", use_container_width=True, key="btn_valider_otp"):
+                        if otp_input == st.session_state.get("étudiant_otp"):
+                            st.session_state.étudiant_auth = {
+                                "mat_bac": mat_bac_clean,
+                                "nom": etud_nom,
+                                "email": st.session_state.étudiant_otp_email,
+                                "promotion": etud_promo
+                            }
+                            if MODE_SUPABASE:
+                                try:
+                                    supabase.table("étudiants_emails").upsert({
+                                        "nom_complet": etud_nom,
+                                        "mat_bac": mat_bac_clean,
+                                        "email": st.session_state.étudiant_otp_email,
+                                        "promotion": etud_promo,
+                                        "derniere_connexion": datetime.now().isoformat()
+                                    }, on_conflict="nom_complet").execute()
+                                except Exception:
+                                    pass
+                            st.session_state.étudiant_otp = None
+                            st.session_state.étudiant_otp_email = None
+                            st.success(f"🎓 Bienvenue {etud_nom} ! Accès autorisé...")
+                            time.sleep(0.8)
+                            st.rerun()
+                        else:
+                            st.error("❌ Code incorrect. Veuillez réessayer.")
+            else:
+                st.error("❌ Matricule BAC non reconnu dans la base étudiants.")
+
+        return
+
+    # =============================================================================
+    # ESPACE ÉTUDIANT
+    # =============================================================================
+    if étudiant_connecte:
+        st.sidebar.markdown(f"### 👤 Espace Étudiant\n**{étudiant_connecte['nom']}**\n*{étudiant_connecte['promotion']}*")
+        if st.sidebar.button("🚪 Déconnexion Étudiant", key="btn_deco_etud"):
+            st.session_state.étudiant_auth = None
+            st.rerun()
+
+        st.markdown(f"## 📋 Mes Absences — {étudiant_connecte['nom']}")
+        absences_list = get_absences_étudiant(étudiant_connecte['nom'])
+
+        if not absences_list:
+            st.success("🎉 Vous n'avez aucune absence enregistrée.")
+        else:
+            df_abs = pd.DataFrame(absences_list)
+            st.dataframe(df_abs[["matiere", "date_absence", "jour_absence", "horaire_absence", "cause_non_eligibilite", "justifie"]], use_container_width=True)
+
+            st.markdown("---")
+            st.markdown("### 📤 Déposer un Justificatif d'Absence")
+
+            with st.form("form_requete_etud"):
+                mat_choisie = st.selectbox("Sélectionner la matière concernée :", options=df_abs["matiere"].unique())
+                m_abs = st.text_area("Motif de l'absence / Remarques :", placeholder="Expliquez la raison de votre absence...")
+                piece_jointe = st.file_uploader("Joindre une pièce justificative (PDF/JPG/PNG) :", type=["pdf", "jpg", "jpeg", "png"])
+                
+                submitted = st.form_submit_button("📩 Envoyer la demande")
+                if submitted:
+                    req_existante = trouver_requete_existante(étudiant_connecte['nom'], mat_choisie)
+                    if req_existante:
+                        st.warning("⚠️ Vous avez déjà une demande en attente pour cette matière.")
+                    else:
+                        pj_bytes = piece_jointe.getvalue() if piece_jointe else None
+                        payload = {
+                            "nom_etudiant": étudiant_connecte['nom'],
+                            "promotion": étudiant_connecte['promotion'],
+                            "matiere": mat_choisie,
+                            "motif": m_abs,
+                            "statut": "En attente",
+                            "date_demande": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "piece_jointe": pj_bytes
+                        }
+                        if MODE_SUPABASE:
+                            enregistrer_requete_supabase(payload)
+                        else:
+                            st.session_state.requetes.append(payload)
+                        st.success("✅ Votre demande a bien été transmise à l'administration.")
+                        time.sleep(1)
+                        st.rerun()
+        return
+
+    # =============================================================================
+    # ESPACE ENSEIGNANT / ADMIN
+    # =============================================================================
+    st.sidebar.markdown("### ⚙️ Espace Gestion / Enseignant")
+    tab1, tab2 = st.tabs(["📝 Saisie des Absences", "📩 Traitement des Requêtes"])
+
+    with tab1:
+        st.markdown("### ✍️ Enregistrement d'une nouvelle absence")
+        c_promo, c_mat, c_prof = st.columns(3)
+        
+        with c_promo:
+            col_promo_det = cols_map.get('promotion')
+            promos_dispo = sorted(df_etu[col_promo_det].dropna().unique().tolist()) if col_promo_det else []
+            promo_sel = st.selectbox("Promotion :", options=promos_dispo, key="sel_promo")
+        
+        with c_mat:
+            matieres_dispo = sorted(df_edt["Enseignements"].dropna().unique().tolist()) if "Enseignements" in df_edt.columns else []
+            matiere_sel = st.selectbox("Matière :", options=matieres_dispo, key="sel_mat")
+            
+        with c_prof:
+            prof_sel = st.selectbox("Enseignant responsable :", options=LISTE_PROFS, key="sel_prof")
+
+        df_etu_promo = df_etu[df_etu[col_promo_det] == promo_sel] if col_promo_det else df_etu
+        etudiants_promo = sorted(df_etu_promo["Nom_Complet"].dropna().unique().tolist())
+
+        with st.form("form_saisie_absence"):
+            etud_absent = st.selectbox("Étudiant concerné :", options=etudiants_promo)
+            date_abs = st.date_input("Date de l'absence :", value=datetime.today())
+            jour_abs = st.selectbox("Jour :", options=["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"])
+            horaire_abs = st.text_input("Horaire :", value="08h00 - 09h30")
+            cause_abs = st.text_input("Cause / Type d'absence :", value="Absence non justifiée")
+
+            btn_save = st.form_submit_button("💾 Enregistrer l'absence")
+            if btn_save:
+                payload_abs = {
+                    "etud_non_eligible": etud_absent,
+                    "promotion": promo_sel,
+                    "matiere": matiere_sel,
+                    "enseignant": prof_sel,
+                    "date_absence": str(date_abs),
+                    "jour_absence": jour_abs,
+                    "horaire_absence": horaire_abs,
+                    "cause_non_eligibilite": cause_abs,
+                    "justifie": False
+                }
+                if MODE_SUPABASE:
+                    enregistrer_absence_supabase(payload_abs)
+                else:
+                    st.session_state.absences.append(payload_abs)
+                st.success(f"✅ Absence enregistrée pour **{etud_absent}** en `{matiere_sel}`.")
+
+    with tab2:
+        st.markdown("### 📩 Demandes de justification reçues")
+        reqs = charger_requetes_supabase() if MODE_SUPABASE else st.session_state.requetes
+        
+        if not reqs:
+            st.info("Aucune requête en attente.")
+        else:
+            for req in reqs:
+                with st.expander(f"📌 {req.get('nom_etudiant')} — {req.get('matiere')} ({req.get('statut')})"):
+                    st.write(f"**Promotion :** {req.get('promotion')}")
+                    st.write(f"**Date demande :** {req.get('date_demande')}")
+                    st.write(f"**Motif :** {req.get('motif')}")
+                    
+                    c_acc, c_ref = st.columns(2)
+                    with c_acc:
+                        if st.button("✅ Accepter", key=f"acc_{req.get('id')}"):
+                            if MODE_SUPABASE:
+                                mettre_a_jour_statut_requete_supabase(req.get('id'), "Accepté")
+                                rehabiliter_absences_etudiant_supabase(req.get('nom_etudiant'), req.get('matiere'))
+                            req['statut'] = "Accepté"
+                            st.success("Demande acceptée !")
+                            st.rerun()
+                    with c_ref:
+                        if st.button("❌ Refuser", key=f"ref_{req.get('id')}"):
+                            if MODE_SUPABASE:
+                                mettre_a_jour_statut_requete_supabase(req.get('id'), "Refusé")
+                            req['statut'] = "Refusé"
+                            st.warning("Demande refusée.")
+                            st.rerun()
+# =============================================================================
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
 # FONCTION DE LECTURE EXCEL ROBUSTE
