@@ -846,54 +846,63 @@ def format_date_naissance(val):
     
     return str(val)
 # =============================================================================
-def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant):
-    """Extrait la page du PDF contenant le nom de l'étudiant (recherche souple)."""
+def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant, df_index=None):
+    """
+    Extrait la page du PDF contenant le nom de l'étudiant.
+    Niveau 1 : pdfplumber (texte extractible)
+    Niveau 2 : PyMuPDF/fitz (texte caché ou PDF scanné)
+    Niveau 3 : fichier d'index (df_index)
+    """
+    import unicodedata
+    import re
+
+    def normalize_text(t):
+        if not t:
+            return ""
+        t = unicodedata.normalize('NFKD', str(t))
+        t = t.encode('ASCII', 'ignore').decode('ASCII')
+        return re.sub(r'[^A-Z]', '', t.upper())
+
+    nom_clean = normalize_text(nom_etudiant)
+    nom_parts = str(nom_etudiant).strip().upper().split()
+    variants = list(dict.fromkeys([
+        nom_clean,
+        normalize_text(nom_parts[0]) if nom_parts else "",
+        normalize_text(nom_parts[-1]) if len(nom_parts) > 1 else ""
+    ]))
+    variants = [v for v in variants if len(v) >= 3]
+
+    # ═══ NIVEAU 3 : Index manuel (le plus fiable) ═══
+    if df_index is not None and not df_index.empty:
+        for _, row in df_index.iterrows():
+            idx_nom = str(row.get('Nom_Complet', '')).strip()
+            idx_page = row.get('Page', row.get('Num_Page', None))
+            if normalize_text(idx_nom) == nom_clean and idx_page is not None:
+                try:
+                    from pypdf import PdfReader, PdfWriter
+                    from io import BytesIO
+                    reader = PdfReader(chemin_pdf)
+                    writer = PdfWriter()
+                    writer.add_page(reader.pages[int(idx_page) - 1])
+                    output = BytesIO()
+                    writer.write(output)
+                    output.seek(0)
+                    return output.getvalue(), int(idx_page)
+                except Exception:
+                    pass
+
+    # ═══ NIVEAU 1 : pdfplumber ═══
     try:
         import pdfplumber
+        from pypdf import PdfReader, PdfWriter
         from io import BytesIO
-        try:
-            from pypdf import PdfReader, PdfWriter
-        except ImportError:
-            from PyPDF2 import PdfReader, PdfWriter
-        
-        import unicodedata
-        import re
-        
-        def normalize_text(t):
-            if not t:
-                return ""
-            t = unicodedata.normalize('NFKD', str(t))
-            t = t.encode('ASCII', 'ignore').decode('ASCII')
-            return re.sub(r'[^A-Z0-9]', '', t.upper())
-        
-        # Variantes du nom à chercher
-        variants = []
-        base = str(nom_etudiant).strip()
-        variants.append(normalize_text(base))  # NOMPRENOM
-        
-        # Nom de famille seul (premier mot si format "NOM Prénom")
-        parts = base.split()
-        if len(parts) >= 1:
-            variants.append(normalize_text(parts[0]))  # NOM seul
-        if len(parts) >= 2:
-            # Prénom seul
-            variants.append(normalize_text(parts[1]))  # PRENOM seul
-            # Inversé Prénom NOM
-            variants.append(normalize_text(parts[1] + " " + parts[0]))
-        
-        # Supprimer les doublons
-        variants = list(dict.fromkeys([v for v in variants if len(v) >= 3]))
-        
+
         with pdfplumber.open(chemin_pdf) as pdf:
             for i, page in enumerate(pdf.pages):
-                text_raw = page.extract_text() or ""
-                text_norm = normalize_text(text_raw)
-                
-                # Debug (visible dans les logs Streamlit Cloud)
-                # st.write(f"Page {i+1} cherche: {variants[:2]} dans: {text_norm[:80]}...")
-                
+                text = page.extract_text() or ""
+                text_norm = normalize_text(text)
                 for var in variants:
-                    if var in text_norm and len(var) >= 3:
+                    if var in text_norm:
                         reader = PdfReader(chemin_pdf)
                         writer = PdfWriter()
                         writer.add_page(reader.pages[i])
@@ -901,12 +910,34 @@ def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant):
                         writer.write(output)
                         output.seek(0)
                         return output.getvalue(), i + 1
-        return None, None
-    except ImportError as e:
-        # pdfplumber non installé
-        return None, f"Missing lib: {e}"
-    except Exception as e:
-        return None, str(e)
+    except Exception:
+        pass
+
+    # ═══ NIVEAU 2 : PyMuPDF (fitz) — gère mieux les PDF scannés ═══
+    try:
+        import fitz
+        from pypdf import PdfReader, PdfWriter
+        from io import BytesIO
+
+        doc = fitz.open(chemin_pdf)
+        for i in range(len(doc)):
+            page = doc.load_page(i)
+            text = page.get_text()
+            text_norm = normalize_text(text)
+            for var in variants:
+                if var in text_norm:
+                    reader = PdfReader(chemin_pdf)
+                    writer = PdfWriter()
+                    writer.add_page(reader.pages[i])
+                    output = BytesIO()
+                    writer.write(output)
+                    output.seek(0)
+                    return output.getvalue(), i + 1
+        doc.close()
+    except Exception:
+        pass
+
+    return None, None
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
 # FONCTION DE LECTURE EXCEL ROBUSTE
@@ -4692,26 +4723,45 @@ td{{word-wrap:break-word;}}
                 
                 cols_map = detecter_colonnes_etudiant(df_etu_edt)
                 row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
-
+                
+                
                 # ═══════════════════════════════════════════════════════════════
-                # 🪪 CARTE ÉTUDIANT
-                # ═══════════════════════════════════════════════════════════════
-                                # ═══════════════════════════════════════════════════════════════
                 # 🪪 CARTE ÉTUDIANT
                 # ═══════════════════════════════════════════════════════════════
                 st.markdown("### 🪪 Carte d'Étudiant")
-                
+
+                # ─── Fichier d'index optionnel ───
+                with st.expander("🔧 Fichier d'index (optionnel — pour PDF scannés)"):
+                    st.markdown("""
+                    Si vos cartes sont des **scans/images** ou en **arabe**, téléchargez un fichier Excel/CSV avec 2 colonnes :
+                    - `Nom_Complet` (exactement comme dans le fichier étudiants)
+                    - `Page` (numéro de page dans le PDF)
+                    """)
+                    idx_file = st.file_uploader("📤 Fichier d'index", type=["xlsx", "csv"], key="index_cartes")
+                    df_index = None
+                    if idx_file:
+                        try:
+                            if idx_file.name.endswith('.csv'):
+                                df_index = pd.read_csv(idx_file)
+                            else:
+                                df_index = pd.read_excel(idx_file)
+                            st.success(f"✅ Index chargé : {len(df_index)} entrées")
+                        except Exception as e:
+                            st.error(f"❌ Erreur lecture index : {e}")
+                else:
+                    df_index = None
+
                 if os.path.exists(FILE_CARTES):
                     col_cartes, col_dl = st.columns([3, 1])
-                    
+
                     with col_cartes:
                         if st.button("🪪 Afficher la carte de cet étudiant", use_container_width=True, type="primary"):
-                            with st.spinner("🔍 Recherche de la carte dans le fichier PDF..."):
-                                pdf_page, num_page = extraire_page_etudiant_pdf(FILE_CARTES, sel_etud)
-                                
+                            with st.spinner("🔍 Recherche dans le PDF..."):
+                                pdf_page, num_page = extraire_page_etudiant_pdf(FILE_CARTES, sel_etud, df_index)
+
                                 if pdf_page and isinstance(pdf_page, bytes):
                                     st.success(f"✅ Carte trouvée (page {num_page})")
-                                    
+
                                     st.download_button(
                                         label="📥 Télécharger cette carte (PDF)",
                                         data=pdf_page,
@@ -4719,33 +4769,32 @@ td{{word-wrap:break-word;}}
                                         mime="application/pdf",
                                         key=f"dl_carte_{sel_etud.replace(' ', '_')}"
                                     )
-                                    
+
                                     b64 = base64.b64encode(pdf_page).decode('utf-8')
                                     pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500px" type="application/pdf"></iframe>'
                                     st.markdown(pdf_display, unsafe_allow_html=True)
-                                
-                                elif num_page and isinstance(num_page, str):
-                                    st.error(f"❌ Erreur technique : {num_page}")
-                                    st.info("Vérifiez que `pdfplumber` et `pypdf` sont dans requirements.txt")
-                                
+
                                 else:
-                                    st.warning("⚠️ Carte individuelle non localisée")
-                                    with st.expander("🔧 Aide au diagnostic"):
+                                    st.warning("⚠️ Carte non localisée automatiquement")
+
+                                    with st.expander("ℹ️ Pourquoi ? Et comment résoudre"):
                                         st.markdown("""
-                                        **Causes possibles :**
-                                        1. Le PDF est un **scan/image** (texte non extractible)
-                                        2. Le nom est écrit différemment dans le PDF (`Prénom NOM` vs `NOM Prénom`)
-                                        3. Le nom contient des **caractères spéciaux** (œ, é, è, etc.)
-                                        
-                                        **Solution** : Le fichier complet s'affiche ci-dessous. Utilisez la barre de recherche du PDF (Ctrl+F) pour trouver manuellement l'étudiant.
+                                        **Causes probables :**
+                                        1. **PDF scanné/image** : le texte n'est pas extractible par un ordinateur
+                                        2. **Texte en arabe** : le nom dans le PDF est en arabe (عيساني) alors que le fichier Excel est en latin (AISSANI)
+                                        3. **Nom inversé** : le PDF contient « Prénom NOM » au lieu de « NOM Prénom »
+
+                                        **Solutions :**
+                                        - **Solution A** : Utilisez le **fichier d'index** ci-dessus (le plus fiable)
+                                        - **Solution B** : Parcourez le PDF complet ci-dessous et notez le numéro de page
                                         """)
-                                    
+
                                     with open(FILE_CARTES, "rb") as f:
                                         full_pdf = f.read()
                                     b64 = base64.b64encode(full_pdf).decode('utf-8')
-                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="600px" type="application/pdf"></iframe>'
+                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}#page=1" width="100%" height="600px" type="application/pdf"></iframe>'
                                     st.markdown(pdf_display, unsafe_allow_html=True)
-                    
+
                     with col_dl:
                         with open(FILE_CARTES, "rb") as f:
                             st.download_button(
@@ -4766,9 +4815,8 @@ td{{word-wrap:break-word;}}
                         with open(FILE_CARTES, "wb") as f:
                             f.write(uploaded_cartes.getvalue())
                         st.success("✅ Fichier enregistré. Rafraîchissez la page pour afficher les cartes.")
-                
+
                 st.divider()
-                
                 # 1️⃣ FICHE ÉTUDIANT D'ABORD
                 st.markdown(f"""
                     <div style="background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); 
