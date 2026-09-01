@@ -329,6 +329,7 @@ _BASE_DIR = Path(__file__).parent.resolve()
 FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
 FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
 FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
+FILE_CARTES    = str(_BASE_DIR / "Fichier_cartes.pdf")
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
@@ -845,6 +846,32 @@ def format_date_naissance(val):
     
     return str(val)
 # =============================================================================
+def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant):
+    """Extrait la page du PDF contenant le nom de l'étudiant."""
+    try:
+        import pdfplumber
+        from io import BytesIO
+        try:
+            from pypdf import PdfReader, PdfWriter
+        except ImportError:
+            from PyPDF2 import PdfReader, PdfWriter
+
+        nom_clean = str(nom_etudiant).strip().upper()
+
+        with pdfplumber.open(chemin_pdf) as pdf:
+            for i, page in enumerate(pdf.pages):
+                text = page.extract_text() or ""
+                if nom_clean in text.upper():
+                    reader = PdfReader(chemin_pdf)
+                    writer = PdfWriter()
+                    writer.add_page(reader.pages[i])
+                    output = BytesIO()
+                    writer.write(output)
+                    output.seek(0)
+                    return output.getvalue(), i + 1
+        return None, None
+    except Exception:
+        return None, None
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
 # FONCTION DE LECTURE EXCEL ROBUSTE
@@ -4630,6 +4657,64 @@ td{{word-wrap:break-word;}}
                 
                 cols_map = detecter_colonnes_etudiant(df_etu_edt)
                 row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
+
+                # ═══════════════════════════════════════════════════════════════
+                # 🪪 CARTE ÉTUDIANT
+                # ═══════════════════════════════════════════════════════════════
+                st.markdown("### 🪪 Carte d'Étudiant")
+
+                if os.path.exists(FILE_CARTES):
+                    col_cartes, col_dl = st.columns([3, 1])
+
+                    with col_cartes:
+                        if st.button("🪪 Afficher la carte de cet étudiant", use_container_width=True, type="primary"):
+                            with st.spinner("🔍 Recherche de la carte dans le fichier PDF..."):
+                                pdf_page, num_page = extraire_page_etudiant_pdf(FILE_CARTES, sel_etud)
+
+                                if pdf_page:
+                                    st.success(f"✅ Carte trouvée (page {num_page})")
+
+                                    st.download_button(
+                                        label="📥 Télécharger cette carte (PDF)",
+                                        data=pdf_page,
+                                        file_name=f"Carte_{sel_etud.replace(' ', '_')}.pdf",
+                                        mime="application/pdf",
+                                        key=f"dl_carte_{sel_etud.replace(' ', '_')}"
+                                    )
+
+                                    b64 = base64.b64encode(pdf_page).decode('utf-8')
+                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500px" type="application/pdf"></iframe>'
+                                    st.markdown(pdf_display, unsafe_allow_html=True)
+                                else:
+                                    st.info("ℹ️ Carte individuelle non localisée dans le fichier. Affichage du document complet ci-dessous.")
+                                    with open(FILE_CARTES, "rb") as f:
+                                        full_pdf = f.read()
+                                    b64 = base64.b64encode(full_pdf).decode('utf-8')
+                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="600px" type="application/pdf"></iframe>'
+                                    st.markdown(pdf_display, unsafe_allow_html=True)
+
+                    with col_dl:
+                        with open(FILE_CARTES, "rb") as f:
+                            st.download_button(
+                                label="📥 Toutes les cartes (PDF)",
+                                data=f.read(),
+                                file_name="Fichier_cartes.pdf",
+                                mime="application/pdf",
+                                key="dl_all_cartes"
+                            )
+                else:
+                    st.warning("⚠️ Fichier 'Fichier_cartes.pdf' introuvable dans le dossier de l'application.")
+                    uploaded_cartes = st.file_uploader(
+                        "📤 Uploader le fichier des cartes étudiants (PDF)", 
+                        type=["pdf"], 
+                        key="upload_cartes"
+                    )
+                    if uploaded_cartes:
+                        with open(FILE_CARTES, "wb") as f:
+                            f.write(uploaded_cartes.getvalue())
+                        st.success("✅ Fichier enregistré. Rafraîchissez la page pour afficher les cartes.")
+
+                st.divider()
                 
                 # 1️⃣ FICHE ÉTUDIANT D'ABORD
                 st.markdown(f"""
