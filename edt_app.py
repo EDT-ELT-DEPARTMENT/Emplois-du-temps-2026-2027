@@ -41,7 +41,24 @@ try:
     from docx.oxml.ns import qn
 except ImportError:
     Document = None
+import os
+import re
+import io
+import json
+from pathlib import Path
+import streamlit as st
+import pandas as pd
+from PIL import Image
 
+try:
+    from pdf2image import convert_from_path
+except ImportError:
+    convert_from_path = None
+
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
 # ═══════════════════════════════════════════════════════════════════════════
 # FONCTIONS UTILITAIRES : Demande EDT + Email Admin
 # ═══════════════════════════════════════════════════════════════════════════
@@ -14584,38 +14601,3 @@ if portail == "🎫 Cartes d'Étudiant":
                     file_name="cartes_etudiants.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-
-
-# ════════════════════════════════════════════════════════════════
-# IMPORTS NÉCESSAIRES
-# ════════════════════════════════════════════════════════════════
-"""
-À ajouter au début du fichier:
-
-import streamlit as st
-import pandas as pd
-from pdf2image import convert_from_path
-from PIL import Image
-import pytesseract
-import os
-import re
-from pathlib import Path
-import json
-import io
-"""
-
-# ════════════════════════════════════════════════════════════════
-# DÉPENDANCES À INSTALLER
-# ════════════════════════════════════════════════════════════════
-"""
-pip install streamlit pandas pdf2image pillow pytesseract openpyxl
-
-Sur Windows (ajouter Tesseract):
-choco install tesseract
-
-Sur Mac:
-brew install tesseract
-
-Sur Linux:
-sudo apt-get install tesseract-ocr
-"""
