@@ -5229,12 +5229,16 @@ td{{word-wrap:break-word;}}
 
                 if fichiers_cartes:
                     st.info(
-                        f"📚 {len(fichiers_cartes)} fichier(s) de cartes détecté(s) : "
-                        f"Fich01.pdf → FichN.pdf"
+                        f"\U0001f4da {len(fichiers_cartes)} fichier(s) de cartes d\u00e9tect\u00e9(s) : "
+                        f"Fich01.pdf \u2192 FichN.pdf"
                     )
 
+                    # Bouton de recherche : on stocke le résultat en session_state
+                    # afin que le bouton de téléchargement persiste entre les reruns.
+                    cle_recherche = f"carte_result_{sel_etud.replace(' ', '_')}"
+
                     if st.button(
-                        "🪮 Afficher la carte de cet étudiant",
+                        "🪞 Afficher la carte de cet étudiant",
                         use_container_width=True,
                         type="primary",
                         key=f"btn_carte_{sel_etud.replace(' ', '_')}"
@@ -5252,6 +5256,32 @@ td{{word-wrap:break-word;}}
                         fichier_trouve = extraire_page_etudiant_pdf.dernier_fichier_trouve
                         mat_trouvee = extraire_page_etudiant_pdf.derniere_matricule_trouvee
                         source_match = extraire_page_etudiant_pdf.derniere_source
+
+                        # On mémorise TOUT en session_state pour pouvoir afficher
+                        # l'aperçu + le bouton de téléchargement HORS du callback.
+                        st.session_state[cle_recherche] = {
+                            "pdf_page": pdf_page,
+                            "num_page": num_page,
+                            "methode": methode,
+                            "statut": statut,
+                            "fichier_trouve": fichier_trouve,
+                            "mat_trouvee": mat_trouvee,
+                            "source_match": source_match,
+                            "matricule_source": matricule_source,
+                            "sel_etud": sel_etud,
+                        }
+
+                    # --- Affichage du résultat (HORS du callback, persistant) ---
+                    res = st.session_state.get(cle_recherche)
+                    if res:
+                        pdf_page = res["pdf_page"]
+                        num_page = res["num_page"]
+                        methode = res["methode"]
+                        statut = res["statut"]
+                        fichier_trouve = res["fichier_trouve"]
+                        mat_trouvee = res["mat_trouvee"]
+                        source_match = res["source_match"]
+                        matricule_source = res["matricule_source"]
 
                         if pdf_page and statut == "matricule_correspondante":
                             nom_fichier = (
@@ -5301,13 +5331,26 @@ td{{word-wrap:break-word;}}
                                     unsafe_allow_html=True
                                 )
 
-                            st.download_button(
-                                "📥 Télécharger cette carte (PDF)",
-                                data=pdf_page,
-                                file_name=f"Carte_{sel_etud.replace(' ', '_')}.pdf",
-                                mime="application/pdf",
-                                key=f"dl_carte_{sel_etud.replace(' ', '_')}"
-                            )
+                            # --- Bouton de téléchargement (HORS du callback) ---
+                            # Il persiste entre les reruns => le téléchargement fonctionne.
+                            col_dl1, col_dl2 = st.columns([3, 1])
+                            with col_dl1:
+                                st.download_button(
+                                    "📥 Télécharger cette carte (PDF)",
+                                    data=pdf_page,
+                                    file_name=f"Carte_{sel_etud.replace(' ', '_')}.pdf",
+                                    mime="application/pdf",
+                                    key=f"dl_carte_{sel_etud.replace(' ', '_')}",
+                                    use_container_width=True
+                                )
+                            with col_dl2:
+                                if st.button(
+                                    "❌ Effacer",
+                                    key=f"clear_carte_{sel_etud.replace(' ', '_')}",
+                                    use_container_width=True
+                                ):
+                                    st.session_state.pop(cle_recherche, None)
+                                    st.rerun()
 
                         elif statut == "matricule_differentee":
                             # --- Message : matricule differentee -> carte refusee ---
@@ -5364,18 +5407,22 @@ td{{word-wrap:break-word;}}
                                     "`Matricule`, `Fichier` et `Page`."
                                 )
 
-                    # Téléchargement des parties si nécessaire
+                    # --- Téléchargement des fichiers sources Fich*.pdf ---
+                    # On lit chaque fichier une seule fois en mémoire puis on crée
+                    # le bouton. Hors de tout callback => fonctionne à tous les coups.
                     with st.expander("📥 Télécharger les fichiers de cartes"):
                         for i, fichier in enumerate(fichiers_cartes, 1):
                             try:
-                                with open(fichier, "rb") as f:
-                                    st.download_button(
-                                        f"📥 {os.path.basename(fichier)}",
-                                        data=f.read(),
-                                        file_name=os.path.basename(fichier),
-                                        mime="application/pdf",
-                                        key=f"dl_cartes_{i}"
-                                    )
+                                with open(fichier, "rb") as fh:
+                                    data_bytes = fh.read()
+                                st.download_button(
+                                    f"📥 {os.path.basename(fichier)}",
+                                    data=data_bytes,
+                                    file_name=os.path.basename(fichier),
+                                    mime="application/pdf",
+                                    key=f"dl_cartes_{i}",
+                                    use_container_width=True
+                                )
                             except Exception as ex:
                                 st.warning(f"Impossible de lire {fichier}: {ex}")
                 else:
