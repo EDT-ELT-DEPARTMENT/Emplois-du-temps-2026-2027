@@ -14109,3 +14109,507 @@ if module_sel == "🔐 Portail Étudiant":
         page_mes_absences()
     elif page_active == "messages":
         page_messages()
+# ════════════════════════════════════════════════════════════════
+# EXTRACTION ET OCR DES CARTES D'ÉTUDIANT DEPUIS PLUSIEURS PDF
+# ════════════════════════════════════════════════════════════════
+
+import streamlit as st
+import pandas as pd
+from pdf2image import convert_from_path
+from PIL import Image
+import pytesseract
+import os
+import re
+from pathlib import Path
+import json
+
+# ════════════════════════════════════════════════════════════════
+# 1. CONFIGURATION
+# ════════════════════════════════════════════════════════════════
+
+PDF_FOLDER = "./cartes_etudiants"  # Dossier contenant tous les PDF
+CACHE_FILE = "./cartes_cache.json"  # Fichier de cache
+os.makedirs(PDF_FOLDER, exist_ok=True)
+
+# ════════════════════════════════════════════════════════════════
+# 2. FONCTIONS OCR ET EXTRACTION
+# ════════════════════════════════════════════════════════════════
+
+def extraire_texte_image(image):
+    """Extrait le texte d'une image avec OCR"""
+    try:
+        # Utiliser pytesseract pour OCR
+        texte = pytesseract.image_to_string(image, lang='ara+fra+eng')
+        return texte
+    except Exception as e:
+        st.error(f"Erreur OCR: {e}")
+        return ""
+
+
+def parser_info_carte(texte):
+    """Parse le texte OCR pour extraire les infos principales"""
+    info = {
+        'nom': '',
+        'prenom': '',
+        'date_naissance': '',
+        'lieu_naissance': '',
+        'matricule': '',
+        'promotion': '',
+        'groupe': '',
+        'sous_groupe': '',
+    }
+    
+    lignes = texte.split('\n')
+    
+    # Chercher les patterns
+    for i, ligne in enumerate(lignes):
+        ligne_clean = ligne.strip()
+        
+        # NOM (généralement en majuscules)
+        if 'اللقب' in ligne or 'NOM' in ligne.upper():
+            # Le nom est généralement dans la ligne suivante
+            if i + 1 < len(lignes):
+                info['nom'] = lignes[i + 1].strip().upper()
+        
+        # PRÉNOM
+        if 'الاسم' in ligne or 'PRÉNOM' in ligne.upper():
+            if i + 1 < len(lignes):
+                info['prenom'] = lignes[i + 1].strip()
+        
+        # DATE DE NAISSANCE
+        if 'تاريخ' in ligne or 'DATE' in ligne.upper() or 'NAISSANCE' in ligne.upper():
+            # Chercher un pattern date (JJ/MM/YYYY ou DD/MM/YYYY)
+            match = re.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}', ligne)
+            if match:
+                info['date_naissance'] = match.group(0)
+        
+        # LIEU DE NAISSANCE
+        if 'مكان' in ligne or 'LIEU' in ligne.upper():
+            if i + 1 < len(lignes):
+                info['lieu_naissance'] = lignes[i + 1].strip()
+        
+        # MATRICULE (généralement des chiffres)
+        if 'الرقم' in ligne or 'MATRICULE' in ligne.upper() or 'ID' in ligne.upper():
+            # Chercher les chiffres
+            match = re.search(r'\d{10,}', ligne)
+            if match:
+                info['matricule'] = match.group(0)
+        
+        # PROMOTION
+        if 'الترقية' in ligne or 'PROMOTION' in ligne.upper():
+            if i + 1 < len(lignes):
+                info['promotion'] = lignes[i + 1].strip()
+        
+        # GROUPE
+        if 'المجموعة' in ligne or 'GROUPE' in ligne.upper():
+            match = re.search(r'G\d+', ligne.upper())
+            if match:
+                info['groupe'] = match.group(0)
+        
+        # SOUS-GROUPE
+        if 'الفئة' in ligne or 'SOUS.*GROUPE' in ligne.upper():
+            match = re.search(r'SG\d+', ligne.upper())
+            if match:
+                info['sous_groupe'] = match.group(0)
+    
+    return info
+
+
+@st.cache_resource
+def charger_tous_les_pdfs():
+    """Charge tous les fichiers PDF du dossier"""
+    pdf_files = {}
+    
+    if os.path.exists(PDF_FOLDER):
+        for filename in os.listdir(PDF_FOLDER):
+            if filename.endswith('.pdf'):
+                pdf_path = os.path.join(PDF_FOLDER, filename)
+                pdf_files[filename] = pdf_path
+    
+    return pdf_files
+
+
+@st.cache_data(show_spinner=True)
+def extraire_cartes_du_pdf(pdf_path):
+    """
+    Extrait toutes les cartes d'un fichier PDF
+    Retourne une liste de dicts avec les infos et les images
+    """
+    cartes = []
+    
+    try:
+        # Convertir PDF en images (1 image = 1 page)
+        images = convert_from_path(pdf_path, dpi=150)
+        
+        # Pour chaque page (chaque carte)
+        for page_num, image in enumerate(images):
+            # OCR pour extraire le texte
+            texte = extraire_texte_image(image)
+            
+            # Parser les infos
+            info = parser_info_carte(texte)
+            info['page'] = page_num + 1
+            info['texte_brut'] = texte
+            info['image'] = image  # Stocker l'image
+            
+            cartes.append(info)
+    
+    except Exception as e:
+        st.error(f"Erreur lors de la lecture du PDF {pdf_path}: {e}")
+    
+    return cartes
+
+
+def charger_toutes_les_cartes():
+    """Charge toutes les cartes depuis tous les PDF"""
+    pdf_files = charger_tous_les_pdfs()
+    toutes_les_cartes = []
+    
+    # Barre de progression
+    progress_bar = st.progress(0)
+    
+    for i, (filename, pdf_path) in enumerate(pdf_files.items()):
+        st.info(f"📂 Traitement: {filename}...")
+        
+        # Extraire les cartes du PDF
+        cartes = extraire_cartes_du_pdf(pdf_path)
+        
+        # Ajouter le nom du fichier PDF source
+        for carte in cartes:
+            carte['pdf_source'] = filename
+        
+        toutes_les_cartes.extend(cartes)
+        
+        # Mettre à jour la barre de progression
+        progress_bar.progress((i + 1) / len(pdf_files))
+    
+    progress_bar.empty()
+    
+    return toutes_les_cartes
+
+
+def creer_dataframe_cartes(cartes):
+    """Crée un DataFrame à partir des cartes extraites"""
+    data = []
+    
+    for carte in cartes:
+        data.append({
+            'Nom': carte.get('nom', ''),
+            'Prénom': carte.get('prenom', ''),
+            'Date de naissance': carte.get('date_naissance', ''),
+            'Lieu de naissance': carte.get('lieu_naissance', ''),
+            'Matricule': carte.get('matricule', ''),
+            'Promotion': carte.get('promotion', ''),
+            'Groupe': carte.get('groupe', ''),
+            'Sous-groupe': carte.get('sous_groupe', ''),
+            'PDF source': carte.get('pdf_source', ''),
+            'Page': carte.get('page', ''),
+            'Index': len(data)  # Pour récupérer la carte
+        })
+    
+    return pd.DataFrame(data)
+
+
+# ════════════════════════════════════════════════════════════════
+# 3. INTERFACE STREAMLIT
+# ════════════════════════════════════════════════════════════════
+
+st.set_page_config(page_title="Cartes d'Étudiants", layout="wide")
+
+# ... (Code existant du portail) ...
+
+# ════════════════════════════════════════════════════════════════
+# SECTION: 🎫 GESTION DES CARTES D'ÉTUDIANT
+# ════════════════════════════════════════════════════════════════
+
+if portail == "🎫 Cartes d'Étudiant":
+    st.markdown("## 🎫 Gestion des Cartes d'Étudiant")
+    
+    # Vérifier s'il y a des PDF
+    pdf_files = charger_tous_les_pdfs()
+    
+    if not pdf_files:
+        st.warning("⚠️ Aucun fichier PDF trouvé dans le dossier './cartes_etudiants'")
+        st.info("📂 Créer le dossier et ajouter les fichiers PDF:")
+        st.code("""
+        cartes_etudiants/
+        ├── Fichier1.pdf
+        ├── Fichier2.pdf
+        └── Fichier3.pdf
+        """)
+    else:
+        st.success(f"✅ {len(pdf_files)} fichier(s) PDF trouvé(s)")
+        
+        # Bouton pour charger les cartes
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        
+        with col_btn1:
+            if st.button("📥 Charger toutes les cartes", key="load_all_cartes"):
+                st.session_state.cartes_loaded = False  # Forcer le rechargement
+        
+        with col_btn2:
+            if st.button("🔄 Actualiser", key="refresh_cartes"):
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                st.rerun()
+        
+        # Charger les cartes si pas encore fait
+        if 'cartes_loaded' not in st.session_state or not st.session_state.cartes_loaded:
+            with st.spinner("⏳ Extraction des cartes en cours..."):
+                cartes = charger_toutes_les_cartes()
+                df_cartes = creer_dataframe_cartes(cartes)
+                
+                st.session_state.cartes = cartes
+                st.session_state.df_cartes = df_cartes
+                st.session_state.cartes_loaded = True
+                
+                st.success(f"✅ {len(cartes)} carte(s) extraite(s)")
+        
+        # Afficher les statistiques
+        if 'df_cartes' in st.session_state:
+            df_cartes = st.session_state.df_cartes
+            cartes = st.session_state.cartes
+            
+            col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+            
+            with col_stat1:
+                st.metric("📊 Total cartes", len(df_cartes))
+            
+            with col_stat2:
+                st.metric("🎓 Promotions", df_cartes['Promotion'].nunique())
+            
+            with col_stat3:
+                st.metric("👥 Groupes", df_cartes['Groupe'].nunique())
+            
+            with col_stat4:
+                st.metric("📂 Fichiers", len(pdf_files))
+            
+            # ────────────────────────────────────────
+            # SECTION: RECHERCHE ET AFFICHAGE
+            # ────────────────────────────────────────
+            
+            st.markdown("---")
+            st.markdown("## 🔍 Rechercher une Carte")
+            
+            # Filtres
+            col_filter1, col_filter2, col_filter3 = st.columns(3)
+            
+            with col_filter1:
+                promo_filter = st.selectbox(
+                    "🎓 Filtrer par Promotion:",
+                    ["Tous"] + sorted(df_cartes['Promotion'].dropna().unique().tolist()),
+                    key="promo_filter"
+                )
+            
+            with col_filter2:
+                groupe_filter = st.selectbox(
+                    "👥 Filtrer par Groupe:",
+                    ["Tous"] + sorted(df_cartes['Groupe'].dropna().unique().tolist()),
+                    key="groupe_filter"
+                )
+            
+            with col_filter3:
+                search_text = st.text_input(
+                    "🔎 Rechercher par nom ou matricule:",
+                    key="search_text"
+                )
+            
+            # Appliquer les filtres
+            df_filtered = df_cartes.copy()
+            
+            if promo_filter != "Tous":
+                df_filtered = df_filtered[df_filtered['Promotion'] == promo_filter]
+            
+            if groupe_filter != "Tous":
+                df_filtered = df_filtered[df_filtered['Groupe'] == groupe_filter]
+            
+            if search_text:
+                df_filtered = df_filtered[
+                    df_filtered['Nom'].str.contains(search_text, case=False, na=False) |
+                    df_filtered['Prénom'].str.contains(search_text, case=False, na=False) |
+                    df_filtered['Matricule'].astype(str).str.contains(search_text, na=False)
+                ]
+            
+            st.info(f"📊 {len(df_filtered)} carte(s) trouvée(s)")
+            
+            # ────────────────────────────────────────
+            # AFFICHAGE DES RÉSULTATS
+            # ────────────────────────────────────────
+            
+            if not df_filtered.empty:
+                # Tableau des résultats
+                st.markdown("### 📋 Résultats:")
+                
+                # Afficher un tableau avec sélection
+                selected_indices = []
+                
+                for idx, row in df_filtered.iterrows():
+                    col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
+                    
+                    with col1:
+                        st.write(f"**{row['Nom']} {row['Prénom']}**")
+                    
+                    with col2:
+                        st.write(f"{row['Promotion']} - {row['Groupe']}")
+                    
+                    with col3:
+                        st.write(f"🆔 {row['Matricule']}")
+                    
+                    with col4:
+                        if st.button("👁️ Voir", key=f"view_{row['Index']}"):
+                            st.session_state.selected_carte_index = row['Index']
+                    
+                    with col5:
+                        st.write(f"P{row['Page']}")
+                
+                # ────────────────────────────────────────
+                # AFFICHAGE DE LA CARTE SÉLECTIONNÉE
+                # ────────────────────────────────────────
+                
+                if 'selected_carte_index' in st.session_state:
+                    idx = st.session_state.selected_carte_index
+                    
+                    if idx < len(cartes):
+                        carte = cartes[idx]
+                        
+                        st.markdown("---")
+                        st.markdown("## 🎫 Aperçu de la Carte")
+                        
+                        # Afficher l'image de la carte
+                        if 'image' in carte:
+                            st.image(carte['image'], use_container_width=True, caption=f"Page {carte['page']}")
+                        
+                        # Afficher les informations
+                        col_info1, col_info2 = st.columns(2)
+                        
+                        with col_info1:
+                            st.markdown("### 📋 Informations Personnelles")
+                            st.markdown(f"**Nom:** {carte.get('nom', 'N/A')}")
+                            st.markdown(f"**Prénom:** {carte.get('prenom', 'N/A')}")
+                            st.markdown(f"**Date de naissance:** {carte.get('date_naissance', 'N/A')}")
+                            st.markdown(f"**Lieu de naissance:** {carte.get('lieu_naissance', 'N/A')}")
+                        
+                        with col_info2:
+                            st.markdown("### 🎓 Informations Académiques")
+                            st.markdown(f"**Matricule:** {carte.get('matricule', 'N/A')}")
+                            st.markdown(f"**Promotion:** {carte.get('promotion', 'N/A')}")
+                            st.markdown(f"**Groupe:** {carte.get('groupe', 'N/A')}")
+                            st.markdown(f"**Sous-groupe:** {carte.get('sous_groupe', 'N/A')}")
+                        
+                        # Afficher le texte brut (OCR)
+                        with st.expander("🔍 Texte reconnu (OCR)"):
+                            st.text(carte.get('texte_brut', 'Aucun texte'))
+                        
+                        # Bouton de téléchargement
+                        col_dl1, col_dl2 = st.columns(2)
+                        
+                        with col_dl1:
+                            # Télécharger l'image
+                            if 'image' in carte:
+                                import io
+                                img_bytes = io.BytesIO()
+                                carte['image'].save(img_bytes, format='PNG')
+                                img_bytes.seek(0)
+                                
+                                st.download_button(
+                                    label="📥 Télécharger la carte (PNG)",
+                                    data=img_bytes.getvalue(),
+                                    file_name=f"carte_{carte.get('nom', 'etudiant')}_{carte.get('prenom', 'sans_nom')}.png",
+                                    mime="image/png"
+                                )
+                        
+                        with col_dl2:
+                            # Télécharger les infos (JSON)
+                            info_export = {
+                                'nom': carte.get('nom', ''),
+                                'prenom': carte.get('prenom', ''),
+                                'date_naissance': carte.get('date_naissance', ''),
+                                'lieu_naissance': carte.get('lieu_naissance', ''),
+                                'matricule': carte.get('matricule', ''),
+                                'promotion': carte.get('promotion', ''),
+                                'groupe': carte.get('groupe', ''),
+                                'sous_groupe': carte.get('sous_groupe', ''),
+                                'pdf_source': carte.get('pdf_source', ''),
+                                'page': carte.get('page', '')
+                            }
+                            
+                            st.download_button(
+                                label="📥 Télécharger les infos (JSON)",
+                                data=json.dumps(info_export, ensure_ascii=False, indent=2),
+                                file_name=f"info_{carte.get('nom', 'etudiant')}.json",
+                                mime="application/json"
+                            )
+                
+                else:
+                    st.info("👆 Cliquez sur 'Voir' pour afficher une carte")
+            
+            else:
+                st.warning("❌ Aucune carte ne correspond aux filtres")
+            
+            # ────────────────────────────────────────
+            # EXPORT DE TOUS LES DONNÉES
+            # ────────────────────────────────────────
+            
+            st.markdown("---")
+            st.markdown("## 📊 Export Données")
+            
+            col_export1, col_export2 = st.columns(2)
+            
+            with col_export1:
+                # Export CSV
+                csv_data = df_cartes.drop(columns=['Index']).to_csv(index=False)
+                st.download_button(
+                    label="📥 Télécharger toutes les données (CSV)",
+                    data=csv_data,
+                    file_name="cartes_etudiants.csv",
+                    mime="text/csv"
+                )
+            
+            with col_export2:
+                # Export Excel
+                excel_bytes = io.BytesIO()
+                with pd.ExcelWriter(excel_bytes, engine='openpyxl') as writer:
+                    df_cartes.drop(columns=['Index']).to_excel(writer, sheet_name='Cartes', index=False)
+                excel_bytes.seek(0)
+                
+                st.download_button(
+                    label="📥 Télécharger toutes les données (Excel)",
+                    data=excel_bytes.getvalue(),
+                    file_name="cartes_etudiants.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+
+# ════════════════════════════════════════════════════════════════
+# IMPORTS NÉCESSAIRES
+# ════════════════════════════════════════════════════════════════
+"""
+À ajouter au début du fichier:
+
+import streamlit as st
+import pandas as pd
+from pdf2image import convert_from_path
+from PIL import Image
+import pytesseract
+import os
+import re
+from pathlib import Path
+import json
+import io
+"""
+
+# ════════════════════════════════════════════════════════════════
+# DÉPENDANCES À INSTALLER
+# ════════════════════════════════════════════════════════════════
+"""
+pip install streamlit pandas pdf2image pillow pytesseract openpyxl
+
+Sur Windows (ajouter Tesseract):
+choco install tesseract
+
+Sur Mac:
+brew install tesseract
+
+Sur Linux:
+sudo apt-get install tesseract-ocr
+"""
