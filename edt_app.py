@@ -332,8 +332,19 @@ FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
 # Cartes étudiants : tous les PDF Fich*.pdf du dossier sont parcourus
 CARTES_PREFIX = "Fich"
 CARTES_EXTENSION = ".pdf"
+# Fichier carte "par defaut" (utilise uniquement si upload unique, legacy)
+FILE_CARTES = str(_BASE_DIR / "Cartes_Etudiants.pdf")
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
+
+# --- Configuration OCR (PDF scannes) ---
+# Activer/desactiver l'OCR. Si pytesseract / pdf2image ne sont pas installes,
+# la recherche bascule automatiquement sur l'index manuel.
+OCR_ACTIF = True
+OCR_DPI = 200           # resolution de rasterisation (qualite vs vitesse)
+OCR_LANG = "fra+eng"    # langues Tesseract
+# Nombre minimum de chiffres qu'un matricule doit contenir pour etre valide
+MATRICULE_MIN_CHIFFRES = 4
 
 HORAIRES_LIST = [
     "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
@@ -861,157 +872,505 @@ def lister_fichiers_cartes():
     return [x[2] for x in fichiers]
 
 
-def _extraire_page_d_un_pdf(chemin_pdf, nom_etudiant, df_index=None, mode_debug=False):
-    """Recherche un étudiant dans un seul PDF."""
+# =============================================================================
+#  OUTILS DE NORMALISATION DE MATRICULE
+# =============================================================================
+def normaliser_matricule(val):
+    """
+    Normalise une matricule en ne conservant QUE les chiffres.
+    - "2026/001"   -> "2026001"
+    - "N 2026 001" -> "2026001"
+    - "" / None / NaN -> ""
+    La comparaison se fait ensuite sur ces chiffres : cela evite tout souci
+    de separateurs (/, -, espaces) entre le fichier source et les cartes.
+    """
+    if val is None:
+        return ""
+    if isinstance(val, float) and pd.isna(val):
+        return ""
+    s = str(val).strip()
+    if s.lower() in ("", "nan", "none", "na"):
+        return ""
+    # Cas particulier : Excel stocke parfois la matricule en float (ex: 2026001.0)
+    try:
+        if "." in s and s.replace(".", "", 1).isdigit():
+            s = str(int(float(s)))
+    except Exception:
+        pass
+    # On ne garde que les chiffres
+    chiffres = re.sub(r"\D", "", s)
+    return chiffres
+
+
+def matricule_valide(val):
+    """Renvoie True si la matricule (normalisee) contient assez de chiffres."""
+    m = normaliser_matricule(val)
+    return len(m) >= MATRICULE_MIN_CHIFFRES
+
+
+def _norm_nom(t):
+    """Normalise un nom pour comparaison (sans accents, en MAJUSCULES, alpha only)."""
     import unicodedata
+    if not t:
+        return ""
+    t = unicodedata.normalize("NFKD", str(t))
+    t = t.encode("ASCII", "ignore").decode("ASCII")
+    return re.sub(r"[^A-Z]", "", t.upper())
+
+
+# =============================================================================
+#  EXTRACTION D'UNE PAGE PDF (via pypdf)
+# =============================================================================
+def _extraire_page_pdf_bytes(chemin_pdf, page_index, mode_debug=False):
+    """Extrait une page d'un PDF et renvoie les bytes de cette page seule."""
     from io import BytesIO
-
-    def norm(t):
-        if not t:
-            return ""
-        t = unicodedata.normalize("NFKD", str(t))
-        t = t.encode("ASCII", "ignore").decode("ASCII")
-        return re.sub(r"[^A-Z]", "", t.upper())
-
-    base = str(nom_etudiant).strip()
-    parts = base.upper().split()
-    nom = parts[0] if parts else ""
-    prenom = " ".join(parts[1:]) if len(parts) > 1 else ""
-
-    v = {
-        "complet": norm(base),
-        "nom": norm(nom),
-        "prenom": norm(prenom),
-        "prenom1": norm(parts[1]) if len(parts) > 1 else ""
-    }
-
-    def page_pdf(page_index):
+    try:
+        from pypdf import PdfReader, PdfWriter
+        reader = PdfReader(chemin_pdf)
+        if not (0 <= page_index < len(reader.pages)):
+            return None
+        writer = PdfWriter()
+        writer.add_page(reader.pages[page_index])
+        out = BytesIO()
+        writer.write(out)
+        return out.getvalue()
+    except Exception:
+        # Fallback PyMuPDF si pypdf absent
         try:
-            from pypdf import PdfReader, PdfWriter
-            reader = PdfReader(chemin_pdf)
-            if not (0 <= page_index < len(reader.pages)):
+            import fitz
+            doc = fitz.open(chemin_pdf)
+            if not (0 <= page_index < len(doc)):
+                doc.close()
                 return None
-            writer = PdfWriter()
-            writer.add_page(reader.pages[page_index])
             out = BytesIO()
-            writer.write(out)
+            # Convertir la page en un PDF mono-page
+            single = fitz.open()
+            single.insert_pdf(doc, from_page=page_index, to_page=page_index)
+            single.save(out)
+            single.close()
+            doc.close()
             return out.getvalue()
         except Exception as ex:
             if mode_debug:
-                print(f"[DEBUG] extraction: {ex}")
+                print(f"[DEBUG] extraction page: {ex}")
             return None
 
-    # Index manuel : Nom_Complet + Page, avec Fichier optionnel.
-    if df_index is not None and not df_index.empty:
+
+# =============================================================================
+#  OCR D'UNE PAGE (PDF scanne)
+# =============================================================================
+def _ocr_page(chemin_pdf, page_index, mode_debug=False):
+    """
+    Rasterise une page de PDF puis lance Tesseract pour en extraire le texte.
+    Retourne une chaine (vide si echec ou dependances manquantes).
+    Met en cache les resultats dans un dict attache a la fonction pour eviter
+    de re-OCR la meme page plusieurs fois.
+    """
+    if not getattr(_ocr_page, "disponible", None):
+        # Detection des dependances une seule fois
         try:
-            courant = os.path.basename(chemin_pdf).lower()
-            for _, row in df_index.iterrows():
-                idx_nom = str(row.get("Nom_Complet", row.get("Nom", ""))).strip()
-                idx_page = row.get("Page", row.get("Num_Page", None))
-                idx_file = str(row.get("Fichier", row.get("PDF", ""))).strip()
+            import pytesseract  # noqa
+            from pdf2image import convert_from_path  # noqa
+            _ocr_page.disponible = True
+        except Exception:
+            _ocr_page.disponible = False
+            return ""
 
-                fichier_ok = True
-                if idx_file and idx_file.lower() not in (
-                    courant,
-                    os.path.splitext(courant)[0]
-                ):
-                    fichier_ok = (
-                        os.path.splitext(idx_file.lower())[0]
-                        == os.path.splitext(courant)[0]
-                    )
+    if not _ocr_page.disponible:
+        if mode_debug:
+            print("[DEBUG] OCR indisponible (pytesseract / pdf2image manquants)")
+        return ""
 
-                if fichier_ok and norm(idx_nom) == v["complet"]:
-                    if str(idx_page).strip().lower() not in ("", "nan", "none"):
-                        page = int(float(str(idx_page).replace(",", "."))) - 1
-                        data = page_pdf(page)
-                        if data:
-                            return data, page + 1, "index"
-        except Exception as ex:
-            if mode_debug:
-                print(f"[DEBUG] index: {ex}")
+    if not hasattr(_ocr_page, "cache"):
+        _ocr_page.cache = {}
 
-    # Recherche texte avec PyMuPDF
+    cle = (str(chemin_pdf), int(page_index))
+    if cle in _ocr_page.cache:
+        return _ocr_page.cache[cle]
+
+    texte = ""
+    try:
+        import pytesseract
+        from pdf2image import convert_from_path
+        images = convert_from_path(
+            chemin_pdf,
+            dpi=OCR_DPI,
+            first_page=page_index + 1,
+            last_page=page_index + 1,
+        )
+        for img in images:
+            texte += pytesseract.image_to_string(img, lang=OCR_LANG) + "\n"
+    except Exception as ex:
+        if mode_debug:
+            print(f"[DEBUG] OCR erreur: {ex}")
+        texte = ""
+
+    _ocr_page.cache[cle] = texte
+    return texte
+
+
+# Initialisation de l'etat OCR
+_ocr_page.disponible = None
+
+# =============================================================================
+#  RECHERCHE PAR MATRICULE DANS UN PDF
+# =============================================================================
+def _rechercher_matricule_dans_pdf(chemin_pdf, matricule_cible, mode_debug=False):
+    """
+    Parcourt toutes les pages d'un PDF et renvoie (page_index, methode, matricule_trouvee)
+    de la PREMIERE page contenant exactement la matricule cible.
+
+    Ordre de recherche par page :
+      1) Index manuel (Matricule | Fichier | Page)   -> 'index_matricule'
+      2) Texte natif (PyMuPDF)                       -> 'fitz_matricule'
+      3) Texte natif (pdfplumber)                    -> 'plumber_matricule'
+      4) OCR (Tesseract, si PDF scanne)              -> 'ocr_matricule'
+
+    Renvoie (None, None, None) si la matricule n'est trouvee dans aucune page.
+    """
+    mat_norm = normaliser_matricule(matricule_cible)
+    if not mat_norm:
+        return None, None, None
+
     try:
         import fitz
         doc = fitz.open(chemin_pdf)
-        for i in range(len(doc)):
-            text = norm(doc.load_page(i).get_text() or "")
+        nb_pages = len(doc)
+    except Exception:
+        doc = None
+        nb_pages = 0
+        try:
+            import pdfplumber
+            with pdfplumber.open(chemin_pdf) as pdf:
+                nb_pages = len(pdf.pages)
+        except Exception as ex:
+            if mode_debug:
+                print(f"[DEBUG] ouverture PDF impossible: {ex}")
+            return None, None, None
 
-            tests = [
-                ("nom_complet", v["complet"], 1),
-                ("nom_famille", v["nom"], 3),
-                ("prenom_complet", v["prenom"], 4),
-                ("prenom", v["prenom1"], 3),
-            ]
+    # --- 1) Index manuel gere en amont (extraire_page_etudiant_pdf) ---
+    # Ici on traite le contenu reel des pages.
 
-            for methode, valeur, minimum in tests:
-                if valeur and len(valeur) >= minimum and valeur in text:
+    for i in range(nb_pages):
+        texte_page = ""
+
+        # 2) PyMuPDF (texte natif)
+        if doc is not None:
+            try:
+                texte_page = doc.load_page(i).get_text() or ""
+            except Exception:
+                texte_page = ""
+            if not texte_page.strip():
+                # page probablement scannee -> on tente pdfplumber puis OCR
+                try:
+                    import pdfplumber
+                    with pdfplumber.open(chemin_pdf) as pdf:
+                        texte_page = pdf.pages[i].extract_text() or ""
+                except Exception:
+                    texte_page = ""
+
+        # 3) pdfplumber si PyMuPDF absent
+        if doc is None and not texte_page.strip():
+            try:
+                import pdfplumber
+                with pdfplumber.open(chemin_pdf) as pdf:
+                    texte_page = pdf.pages[i].extract_text() or ""
+            except Exception:
+                texte_page = ""
+
+        # Comparaison matricule sur texte natif
+        if texte_page.strip():
+            trouvee = _chercher_matricule_dans_texte(texte_page, mat_norm)
+            if trouvee:
+                if doc is not None:
                     doc.close()
-                    data = page_pdf(i)
-                    if data:
-                        return data, i + 1, f"fitz_{methode}"
-                    break
+                methode = "fitz_matricule" if doc is not None else "plumber_matricule"
+                return i, methode, trouvee
+
+        # 4) OCR pour les pages scannees (texte vide / image)
+        if not texte_page.strip() and OCR_ACTIF:
+            texte_ocr = _ocr_page(chemin_pdf, i, mode_debug)
+            if texte_ocr.strip():
+                trouvee = _chercher_matricule_dans_texte(texte_ocr, mat_norm)
+                if trouvee:
+                    if doc is not None:
+                        doc.close()
+                    return i, "ocr_matricule", trouvee
+
+    if doc is not None:
         doc.close()
-    except ImportError:
-        pass
-    except Exception as ex:
-        if mode_debug:
-            print(f"[DEBUG] fitz: {ex}")
-
-    # Fallback pdfplumber
-    try:
-        import pdfplumber
-        with pdfplumber.open(chemin_pdf) as pdf:
-            for i, page in enumerate(pdf.pages):
-                text = norm(page.extract_text() or "")
-                tests = [
-                    ("nom_complet", v["complet"], 1),
-                    ("nom_famille", v["nom"], 3),
-                    ("prenom_complet", v["prenom"], 4),
-                    ("prenom", v["prenom1"], 3),
-                ]
-                for methode, valeur, minimum in tests:
-                    if valeur and len(valeur) >= minimum and valeur in text:
-                        data = page_pdf(i)
-                        if data:
-                            return data, i + 1, f"plumber_{methode}"
-                        break
-    except Exception as ex:
-        if mode_debug:
-            print(f"[DEBUG] pdfplumber: {ex}")
-
     return None, None, None
 
 
-def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant, df_index=None, mode_debug=False):
+def _chercher_matricule_dans_texte(texte, mat_norm):
     """
-    Recherche l'étudiant dans TOUS les fichiers Fich*.pdf.
-    Compatible aussi avec un seul PDF ou une liste de PDF.
+    Cherche la matricule normalisee dans un bloc de texte.
+    Retourne la matricule trouvee (string de chiffres) si elle y figure,
+    sinon None.
+
+    La regle STRICTE : on extrait TOUTES les suites de chiffres du texte
+    (apres suppression des separateurs) et on cherche une egalite EXACTE
+    avec la matricule cible. On accepte aussi une matricule cible contenue
+    dans une suite plus longue UNIQUEMENT si cette suite correspond au
+    format "matricule + chiffres de controle" (difference <= 2 chiffres),
+    pour tolerer un eventuel caractere supplementaire sur la carte.
     """
+    if not mat_norm or not texte:
+        return None
+
+    # Toutes les suites de chiffres (apres nettoyage des separateurs usuels)
+    # On remplace / - . et espaces par rien sur des fenetres, puis on extrait
+    nettoyage = re.sub(r"[ /\-_.]", "", str(texte))
+    candidats = re.findall(r"\d+", nettoyage)
+
+    for c in candidats:
+        if c == mat_norm:
+            return c
+        # Tolerance : matricule cible contenue dans un candidat legerement plus long
+        # (ex: carte imprime "2026001007" alors que le source donne "2026001")
+        # On n'accepte que si le candidat commence par la matricule cible et que
+        # l'ecart est petit, pour eviter les faux positifs.
+        if len(c) > len(mat_norm) and c.startswith(mat_norm) and (len(c) - len(mat_norm)) <= 3:
+            return c
+        if len(mat_norm) > len(c) and mat_norm.startswith(c) and (len(mat_norm) - len(c)) <= 3:
+            return mat_norm
+
+    return None
+
+
+# =============================================================================
+#  RECHERCHE PAR INDEX (Matricule | Fichier | Page  OU  Nom_Complet | Page)
+# =============================================================================
+def _rechercher_dans_index(df_index, matricule_cible, nom_etudiant, chemin_courant, mode_debug=False):
+    """
+    Cherche une entree dans l'index correspondant :
+      - soit a la MATRICULE (prioritaire),
+      - soit au Nom_Complet (fallback, MAIS la matricule doit quand meme
+        etre verifiee sur la page extraite).
+
+    Renvoie (page_index, methode) ou (None, None).
+    """
+    if df_index is None or df_index.empty:
+        return None, None
+
+    mat_norm = normaliser_matricule(matricule_cible)
+    courant = os.path.basename(chemin_courant).lower()
+    courant_sans_ext = os.path.splitext(courant)[0]
+
+    try:
+        for _, row in df_index.iterrows():
+            idx_mat = row.get("Matricule", row.get("matricule", None))
+            idx_nom = str(row.get("Nom_Complet", row.get("Nom", ""))).strip()
+            idx_page = row.get("Page", row.get("Num_Page", None))
+            idx_file = str(row.get("Fichier", row.get("PDF", ""))).strip()
+
+            # Filtre fichier (si la colonne Fichier est renseignee)
+            fichier_ok = True
+            if idx_file and idx_file.lower() not in ("", "nan", "none"):
+                f_lower = idx_file.lower()
+                if f_lower not in (courant, courant_sans_ext):
+                    fichier_ok = os.path.splitext(f_lower)[0] == courant_sans_ext
+            if not fichier_ok:
+                continue
+
+            # 1) Priorite : correspondance MATRICULE
+            if mat_norm and matricule_valide(idx_mat):
+                if normaliser_matricule(idx_mat) == mat_norm:
+                    page = _page_index_valide(idx_page)
+                    if page is not None:
+                        return page, "index_matricule"
+
+            # 2) Fallback : Nom_Complet (seulement si pas de matricule dans l'index)
+            #    La verification finale de la matricule se fait dans extraire_page_etudiant_pdf.
+            if not mat_norm and idx_nom and _norm_nom(idx_nom) == _norm_nom(nom_etudiant):
+                page = _page_index_valide(idx_page)
+                if page is not None:
+                    return page, "index_nom"
+
+    except Exception as ex:
+        if mode_debug:
+            print(f"[DEBUG] index: {ex}")
+    return None, None
+
+
+def _page_index_valide(idx_page):
+    """Convertit une valeur de page d'index en int (0-based). Renvoie None si invalide."""
+    try:
+        s = str(idx_page).strip().replace(",", ".")
+        if s.lower() in ("", "nan", "none"):
+            return None
+        return int(float(s)) - 1  # index 0-based
+    except Exception:
+        return None
+
+
+# =============================================================================
+#  VERIFICATION D'UNE PAGE : la matricule y figure-t-elle ?
+# =============================================================================
+def _verifier_matricule_sur_page(chemin_pdf, page_index, matricule_cible, mode_debug=False):
+    """
+    Verifie que la matricule cible figure bien sur la page extraite.
+    Utilise le texte natif puis l'OCR si necessaire.
+    Renvoie (ok: bool, matricule_trouvee: str|None, source: str).
+    """
+    mat_norm = normaliser_matricule(matricule_cible)
+    if not mat_norm:
+        return False, None, "matricule_source_vide"
+
+    texte_page = ""
+    # Texte natif via PyMuPDF
+    try:
+        import fitz
+        doc = fitz.open(chemin_pdf)
+        if 0 <= page_index < len(doc):
+            texte_page = doc.load_page(page_index).get_text() or ""
+        doc.close()
+    except Exception:
+        pass
+
+    # pdfplumber si PyMuPDF vide / absent
+    if not texte_page.strip():
+        try:
+            import pdfplumber
+            with pdfplumber.open(chemin_pdf) as pdf:
+                if 0 <= page_index < len(pdf.pages):
+                    texte_page = pdf.pages[page_index].extract_text() or ""
+        except Exception:
+            pass
+
+    if texte_page.strip():
+        trouvee = _chercher_matricule_dans_texte(texte_page, mat_norm)
+        if trouvee:
+            return True, trouvee, "texte_natif"
+
+    # OCR pour les pages scannees
+    if OCR_ACTIF:
+        texte_ocr = _ocr_page(chemin_pdf, page_index, mode_debug)
+        if texte_ocr.strip():
+            trouvee = _chercher_matricule_dans_texte(texte_ocr, mat_norm)
+            if trouvee:
+                return True, trouvee, "ocr"
+
+    return False, None, "non_trouvee"
+
+
+# =============================================================================
+#  FONCTION PRINCIPALE : extraire_page_etudiant_pdf
+# =============================================================================
+def extraire_page_etudiant_pdf(
+    chemin_pdf,
+    nom_etudiant,
+    df_index=None,
+    mode_debug=False,
+    matricule=None,
+):
+    """
+    Recherche la carte d'un etudiant dans TOUS les fichiers Fich*.pdf.
+
+    LOGIQUE STRICTE (conformement au cahier des charges) :
+      - La carte est selectionnee UNIQUEMENT si la MATRICULE de l'etudiant
+        (recuperee depuis le fichier source) figure sur la page.
+      - Une correspondance par nom / prenom / nom de famille seule n'affiche
+        JAMAIS une carte.
+      - Si la matricule est absente du fichier source (colonne non detectee),
+        on bascule sur l'index manuel (Nom_Complet | Page) MAIS la carte
+        n'est validee que si l'index contient une colonne Matricule correspondante.
+
+    Parametres :
+      chemin_pdf    : chemin unique, liste de chemins, ou None (= Fich*.pdf auto)
+      nom_etudiant  : "NOM Prenom" (affichage uniquement)
+      df_index      : DataFrame index optionnel
+                      colonnes attendues : Matricule, Fichier, Page
+                                          (ou Nom_Complet, Fichier, Page)
+      matricule     : matricule exacte de l'etudiant depuis le fichier source
+                      (colonne mat_etud ou mat_bac)
+
+    Retourne :
+      (pdf_bytes, num_page, methode, statut) ou (None, None, None, statut)
+      statut : "matricule_correspondante" | "matricule_differentee"
+               | "carte_introuvable" | "matricule_source_vide"
+               | "aucun_fichier"
+    """
+    # --- Choix de la liste de fichiers ---
     if isinstance(chemin_pdf, (list, tuple, set)):
         fichiers = [str(x) for x in chemin_pdf if os.path.isfile(str(x))]
     elif chemin_pdf and os.path.isfile(str(chemin_pdf)):
         fichiers = [str(chemin_pdf)]
     else:
         fichiers = lister_fichiers_cartes()
-
     if not fichiers:
         fichiers = lister_fichiers_cartes()
 
     extraire_page_etudiant_pdf.dernier_fichier_trouve = None
+    extraire_page_etudiant_pdf.derniere_matricule_trouvee = None
+    extraire_page_etudiant_pdf.derniere_source = None
 
-    for fichier in fichiers:
-        data, page, methode = _extraire_page_d_un_pdf(
-            fichier, nom_etudiant, df_index, mode_debug
-        )
-        if data:
-            extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
-            return data, page, methode
+    if not fichiers:
+        return None, None, None, "aucun_fichier"
 
-    return None, None, None
+    mat_norm = normaliser_matricule(matricule)
+
+    # --- Cas 1 : matricule source disponible -> recherche par matricule ---
+    if mat_norm and matricule_valide(matricule):
+        for fichier in fichiers:
+            # 1a) Index manuel prioritaire (Matricule | Fichier | Page)
+            page_idx, methode_idx = _rechercher_dans_index(
+                df_index, matricule, nom_etudiant, fichier, mode_debug
+            )
+            if page_idx is not None and methode_idx == "index_matricule":
+                ok, trouvee, src = _verifier_matricule_sur_page(
+                    fichier, page_idx, matricule, mode_debug
+                )
+                if ok:
+                    data = _extraire_page_pdf_bytes(fichier, page_idx, mode_debug)
+                    if data:
+                        extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
+                        extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
+                        extraire_page_etudiant_pdf.derniere_source = src
+                        return data, page_idx + 1, methode_idx, "matricule_correspondante"
+                # index disait cette page mais matricule non confirmee -> on continue
+
+            # 1b) Recherche automatique dans toutes les pages
+            page_idx, methode, trouvee = _rechercher_matricule_dans_pdf(
+                fichier, matricule, mode_debug
+            )
+            if page_idx is not None:
+                data = _extraire_page_pdf_bytes(fichier, page_idx, mode_debug)
+                if data:
+                    extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
+                    extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
+                    extraire_page_etudiant_pdf.derniere_source = methode
+                    return data, page_idx + 1, methode, "matricule_correspondante"
+
+        # Aucune page ne contient la matricule -> carte refusee
+        return None, None, None, "matricule_differentee"
+
+    # --- Cas 2 : pas de matricule source -> on exige un index avec matricule ---
+    if df_index is not None and not df_index.empty:
+        for fichier in fichiers:
+            page_idx, methode_idx = _rechercher_dans_index(
+                df_index, matricule, nom_etudiant, fichier, mode_debug
+            )
+            if page_idx is not None and methode_idx == "index_matricule":
+                ok, trouvee, src = _verifier_matricule_sur_page(
+                    fichier, page_idx, matricule, mode_debug
+                )
+                if ok:
+                    data = _extraire_page_pdf_bytes(fichier, page_idx, mode_debug)
+                    if data:
+                        extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
+                        extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
+                        extraire_page_etudiant_pdf.derniere_source = src
+                        return data, page_idx + 1, methode_idx, "matricule_correspondante"
+
+    return None, None, None, "matricule_source_vide"
 
 
+# Etat partage (compatibilite ascendante)
 extraire_page_etudiant_pdf.dernier_fichier_trouve = None
+extraire_page_etudiant_pdf.derniere_matricule_trouvee = None
+extraire_page_etudiant_pdf.derniere_source = None
+
 
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
@@ -4803,14 +5162,53 @@ td{{word-wrap:break-word;}}
                 # ═══════════════════════════════════════════════════════════════
                 # 🪪 CARTE ÉTUDIANT
                 # ═══════════════════════════════════════════════════════════════
-                st.markdown("### 🪪 Carte d'Étudiant")
+                st.markdown("### 🪮 Carte d'Étudiant")
 
-                # ─── Fichier d'index optionnel ───
+                # --- Recuperation de la matricule depuis le fichier source ---
+                col_mat_etud = cols_map.get('mat_etud')
+                col_mat_bac = cols_map.get('mat_bac')
+                matricule_source = ""
+                matricule_source_type = ""
+                if col_mat_etud and col_mat_etud in row.index:
+                    val = row[col_mat_etud]
+                    if pd.notna(val) and str(val).strip().lower() not in ("", "nan", "none"):
+                        matricule_source = str(val).strip()
+                        matricule_source_type = "Mat. Étudiant"
+                if not matricule_valide(matricule_source) and col_mat_bac and col_mat_bac in row.index:
+                    val = row[col_mat_bac]
+                    if pd.notna(val) and str(val).strip().lower() not in ("", "nan", "none"):
+                        if not matricule_source:
+                            matricule_source = str(val).strip()
+                            matricule_source_type = "Mat. BAC"
+
+                # Affichage de la matricule source utilisee pour la verification
+                if matricule_valide(matricule_source):
+                    st.markdown(
+                        f"<div style='background:#eff6ff;border:1px solid #3b82f6;"
+                        f"border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px;color:#1e3a8a;'>"
+                        f"🆔 <b>{matricule_source_type or 'Matricule'} source :</b> "
+                        f"<code style='font-size:14px;font-weight:700;'>{matricule_source}</code> "
+                        f"<span style='color:#64748b;'>(recherche par matricule dans Fich*.pdf)</span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.warning(
+                        "⚠️ Aucune matricule valide trouvee dans le fichier source pour cet "
+                        "étudiant. La carte ne peut pas etre affichee par recherche automatique. "
+                        "Fournissez un fichier d'index contenant la colonne **Matricule**."
+                    )
+
+                # --- Fichier d'index optionnel (Matricule | Fichier | Page) ---
                 with st.expander("🔧 Fichier d'index (optionnel — recommandé pour PDF scannés)"):
                     st.markdown("""
-                    Si la recherche automatique échoue, créez un fichier Excel/CSV avec 2 colonnes :
-                    - `Nom_Complet` (exactement comme dans le fichier étudiants, ex: **AISSANI Abassia**)
+                    Créez un fichier Excel/CSV avec **3 colonnes** :
+                    - `Matricule` (la matricule exacte de l'étudiant, ex: **2026001**)
+                    - `Fichier` (nom du PDF, ex: **Fich01.pdf** — optionnel)
                     - `Page` (numéro de page dans le PDF, ex: **42**)
+
+                    > L'ancien format `Nom_Complet` | `Page` est toujours accepté en secours,
+                    > mais **la carte n'est validée que si la matricule figure sur la page**.
                     """)
                     idx_file = st.file_uploader("📤 Fichier d'index", type=["xlsx", "csv"], key="index_cartes")
                     df_index = None
@@ -4823,10 +5221,9 @@ td{{word-wrap:break-word;}}
                             st.success(f"✅ Index chargé : {len(df_index)} entrées")
                         except Exception as e:
                             st.error(f"❌ Erreur lecture index : {e}")
-                            
 
                 # =============================================================
-                # 🪪 CARTES ÉTUDIANTS — TOUS LES Fich*.pdf
+                # 🪮 CARTES ÉTUDIANTS — TOUS LES Fich*.pdf
                 # =============================================================
                 fichiers_cartes = lister_fichiers_cartes()
 
@@ -4837,33 +5234,48 @@ td{{word-wrap:break-word;}}
                     )
 
                     if st.button(
-                        "🪪 Afficher la carte de cet étudiant",
+                        "🪮 Afficher la carte de cet étudiant",
                         use_container_width=True,
                         type="primary",
                         key=f"btn_carte_{sel_etud.replace(' ', '_')}"
                     ):
                         with st.spinner(
-                            f"🔍 Recherche de {sel_etud} dans "
+                            f"🔍 Recherche de la matricule "
+                            f"{matricule_source or '(manquante)'} dans "
                             f"{len(fichiers_cartes)} fichier(s)..."
                         ):
-                            pdf_page, num_page, methode = extraire_page_etudiant_pdf(
-                                fichiers_cartes, sel_etud, df_index
+                            pdf_page, num_page, methode, statut = extraire_page_etudiant_pdf(
+                                fichiers_cartes, sel_etud, df_index,
+                                matricule=matricule_source
                             )
 
                         fichier_trouve = extraire_page_etudiant_pdf.dernier_fichier_trouve
+                        mat_trouvee = extraire_page_etudiant_pdf.derniere_matricule_trouvee
+                        source_match = extraire_page_etudiant_pdf.derniere_source
 
-                        if pdf_page:
+                        if pdf_page and statut == "matricule_correspondante":
                             nom_fichier = (
                                 os.path.basename(fichier_trouve)
                                 if fichier_trouve else "Fichier PDF"
                             )
 
+                            # --- Message : matricule correspondante ---
                             st.success(
-                                f"✅ Carte d'étudiant trouvée — "
-                                f"{nom_fichier} — page {num_page}"
+                                f"✅ **Matricule correspondante** — Carte d'étudiant trouvée "
+                                f"({nom_fichier} — page {num_page})"
+                            )
+                            st.markdown(
+                                f"<div style='background:#dcfce7;border-left:4px solid #22c55e;"
+                                f"padding:10px 14px;border-radius:6px;margin:8px 0;font-size:13px;color:#166534;'>"
+                                f"✅ Matricule source : <code>{matricule_source}</code> "
+                                f"→ Matricule sur la carte : <code>{mat_trouvee or matricule_source}</code> "
+                                f"<span style='color:#15803d;'>✓ vérification réussie</span> "
+                                f"<span style='color:#64748b;'>(source : {source_match or methode})</span>"
+                                f"</div>",
+                                unsafe_allow_html=True,
                             )
 
-                            # Aperçu visuel
+                            # --- Apercu visuel ---
                             try:
                                 import fitz
                                 doc = fitz.open(stream=pdf_page, filetype="pdf")
@@ -4896,20 +5308,60 @@ td{{word-wrap:break-word;}}
                                 mime="application/pdf",
                                 key=f"dl_carte_{sel_etud.replace(' ', '_')}"
                             )
-                        else:
-                            st.warning(
-                                "⚠️ Carte non localisée automatiquement dans "
-                                "les fichiers Fich*.pdf."
+
+                        elif statut == "matricule_differentee":
+                            # --- Message : matricule differentee -> carte refusee ---
+                            st.error(
+                                f"❌ **Matricule différente** — Aucune page ne contient la "
+                                f"matricule <code>{matricule_source}</code> dans les fichiers Fich*.pdf."
+                            )
+                            st.markdown(
+                                f"<div style='background:#fee2e2;border-left:4px solid #ef4444;"
+                                f"padding:10px 14px;border-radius:6px;margin:8px 0;font-size:13px;color:#991b1b;'>"
+                                f"❌ Matricule recherchée : <code>{matricule_source}</code> "
+                                f"→ <b>aucune correspondance</b> sur les cartes. "
+                                f"La carte est <b>refusée</b> (le nom seul ne suffit jamais)."
+                                f"</div>",
+                                unsafe_allow_html=True,
                             )
                             with st.expander("🔧 Diagnostic"):
-                                st.write(f"**Étudiant recherché :** {sel_etud}")
+                                st.write(f"**Étudiant :** {sel_etud}")
+                                st.write(f"**Matricule source :** {matricule_source}")
                                 st.write(f"**Fichiers parcourus :** {len(fichiers_cartes)}")
                                 for f in fichiers_cartes:
                                     st.write(f"• {os.path.basename(f)}")
+                                st.markdown(
+                                    "Vérifiez que la matricule du fichier source correspond bien "
+                                    "à celle imprimée sur la carte. Pour les PDF scannés, "
+                                    "fournissez un index **Matricule | Fichier | Page**."
+                                )
 
+                        elif statut == "matricule_source_vide":
+                            st.warning(
+                                "⚠️ Matricule absente du fichier source. Impossible de "
+                                "valider la carte par recherche automatique."
+                            )
+                            with st.expander("🔧 Que faire ?"):
+                                st.markdown(
+                                    "- Ajoutez une colonne **Matricule Étudiant** dans le fichier "
+                                    "source, **ou**\n"
+                                    "- Fournissez un fichier d'index avec une colonne "
+                                    "**Matricule** | **Fichier** | **Page**."
+                                )
+
+                        else:  # carte_introuvable / aucun_fichier
+                            st.warning(
+                                "⚠️ Carte non localisée dans les fichiers Fich*.pdf."
+                            )
+                            with st.expander("🔧 Diagnostic"):
+                                st.write(f"**Étudiant recherché :** {sel_etud}")
+                                st.write(f"**Matricule source :** {matricule_source or '(vide)'}")
+                                st.write(f"**Fichiers parcourus :** {len(fichiers_cartes)}")
+                                for f in fichiers_cartes:
+                                    st.write(f"• {os.path.basename(f)}")
                                 st.markdown(
                                     "Pour les PDF scannés, utilisez un index avec "
-                                    "`Nom_Complet`, `Fichier` et `Page`."
+                                    "`Matricule`, `Fichier` et `Page`."
                                 )
 
                     # Téléchargement des parties si nécessaire
@@ -4932,8 +5384,8 @@ td{{word-wrap:break-word;}}
                         "Fich03.pdf, ... dans le même dossier que l'application."
                     )
                     uploaded_cartes = st.file_uploader(
-                        "📤 Uploader le fichier des cartes étudiants (PDF)", 
-                        type=["pdf"], 
+                        "📤 Uploader le fichier des cartes étudiants (PDF)",
+                        type=["pdf"],
                         key="upload_cartes"
                     )
                     if uploaded_cartes:
