@@ -4715,12 +4715,75 @@ td{{word-wrap:break-word;}}
                     st.caption("⚠️ Colonne 'Promotion' non trouvée")
             
             if sel_etud:
-                st.divider()
+                st.divider()              
                 
+                # ═══════════════════════════════════════════════════════════════
+                # DÉFINITIONS (doivent être au début pour éviter UnboundLocalError)
+                # ═══════════════════════════════════════════════════════════════
                 cols_map = detecter_colonnes_etudiant(df_etu_edt)
                 row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
                 
-                # 1️⃣ FICHE ÉTUDIANT D'ABORD
+                # ═══════════════════════════════════════════════════════════════
+                # 🪪 CARTE ÉTUDIANT
+                # ═══════════════════════════════════════════════════════════════
+                st.markdown("### 🪪 Carte d'Étudiant")
+                
+                if os.path.exists(FILE_CARTES):
+                    col_cartes, col_dl = st.columns([3, 1])
+                    
+                    with col_cartes:
+                        if st.button("🪪 Afficher la carte de cet étudiant", use_container_width=True, type="primary"):
+                            with st.spinner("🔍 Recherche de la carte dans le fichier PDF..."):
+                                pdf_page, num_page = extraire_page_etudiant_pdf(FILE_CARTES, sel_etud)
+                                
+                                if pdf_page:
+                                    st.success(f"✅ Carte trouvée (page {num_page})")
+                                    
+                                    st.download_button(
+                                        label="📥 Télécharger cette carte (PDF)",
+                                        data=pdf_page,
+                                        file_name=f"Carte_{sel_etud.replace(' ', '_')}.pdf",
+                                        mime="application/pdf",
+                                        key=f"dl_carte_{sel_etud.replace(' ', '_')}"
+                                    )
+                                    
+                                    b64 = base64.b64encode(pdf_page).decode('utf-8')
+                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500px" type="application/pdf"></iframe>'
+                                    st.markdown(pdf_display, unsafe_allow_html=True)
+                                else:
+                                    st.info("ℹ️ Carte individuelle non localisée dans le fichier. Affichage du document complet ci-dessous.")
+                                    with open(FILE_CARTES, "rb") as f:
+                                        full_pdf = f.read()
+                                    b64 = base64.b64encode(full_pdf).decode('utf-8')
+                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="600px" type="application/pdf"></iframe>'
+                                    st.markdown(pdf_display, unsafe_allow_html=True)
+                    
+                    with col_dl:
+                        with open(FILE_CARTES, "rb") as f:
+                            st.download_button(
+                                label="📥 Toutes les cartes (PDF)",
+                                data=f.read(),
+                                file_name="Fichier_cartes.pdf",
+                                mime="application/pdf",
+                                key="dl_all_cartes"
+                            )
+                else:
+                    st.warning("⚠️ Fichier 'Fichier_cartes.pdf' introuvable dans le dossier de l'application.")
+                    uploaded_cartes = st.file_uploader(
+                        "📤 Uploader le fichier des cartes étudiants (PDF)", 
+                        type=["pdf"], 
+                        key="upload_cartes"
+                    )
+                    if uploaded_cartes:
+                        with open(FILE_CARTES, "wb") as f:
+                            f.write(uploaded_cartes.getvalue())
+                        st.success("✅ Fichier enregistré. Rafraîchissez la page pour afficher les cartes.")
+                
+                st.divider()
+                
+                # ═══════════════════════════════════════════════════════════════
+                # 1️⃣ FICHE ÉTUDIANT
+                # ═══════════════════════════════════════════════════════════════
                 st.markdown(f"""
                     <div style="background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); 
                                 padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
@@ -4793,7 +4856,7 @@ td{{word-wrap:break-word;}}
                                     delta="En congé académique"
                                 )
                     else:
-                        st.info("ℹ️ Aucun promotion avec étudiant en congé")
+                        st.info("ℹ️ Aucune promotion avec étudiant en congé")
                 elif not df_conges.empty:
                     st.warning("⚠️ Colonne 'Promotion' non détectée")
                 else:
