@@ -3,6 +3,71 @@
 # =============================================================================
 import streamlit as st
 import pandas as pd
+from supabase import create_client, Client
+
+# 1. Configuration de la page
+TITRE_APPLICATION = "Plateforme de gestion des EDTs-S2-2026-Département d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+
+st.set_page_config(
+    page_title=TITRE_APPLICATION,
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Affichage du titre réglementaire
+st.title(TITRE_APPLICATION)
+
+# 2. Connexion à Supabase avec gestion d'erreurs
+@st.cache_resource
+def init_supabase() -> Client:
+    try:
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
+        return create_client(url, key)
+    except Exception as e:
+        st.error(f"Erreur de connexion à la base de données : {e}")
+        return None
+
+supabase = init_supabase()
+
+# 3. Récupération des données
+def charger_donnees():
+    if not supabase:
+        return pd.DataFrame()
+    try:
+        response = supabase.table("EDTCE").select("*").execute()
+        data = response.data
+        if data:
+            df = pd.DataFrame(data)
+            # Alignment des colonnes selon la disposition requise
+            colonnes_requises = ["Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion"]
+            
+            # S'assurer que toutes les colonnes existent
+            for col in colonnes_requises:
+                if col not in df.columns:
+                    df[col] = ""
+                    
+            return df[colonnes_requises]
+        else:
+            return pd.DataFrame(columns=["Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion"])
+    except Exception as e:
+        st.error(f"Erreur lors du chargement des données : {e}")
+        return pd.DataFrame()
+
+# 4. Interface principale
+try:
+    df_edt = charger_donnees()
+
+    st.subheader("Emploi du Temps")
+    if not df_edt.empty:
+        st.dataframe(df_edt, use_container_width=True)
+    else:
+        st.info("Aucune donnée disponible à afficher.")
+
+except Exception as e:
+    st.error(f"Une erreur inattendue est survenue lors du rendu de la page : {e}")
+import streamlit as st
+import pandas as pd
 import base64
 import io
 import time
