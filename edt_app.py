@@ -4801,8 +4801,8 @@ td{{word-wrap:break-word;}}
                             st.success(f"✅ Index chargé : {len(df_index)} entrées")
                         except Exception as e:
                             st.error(f"❌ Erreur lecture index : {e}")
-                else:
-                    df_index = None
+                            else:
+                                df_index = None
 
                 if os.path.exists(FILE_CARTES):
                     col_cartes, col_dl = st.columns([3, 1])
