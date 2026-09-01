@@ -329,7 +329,9 @@ _BASE_DIR = Path(__file__).parent.resolve()
 FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
 FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
 FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
-FILE_CARTES    = str(_BASE_DIR / "Fichier_cartes.pdf")
+# Cartes étudiants : tous les PDF Fich*.pdf du dossier sont parcourus
+CARTES_PREFIX = "Fich"
+CARTES_EXTENSION = ".pdf"
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
@@ -846,174 +848,170 @@ def format_date_naissance(val):
     
     return str(val)
 # =============================================================================
-def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant, df_index=None, mode_debug=False):
-    """
-    Extrait la page du PDF contenant le nom de l'étudiant.
-    Stratégies (dans l'ordre) :
-      1. Index manuel (df_index)
-      2. Correspondance nom COMPLET
-      3. Correspondance NOM DE FAMILLE seul
-      4. Correspondance PRÉNOM seul
-      5. PyMuPDF (fitz) — meilleur pour PDF scannés
-    """
+
+def lister_fichiers_cartes():
+    """Liste automatiquement Fich01.pdf, Fich02.pdf, ... FichN.pdf."""
+    fichiers = []
+    for p in _BASE_DIR.glob(f"{CARTES_PREFIX}*{CARTES_EXTENSION}"):
+        if p.is_file():
+            m = re.search(r"(\d+)", p.stem)
+            numero = int(m.group(1)) if m else 10**12
+            fichiers.append((numero, p.name.lower(), str(p)))
+    fichiers.sort(key=lambda x: (x[0], x[1]))
+    return [x[2] for x in fichiers]
+
+
+def _extraire_page_d_un_pdf(chemin_pdf, nom_etudiant, df_index=None, mode_debug=False):
+    """Recherche un étudiant dans un seul PDF."""
     import unicodedata
-    import re
     from io import BytesIO
 
     def norm(t):
         if not t:
             return ""
-        t = unicodedata.normalize('NFKD', str(t))
-        t = t.encode('ASCII', 'ignore').decode('ASCII')
-        return re.sub(r'[^A-Z]', '', t.upper())
+        t = unicodedata.normalize("NFKD", str(t))
+        t = t.encode("ASCII", "ignore").decode("ASCII")
+        return re.sub(r"[^A-Z]", "", t.upper())
 
     base = str(nom_etudiant).strip()
     parts = base.upper().split()
-    nom_famille = parts[0] if parts else ""
-    prenom = parts[1] if len(parts) > 1 else ""
+    nom = parts[0] if parts else ""
+    prenom = " ".join(parts[1:]) if len(parts) > 1 else ""
 
-    variants = {
-        "nom_complet": norm(base),
-        "nom_famille": norm(nom_famille),
+    v = {
+        "complet": norm(base),
+        "nom": norm(nom),
         "prenom": norm(prenom),
+        "prenom1": norm(parts[1]) if len(parts) > 1 else ""
     }
 
-    if mode_debug:
-        print(f"[DEBUG] Recherche : {variants}")
+    def page_pdf(page_index):
+        try:
+            from pypdf import PdfReader, PdfWriter
+            reader = PdfReader(chemin_pdf)
+            if not (0 <= page_index < len(reader.pages)):
+                return None
+            writer = PdfWriter()
+            writer.add_page(reader.pages[page_index])
+            out = BytesIO()
+            writer.write(out)
+            return out.getvalue()
+        except Exception as ex:
+            if mode_debug:
+                print(f"[DEBUG] extraction: {ex}")
+            return None
 
-    # ═══ NIVEAU 1 : Index manuel ═══
+    # Index manuel : Nom_Complet + Page, avec Fichier optionnel.
     if df_index is not None and not df_index.empty:
-        for _, row in df_index.iterrows():
-            idx_nom = str(row.get('Nom_Complet', '')).strip()
-            idx_page = row.get('Page', row.get('Num_Page', None))
-            if norm(idx_nom) == variants["nom_complet"] and idx_page is not None:
-                try:
-                    from pypdf import PdfReader, PdfWriter
-                    reader = PdfReader(chemin_pdf)
-                    writer = PdfWriter()
-                    writer.add_page(reader.pages[int(idx_page) - 1])
-                    output = BytesIO()
-                    writer.write(output)
-                    output.seek(0)
-                    return output.getvalue(), int(idx_page), "index"
-                except Exception:
-                    pass
+        try:
+            courant = os.path.basename(chemin_pdf).lower()
+            for _, row in df_index.iterrows():
+                idx_nom = str(row.get("Nom_Complet", row.get("Nom", ""))).strip()
+                idx_page = row.get("Page", row.get("Num_Page", None))
+                idx_file = str(row.get("Fichier", row.get("PDF", ""))).strip()
 
-    # ═══ NIVEAU 2 : PyMuPDF (fitz) — prioritaire car plus robuste ═══
+                fichier_ok = True
+                if idx_file and idx_file.lower() not in (
+                    courant,
+                    os.path.splitext(courant)[0]
+                ):
+                    fichier_ok = (
+                        os.path.splitext(idx_file.lower())[0]
+                        == os.path.splitext(courant)[0]
+                    )
+
+                if fichier_ok and norm(idx_nom) == v["complet"]:
+                    if str(idx_page).strip().lower() not in ("", "nan", "none"):
+                        page = int(float(str(idx_page).replace(",", "."))) - 1
+                        data = page_pdf(page)
+                        if data:
+                            return data, page + 1, "index"
+        except Exception as ex:
+            if mode_debug:
+                print(f"[DEBUG] index: {ex}")
+
+    # Recherche texte avec PyMuPDF
     try:
         import fitz
-        from pypdf import PdfReader, PdfWriter
-
         doc = fitz.open(chemin_pdf)
         for i in range(len(doc)):
-            page = doc.load_page(i)
-            text = page.get_text() or ""
-            text_norm = norm(text)
+            text = norm(doc.load_page(i).get_text() or "")
 
-            if mode_debug and i < 3:
-                print(f"[DEBUG] Page {i+1} extrait : {text_norm[:200]}")
+            tests = [
+                ("nom_complet", v["complet"], 1),
+                ("nom_famille", v["nom"], 3),
+                ("prenom_complet", v["prenom"], 4),
+                ("prenom", v["prenom1"], 3),
+            ]
 
-            # Ordre de priorité : nom complet > nom de famille > prénom
-            if variants["nom_complet"] and variants["nom_complet"] in text_norm:
-                doc.close()
-                reader = PdfReader(chemin_pdf)
-                writer = PdfWriter()
-                writer.add_page(reader.pages[i])
-                output = BytesIO()
-                writer.write(output)
-                output.seek(0)
-                return output.getvalue(), i + 1, "fitz_nom_complet"
-
-            if variants["nom_famille"] and len(variants["nom_famille"]) >= 3 and variants["nom_famille"] in text_norm:
-                doc.close()
-                reader = PdfReader(chemin_pdf)
-                writer = PdfWriter()
-                writer.add_page(reader.pages[i])
-                output = BytesIO()
-                writer.write(output)
-                output.seek(0)
-                return output.getvalue(), i + 1, "fitz_nom_famille"
-
-            if variants["prenom"] and len(variants["prenom"]) >= 3 and variants["prenom"] in text_norm:
-                doc.close()
-                reader = PdfReader(chemin_pdf)
-                writer = PdfWriter()
-                writer.add_page(reader.pages[i])
-                output = BytesIO()
-                writer.write(output)
-                output.seek(0)
-                return output.getvalue(), i + 1, "fitz_prenom"
+            for methode, valeur, minimum in tests:
+                if valeur and len(valeur) >= minimum and valeur in text:
+                    doc.close()
+                    data = page_pdf(i)
+                    if data:
+                        return data, i + 1, f"fitz_{methode}"
+                    break
         doc.close()
     except ImportError:
+        pass
+    except Exception as ex:
         if mode_debug:
-            print("[DEBUG] PyMuPDF (fitz) non installé")
-    except Exception as e:
-        if mode_debug:
-            print(f"[DEBUG] Erreur fitz : {e}")
+            print(f"[DEBUG] fitz: {ex}")
 
-    # ═══ NIVEAU 3 : pdfplumber (fallback) ═══
+    # Fallback pdfplumber
     try:
         import pdfplumber
-        from pypdf import PdfReader, PdfWriter
-
         with pdfplumber.open(chemin_pdf) as pdf:
             for i, page in enumerate(pdf.pages):
-                text = page.extract_text() or ""
-                text_norm = norm(text)
-
-                if variants["nom_complet"] and variants["nom_complet"] in text_norm:
-                    reader = PdfReader(chemin_pdf)
-                    writer = PdfWriter()
-                    writer.add_page(reader.pages[i])
-                    output = BytesIO()
-                    writer.write(output)
-                    output.seek(0)
-                    return output.getvalue(), i + 1, "plumber_nom_complet"
-
-                if variants["nom_famille"] and len(variants["nom_famille"]) >= 3 and variants["nom_famille"] in text_norm:
-                    reader = PdfReader(chemin_pdf)
-                    writer = PdfWriter()
-                    writer.add_page(reader.pages[i])
-                    output = BytesIO()
-                    writer.write(output)
-                    output.seek(0)
-                    return output.getvalue(), i + 1, "plumber_nom_famille"
-
-                if variants["prenom"] and len(variants["prenom"]) >= 3 and variants["prenom"] in text_norm:
-                    reader = PdfReader(chemin_pdf)
-                    writer = PdfWriter()
-                    writer.add_page(reader.pages[i])
-                    output = BytesIO()
-                    writer.write(output)
-                    output.seek(0)
-                    return output.getvalue(), i + 1, "plumber_prenom"
-    except Exception:
-        pass
+                text = norm(page.extract_text() or "")
+                tests = [
+                    ("nom_complet", v["complet"], 1),
+                    ("nom_famille", v["nom"], 3),
+                    ("prenom_complet", v["prenom"], 4),
+                    ("prenom", v["prenom1"], 3),
+                ]
+                for methode, valeur, minimum in tests:
+                    if valeur and len(valeur) >= minimum and valeur in text:
+                        data = page_pdf(i)
+                        if data:
+                            return data, i + 1, f"plumber_{methode}"
+                        break
+    except Exception as ex:
+        if mode_debug:
+            print(f"[DEBUG] pdfplumber: {ex}")
 
     return None, None, None
 
-# =============================================================================
-# APERÇU VISUEL D'UNE CARTE ÉTUDIANT
-# =============================================================================
-def rendre_apercu_carte_pdf(pdf_bytes, dpi=150):
-    """Convertit la première page du PDF extrait en image PNG."""
-    if not pdf_bytes:
-        return None
-    try:
-        import fitz
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        if len(doc) == 0:
-            doc.close()
-            return None
-        page = doc.load_page(0)
-        zoom = dpi / 72
-        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
-        image_bytes = pix.tobytes("png")
-        doc.close()
-        return image_bytes
-    except Exception as e:
-        print(f"[APERÇU CARTE] Erreur conversion PDF -> image : {e}")
-        return None
+
+def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant, df_index=None, mode_debug=False):
+    """
+    Recherche l'étudiant dans TOUS les fichiers Fich*.pdf.
+    Compatible aussi avec un seul PDF ou une liste de PDF.
+    """
+    if isinstance(chemin_pdf, (list, tuple, set)):
+        fichiers = [str(x) for x in chemin_pdf if os.path.isfile(str(x))]
+    elif chemin_pdf and os.path.isfile(str(chemin_pdf)):
+        fichiers = [str(chemin_pdf)]
+    else:
+        fichiers = lister_fichiers_cartes()
+
+    if not fichiers:
+        fichiers = lister_fichiers_cartes()
+
+    extraire_page_etudiant_pdf.dernier_fichier_trouve = None
+
+    for fichier in fichiers:
+        data, page, methode = _extraire_page_d_un_pdf(
+            fichier, nom_etudiant, df_index, mode_debug
+        )
+        if data:
+            extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
+            return data, page, methode
+
+    return None, None, None
+
+
+extraire_page_etudiant_pdf.dernier_fichier_trouve = None
 
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
@@ -4803,167 +4801,145 @@ td{{word-wrap:break-word;}}
                 
                 
                 # ═══════════════════════════════════════════════════════════════
-                # 🪪 CARTE ÉTUDIANT — APERÇU AUTOMATIQUE AU CLIC
+                # 🪪 CARTE ÉTUDIANT
                 # ═══════════════════════════════════════════════════════════════
                 st.markdown("### 🪪 Carte d'Étudiant")
 
+                # ─── Fichier d'index optionnel ───
                 with st.expander("🔧 Fichier d'index (optionnel — recommandé pour PDF scannés)"):
                     st.markdown("""
-                    Si la recherche automatique échoue, utilisez un fichier Excel/CSV
-                    contenant 2 colonnes :
-                    - `Nom_Complet` : exactement comme dans le fichier étudiants
-                    - `Page` : numéro de page correspondant dans le PDF
+                    Si la recherche automatique échoue, créez un fichier Excel/CSV avec 2 colonnes :
+                    - `Nom_Complet` (exactement comme dans le fichier étudiants, ex: **AISSANI Abassia**)
+                    - `Page` (numéro de page dans le PDF, ex: **42**)
                     """)
-                    idx_file = st.file_uploader(
-                        "📤 Fichier d'index",
-                        type=["xlsx", "csv"],
-                        key="index_cartes"
-                    )
+                    idx_file = st.file_uploader("📤 Fichier d'index", type=["xlsx", "csv"], key="index_cartes")
                     df_index = None
                     if idx_file:
                         try:
-                            if idx_file.name.lower().endswith(".csv"):
+                            if idx_file.name.endswith('.csv'):
                                 df_index = pd.read_csv(idx_file)
                             else:
                                 df_index = pd.read_excel(idx_file)
-                            df_index.columns = [str(c).strip() for c in df_index.columns]
                             st.success(f"✅ Index chargé : {len(df_index)} entrées")
                         except Exception as e:
                             st.error(f"❌ Erreur lecture index : {e}")
+                            
 
-                # Le selectbox provoque un rerun : la carte est recherchée
-                # et affichée automatiquement dès qu'un étudiant est sélectionné.
-                if os.path.exists(FILE_CARTES):
-                    with st.spinner(f"🔍 Recherche de la carte de {sel_etud}..."):
-                        pdf_page, num_page, methode = extraire_page_etudiant_pdf(
-                            FILE_CARTES, sel_etud, df_index
-                        )
+                # =============================================================
+                # 🪪 CARTES ÉTUDIANTS — TOUS LES Fich*.pdf
+                # =============================================================
+                fichiers_cartes = lister_fichiers_cartes()
 
-                    if pdf_page and isinstance(pdf_page, bytes):
-                        st.success(
-                            f"✅ Carte d'étudiant trouvée — page {num_page}"
-                            + (f" · méthode : {methode}" if methode else "")
-                        )
+                if fichiers_cartes:
+                    st.info(
+                        f"📚 {len(fichiers_cartes)} fichier(s) de cartes détecté(s) : "
+                        f"Fich01.pdf → FichN.pdf"
+                    )
 
-                        apercu_carte = rendre_apercu_carte_pdf(pdf_page, dpi=160)
+                    if st.button(
+                        "🪪 Afficher la carte de cet étudiant",
+                        use_container_width=True,
+                        type="primary",
+                        key=f"btn_carte_{sel_etud.replace(' ', '_')}"
+                    ):
+                        with st.spinner(
+                            f"🔍 Recherche de {sel_etud} dans "
+                            f"{len(fichiers_cartes)} fichier(s)..."
+                        ):
+                            pdf_page, num_page, methode = extraire_page_etudiant_pdf(
+                                fichiers_cartes, sel_etud, df_index
+                            )
 
-                        if apercu_carte:
-                            st.markdown("""
-                            <div style="
-                                background:#f8fafc;
-                                border:1px solid #cbd5e1;
-                                border-radius:14px;
-                                padding:16px;
-                                margin:10px 0 18px 0;
-                                text-align:center;
-                            ">
-                                <div style="
-                                    font-size:14px;
-                                    font-weight:700;
-                                    color:#1e3a8a;
-                                    margin-bottom:12px;
-                                ">
-                                    👁️ Aperçu de la carte d'étudiant
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                        fichier_trouve = extraire_page_etudiant_pdf.dernier_fichier_trouve
 
-                            st.image(
-                                apercu_carte,
-                                caption=f"Carte de {sel_etud} — page {num_page}",
-                                use_container_width=True
+                        if pdf_page:
+                            nom_fichier = (
+                                os.path.basename(fichier_trouve)
+                                if fichier_trouve else "Fichier PDF"
+                            )
+
+                            st.success(
+                                f"✅ Carte d'étudiant trouvée — "
+                                f"{nom_fichier} — page {num_page}"
+                            )
+
+                            # Aperçu visuel
+                            try:
+                                import fitz
+                                doc = fitz.open(stream=pdf_page, filetype="pdf")
+                                pix = doc[0].get_pixmap(
+                                    matrix=fitz.Matrix(1.8, 1.8),
+                                    alpha=False
+                                )
+                                image = pix.tobytes("png")
+                                doc.close()
+
+                                st.markdown("#### 🖼️ Aperçu de la carte d'étudiant")
+                                st.image(
+                                    image,
+                                    use_container_width=True,
+                                    caption=f"{sel_etud} — {nom_fichier}, page {num_page}"
+                                )
+                            except Exception:
+                                b64 = base64.b64encode(pdf_page).decode("utf-8")
+                                st.markdown(
+                                    f'<iframe src="data:application/pdf;base64,{b64}" '
+                                    'width="100%" height="600px" '
+                                    'type="application/pdf"></iframe>',
+                                    unsafe_allow_html=True
+                                )
+
+                            st.download_button(
+                                "📥 Télécharger cette carte (PDF)",
+                                data=pdf_page,
+                                file_name=f"Carte_{sel_etud.replace(' ', '_')}.pdf",
+                                mime="application/pdf",
+                                key=f"dl_carte_{sel_etud.replace(' ', '_')}"
                             )
                         else:
-                            b64 = base64.b64encode(pdf_page).decode("utf-8")
-                            st.markdown(f"""
-                            <iframe
-                                src="data:application/pdf;base64,{b64}"
-                                width="100%"
-                                height="650"
-                                style="border:1px solid #cbd5e1;border-radius:12px;"
-                                type="application/pdf">
-                            </iframe>
-                            """, unsafe_allow_html=True)
+                            st.warning(
+                                "⚠️ Carte non localisée automatiquement dans "
+                                "les fichiers Fich*.pdf."
+                            )
+                            with st.expander("🔧 Diagnostic"):
+                                st.write(f"**Étudiant recherché :** {sel_etud}")
+                                st.write(f"**Fichiers parcourus :** {len(fichiers_cartes)}")
+                                for f in fichiers_cartes:
+                                    st.write(f"• {os.path.basename(f)}")
 
-                        st.download_button(
-                            label="📥 Télécharger cette carte (PDF)",
-                            data=pdf_page,
-                            file_name=f"Carte_{sel_etud.replace(' ', '_')}.pdf",
-                            mime="application/pdf",
-                            key=f"dl_carte_{hashlib.md5(sel_etud.encode('utf-8')).hexdigest()}",
-                            use_container_width=True
-                        )
-
-                    else:
-                        st.warning(
-                            f"⚠️ Carte de **{sel_etud}** non localisée automatiquement."
-                        )
-
-                        with st.expander("🔧 Diagnostic & solutions", expanded=True):
-                            morceaux = sel_etud.split()
-                            st.markdown(f"""
-                            **Nom recherché :** `{sel_etud}`
-
-                            **Nom de famille :** `{morceaux[0] if morceaux else 'N/A'}`
-
-                            **Prénom :** `{' '.join(morceaux[1:]) if len(morceaux) > 1 else 'N/A'}`
-
-                            **Solutions possibles :**
-                            1. Si le PDF est scanné/image, utilisez le **fichier d'index** ci-dessus.
-                            2. Vérifiez que le numéro de page indiqué dans l'index est correct.
-                            3. Vérifiez que `Nom_Complet` correspond exactement au nom affiché dans la liste.
-                            4. Si le PDF contient des noms en arabe ou sous forme d'image, l'index manuel est recommandé.
-                            """)
-
-                        try:
-                            with open(FILE_CARTES, "rb") as f:
-                                full_pdf = f.read()
-                            b64 = base64.b64encode(full_pdf).decode("utf-8")
-                            st.markdown(f"""
-                            <iframe
-                                src="data:application/pdf;base64,{b64}#page=1"
-                                width="100%"
-                                height="600"
-                                style="border:1px solid #cbd5e1;border-radius:12px;"
-                                type="application/pdf">
-                            </iframe>
-                            """, unsafe_allow_html=True)
-                        except Exception as e:
-                            st.error(f"❌ Impossible d'afficher le PDF complet : {e}")
-
-                    with st.expander("📦 Télécharger le fichier complet des cartes"):
-                        try:
-                            with open(FILE_CARTES, "rb") as f:
-                                st.download_button(
-                                    label="📥 Toutes les cartes (PDF)",
-                                    data=f.read(),
-                                    file_name="Fichier_cartes.pdf",
-                                    mime="application/pdf",
-                                    key="dl_all_cartes"
+                                st.markdown(
+                                    "Pour les PDF scannés, utilisez un index avec "
+                                    "`Nom_Complet`, `Fichier` et `Page`."
                                 )
-                        except Exception as e:
-                            st.error(f"❌ Erreur téléchargement PDF : {e}")
 
+                    # Téléchargement des parties si nécessaire
+                    with st.expander("📥 Télécharger les fichiers de cartes"):
+                        for i, fichier in enumerate(fichiers_cartes, 1):
+                            try:
+                                with open(fichier, "rb") as f:
+                                    st.download_button(
+                                        f"📥 {os.path.basename(fichier)}",
+                                        data=f.read(),
+                                        file_name=os.path.basename(fichier),
+                                        mime="application/pdf",
+                                        key=f"dl_cartes_{i}"
+                                    )
+                            except Exception as ex:
+                                st.warning(f"Impossible de lire {fichier}: {ex}")
                 else:
                     st.warning(
-                        "⚠️ Fichier 'Fichier_cartes.pdf' introuvable dans le dossier de l'application."
+                        "⚠️ Aucun fichier trouvé. Placez Fich01.pdf, Fich02.pdf, "
+                        "Fich03.pdf, ... dans le même dossier que l'application."
                     )
                     uploaded_cartes = st.file_uploader(
-                        "📤 Uploader le fichier des cartes étudiants (PDF)",
-                        type=["pdf"],
+                        "📤 Uploader le fichier des cartes étudiants (PDF)", 
+                        type=["pdf"], 
                         key="upload_cartes"
                     )
-
                     if uploaded_cartes:
-                        try:
-                            with open(FILE_CARTES, "wb") as f:
-                                f.write(uploaded_cartes.getvalue())
-                            st.success(
-                                "✅ Fichier enregistré. La carte sera recherchée automatiquement."
-                            )
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Impossible d'enregistrer le PDF : {e}")
+                        with open(FILE_CARTES, "wb") as f:
+                            f.write(uploaded_cartes.getvalue())
+                        st.success("✅ Fichier enregistré. Rafraîchissez la page pour afficher les cartes.")
 
                 st.divider()
                 # 1️⃣ FICHE ÉTUDIANT D'ABORD
