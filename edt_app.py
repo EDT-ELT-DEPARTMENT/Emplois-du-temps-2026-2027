@@ -326,10 +326,11 @@ if create_client:
 # =============================================================================
 _BASE_DIR = Path(__file__).parent.resolve()
 
+FILE_CARTES    = str(_BASE_DIR / "Fichier_cartes.pdf")
 FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
 FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
 FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
-FILE_CARTES    = str(_BASE_DIR / "Fichier_cartes.pdf")
+
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
@@ -850,6 +851,32 @@ def format_date_naissance(val):
 # =============================================================================
 # FONCTION DE LECTURE EXCEL ROBUSTE
     # =============================================================================
+def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant):
+    """Extrait la page du PDF contenant le nom de l'étudiant."""
+    try:
+        import pdfplumber
+        from io import BytesIO
+        try:
+            from pypdf import PdfReader, PdfWriter
+        except ImportError:
+            from PyPDF2 import PdfReader, PdfWriter
+        
+        nom_clean = str(nom_etudiant).strip().upper()
+        
+        with pdfplumber.open(chemin_pdf) as pdf:
+            for i, page in enumerate(pdf.pages):
+                text = page.extract_text() or ""
+                if nom_clean in text.upper():
+                    reader = PdfReader(chemin_pdf)
+                    writer = PdfWriter()
+                    writer.add_page(reader.pages[i])
+                    output = BytesIO()
+                    writer.write(output)
+                    output.seek(0)
+                    return output.getvalue(), i + 1
+        return None, None
+    except Exception:
+        return None, None
 def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
     """Lit un fichier Excel en essayant plusieurs engines (.xlsx, .xls, .xlsb)."""
     if chemin_ou_fichier is None:
