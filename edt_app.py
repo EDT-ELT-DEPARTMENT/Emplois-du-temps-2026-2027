@@ -341,7 +341,7 @@ NOM_FICHIER_CONTACTS = FILE_ENS
 # Activer/desactiver l'OCR. Si pytesseract / pdf2image ne sont pas installes,
 # la recherche bascule automatiquement sur l'index manuel.
 OCR_ACTIF = True
-OCR_DPI = 200           # resolution de rasterisation (qualite vs vitesse)
+OCR_DPI = 150           # resolution de rasterisation (150 = rapide, suffisant pour les chiffres)
 OCR_LANG = "fra+eng"    # langues Tesseract
 # Nombre minimum de chiffres qu'un matricule doit contenir pour etre valide
 MATRICULE_MIN_CHIFFRES = 4
@@ -921,9 +921,105 @@ def _norm_nom(t):
 # =============================================================================
 #  EXTRACTION D'UNE PAGE PDF (via pypdf)
 # =============================================================================
+#  CACHE GLOBAL DE TEXTE / OCR  (accelere considerablement les recherches)
+# =============================================================================
+# _TEXTE_CACHE[(chemin_pdf, page_index)] = texte natif de la page (str)
+# _OCR_CACHE[(chemin_pdf, page_index)]   = texte OCR de la page (str)
+_TEXTE_CACHE = {}
+_OCR_CACHE = {}
+_DOC_CACHE = {}  # chemin_pdf -> (fitz.Document, nb_pages) ouvert reusable
+
+# Regex precompile pour extraction des chiffres
+_RE_CHIFFRES = re.compile(r"\d+")
+_RE_NETTOYAGE = re.compile(r"[ /\-_.]")
+
+
+def _get_doc(chemin_pdf, mode_debug=False):
+    """Ouvre (ou reutilise) un document fitz. Retourne (doc, nb_pages) ou (None, 0)."""
+    cle = str(chemin_pdf)
+    if cle in _DOC_CACHE:
+        doc, nb = _DOC_CACHE[cle]
+        try:
+            # verifier que le doc est toujours valide
+            _ = len(doc)
+            return doc, nb
+        except Exception:
+            _DOC_CACHE.pop(cle, None)
+    try:
+        import fitz
+        doc = fitz.open(chemin_pdf)
+        nb = len(doc)
+        _DOC_CACHE[cle] = (doc, nb)
+        return doc, nb
+    except Exception as ex:
+        if mode_debug:
+            print(f"[DEBUG] ouverture fitz impossible: {ex}")
+        return None, 0
+
+
+def _fermer_tous_docs():
+    """Ferme tous les documents fitz en cache (a appeler en fin de recherche)."""
+    for cle, (doc, _nb) in list(_DOC_CACHE.items()):
+        try:
+            doc.close()
+        except Exception:
+            pass
+    _DOC_CACHE.clear()
+
+
+def _texte_page_natif(chemin_pdf, page_index, mode_debug=False):
+    """
+    Renvoie le texte natif d'une page, avec cache.
+    Utilise fitz en priorite, pdfplumber en secours (une seule fois).
+    """
+    cle = (str(chemin_pdf), int(page_index))
+    if cle in _TEXTE_CACHE:
+        return _TEXTE_CACHE[cle]
+
+    texte = ""
+    doc, nb = _get_doc(chemin_pdf, mode_debug)
+    if doc is not None and 0 <= page_index < nb:
+        try:
+            texte = doc.load_page(page_index).get_text() or ""
+        except Exception:
+            texte = ""
+
+    # Secours pdfplumber SI fitz n'a rien donne (page scannee / texte image)
+    if not texte.strip():
+        try:
+            import pdfplumber
+            with pdfplumber.open(chemin_pdf) as pdf:
+                if 0 <= page_index < len(pdf.pages):
+                    texte = pdf.pages[page_index].extract_text() or ""
+        except Exception:
+            pass
+
+    _TEXTE_CACHE[cle] = texte
+    return texte
+
+
+# =============================================================================
+#  EXTRACTION D'UNE PAGE PDF (mono-page)
+# =============================================================================
 def _extraire_page_pdf_bytes(chemin_pdf, page_index, mode_debug=False):
-    """Extrait une page d'un PDF et renvoie les bytes de cette page seule."""
+    """Extrait une page d'un PDF et renvoie les bytes de cette page seule.
+    Reutilise le document fitz deja ouvert dans le cache quand c'est possible."""
     from io import BytesIO
+    # 1) fitz (rapide, reutilise le doc cache)
+    try:
+        import fitz
+        doc, nb = _get_doc(chemin_pdf, mode_debug)
+        if doc is not None and 0 <= page_index < nb:
+            out = BytesIO()
+            single = fitz.open()
+            single.insert_pdf(doc, from_page=page_index, to_page=page_index)
+            single.save(out)
+            single.close()
+            return out.getvalue()
+    except Exception as ex:
+        if mode_debug:
+            print(f"[DEBUG] extraction fitz: {ex}")
+    # 2) pypdf (fallback)
     try:
         from pypdf import PdfReader, PdfWriter
         reader = PdfReader(chemin_pdf)
@@ -934,40 +1030,22 @@ def _extraire_page_pdf_bytes(chemin_pdf, page_index, mode_debug=False):
         out = BytesIO()
         writer.write(out)
         return out.getvalue()
-    except Exception:
-        # Fallback PyMuPDF si pypdf absent
-        try:
-            import fitz
-            doc = fitz.open(chemin_pdf)
-            if not (0 <= page_index < len(doc)):
-                doc.close()
-                return None
-            out = BytesIO()
-            # Convertir la page en un PDF mono-page
-            single = fitz.open()
-            single.insert_pdf(doc, from_page=page_index, to_page=page_index)
-            single.save(out)
-            single.close()
-            doc.close()
-            return out.getvalue()
-        except Exception as ex:
-            if mode_debug:
-                print(f"[DEBUG] extraction page: {ex}")
-            return None
+    except Exception as ex:
+        if mode_debug:
+            print(f"[DEBUG] extraction pypdf: {ex}")
+        return None
 
 
 # =============================================================================
-#  OCR D'UNE PAGE (PDF scanne)
+#  OCR D'UNE PAGE (PDF scanne) — avec cache global partage
 # =============================================================================
 def _ocr_page(chemin_pdf, page_index, mode_debug=False):
     """
     Rasterise une page de PDF puis lance Tesseract pour en extraire le texte.
     Retourne une chaine (vide si echec ou dependances manquantes).
-    Met en cache les resultats dans un dict attache a la fonction pour eviter
-    de re-OCR la meme page plusieurs fois.
+    Le resultat est mis en cache dans _OCR_CACHE (partage entre recherche + verification).
     """
     if not getattr(_ocr_page, "disponible", None):
-        # Detection des dependances une seule fois
         try:
             import pytesseract  # noqa
             from pdf2image import convert_from_path  # noqa
@@ -975,18 +1053,14 @@ def _ocr_page(chemin_pdf, page_index, mode_debug=False):
         except Exception:
             _ocr_page.disponible = False
             return ""
-
     if not _ocr_page.disponible:
         if mode_debug:
             print("[DEBUG] OCR indisponible (pytesseract / pdf2image manquants)")
         return ""
 
-    if not hasattr(_ocr_page, "cache"):
-        _ocr_page.cache = {}
-
     cle = (str(chemin_pdf), int(page_index))
-    if cle in _ocr_page.cache:
-        return _ocr_page.cache[cle]
+    if cle in _OCR_CACHE:
+        return _OCR_CACHE[cle]
 
     texte = ""
     try:
@@ -1005,40 +1079,34 @@ def _ocr_page(chemin_pdf, page_index, mode_debug=False):
             print(f"[DEBUG] OCR erreur: {ex}")
         texte = ""
 
-    _ocr_page.cache[cle] = texte
+    _OCR_CACHE[cle] = texte
     return texte
 
-
-# Initialisation de l'etat OCR
 _ocr_page.disponible = None
 
+
 # =============================================================================
-#  RECHERCHE PAR MATRICULE DANS UN PDF
+#  RECHERCHE PAR MATRICULE DANS UN PDF  (optimisee)
 # =============================================================================
 def _rechercher_matricule_dans_pdf(chemin_pdf, matricule_cible, mode_debug=False):
     """
     Parcourt toutes les pages d'un PDF et renvoie (page_index, methode, matricule_trouvee)
     de la PREMIERE page contenant exactement la matricule cible.
 
-    Ordre de recherche par page :
-      1) Index manuel (Matricule | Fichier | Page)   -> 'index_matricule'
-      2) Texte natif (PyMuPDF)                       -> 'fitz_matricule'
-      3) Texte natif (pdfplumber)                    -> 'plumber_matricule'
-      4) OCR (Tesseract, si PDF scanne)              -> 'ocr_matricule'
-
-    Renvoie (None, None, None) si la matricule n'est trouvee dans aucune page.
+    Optimisations :
+      - Le PDF est ouvert UNE SEULE fois (fitz, via _get_doc).
+      - Le texte de chaque page est mis en cache (_TEXTE_CACHE).
+      - pdfplumber n'est appele QUE si fitz ne donne rien sur une page.
+      - L'OCR n'est lance QUE sur les pages sans texte natif, et son resultat est cache.
+      - Early-exit des la premiere page trouvee.
     """
     mat_norm = normaliser_matricule(matricule_cible)
     if not mat_norm:
         return None, None, None
 
-    try:
-        import fitz
-        doc = fitz.open(chemin_pdf)
-        nb_pages = len(doc)
-    except Exception:
-        doc = None
-        nb_pages = 0
+    doc, nb_pages = _get_doc(chemin_pdf, mode_debug)
+    if nb_pages == 0:
+        # fitz a echoue ; on tente pdfplumber juste pour compter les pages
         try:
             import pdfplumber
             with pdfplumber.open(chemin_pdf) as pdf:
@@ -1048,93 +1116,46 @@ def _rechercher_matricule_dans_pdf(chemin_pdf, matricule_cible, mode_debug=False
                 print(f"[DEBUG] ouverture PDF impossible: {ex}")
             return None, None, None
 
-    # --- 1) Index manuel gere en amont (extraire_page_etudiant_pdf) ---
-    # Ici on traite le contenu reel des pages.
-
     for i in range(nb_pages):
-        texte_page = ""
-
-        # 2) PyMuPDF (texte natif)
-        if doc is not None:
-            try:
-                texte_page = doc.load_page(i).get_text() or ""
-            except Exception:
-                texte_page = ""
-            if not texte_page.strip():
-                # page probablement scannee -> on tente pdfplumber puis OCR
-                try:
-                    import pdfplumber
-                    with pdfplumber.open(chemin_pdf) as pdf:
-                        texte_page = pdf.pages[i].extract_text() or ""
-                except Exception:
-                    texte_page = ""
-
-        # 3) pdfplumber si PyMuPDF absent
-        if doc is None and not texte_page.strip():
-            try:
-                import pdfplumber
-                with pdfplumber.open(chemin_pdf) as pdf:
-                    texte_page = pdf.pages[i].extract_text() or ""
-            except Exception:
-                texte_page = ""
+        texte_page = _texte_page_natif(chemin_pdf, i, mode_debug)
 
         # Comparaison matricule sur texte natif
         if texte_page.strip():
             trouvee = _chercher_matricule_dans_texte(texte_page, mat_norm)
             if trouvee:
-                if doc is not None:
-                    doc.close()
-                methode = "fitz_matricule" if doc is not None else "plumber_matricule"
-                return i, methode, trouvee
+                src = "fitz_matricule" if doc is not None else "plumber_matricule"
+                return i, src, trouvee
 
-        # 4) OCR pour les pages scannees (texte vide / image)
+        # OCR pour les pages scannees (texte vide / image) — resultat cache
         if not texte_page.strip() and OCR_ACTIF:
             texte_ocr = _ocr_page(chemin_pdf, i, mode_debug)
             if texte_ocr.strip():
                 trouvee = _chercher_matricule_dans_texte(texte_ocr, mat_norm)
                 if trouvee:
-                    if doc is not None:
-                        doc.close()
                     return i, "ocr_matricule", trouvee
 
-    if doc is not None:
-        doc.close()
     return None, None, None
 
 
 def _chercher_matricule_dans_texte(texte, mat_norm):
     """
     Cherche la matricule normalisee dans un bloc de texte.
-    Retourne la matricule trouvee (string de chiffres) si elle y figure,
-    sinon None.
+    Retourne la matricule trouvee (string de chiffres) si elle y figure, sinon None.
 
-    La regle STRICTE : on extrait TOUTES les suites de chiffres du texte
-    (apres suppression des separateurs) et on cherche une egalite EXACTE
-    avec la matricule cible. On accepte aussi une matricule cible contenue
-    dans une suite plus longue UNIQUEMENT si cette suite correspond au
-    format "matricule + chiffres de controle" (difference <= 2 chiffres),
-    pour tolerer un eventuel caractere supplementaire sur la carte.
+    Regle STRICTE : on extrait toutes les suites de chiffres du texte et on cherche
+    une egalite EXACTE avec la matricule cible. Tolerance prefixe +/-3 chiffres
+    pour gerer un caractere supplementaire sur la carte.
     """
     if not mat_norm or not texte:
         return None
-
-    # Toutes les suites de chiffres (apres nettoyage des separateurs usuels)
-    # On remplace / - . et espaces par rien sur des fenetres, puis on extrait
-    nettoyage = re.sub(r"[ /\-_.]", "", str(texte))
-    candidats = re.findall(r"\d+", nettoyage)
-
-    for c in candidats:
+    nettoyage = _RE_NETTOYAGE.sub("", str(texte))
+    for c in _RE_CHIFFRES.findall(nettoyage):
         if c == mat_norm:
             return c
-        # Tolerance : matricule cible contenue dans un candidat legerement plus long
-        # (ex: carte imprime "2026001007" alors que le source donne "2026001")
-        # On n'accepte que si le candidat commence par la matricule cible et que
-        # l'ecart est petit, pour eviter les faux positifs.
         if len(c) > len(mat_norm) and c.startswith(mat_norm) and (len(c) - len(mat_norm)) <= 3:
             return c
         if len(mat_norm) > len(c) and mat_norm.startswith(c) and (len(mat_norm) - len(c)) <= 3:
             return mat_norm
-
     return None
 
 
@@ -1143,12 +1164,8 @@ def _chercher_matricule_dans_texte(texte, mat_norm):
 # =============================================================================
 def _rechercher_dans_index(df_index, matricule_cible, nom_etudiant, chemin_courant, mode_debug=False):
     """
-    Cherche une entree dans l'index correspondant :
-      - soit a la MATRICULE (prioritaire),
-      - soit au Nom_Complet (fallback, MAIS la matricule doit quand meme
-        etre verifiee sur la page extraite).
-
-    Renvoie (page_index, methode) ou (None, None).
+    Cherche une entree dans l'index correspondant a la MATRICULE (prioritaire)
+    ou au Nom_Complet (fallback). Renvoie (page_index, methode) ou (None, None).
     """
     if df_index is None or df_index.empty:
         return None, None
@@ -1164,7 +1181,6 @@ def _rechercher_dans_index(df_index, matricule_cible, nom_etudiant, chemin_coura
             idx_page = row.get("Page", row.get("Num_Page", None))
             idx_file = str(row.get("Fichier", row.get("PDF", ""))).strip()
 
-            # Filtre fichier (si la colonne Fichier est renseignee)
             fichier_ok = True
             if idx_file and idx_file.lower() not in ("", "nan", "none"):
                 f_lower = idx_file.lower()
@@ -1173,15 +1189,12 @@ def _rechercher_dans_index(df_index, matricule_cible, nom_etudiant, chemin_coura
             if not fichier_ok:
                 continue
 
-            # 1) Priorite : correspondance MATRICULE
             if mat_norm and matricule_valide(idx_mat):
                 if normaliser_matricule(idx_mat) == mat_norm:
                     page = _page_index_valide(idx_page)
                     if page is not None:
                         return page, "index_matricule"
 
-            # 2) Fallback : Nom_Complet (seulement si pas de matricule dans l'index)
-            #    La verification finale de la matricule se fait dans extraire_page_etudiant_pdf.
             if not mat_norm and idx_nom and _norm_nom(idx_nom) == _norm_nom(nom_etudiant):
                 page = _page_index_valide(idx_page)
                 if page is not None:
@@ -1199,51 +1212,33 @@ def _page_index_valide(idx_page):
         s = str(idx_page).strip().replace(",", ".")
         if s.lower() in ("", "nan", "none"):
             return None
-        return int(float(s)) - 1  # index 0-based
+        return int(float(s)) - 1
     except Exception:
         return None
 
 
 # =============================================================================
-#  VERIFICATION D'UNE PAGE : la matricule y figure-t-elle ?
+#  VERIFICATION D'UNE PAGE : la matricule y figure-t-elle ?  (optimisee)
 # =============================================================================
 def _verifier_matricule_sur_page(chemin_pdf, page_index, matricule_cible, mode_debug=False):
     """
     Verifie que la matricule cible figure bien sur la page extraite.
-    Utilise le texte natif puis l'OCR si necessaire.
+    REUTILISE le cache de texte natif (_TEXTE_CACHE) et le cache OCR (_OCR_CACHE)
+    => aucune re-ouverture de PDF, aucun re-OCR si deja fait pendant la recherche.
     Renvoie (ok: bool, matricule_trouvee: str|None, source: str).
     """
     mat_norm = normaliser_matricule(matricule_cible)
     if not mat_norm:
         return False, None, "matricule_source_vide"
 
-    texte_page = ""
-    # Texte natif via PyMuPDF
-    try:
-        import fitz
-        doc = fitz.open(chemin_pdf)
-        if 0 <= page_index < len(doc):
-            texte_page = doc.load_page(page_index).get_text() or ""
-        doc.close()
-    except Exception:
-        pass
-
-    # pdfplumber si PyMuPDF vide / absent
-    if not texte_page.strip():
-        try:
-            import pdfplumber
-            with pdfplumber.open(chemin_pdf) as pdf:
-                if 0 <= page_index < len(pdf.pages):
-                    texte_page = pdf.pages[page_index].extract_text() or ""
-        except Exception:
-            pass
-
+    # Texte natif (cache)
+    texte_page = _texte_page_natif(chemin_pdf, page_index, mode_debug)
     if texte_page.strip():
         trouvee = _chercher_matricule_dans_texte(texte_page, mat_norm)
         if trouvee:
             return True, trouvee, "texte_natif"
 
-    # OCR pour les pages scannees
+    # OCR (cache — si deja fait pendant la recherche, on le recupere instantanement)
     if OCR_ACTIF:
         texte_ocr = _ocr_page(chemin_pdf, page_index, mode_debug)
         if texte_ocr.strip():
@@ -1255,7 +1250,7 @@ def _verifier_matricule_sur_page(chemin_pdf, page_index, matricule_cible, mode_d
 
 
 # =============================================================================
-#  FONCTION PRINCIPALE : extraire_page_etudiant_pdf
+#  FONCTION PRINCIPALE : extraire_page_etudiant_pdf  (optimisee)
 # =============================================================================
 def extraire_page_etudiant_pdf(
     chemin_pdf,
@@ -1267,29 +1262,21 @@ def extraire_page_etudiant_pdf(
     """
     Recherche la carte d'un etudiant dans TOUS les fichiers Fich*.pdf.
 
-    LOGIQUE STRICTE (conformement au cahier des charges) :
+    LOGIQUE STRICTE :
       - La carte est selectionnee UNIQUEMENT si la MATRICULE de l'etudiant
-        (recuperee depuis le fichier source) figure sur la page.
-      - Une correspondance par nom / prenom / nom de famille seule n'affiche
-        JAMAIS une carte.
-      - Si la matricule est absente du fichier source (colonne non detectee),
-        on bascule sur l'index manuel (Nom_Complet | Page) MAIS la carte
-        n'est validee que si l'index contient une colonne Matricule correspondante.
+        figure sur la page. Une correspondance par nom seule n'affiche JAMAIS une carte.
+      - Si la matricule est absente du fichier source, on exige un index avec matricule.
 
-    Parametres :
-      chemin_pdf    : chemin unique, liste de chemins, ou None (= Fich*.pdf auto)
-      nom_etudiant  : "NOM Prenom" (affichage uniquement)
-      df_index      : DataFrame index optionnel
-                      colonnes attendues : Matricule, Fichier, Page
-                                          (ou Nom_Complet, Fichier, Page)
-      matricule     : matricule exacte de l'etudiant depuis le fichier source
-                      (colonne mat_etud ou mat_bac)
+    Optimisations :
+      - Cache global de texte (_TEXTE_CACHE) + OCR (_OCR_CACHE) + documents fitz (_DOC_CACHE).
+      - Si un index Matricule|Fichier|Page est fourni, on saute directement a la bonne page
+        (pas de parcours de toutes les pages).
+      - Une fois la carte trouvee, on ferme les docs ouverts pour liberer la memoire.
 
     Retourne :
       (pdf_bytes, num_page, methode, statut) ou (None, None, None, statut)
       statut : "matricule_correspondante" | "matricule_differentee"
-               | "carte_introuvable" | "matricule_source_vide"
-               | "aucun_fichier"
+               | "carte_introuvable" | "matricule_source_vide" | "aucun_fichier"
     """
     # --- Choix de la liste de fichiers ---
     if isinstance(chemin_pdf, (list, tuple, set)):
@@ -1310,60 +1297,67 @@ def extraire_page_etudiant_pdf(
 
     mat_norm = normaliser_matricule(matricule)
 
-    # --- Cas 1 : matricule source disponible -> recherche par matricule ---
-    if mat_norm and matricule_valide(matricule):
-        for fichier in fichiers:
-            # 1a) Index manuel prioritaire (Matricule | Fichier | Page)
-            page_idx, methode_idx = _rechercher_dans_index(
-                df_index, matricule, nom_etudiant, fichier, mode_debug
-            )
-            if page_idx is not None and methode_idx == "index_matricule":
-                ok, trouvee, src = _verifier_matricule_sur_page(
-                    fichier, page_idx, matricule, mode_debug
+    try:
+        # --- Cas 1 : matricule source disponible -> recherche par matricule ---
+        if mat_norm and matricule_valide(matricule):
+            for fichier in fichiers:
+                # 1a) Index manuel prioritaire (Matricule | Fichier | Page)
+                #     -> saut direct a la page, pas de parcours complet
+                page_idx, methode_idx = _rechercher_dans_index(
+                    df_index, matricule, nom_etudiant, fichier, mode_debug
                 )
-                if ok:
+                if page_idx is not None and methode_idx == "index_matricule":
+                    ok, trouvee, src = _verifier_matricule_sur_page(
+                        fichier, page_idx, matricule, mode_debug
+                    )
+                    if ok:
+                        data = _extraire_page_pdf_bytes(fichier, page_idx, mode_debug)
+                        if data:
+                            extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
+                            extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
+                            extraire_page_etudiant_pdf.derniere_source = src
+                            return data, page_idx + 1, methode_idx, "matricule_correspondante"
+
+                # 1b) Recherche automatique dans toutes les pages (avec cache)
+                page_idx, methode, trouvee = _rechercher_matricule_dans_pdf(
+                    fichier, matricule, mode_debug
+                )
+                if page_idx is not None:
+                    # La matricule a deja ete verifiee pendant la recherche (texte/OCR).
+                    # On extrait juste la page (reutilise le doc fitz cache).
                     data = _extraire_page_pdf_bytes(fichier, page_idx, mode_debug)
                     if data:
                         extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
                         extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
-                        extraire_page_etudiant_pdf.derniere_source = src
-                        return data, page_idx + 1, methode_idx, "matricule_correspondante"
-                # index disait cette page mais matricule non confirmee -> on continue
+                        extraire_page_etudiant_pdf.derniere_source = methode
+                        return data, page_idx + 1, methode, "matricule_correspondante"
 
-            # 1b) Recherche automatique dans toutes les pages
-            page_idx, methode, trouvee = _rechercher_matricule_dans_pdf(
-                fichier, matricule, mode_debug
-            )
-            if page_idx is not None:
-                data = _extraire_page_pdf_bytes(fichier, page_idx, mode_debug)
-                if data:
-                    extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
-                    extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
-                    extraire_page_etudiant_pdf.derniere_source = methode
-                    return data, page_idx + 1, methode, "matricule_correspondante"
+            return None, None, None, "matricule_differentee"
 
-        # Aucune page ne contient la matricule -> carte refusee
-        return None, None, None, "matricule_differentee"
-
-    # --- Cas 2 : pas de matricule source -> on exige un index avec matricule ---
-    if df_index is not None and not df_index.empty:
-        for fichier in fichiers:
-            page_idx, methode_idx = _rechercher_dans_index(
-                df_index, matricule, nom_etudiant, fichier, mode_debug
-            )
-            if page_idx is not None and methode_idx == "index_matricule":
-                ok, trouvee, src = _verifier_matricule_sur_page(
-                    fichier, page_idx, matricule, mode_debug
+        # --- Cas 2 : pas de matricule source -> on exige un index avec matricule ---
+        if df_index is not None and not df_index.empty:
+            for fichier in fichiers:
+                page_idx, methode_idx = _rechercher_dans_index(
+                    df_index, matricule, nom_etudiant, fichier, mode_debug
                 )
-                if ok:
-                    data = _extraire_page_pdf_bytes(fichier, page_idx, mode_debug)
-                    if data:
-                        extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
-                        extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
-                        extraire_page_etudiant_pdf.derniere_source = src
-                        return data, page_idx + 1, methode_idx, "matricule_correspondante"
+                if page_idx is not None and methode_idx == "index_matricule":
+                    ok, trouvee, src = _verifier_matricule_sur_page(
+                        fichier, page_idx, matricule, mode_debug
+                    )
+                    if ok:
+                        data = _extraire_page_pdf_bytes(fichier, page_idx, mode_debug)
+                        if data:
+                            extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
+                            extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
+                            extraire_page_etudiant_pdf.derniere_source = src
+                            return data, page_idx + 1, methode_idx, "matricule_correspondante"
 
-    return None, None, None, "matricule_source_vide"
+        return None, None, None, "matricule_source_vide"
+    finally:
+        # Liberer la memoire : fermer les documents fitz ouverts pendant la recherche.
+        # Les caches de texte/OCR restent disponibles pour les recherches suivantes
+        # (memes fichiers) => la 2e recherche d'un meme etudiant est quasi-instantanee.
+        _fermer_tous_docs()
 
 
 # Etat partage (compatibilite ascendante)
