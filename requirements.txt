@@ -16,7 +16,12 @@ pytz>=2023.3
 python-dateutil>=2.8.2
 pdf2image
 pytesseract
+streamlit
+pandas
+pdf2image
 pillow
+pytesseract
+openpyxl
 pdfplumber
 pypdf
 PyMuPDF
