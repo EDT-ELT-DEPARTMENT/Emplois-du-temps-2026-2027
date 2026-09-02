@@ -6689,7 +6689,29 @@ def render_download_hub(df_global, user_data, is_admin):
     if not demandes_filtrees:
         st.info("📭 Aucune demande reçue pour le moment.")
     else:
-        st.markdown(f"### 📋 {len(demandes_filtrees)} demande(s) trouvée(s)")
+        # --- Ligne titre + bouton "Effacer toutes les demandes" ---
+        _col_titre, _col_eff = st.columns([4, 1])
+        with _col_titre:
+            st.markdown(f"### 📋 {len(demandes_filtrees)} demande(s) trouvée(s)")
+        with _col_eff:
+            if st.button("🗑️ Effacer toutes les demandes",
+                         use_container_width=True,
+                         type="secondary",
+                         key="btn_effacer_toutes_demandes_admin",
+                         help="Supprime DéFINITIVEMENT toutes les demandes "
+                              "(Supabase + mode hors-ligne). Action irréversible."):
+                _nb_eff = len(demandes)
+                # 1) Suppression côté Supabase
+                if supabase:
+                    try:
+                        supabase.table("edt_update_requests").delete().neq("id", -1).execute()
+                    except Exception as _e:
+                        st.warning(f"⚠️ Erreur Supabase lors de la suppression : {_e}")
+                # 2) Suppression côté local (mode hors-ligne)
+                if "demandes_edt_local" in st.session_state:
+                    st.session_state.demandes_edt_local = []
+                st.success(f"✅ {_nb_eff} demande(s) effacée(s) avec succès.")
+                st.rerun()
         
         for demande in demandes_filtrees:
             nom_ens = demande.get('enseignant_nom', 'Inconnu')
@@ -10491,7 +10513,27 @@ if df is not None:
         if not demandes:
             st.info("📭 Aucune demande reçue pour le moment.")
         else:
-            st.markdown(f"### 📋 {len(demandes)} demande(s)")
+            # --- Ligne titre + bouton "Effacer toutes les demandes" ---
+            _col_titre2, _col_eff2 = st.columns([4, 1])
+            with _col_titre2:
+                st.markdown(f"### 📋 {len(demandes)} demande(s)")
+            with _col_eff2:
+                if st.button("🗑️ Effacer toutes les demandes",
+                             use_container_width=True,
+                             type="secondary",
+                             key="btn_effacer_toutes_demandes_portail",
+                             help="Supprime DéFINITIVEMENT toutes les demandes "
+                                  "(Supabase + mode hors-ligne). Action irréversible."):
+                    _nb_eff2 = len(demandes)
+                    if supabase:
+                        try:
+                            supabase.table("edt_update_requests").delete().neq("id", -1).execute()
+                        except Exception as _e2:
+                            st.warning(f"⚠️ Erreur Supabase lors de la suppression : {_e2}")
+                    if "demandes_edt_local" in st.session_state:
+                        st.session_state.demandes_edt_local = []
+                    st.success(f"✅ {_nb_eff2} demande(s) effacée(s) avec succès.")
+                    st.rerun()
             
             for demande in demandes:
                 nom_ens = demande.get('enseignant_nom', 'Inconnu')
