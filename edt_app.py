@@ -42,6 +42,241 @@ try:
 except ImportError:
     Document = None
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# IMPORTS OCR + CACHE MATRICULE (AJOUTÉS)
+# ═══════════════════════════════════════════════════════════════════════════
+try:
+    from pdf2image import convert_from_path
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+
+try:
+    import pytesseract
+    OCR_SUPPORT = True
+except ImportError:
+    OCR_SUPPORT = False
+
+import pickle
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CONFIGURATION OCR + CACHE
+# ═══════════════════════════════════════════════════════════════════════════
+PDF_CARTES_FILE = "./Fich01.pdf"
+CACHE_CARTES_CSV = "./cache_cartes_etudiants.csv"
+CACHE_CARTES_PICKLE = "./cache_cartes_images.pkl"
+CACHE_MATRICULE_INDEX = "./cache_matricule_index.json"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FONCTIONS OCR ET CACHE MATRICULE
+# ═══════════════════════════════════════════════════════════════════════════
+
+def extraire_texte_image(image):
+    """Extrait le texte d'une image avec OCR"""
+    if not OCR_SUPPORT:
+        return ""
+    try:
+        texte = pytesseract.image_to_string(image, lang='ara+fra+eng')
+        return texte
+    except Exception as e:
+        return f"Erreur OCR"
+
+def parser_info_carte(texte):
+    """Parse le texte OCR pour extraire les infos"""
+    info = {
+        'nom': '',
+        'prenom': '',
+        'date_naissance': '',
+        'lieu_naissance': '',
+        'matricule': '',
+        'promotion': '',
+        'groupe': '',
+        'sous_groupe': '',
+    }
+    
+    lignes = texte.split('\n')
+    
+    for i, ligne in enumerate(lignes):
+        if 'اللقب' in ligne or 'NOM' in ligne.upper():
+            if i + 1 < len(lignes):
+                info['nom'] = lignes[i + 1].strip().upper()
+        
+        if 'الاسم' in ligne or 'PRÉNOM' in ligne.upper():
+            if i + 1 < len(lignes):
+                info['prenom'] = lignes[i + 1].strip()
+        
+        if 'تاريخ' in ligne or 'DATE' in ligne.upper():
+            match = re.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}', ligne)
+            if match:
+                info['date_naissance'] = match.group(0)
+        
+        if 'مكان' in ligne or 'LIEU' in ligne.upper():
+            if i + 1 < len(lignes):
+                info['lieu_naissance'] = lignes[i + 1].strip()
+        
+        if 'الرقم' in ligne or 'MATRICULE' in ligne.upper():
+            match = re.search(r'\d{10,}', ligne)
+            if match:
+                info['matricule'] = match.group(0)
+        
+        if not info['matricule']:
+            match = re.search(r'\d{10,}', ligne)
+            if match:
+                info['matricule'] = match.group(0)
+        
+        if 'الترقية' in ligne or 'PROMOTION' in ligne.upper():
+            if i + 1 < len(lignes):
+                info['promotion'] = lignes[i + 1].strip()
+        
+        if 'المجموعة' in ligne or 'GROUPE' in ligne.upper():
+            match = re.search(r'G\d+', ligne.upper())
+            if match:
+                info['groupe'] = match.group(0)
+        
+        if 'الفئة' in ligne or 'SOUS' in ligne.upper():
+            match = re.search(r'SG\d+', ligne.upper())
+            if match:
+                info['sous_groupe'] = match.group(0)
+    
+    return info
+
+@st.cache_resource
+def charger_et_creer_cache():
+    """Crée le cache des cartes par matricule"""
+    
+    if not os.path.exists(PDF_CARTES_FILE):
+        return None, None, None
+    
+    if not PDF_SUPPORT:
+        return None, None, None
+    
+    try:
+        if os.path.exists(CACHE_CARTES_CSV) and os.path.exists(CACHE_MATRICULE_INDEX):
+            df_cache = pd.read_csv(CACHE_CARTES_CSV)
+            with open(CACHE_MATRICULE_INDEX, 'r') as f:
+                index_matricule = json.load(f)
+            
+            if os.path.exists(CACHE_CARTES_PICKLE):
+                with open(CACHE_CARTES_PICKLE, 'rb') as f:
+                    images_cache = pickle.load(f)
+            else:
+                images_cache = {}
+            
+            return df_cache, index_matricule, images_cache
+        
+        st.info("📂 Création du cache (1ère fois)...")
+        progress_bar = st.progress(0)
+        
+        images = convert_from_path(PDF_CARTES_FILE, dpi=150)
+        
+        cartes_list = []
+        images_cache = {}
+        
+        for page_num, image in enumerate(images):
+            texte = extraire_texte_image(image)
+            info = parser_info_carte(texte)
+            info['page'] = page_num + 1
+            info['texte_brut'] = texte
+            
+            cartes_list.append(info)
+            
+            if info['matricule']:
+                images_cache[info['matricule']] = image
+            
+            progress_bar.progress((page_num + 1) / len(images))
+        
+        progress_bar.empty()
+        
+        df_cache = pd.DataFrame(cartes_list)
+        
+        index_matricule = {}
+        for idx, row in df_cache.iterrows():
+            if pd.notna(row['matricule']) and row['matricule']:
+                index_matricule[str(row['matricule'])] = idx
+        
+        df_cache.to_csv(CACHE_CARTES_CSV, index=False)
+        
+        with open(CACHE_MATRICULE_INDEX, 'w') as f:
+            json.dump(index_matricule, f)
+        
+        with open(CACHE_CARTES_PICKLE, 'wb') as f:
+            pickle.dump(images_cache, f)
+        
+        st.success(f"✅ Cache créé: {len(df_cache)} cartes")
+        
+        return df_cache, index_matricule, images_cache
+    
+    except Exception as e:
+        st.error(f"❌ Erreur: {str(e)[:50]}")
+        return None, None, None
+
+def chercher_carte_par_matricule(matricule, df_cache, index_matricule, images_cache):
+    """Cherche rapidement une carte par matricule"""
+    
+    if df_cache is None or not index_matricule:
+        return None, None
+    
+    mat_search = str(matricule).strip()
+    
+    if mat_search in index_matricule:
+        idx = index_matricule[mat_search]
+        carte = df_cache.iloc[idx].to_dict()
+        image = images_cache.get(mat_search, None)
+        return carte, image
+    
+    return None, None
+
+def afficher_carte_etudiant(carte, image):
+    """Affiche la carte d'étudiant"""
+    
+    if carte is None:
+        return
+    
+    st.markdown("---")
+    st.markdown("### 🪪 Carte d'Étudiant")
+    st.markdown(f"✅ **Carte trouvée (page {carte.get('page', 'N/A')})**")
+    st.markdown("---")
+    
+    col_image, col_info = st.columns([1, 1])
+    
+    with col_image:
+        st.markdown("#### 📸 Aperçu")
+        if image is not None:
+            st.image(image, use_container_width=True)
+            
+            img_bytes = io.BytesIO()
+            image.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+            
+            st.download_button(
+                label="📥 Télécharger PNG",
+                data=img_bytes.getvalue(),
+                file_name=f"carte_{carte.get('nom', 'etudiant')}.png",
+                mime="image/png",
+                key=f"dl_carte_{carte.get('matricule', 'unk')}"
+            )
+    
+    with col_info:
+        st.markdown("#### 📋 Informations")
+        
+        col_i1, col_i2 = st.columns(2)
+        
+        with col_i1:
+            st.write("**Personnelles:**")
+            st.write(f"Nom: `{carte.get('nom', 'N/A')}`")
+            st.write(f"Prénom: `{carte.get('prenom', 'N/A')}`")
+            st.write(f"Date: `{carte.get('date_naissance', 'N/A')}`")
+            st.write(f"Lieu: `{carte.get('lieu_naissance', 'N/A')}`")
+        
+        with col_i2:
+            st.write("**Académiques:**")
+            st.write(f"Matricule: `{carte.get('matricule', 'N/A')}`")
+            st.write(f"Promotion: `{carte.get('promotion', 'N/A')}`")
+            st.write(f"Groupe: `{carte.get('groupe', 'N/A')}`")
+            st.write(f"S-groupe: `{carte.get('sous_groupe', 'N/A')}`")
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # FONCTIONS UTILITAIRES : Demande EDT + Email Admin
 # ═══════════════════════════════════════════════════════════════════════════
@@ -293,6 +528,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ═══════════════════════════════════════════════════════════════════════════
+# CHARGEMENT DU CACHE AU DÉMARRAGE
+# ═══════════════════════════════════════════════════════════════════════════
+df_cache, index_matricule, images_cache = charger_et_creer_cache()
+
+
 # Masquer les éléments du menu supérieur
 hide_st_style = """
 <style>
@@ -329,6 +570,7 @@ _BASE_DIR = Path(__file__).parent.resolve()
 FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
 FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
 FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
+FILE_CARTES    = str(_BASE_DIR / "Fichier_cartes.pdf")
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
@@ -845,6 +1087,151 @@ def format_date_naissance(val):
     
     return str(val)
 # =============================================================================
+def extraire_page_etudiant_pdf(chemin_pdf, nom_etudiant, df_index=None, mode_debug=False):
+    """
+    Extrait la page du PDF contenant le nom de l'étudiant.
+    Stratégies (dans l'ordre) :
+      1. Index manuel (df_index)
+      2. Correspondance nom COMPLET
+      3. Correspondance NOM DE FAMILLE seul
+      4. Correspondance PRÉNOM seul
+      5. PyMuPDF (fitz) — meilleur pour PDF scannés
+    """
+    import unicodedata
+    import re
+    from io import BytesIO
+
+    def norm(t):
+        if not t:
+            return ""
+        t = unicodedata.normalize('NFKD', str(t))
+        t = t.encode('ASCII', 'ignore').decode('ASCII')
+        return re.sub(r'[^A-Z]', '', t.upper())
+
+    base = str(nom_etudiant).strip()
+    parts = base.upper().split()
+    nom_famille = parts[0] if parts else ""
+    prenom = parts[1] if len(parts) > 1 else ""
+
+    variants = {
+        "nom_complet": norm(base),
+        "nom_famille": norm(nom_famille),
+        "prenom": norm(prenom),
+    }
+
+    if mode_debug:
+        print(f"[DEBUG] Recherche : {variants}")
+
+    # ═══ NIVEAU 1 : Index manuel ═══
+    if df_index is not None and not df_index.empty:
+        for _, row in df_index.iterrows():
+            idx_nom = str(row.get('Nom_Complet', '')).strip()
+            idx_page = row.get('Page', row.get('Num_Page', None))
+            if norm(idx_nom) == variants["nom_complet"] and idx_page is not None:
+                try:
+                    from pypdf import PdfReader, PdfWriter
+                    reader = PdfReader(chemin_pdf)
+                    writer = PdfWriter()
+                    writer.add_page(reader.pages[int(idx_page) - 1])
+                    output = BytesIO()
+                    writer.write(output)
+                    output.seek(0)
+                    return output.getvalue(), int(idx_page), "index"
+                except Exception:
+                    pass
+
+    # ═══ NIVEAU 2 : PyMuPDF (fitz) — prioritaire car plus robuste ═══
+    try:
+        import fitz
+        from pypdf import PdfReader, PdfWriter
+
+        doc = fitz.open(chemin_pdf)
+        for i in range(len(doc)):
+            page = doc.load_page(i)
+            text = page.get_text() or ""
+            text_norm = norm(text)
+
+            if mode_debug and i < 3:
+                print(f"[DEBUG] Page {i+1} extrait : {text_norm[:200]}")
+
+            # Ordre de priorité : nom complet > nom de famille > prénom
+            if variants["nom_complet"] and variants["nom_complet"] in text_norm:
+                doc.close()
+                reader = PdfReader(chemin_pdf)
+                writer = PdfWriter()
+                writer.add_page(reader.pages[i])
+                output = BytesIO()
+                writer.write(output)
+                output.seek(0)
+                return output.getvalue(), i + 1, "fitz_nom_complet"
+
+            if variants["nom_famille"] and len(variants["nom_famille"]) >= 3 and variants["nom_famille"] in text_norm:
+                doc.close()
+                reader = PdfReader(chemin_pdf)
+                writer = PdfWriter()
+                writer.add_page(reader.pages[i])
+                output = BytesIO()
+                writer.write(output)
+                output.seek(0)
+                return output.getvalue(), i + 1, "fitz_nom_famille"
+
+            if variants["prenom"] and len(variants["prenom"]) >= 3 and variants["prenom"] in text_norm:
+                doc.close()
+                reader = PdfReader(chemin_pdf)
+                writer = PdfWriter()
+                writer.add_page(reader.pages[i])
+                output = BytesIO()
+                writer.write(output)
+                output.seek(0)
+                return output.getvalue(), i + 1, "fitz_prenom"
+        doc.close()
+    except ImportError:
+        if mode_debug:
+            print("[DEBUG] PyMuPDF (fitz) non installé")
+    except Exception as e:
+        if mode_debug:
+            print(f"[DEBUG] Erreur fitz : {e}")
+
+    # ═══ NIVEAU 3 : pdfplumber (fallback) ═══
+    try:
+        import pdfplumber
+        from pypdf import PdfReader, PdfWriter
+
+        with pdfplumber.open(chemin_pdf) as pdf:
+            for i, page in enumerate(pdf.pages):
+                text = page.extract_text() or ""
+                text_norm = norm(text)
+
+                if variants["nom_complet"] and variants["nom_complet"] in text_norm:
+                    reader = PdfReader(chemin_pdf)
+                    writer = PdfWriter()
+                    writer.add_page(reader.pages[i])
+                    output = BytesIO()
+                    writer.write(output)
+                    output.seek(0)
+                    return output.getvalue(), i + 1, "plumber_nom_complet"
+
+                if variants["nom_famille"] and len(variants["nom_famille"]) >= 3 and variants["nom_famille"] in text_norm:
+                    reader = PdfReader(chemin_pdf)
+                    writer = PdfWriter()
+                    writer.add_page(reader.pages[i])
+                    output = BytesIO()
+                    writer.write(output)
+                    output.seek(0)
+                    return output.getvalue(), i + 1, "plumber_nom_famille"
+
+                if variants["prenom"] and len(variants["prenom"]) >= 3 and variants["prenom"] in text_norm:
+                    reader = PdfReader(chemin_pdf)
+                    writer = PdfWriter()
+                    writer.add_page(reader.pages[i])
+                    output = BytesIO()
+                    writer.write(output)
+                    output.seek(0)
+                    return output.getvalue(), i + 1, "plumber_prenom"
+    except Exception:
+        pass
+
+    return None, None, None
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
 # FONCTION DE LECTURE EXCEL ROBUSTE
@@ -4631,6 +5018,102 @@ td{{word-wrap:break-word;}}
                 cols_map = detecter_colonnes_etudiant(df_etu_edt)
                 row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
                 
+                
+                # ═══════════════════════════════════════════════════════════════
+                # 🪪 CARTE ÉTUDIANT
+                # ═══════════════════════════════════════════════════════════════
+                st.markdown("### 🪪 Carte d'Étudiant")
+
+                # ─── Fichier d'index optionnel ───
+                with st.expander("🔧 Fichier d'index (optionnel — recommandé pour PDF scannés)"):
+                    st.markdown("""
+                    Si la recherche automatique échoue, créez un fichier Excel/CSV avec 2 colonnes :
+                    - `Nom_Complet` (exactement comme dans le fichier étudiants, ex: **AISSANI Abassia**)
+                    - `Page` (numéro de page dans le PDF, ex: **42**)
+                    """)
+                    idx_file = st.file_uploader("📤 Fichier d'index", type=["xlsx", "csv"], key="index_cartes")
+                    df_index = None
+                    if idx_file:
+                        try:
+                            if idx_file.name.endswith('.csv'):
+                                df_index = pd.read_csv(idx_file)
+                            else:
+                                df_index = pd.read_excel(idx_file)
+                            st.success(f"✅ Index chargé : {len(df_index)} entrées")
+                        except Exception as e:
+                            st.error(f"❌ Erreur lecture index : {e}")
+                            
+
+                if os.path.exists(FILE_CARTES):
+                    col_cartes, col_dl = st.columns([3, 1])
+
+                    with col_cartes:
+                        if st.button("🪪 Afficher la carte de cet étudiant", use_container_width=True, type="primary"):
+                            with st.spinner("🔍 Recherche dans le PDF..."):
+                                pdf_page, num_page, methode = extraire_page_etudiant_pdf(FILE_CARTES, sel_etud, df_index)
+
+                                if pdf_page and isinstance(pdf_page, bytes):
+                                    st.success(f"✅ Carte d'étudiant trouvée (page {num_page})")
+
+                                    st.download_button(
+                                        label="📥 Télécharger cette carte (PDF)",
+                                        data=pdf_page,
+                                        file_name=f"Carte_{sel_etud.replace(' ', '_')}.pdf",
+                                        mime="application/pdf",
+                                        key=f"dl_carte_{sel_etud.replace(' ', '_')}"
+                                    )
+
+                                    b64 = base64.b64encode(pdf_page).decode('utf-8')
+                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500px" type="application/pdf"></iframe>'
+                                    st.markdown(pdf_display, unsafe_allow_html=True)
+
+                                else:
+                                    st.warning("⚠️ Carte non localisée automatiquement")
+
+                                    with st.expander("🔧 Diagnostic & solutions"):
+                                        st.markdown(f"""
+                                        **Nom recherché :** `{sel_etud}`  
+                                        **Nom de famille :** `{sel_etud.split()[0] if sel_etud.split() else 'N/A'}`  
+                                        **Prénom :** `{' '.join(sel_etud.split()[1:]) if len(sel_etud.split()) > 1 else 'N/A'}`
+
+                                        **Causes probables :**
+                                        1. **PDF scanné/image** : le texte n'est pas extractible par un ordinateur
+                                        2. **Nom sur plusieurs lignes** : le PDF contient `AISSANI` puis `Abassia` sur deux lignes séparées (notre recherche gère ce cas, mais le PDF pourrait être une image)
+                                        3. **PDF en arabe** : le nom est écrit en arabe (عيساني) — seul l'index manuel fonctionnera
+
+                                        **Solutions :**
+                                        - **Solution A** : Utilisez le **fichier d'index** ci-dessus (100%% fiable)
+                                        - **Solution B** : Uploadez un nouveau PDF avec du texte sélectionnable (pas un scan)
+                                        """)
+
+                                    with open(FILE_CARTES, "rb") as f:
+                                        full_pdf = f.read()
+                                    b64 = base64.b64encode(full_pdf).decode('utf-8')
+                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}#page=1" width="100%" height="600px" type="application/pdf"></iframe>'
+                                    st.markdown(pdf_display, unsafe_allow_html=True)
+
+                    with col_dl:
+                        with open(FILE_CARTES, "rb") as f:
+                            st.download_button(
+                                label="📥 Toutes les cartes (PDF)",
+                                data=f.read(),
+                                file_name="Fichier_cartes.pdf",
+                                mime="application/pdf",
+                                key="dl_all_cartes"
+                            )
+                else:
+                    st.warning("⚠️ Fichier 'Fichier_cartes.pdf' introuvable dans le dossier de l'application.")
+                    uploaded_cartes = st.file_uploader(
+                        "📤 Uploader le fichier des cartes étudiants (PDF)", 
+                        type=["pdf"], 
+                        key="upload_cartes"
+                    )
+                    if uploaded_cartes:
+                        with open(FILE_CARTES, "wb") as f:
+                            f.write(uploaded_cartes.getvalue())
+                        st.success("✅ Fichier enregistré. Rafraîchissez la page pour afficher les cartes.")
+
+                st.divider()
                 # 1️⃣ FICHE ÉTUDIANT D'ABORD
                 st.markdown(f"""
                     <div style="background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); 
@@ -6689,27 +7172,7 @@ def render_download_hub(df_global, user_data, is_admin):
     if not demandes_filtrees:
         st.info("📭 Aucune demande reçue pour le moment.")
     else:
-        # --- Bouton "Effacer toutes les demandes" (pleine largeur, bien visible) ---
         st.markdown(f"### 📋 {len(demandes_filtrees)} demande(s) trouvée(s)")
-        _col_btn1, _col_btn2 = st.columns([1, 4])
-        with _col_btn1:
-            if st.button("🗑️ Effacer toutes les demandes",
-                         use_container_width=True,
-                         type="primary",
-                         key="btn_effacer_toutes_demandes_admin",
-                         help="Supprime DéFINITIVEMENT toutes les demandes (Supabase + mode hors-ligne)."):
-                _nb_eff = len(demandes)
-                if supabase:
-                    try:
-                        supabase.table("edt_update_requests").delete().neq("id", -1).execute()
-                    except Exception as _e:
-                        st.warning(f"⚠️ Erreur Supabase : {_e}")
-                if "demandes_edt_local" in st.session_state:
-                    st.session_state.demandes_edt_local = []
-                st.success(f"✅ {_nb_eff} demande(s) effacée(s) avec succès.")
-                st.rerun()
-        with _col_btn2:
-            st.caption("⚠️ Cliquez pour supprimer DéFINITIVEMENT toutes les demandes ci-dessous.")
         
         for demande in demandes_filtrees:
             nom_ens = demande.get('enseignant_nom', 'Inconnu')
@@ -10511,27 +10974,7 @@ if df is not None:
         if not demandes:
             st.info("📭 Aucune demande reçue pour le moment.")
         else:
-            # --- Bouton "Effacer toutes les demandes" (pleine largeur, bien visible) ---
             st.markdown(f"### 📋 {len(demandes)} demande(s)")
-            _col_btn1p, _col_btn2p = st.columns([1, 4])
-            with _col_btn1p:
-                if st.button("🗑️ Effacer toutes les demandes",
-                             use_container_width=True,
-                             type="primary",
-                             key="btn_effacer_toutes_demandes_portail",
-                             help="Supprime DéFINITIVEMENT toutes les demandes (Supabase + mode hors-ligne)."):
-                    _nb_eff2 = len(demandes)
-                    if supabase:
-                        try:
-                            supabase.table("edt_update_requests").delete().neq("id", -1).execute()
-                        except Exception as _e2:
-                            st.warning(f"⚠️ Erreur Supabase : {_e2}")
-                    if "demandes_edt_local" in st.session_state:
-                        st.session_state.demandes_edt_local = []
-                    st.success(f"✅ {_nb_eff2} demande(s) effacée(s) avec succès.")
-                    st.rerun()
-            with _col_btn2p:
-                st.caption("⚠️ Cliquez pour supprimer DéFINITIVEMENT toutes les demandes ci-dessous.")
             
             for demande in demandes:
                 nom_ens = demande.get('enseignant_nom', 'Inconnu')
