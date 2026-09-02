@@ -5,6 +5,7 @@ import streamlit as st
 import pandas as pd
 import base64
 import io
+import json
 import time
 import re
 import os
@@ -933,6 +934,118 @@ _DOC_CACHE = {}  # chemin_pdf -> (fitz.Document, nb_pages) ouvert reusable
 _RE_CHIFFRES = re.compile(r"\d+")
 _RE_NETTOYAGE = re.compile(r"[ /\-_.]")
 
+# --- CACHE PERSISTANT des matricules -> (fichier, page) ---
+# Fichier JSON enregistre sur le disque : il survit aux redemarrages de
+# l'application. Chaque entree relie une matricule (normalisee) au fichier
+# PDF et au numero de page (0-based) ou la carte a ete trouvee.
+# BUT : la 2e recherche d'un meme etudiant est INSTANTANEE (saut direct a la
+#       page, zero OCR, zero parcours de toutes les pages).
+FILE_CACHE_MATRICULES = str(_BASE_DIR / "cache_matricules_cartes.json")
+_CACHE_PERSISTANT = None  # dict en memoire (charge paresseusement)
+
+
+def _charger_cache_matricules():
+    """Charge le cache persistant depuis le disque (une seule fois en memoire).
+    Renvoie un dict {matricule_norm: {"fichier": chemin, "page": idx_0based}}.
+    En cas d'erreur ou de fichier absent, renvoie un dict vide."""
+    global _CACHE_PERSISTANT
+    if _CACHE_PERSISTANT is not None:
+        return _CACHE_PERSISTANT
+    _CACHE_PERSISTANT = {}
+    try:
+        if os.path.isfile(FILE_CACHE_MATRICULES):
+            with io.open(FILE_CACHE_MATRICULES, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                # Nettoyer / valider les entrees
+                for k, v in data.items():
+                    if isinstance(k, str) and isinstance(v, dict):
+                        fich = v.get("fichier")
+                        pg = v.get("page")
+                        if fich and pg is not None:
+                            try:
+                                _CACHE_PERSISTANT[str(k)] = {
+                                    "fichier": str(fich),
+                                    "page": int(pg),
+                                }
+                            except (ValueError, TypeError):
+                                pass
+    except Exception:
+        _CACHE_PERSISTANT = {}
+    return _CACHE_PERSISTANT
+
+
+def _sauver_cache_matricules():
+    """Sauvegarde le cache persistant sur le disque (JSON)."""
+    global _CACHE_PERSISTANT
+    if _CACHE_PERSISTANT is None:
+        return
+    try:
+        with io.open(FILE_CACHE_MATRICULES, "w", encoding="utf-8") as f:
+            json.dump(_CACHE_PERSISTANT, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _enregistrer_dans_cache(matricule_norm, chemin_fichier, page_idx):
+    """Enregistre (ou met a jour) une matricule trouvee dans le cache persistant.
+    Sauvegarde immediatement sur le disque."""
+    global _CACHE_PERSISTANT
+    if not matricule_norm or not chemin_fichier or page_idx is None:
+        return
+    cache = _charger_cache_matricules()
+    cache[str(matricule_norm)] = {
+        "fichier": str(chemin_fichier),
+        "page": int(page_idx),
+    }
+    _sauver_cache_matricules()
+
+
+def _vider_cache_matricules():
+    """Vide entierement le cache persistant (memoire + disque)."""
+    global _CACHE_PERSISTANT
+    _CACHE_PERSISTANT = {}
+    try:
+        if os.path.isfile(FILE_CACHE_MATRICULES):
+            os.remove(FILE_CACHE_MATRICULES)
+    except Exception:
+        pass
+
+
+def _chercher_dans_cache_persistant(matricule_norm, fichiers_disponibles=None):
+    """Cherche une matricule dans le cache persistant.
+    Renvoie (chemin_fichier, page_idx_0based) ou (None, None).
+
+    Si fichiers_disponibles est fourni (liste de chemins), on verifie que le
+    fichier cache existe toujours sur le disque avant de le renvoyer (securite
+    contre un fichier PDF renomme/supprime)."""
+    if not matricule_norm:
+        return None, None
+    cache = _charger_cache_matricules()
+    entree = cache.get(str(matricule_norm))
+    if not entree:
+        return None, None
+    chemin = entree.get("fichier")
+    page = entree.get("page")
+    if chemin is None or page is None:
+        return None, None
+    # Verification : le fichier doit exister sur le disque
+    if not os.path.isfile(str(chemin)):
+        # Tentative : le chemin absolu a peut-etre change (deplacement du dossier)
+        nom = os.path.basename(str(chemin))
+        if fichiers_disponibles:
+            for f in fichiers_disponibles:
+                if os.path.basename(str(f)).lower() == nom.lower():
+                    # Mettre a jour le cache avec le nouveau chemin
+                    entree["fichier"] = str(f)
+                    _sauver_cache_matricules()
+                    return str(f), int(page)
+        # Fichier introuvable : on supprime l'entree obsolete du cache
+        cache.pop(str(matricule_norm), None)
+        _sauver_cache_matricules()
+        return None, None
+    return str(chemin), int(page)
+
 
 def _get_doc(chemin_pdf, mode_debug=False):
     """Ouvre (ou reutilise) un document fitz. Retourne (doc, nb_pages) ou (None, 0)."""
@@ -1449,6 +1562,41 @@ def extraire_page_etudiant_pdf(
     try:
         # --- Cas 1 : matricule source disponible -> recherche par matricule ---
         if mat_norm and matricule_valide(matricule):
+
+            # ==================================================================
+            # NIVEAU 0 (le plus rapide) : CACHE PERSISTANT sur disque
+            # Si la matricule a deja ete trouvee lors d'une recherche precedente
+            # (meme apres un redemarrage de l'app), on saute DIRECTEMENT a la
+            # bonne page du bon fichier. Zero OCR, zero parcours.
+            # ==================================================================
+            fich_cache, page_cache = _chercher_dans_cache_persistant(
+                mat_norm, fichiers
+            )
+            if fich_cache is not None and page_cache is not None:
+                if mode_debug:
+                    print(f"[DEBUG] CACHE PERSISTANT HIT : {mat_norm} -> {fich_cache} page {page_cache+1}")
+                # Verification rapide que la matricule est bien sur cette page
+                # (securite : le PDF a pu etre regenere avec une mise en page differente)
+                ok, trouvee, src = _verifier_matricule_sur_page(
+                    fich_cache, page_cache, matricule, mode_debug
+                )
+                if ok:
+                    data = _extraire_page_pdf_bytes(fich_cache, page_cache, mode_debug)
+                    if data:
+                        extraire_page_etudiant_pdf.dernier_fichier_trouve = fich_cache
+                        extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
+                        extraire_page_etudiant_pdf.derniere_source = "cache_persistant"
+                        # Le cache est deja a jour, inutile de re-enregistrer
+                        return data, page_cache + 1, "cache_persistant", "matricule_correspondante"
+                else:
+                    # La page cachee ne contient plus la matricule (PDF modifie).
+                    # On supprime l'entree obsolete et on relance la recherche complete.
+                    if mode_debug:
+                        print(f"[DEBUG] cache persistant obsolete pour {mat_norm} -> recherche complete")
+                    cache = _charger_cache_matricules()
+                    cache.pop(str(mat_norm), None)
+                    _sauver_cache_matricules()
+
             for fichier in fichiers:
                 # 1a) Index manuel prioritaire (Matricule | Fichier | Page)
                 #     -> saut direct a la page, pas de parcours complet
@@ -1465,6 +1613,8 @@ def extraire_page_etudiant_pdf(
                             extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
                             extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
                             extraire_page_etudiant_pdf.derniere_source = src
+                            # ENREGISTREMENT DANS LE CACHE PERSISTANT (pour les prochaines fois)
+                            _enregistrer_dans_cache(mat_norm, fichier, page_idx)
                             return data, page_idx + 1, methode_idx, "matricule_correspondante"
 
                 # 1b) Recherche automatique dans toutes les pages (avec cache)
@@ -1479,6 +1629,8 @@ def extraire_page_etudiant_pdf(
                         extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
                         extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
                         extraire_page_etudiant_pdf.derniere_source = methode
+                        # ENREGISTREMENT DANS LE CACHE PERSISTANT (pour les prochaines fois)
+                        _enregistrer_dans_cache(mat_norm, fichier, page_idx)
                         return data, page_idx + 1, methode, "matricule_correspondante"
 
             return None, None, None, "matricule_differentee"
@@ -1499,6 +1651,8 @@ def extraire_page_etudiant_pdf(
                             extraire_page_etudiant_pdf.dernier_fichier_trouve = fichier
                             extraire_page_etudiant_pdf.derniere_matricule_trouvee = trouvee
                             extraire_page_etudiant_pdf.derniere_source = src
+                            if mat_norm:
+                                _enregistrer_dans_cache(mat_norm, fichier, page_idx)
                             return data, page_idx + 1, methode_idx, "matricule_correspondante"
 
         return None, None, None, "matricule_source_vide"
@@ -5380,6 +5534,37 @@ td{{word-wrap:break-word;}}
                         f"Fich01.pdf \u2192 FichN.pdf"
                     )
 
+                    # --- Indicateur de cache persistant (mémoire des recherches) ---
+                    try:
+                        _nb_cache = len(_charger_cache_matricules())
+                    except Exception:
+                        _nb_cache = 0
+                    _col_cache1, _col_cache2 = st.columns([3, 1])
+                    with _col_cache1:
+                        if _nb_cache > 0:
+                            st.success(
+                                f"\U0001f9e0 **Cache de recherche** : {_nb_cache} matricule(s) "
+                                f"d\u00e9j\u00e0 localis\u00e9e(s) \u2014 la recherche de ces \u00e9tudiants "
+                                f"est **instantan\u00e9e** (saut direct \u00e0 la page)."
+                            )
+                        else:
+                            st.caption(
+                                "\U0001f9e0 Cache de recherche vide \u2014 la 1\u1d49\u02b3 recherche "
+                                f"de chaque \u00e9tudiant construit automatiquement le cache."
+                            )
+                    with _col_cache2:
+                        if _nb_cache > 0:
+                            if st.button(
+                                "\U0001f9f9 Vider le cache",
+                                key="btn_vider_cache_matricules",
+                                help="Supprime le fichier cache_matricules_cartes.json. "
+                                     "La prochaine recherche de chaque \u00e9tudiant repartira "
+                                     "de z\u00e9ro (OCR si n\u00e9cessaire)."
+                            ):
+                                _vider_cache_matricules()
+                                st.success("\u2705 Cache vid\u00e9 avec succ\u00e8s.")
+                                st.rerun()
+
                     # Bouton de recherche : on stocke le résultat en session_state
                     # afin que le bouton de téléchargement persiste entre les reruns.
                     cle_recherche = f"carte_result_{sel_etud.replace(' ', '_')}"
@@ -5394,8 +5579,8 @@ td{{word-wrap:break-word;}}
                             f"🔍 Recherche de la matricule "
                             f"{matricule_source or '(manquante)'} dans "
                             f"{len(fichiers_cartes)} fichier(s)... "
-                            f"(les PDF scannés sont OCR-isés "
-                            f"en parallèle, patience si besoin)"
+                            f"(instantané si déjà en cache, "
+                            f"OCR parallèle sinon)"
                         ):
                             pdf_page, num_page, methode, statut = extraire_page_etudiant_pdf(
                                 fichiers_cartes, sel_etud, df_index,
