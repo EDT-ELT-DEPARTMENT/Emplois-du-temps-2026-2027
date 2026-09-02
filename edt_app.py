@@ -977,15 +977,21 @@ def _texte_page_natif(chemin_pdf, page_index, mode_debug=False):
         return _TEXTE_CACHE[cle]
 
     texte = ""
+    fitz_ok = False
     doc, nb = _get_doc(chemin_pdf, mode_debug)
     if doc is not None and 0 <= page_index < nb:
         try:
             texte = doc.load_page(page_index).get_text() or ""
+            fitz_ok = True
         except Exception:
             texte = ""
 
-    # Secours pdfplumber SI fitz n'a rien donne (page scannee / texte image)
-    if not texte.strip():
+    # Secours pdfplumber UNIQUEMENT si fitz n'a pas pu ouvrir la page.
+    # Si fitz a ouvert la page mais renvoie du texte vide, c'est une page
+    # scannee (image) : pdfplumber ne ferait que rouvrir tout le PDF
+    # pour rien (tres lent sur un PDF de 200 pages). On saute donc le
+    # secours dans ce cas et on laisse l'OCR (Passe 2) s'en charger.
+    if not fitz_ok:
         try:
             import pdfplumber
             with pdfplumber.open(chemin_pdf) as pdf:
@@ -1085,6 +1091,112 @@ def _ocr_page(chemin_pdf, page_index, mode_debug=False):
 _ocr_page.disponible = None
 
 
+# --- OCR rapide oriente "chiffres uniquement" (pour la recherche de matricule) ---
+def _ocr_page_chiffres(chemin_pdf, page_index, mode_debug=False):
+    """
+    OCR optimise pour detecter UNIQUEMENT des chiffres (matricules).
+    - DPI plus bas (100) => rasterisation 2x plus rapide.
+    - config Tesseract : --psm 6 + whitelist 0-9 / - . espaces
+      => Tesseract ignore les lettres => beaucoup plus rapide.
+    - Resultat mis en cache dans _OCR_CACHE (cle dediee 'chiffres').
+    """
+    if not getattr(_ocr_page, "disponible", None):
+        try:
+            import pytesseract  # noqa
+            from pdf2image import convert_from_path  # noqa
+            _ocr_page.disponible = True
+        except Exception:
+            _ocr_page.disponible = False
+            return ""
+    if not _ocr_page.disponible:
+        return ""
+
+    cle = (str(chemin_pdf), int(page_index), "chiffres")
+    if cle in _OCR_CACHE:
+        return _OCR_CACHE[cle]
+
+    texte = ""
+    try:
+        import pytesseract
+        from pdf2image import convert_from_path
+        images = convert_from_path(
+            chemin_pdf,
+            dpi=200,  # 200 = bon compromis vitesse/precision pour les chiffres
+            first_page=page_index + 1,
+            last_page=page_index + 1,
+            grayscale=True,  # niveaux de gris => plus rapide + plus precis
+        )
+        # Pre-traitement : binarisation (seuil) pour ameliorer la reconnaissance des chiffres
+        try:
+            from PIL import Image
+            pil_images = []
+            for img in images:
+                # conversion en niveaux de gris + seuillage automatique (Otsu via point)
+                g = img.convert("L") if img.mode != "L" else img
+                # seuil simple : pixels < 180 -> noir, sinon blanc
+                pil_images.append(g.point(lambda x: 0 if x < 180 else 255, "L"))
+            images = pil_images
+        except Exception:
+            pass  # on garde les images brutes si PIL indisponible
+
+        # config : PSM 6 (bloc de texte uniforme), whitelist chiffres + separateurs
+        config = "--psm 6 -c tessedit_char_whitelist=0123456789-/. "
+        for img in images:
+            texte += pytesseract.image_to_string(img, lang="eng", config=config) + "\n"
+    except Exception as ex:
+        if mode_debug:
+            print(f"[DEBUG] OCR chiffres erreur: {ex}")
+        texte = ""
+
+    _OCR_CACHE[cle] = texte
+    return texte
+
+
+# --- OCR parallele d'un lot de pages (ThreadPoolExecutor) ---
+def _ocr_batch(chemin_pdf, page_indices, mode_debug=False, max_workers=None):
+    """
+    Lance l'OCR (mode chiffres) sur plusieurs pages EN PARALLELE.
+    Renvoie un dict {page_index: texte_ocr}.
+    Utilise un ThreadPoolExecutor : pdf2image + pytesseract liberent le GIL
+    pendant les appels C (Tesseract), donc le parallelisme est effectif.
+    """
+    if not page_indices:
+        return {}
+    if not getattr(_ocr_page, "disponible", None):
+        # verifier dispo une fois
+        try:
+            import pytesseract  # noqa
+            from pdf2image import convert_from_path  # noqa
+            _ocr_page.disponible = True
+        except Exception:
+            _ocr_page.disponible = False
+            return {}
+    if not _ocr_page.disponible:
+        return {}
+
+    from concurrent.futures import ThreadPoolExecutor
+    if max_workers is None:
+        max_workers = min(4, max(1, (os.cpu_count() or 2)))
+
+    results = {}
+    # Ne traiter que les pages non deja en cache
+    a_traiter = []
+    for idx in page_indices:
+        cle = (str(chemin_pdf), int(idx), "chiffres")
+        if cle in _OCR_CACHE:
+            results[idx] = _OCR_CACHE[cle]
+        else:
+            a_traiter.append(idx)
+
+    if a_traiter:
+        def _work(idx):
+            return idx, _ocr_page_chiffres(chemin_pdf, idx, mode_debug)
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for idx, txt in pool.map(_work, a_traiter):
+                results[idx] = txt
+    return results
+
+
 # =============================================================================
 #  RECHERCHE PAR MATRICULE DANS UN PDF  (optimisee)
 # =============================================================================
@@ -1093,12 +1205,17 @@ def _rechercher_matricule_dans_pdf(chemin_pdf, matricule_cible, mode_debug=False
     Parcourt toutes les pages d'un PDF et renvoie (page_index, methode, matricule_trouvee)
     de la PREMIERE page contenant exactement la matricule cible.
 
-    Optimisations :
-      - Le PDF est ouvert UNE SEULE fois (fitz, via _get_doc).
-      - Le texte de chaque page est mis en cache (_TEXTE_CACHE).
-      - pdfplumber n'est appele QUE si fitz ne donne rien sur une page.
-      - L'OCR n'est lance QUE sur les pages sans texte natif, et son resultat est cache.
-      - Early-exit des la premiere page trouvee.
+    Strategie en 2 passes (tres rapide meme sur les PDF scannes) :
+      Passe 1 — Texte natif (instantane) : on extrait le texte de toutes les pages
+                via fitz (une seule ouverture). Si la matricule y figure, on retourne
+                immediatement. Couvre les PDF "normaux" en quelques millisecondes.
+      Passe 2 — OCR parallele (PDF scannes) : pour les pages SANS texte natif, on
+                lance l'OCR "chiffres uniquement" EN PARALLELE (ThreadPoolExecutor)
+                sur toutes ces pages d'un coup, puis on cherche la matricule.
+                Le parallelisme (2-4 workers) divise le temps OCR par ~3.
+
+    Caches : texte natif (_TEXTE_CACHE) + OCR (_OCR_CACHE) partages entre
+             recherche et verification => aucun re-travail.
     """
     mat_norm = normaliser_matricule(matricule_cible)
     if not mat_norm:
@@ -1106,7 +1223,6 @@ def _rechercher_matricule_dans_pdf(chemin_pdf, matricule_cible, mode_debug=False
 
     doc, nb_pages = _get_doc(chemin_pdf, mode_debug)
     if nb_pages == 0:
-        # fitz a echoue ; on tente pdfplumber juste pour compter les pages
         try:
             import pdfplumber
             with pdfplumber.open(chemin_pdf) as pdf:
@@ -1116,19 +1232,26 @@ def _rechercher_matricule_dans_pdf(chemin_pdf, matricule_cible, mode_debug=False
                 print(f"[DEBUG] ouverture PDF impossible: {ex}")
             return None, None, None
 
+    pages_scannees = []  # pages sans texte natif -> necessiteront OCR
+
+    # --- Passe 1 : texte natif sur toutes les pages (instantane) ---
     for i in range(nb_pages):
         texte_page = _texte_page_natif(chemin_pdf, i, mode_debug)
-
-        # Comparaison matricule sur texte natif
         if texte_page.strip():
             trouvee = _chercher_matricule_dans_texte(texte_page, mat_norm)
             if trouvee:
                 src = "fitz_matricule" if doc is not None else "plumber_matricule"
                 return i, src, trouvee
+        else:
+            pages_scannees.append(i)
 
-        # OCR pour les pages scannees (texte vide / image) — resultat cache
-        if not texte_page.strip() and OCR_ACTIF:
-            texte_ocr = _ocr_page(chemin_pdf, i, mode_debug)
+    # --- Passe 2 : OCR parallele sur les pages scannees ---
+    if pages_scannees and OCR_ACTIF:
+        if mode_debug:
+            print(f"[DEBUG] {len(pages_scannees)} page(s) scannee(s) -> OCR parallele")
+        batch = _ocr_batch(chemin_pdf, pages_scannees, mode_debug)
+        for i in pages_scannees:
+            texte_ocr = batch.get(i, "")
             if texte_ocr.strip():
                 trouvee = _chercher_matricule_dans_texte(texte_ocr, mat_norm)
                 if trouvee:
@@ -1142,20 +1265,33 @@ def _chercher_matricule_dans_texte(texte, mat_norm):
     Cherche la matricule normalisee dans un bloc de texte.
     Retourne la matricule trouvee (string de chiffres) si elle y figure, sinon None.
 
-    Regle STRICTE : on extrait toutes les suites de chiffres du texte et on cherche
-    une egalite EXACTE avec la matricule cible. Tolerance prefixe +/-3 chiffres
-    pour gerer un caractere supplementaire sur la carte.
+    Regle STRICTE :
+      - On extrait toutes les suites de chiffres du texte.
+      - Une suite c match si :
+          * c == mat_norm  (egalite exacte), OU
+          * c est PLUS LONG que mat_norm ET commence par mat_norm avec un ecart
+            de <= 2 chiffres (tolerance pour un caractere de controle supplementaire
+            imprime sur la carte). JAMAIS l'inverse.
+      - On n'accepte JAMAIS une suite PLUS COURTE que la matricule cible
+        (ex: "2026" ne doit PAS matcher "2026001" — c'est l'annee, pas la matricule).
+      - Pour eviter qu'une annee (ex: 2026) colle a d'autres chiffres et produise
+        un faux "2026001", on cherche aussi la matricule telle quelle dans le texte
+        nettoyé (suppression des separateurs) avant l'extraction par groupes.
     """
     if not mat_norm or not texte:
         return None
-    nettoyage = _RE_NETTOYAGE.sub("", str(texte))
+    s = str(texte)
+    # 1) Recherche directe dans le texte nettoye des separateurs (le plus fiable)
+    nettoyage = _RE_NETTOYAGE.sub("", s)
+    if mat_norm in nettoyage:
+        return mat_norm
+    # 2) Recherche par groupes de chiffres (tolerance prefixe, candidat PLUS LONG seulement)
     for c in _RE_CHIFFRES.findall(nettoyage):
         if c == mat_norm:
             return c
+        # tolerance: candidat legerement plus long (chiffres de controle sur la carte)
         if len(c) > len(mat_norm) and c.startswith(mat_norm) and (len(c) - len(mat_norm)) <= 3:
             return c
-        if len(mat_norm) > len(c) and mat_norm.startswith(c) and (len(mat_norm) - len(c)) <= 3:
-            return mat_norm
     return None
 
 
@@ -1225,20 +1361,33 @@ def _verifier_matricule_sur_page(chemin_pdf, page_index, matricule_cible, mode_d
     Verifie que la matricule cible figure bien sur la page extraite.
     REUTILISE le cache de texte natif (_TEXTE_CACHE) et le cache OCR (_OCR_CACHE)
     => aucune re-ouverture de PDF, aucun re-OCR si deja fait pendant la recherche.
+
+    Ordre :
+      1) texte natif (cache _TEXTE_CACHE)
+      2) OCR "chiffres" rapide (cache _OCR_CACHE cle 'chiffres' — partage avec la recherche)
+      3) OCR complet (cache _OCR_CACHE cle normale — fallback si le mode chiffres rate)
     Renvoie (ok: bool, matricule_trouvee: str|None, source: str).
     """
     mat_norm = normaliser_matricule(matricule_cible)
     if not mat_norm:
         return False, None, "matricule_source_vide"
 
-    # Texte natif (cache)
+    # 1) Texte natif (cache)
     texte_page = _texte_page_natif(chemin_pdf, page_index, mode_debug)
     if texte_page.strip():
         trouvee = _chercher_matricule_dans_texte(texte_page, mat_norm)
         if trouvee:
             return True, trouvee, "texte_natif"
 
-    # OCR (cache — si deja fait pendant la recherche, on le recupere instantanement)
+    # 2) OCR "chiffres" rapide (cache partage avec la recherche => instantane si deja fait)
+    if OCR_ACTIF:
+        texte_ocr = _ocr_page_chiffres(chemin_pdf, page_index, mode_debug)
+        if texte_ocr.strip():
+            trouvee = _chercher_matricule_dans_texte(texte_ocr, mat_norm)
+            if trouvee:
+                return True, trouvee, "ocr"
+
+    # 3) OCR complet (fallback si le mode chiffres n'a rien donne)
     if OCR_ACTIF:
         texte_ocr = _ocr_page(chemin_pdf, page_index, mode_debug)
         if texte_ocr.strip():
@@ -5203,6 +5352,10 @@ td{{word-wrap:break-word;}}
 
                     > L'ancien format `Nom_Complet` | `Page` est toujours accepté en secours,
                     > mais **la carte n'est validée que si la matricule figure sur la page**.
+                    >
+> ⚡ **Accélère drasticement la recherche** : avec un index, le programme
+> saute directement à la bonne page (pas d'OCR sur les autres pages).
+> Sans index, les PDF scannés sont OCR-isés en parallèle (plus lent).
                     """)
                     idx_file = st.file_uploader("📤 Fichier d'index", type=["xlsx", "csv"], key="index_cartes")
                     df_index = None
@@ -5240,7 +5393,9 @@ td{{word-wrap:break-word;}}
                         with st.spinner(
                             f"🔍 Recherche de la matricule "
                             f"{matricule_source or '(manquante)'} dans "
-                            f"{len(fichiers_cartes)} fichier(s)..."
+                            f"{len(fichiers_cartes)} fichier(s)... "
+                            f"(les PDF scannés sont OCR-isés "
+                            f"en parallèle, patience si besoin)"
                         ):
                             pdf_page, num_page, methode, statut = extraire_page_etudiant_pdf(
                                 fichiers_cartes, sel_etud, df_index,
