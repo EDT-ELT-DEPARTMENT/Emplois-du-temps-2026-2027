@@ -8298,7 +8298,7 @@ with col_date:
     st.markdown(f"<div class='date-badge' style='float: right;'>📅 {nom_jour_fr}<br>{date_str}</div>", unsafe_allow_html=True)
 
 # Ligne dorée décorative et badge du mode
-st.markdown("<div style='border-bottom: 3px solid #1E3A8A; margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='border-bottom: 3px solid #FFFFFF; margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 st.markdown(f"<div class='portal-badge'>MODE ACTIF : {portail.upper()}</div>", unsafe_allow_html=True)
 
 # --- LOGIQUE PRINCIPALE ---
