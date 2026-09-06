@@ -1,12 +1,10 @@
 # =============================================================================
 # IMPORTS UNIFIES
 # =============================================================================
-import io
-import qrcode
-from PIL import Image, ImageDraw, ImageFont
+import urllib.parse
 import streamlit as st
 
-# --- INTÉGRATION DE LA DÉNOMINATION OFFICIELLE ET DU LIEN REÇU ---
+# Dénomination officielle
 APP_TITLE = (
     "Plateforme de gestion des EDTs-S2-2026-Département"
     " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
@@ -16,99 +14,26 @@ URL_PLATEFORME = (
 )
 
 
-def generate_qr_code_badge(url_app: str) -> bytes:
-    """Génère le badge QR Code optimisé et stylisé pour l'application UDL-SBA."""
-    qr = qrcode.QRCode(
-        version=3,
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=10,
-        border=2,
-    )
-    qr.add_data(url_app)
-    qr.make(fit=True)
-
-    # QR Code bleu nuit (#1E3A8A) sur fond blanc
-    qr_img = qr.make_image(
-        fill_color="#1E3A8A", back_color="#FFFFFF"
-    ).convert("RGBA")
-
-    # Dimensions du badge
-    card_w = qr_img.size[0] + 40
-    card_h = qr_img.size[1] + 130
-
-    card = Image.new("RGBA", (card_w, card_h), "#F8FAFC")
-    draw = ImageDraw.Draw(card)
-
-    # Bandeau supérieur
-    draw.rectangle([0, 0, card_w, 70], fill="#1E3A8A")
-
-    try:
-        font_title = ImageFont.truetype("arial.ttf", 16)
-        font_sub = ImageFont.truetype("arial.ttf", 10)
-    except IOError:
-        font_title = ImageFont.load_default()
-        font_sub = ImageFont.load_default()
-
-    # En-tête
-    draw.text(
-        (card_w / 2, 22),
-        "🏛️ UDL-SBA",
-        fill="#FFFFFF",
-        font=font_title,
-        anchor="mm",
-    )
-    draw.text(
-        (card_w / 2, 48),
-        "EDTs S2-2026 — Électrotechnique",
-        fill="#E2E8F0",
-        font=font_sub,
-        anchor="mm",
-    )
-
-    # Intégration du QR code
-    card.paste(qr_img, (20, 85), qr_img)
-
-    # Pied de page
-    draw.text(
-        (card_w / 2, card_h - 20),
-        "Faculté de Génie Électrique",
-        fill="#64748B",
-        font=font_sub,
-        anchor="mm",
-    )
-
-    # Conversion en buffer PNG
-    buf = io.BytesIO()
-    card.save(buf, format="PNG")
-    return buf.getvalue()
-
-
-def render_sidebar_qr():
-    """Affiche le QR Code directement dans la barre latérale Streamlit."""
+def render_sidebar_qr_api():
+    """Affiche le QR code via une API web sans nécessiter le module 'qrcode'."""
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📱 Accès Mobile (QR Code)")
 
-    # Génération du QR code avec l'URL exacte
-    qr_bytes = generate_qr_code_badge(URL_PLATEFORME)
+    # Encodage de l'URL pour l'API Google Chart
+    encoded_url = urllib.parse.quote(URL_PLATEFORME)
+    qr_api_url = f"https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl={encoded_url}&choe=UTF-8"
 
-    # Affichage de l'image du QR Code
+    # Affichage direct de l'image issue de l'API
     st.sidebar.image(
-        qr_bytes, caption="Scannez pour accéder", use_container_width=True
-    )
-
-    # Bouton de téléchargement direct
-    st.sidebar.download_button(
-        label="📥 Télécharger le QR Code",
-        data=qr_bytes,
-        file_name="QR_Code_EDT_S2_2026_UDL_SBA.png",
-        mime="image/png",
+        qr_api_url,
+        caption="Scannez pour accéder à la plateforme",
         use_container_width=True,
     )
     st.sidebar.markdown("---")
 
 
-# Appel de la fonction dans la sidebar
-render_sidebar_qr()
+# Appel dans la barre latérale
+render_sidebar_qr_api()
 import streamlit as st
 import pandas as pd
 import base64
