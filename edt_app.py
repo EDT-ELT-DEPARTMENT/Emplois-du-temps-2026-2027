@@ -804,6 +804,10 @@ def detecter_colonnes_etudiant(df):
     mapping['admis_dette']   = find_col(['admisdette', 'admis_dette', 'admisdette', 'endette', 'en_dette', 'dette'])
     mapping['conge_acad']    = find_col(['congeacademique', 'conge_academique', 'congeacad', 'conge_acad', 'congee', 'conge'])
     mapping['sit_ins']       = find_col(["sitd'ins", 'sitdins', "situationd'inscription", 'situationinscription', 'situationins', 'statutinscription', 'statutins'])
+    # ✨ Noms en arabe : colonnes اللقب (nom) et الإسم (prénom) - détection directe,
+    # car la normalisation ASCII (NFKD) supprime les caractères arabes.
+    mapping['nom_ar'] = next((c for c in df.columns if str(c).strip() in ('اللقب', 'لقب')), None)
+    mapping['prenom_ar'] = next((c for c in df.columns if str(c).strip() in ('الإسم', 'الاسم', 'إسم', 'اسم')), None)
     
     return mapping
 
@@ -879,10 +883,47 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
     pdf = PDFFiche(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
+    # ✨ Police arabe (lettres connectées) : chargée si présente près de l'application
+    _police_ar, _police_ar_ok = "Amiri", False
+    for _fam_ar, _cp_ar in [
+        ("Amiri", "Amiri-Regular.ttf"),
+        ("Amiri", os.path.join("fonts", "Amiri-Regular.ttf")),
+        ("Amiri", os.path.join("static", "fonts", "Amiri-Regular.ttf")),
+        ("Amiri", "/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf"),
+        ("NotoNaskhArabic", "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf"),
+    ]:
+        try:
+            if os.path.isfile(_cp_ar):
+                pdf.add_font(_fam_ar, "", _cp_ar)
+                _police_ar, _police_ar_ok = _fam_ar, True
+                break
+        except Exception:
+            continue
+    # Text shaping : indispensable pour connecter les lettres arabes
+    if _police_ar_ok:
+        try:
+            import uharfbuzz  # noqa: F401
+            pdf.set_text_shaping(True)
+        except Exception:
+            _police_ar_ok = False  # sans shaping l'arabe serait illisible -> on ne l'affiche pas
+
+    # ✨ Nom et prénom en arabe (colonnes اللقب / الإسم), si renseignés
+    _nom_ar_pdf = ""
+    try:
+        _c_na, _c_pa = cols_map.get("nom_ar"), cols_map.get("prenom_ar")
+        _na_ar = str(row.get(_c_na, "")).strip() if _c_na else ""
+        _pa_ar = str(row.get(_c_pa, "")).strip() if _c_pa else ""
+        _na_ar = "" if _na_ar.lower() in ("nan", "none") else _na_ar
+        _pa_ar = "" if _pa_ar.lower() in ("nan", "none") else _pa_ar
+        _nom_ar_pdf = " ".join(x for x in (_na_ar, _pa_ar) if x)
+    except Exception:
+        _nom_ar_pdf = ""
+
 
     # ---- Carte d'identité bleue (dégradé simulé par bandes) ----
     x0, y0, w = pdf.l_margin, pdf.get_y() + 2, pdf.epw
-    H = 34
+    _avec_arabe = bool(_nom_ar_pdf) and _police_ar_ok
+    H = 42 if _avec_arabe else 34
     nb_bandes = 28
     for i in range(nb_bandes):
         r = int(30 + (59 - 30) * i / (nb_bandes - 1))
@@ -899,6 +940,9 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
     pdf.cell(0, 5, "FICHE ÉTUDIANT - DÉPARTEMENT D'ÉLECTROTECHNIQUE", 0, 2, "L")
     pdf.set_font("Helvetica", "B", 19)
     pdf.cell(0, 10, _pdf_txt(nom_affiche)[:70], 0, 2, "L")
+    if _avec_arabe:
+        pdf.set_font(_police_ar, "", 13)
+        pdf.cell(0, 8, _nom_ar_pdf[:70], 0, 2, "L")
 
     # ---- Badge d'inscription (couleur selon statut) ----
     _col_sit = cols_map.get("sit_ins")
@@ -4853,6 +4897,18 @@ td{{word-wrap:break-word;}}
                                   "border-radius:9999px;font-size:13px;font-weight:600;white-space:nowrap;\">"
                                   "⚠️ Inscription non validée</span>")
                     _sit_txt = "⚠️ " + (_sit_val if _sit_val else "Non validée") + " (non validée)"
+                # ✨ Nom et prénom en arabe (اللقب / الإسم), affichés sous le nom si renseignés
+                _nom_ar = ""
+                try:
+                    _c_na_w, _c_pa_w = cols_map.get('nom_ar'), cols_map.get('prenom_ar')
+                    _na_w = str(row.get(_c_na_w, "")).strip() if _c_na_w else ""
+                    _pa_w = str(row.get(_c_pa_w, "")).strip() if _c_pa_w else ""
+                    _na_w = "" if _na_w.lower() in ("nan", "none") else _na_w
+                    _pa_w = "" if _pa_w.lower() in ("nan", "none") else _pa_w
+                    _nom_ar = " ".join(x for x in (_na_w, _pa_w) if x)
+                except Exception:
+                    _nom_ar = ""
+                _nom_ar_html = (f'<div dir="rtl" style="font-size:18px;opacity:0.95;margin-top:2px;">{_nom_ar}</div>') if _nom_ar else ""
                 st.markdown(f"""
                     <div style="background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); 
                                 padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
@@ -4860,8 +4916,9 @@ td{{word-wrap:break-word;}}
                             Fiche Étudiant — département d'Électrotechnique
                         </div>
                         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;flex-wrap:wrap;">
-                            <div style="font-size: 24px; font-weight: bold;">
-                                {sel_etud}
+                            <div>
+                                <div style="font-size: 24px; font-weight: bold;">{sel_etud}</div>
+                                {_nom_ar_html}
                             </div>
                             {_sit_badge}
                         </div>
