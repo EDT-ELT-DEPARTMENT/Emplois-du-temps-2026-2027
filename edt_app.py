@@ -803,6 +803,7 @@ def detecter_colonnes_etudiant(df):
     # ✨ NOUVELLES COLONNES
     mapping['admis_dette']   = find_col(['admisdette', 'admis_dette', 'admisdette', 'endette', 'en_dette', 'dette'])
     mapping['conge_acad']    = find_col(['congeacademique', 'conge_academique', 'congeacad', 'conge_acad', 'congee', 'conge'])
+    mapping['sit_ins']       = find_col(["sitd'ins", 'sitdins', "situationd'inscription", 'situationinscription', 'situationins', 'statutinscription', 'statutins'])
     
     return mapping
 
@@ -4632,14 +4633,36 @@ td{{word-wrap:break-word;}}
                 row = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud].iloc[0]
                 
                 # 1️⃣ FICHE ÉTUDIANT D'ABORD
+                # ✅ Statut d'inscription depuis la colonne « Sit. d'ins. » (Validée / Générée)
+                _col_sit_ins = cols_map.get('sit_ins')
+                _sit_val = str(row.get(_col_sit_ins, "")).strip() if _col_sit_ins else ""
+                _sit_up = _sit_val.upper()
+                if _sit_up in ("", "NAN", "NONE"):
+                    _sit_badge = ("<span style=\"background:#64748b;color:white;padding:6px 14px;"
+                                  "border-radius:9999px;font-size:13px;font-weight:600;white-space:nowrap;\">"
+                                  "ℹ️ Inscription : non renseignée</span>")
+                    _sit_txt = "N/A"
+                elif "VALID" in _sit_up:
+                    _sit_badge = ("<span style=\"background:#16a34a;color:white;padding:6px 14px;"
+                                  "border-radius:9999px;font-size:13px;font-weight:600;white-space:nowrap;\">"
+                                  "✅ Inscription validée</span>")
+                    _sit_txt = "✅ Validée"
+                else:
+                    _sit_badge = ("<span style=\"background:#ea580c;color:white;padding:6px 14px;"
+                                  "border-radius:9999px;font-size:13px;font-weight:600;white-space:nowrap;\">"
+                                  "⚠️ Inscription non validée</span>")
+                    _sit_txt = "⚠️ " + (_sit_val if _sit_val else "Non validée") + " (non validée)"
                 st.markdown(f"""
                     <div style="background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); 
                                 padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
                         <div style="font-size: 12px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px;">
                             Fiche Étudiant — département d'Électrotechnique
                         </div>
-                        <div style="font-size: 24px; font-weight: bold; margin-top: 6px;">
-                            {sel_etud}
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;flex-wrap:wrap;">
+                            <div style="font-size: 24px; font-weight: bold;">
+                                {sel_etud}
+                            </div>
+                            {_sit_badge}
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
@@ -4651,6 +4674,7 @@ td{{word-wrap:break-word;}}
                         st.write(f"**Promotion :** {row.get(cols_map['promotion'], 'N/A')}")
                         st.write(f"**Mat. BAC :** {row.get(cols_map['mat_bac'], 'N/A')}")
                         st.write(f"**Mat. Étudiant :** {row.get(cols_map['mat_etud'], 'N/A')}")
+                        st.write(f"**Sit. d'ins. :** {_sit_txt}")
                 
                 with cb:
                     with st.container(border=True):
