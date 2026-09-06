@@ -1108,24 +1108,11 @@ def _arabe_pdf_python(t):
             morceaux.append("".join(chr(_MIROIR_BIDI.get(ord(c), ord(c))) for c in reversed(seg)))
     return "".join(morceaux)
 
-def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
-    """Génère la Fiche Étudiant en PDF coloré (bytes prêts pour st.download_button).
-    Retourne (bytes, None) en cas de succès ou (None, message_d_erreur)."""
-    try:
-        from fpdf import FPDF
-    except ImportError:
-        return None, "La librairie fpdf2 n'est pas installée sur le serveur (pip install fpdf2)."
-
-    class PDFFiche(FPDF):
-        def footer(self):
-            self.set_y(-16)
-            self.set_font("Helvetica", "I", 7.5)
-            self.set_text_color(120, 128, 140)
-            self.cell(0, 5, "Plateforme de gestion des EDTs - Semestre 01 - 2026-2027 - département d'Électrotechnique - FGE/UDL-SBA", 0, 0, "C")
-
-    pdf = PDFFiche(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=18)
-    pdf.add_page()
+def _charger_police_arabe(pdf):
+    """Charge la police arabe pour un PDF : 1) Amiri/Noto présentes sur le
+    disque, 2) sinon police Amiri EMBARQUÉE dans ce fichier (extraite vers un
+    fichier temporaire). Active le shaping HarfBuzz si disponible, sinon le
+    reshapeur pur Python intégré. Retourne (famille, ok, mode_shaping)."""
     # ✨ Police arabe : 1) Amiri/Noto présents sur le disque, 2) sinon police Amiri
     # EMBARQUÉE dans ce fichier (extraite vers un fichier temporaire) : l'arabe
     # s'affiche sur n'importe quel serveur, sans fichier externe à déployer.
@@ -1167,6 +1154,13 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
         except Exception:
             _mode_shaping = "python"
 
+    return _police_ar, _police_ar_ok, _mode_shaping
+
+
+def _dessiner_fiche_etudiant(pdf, row, cols_map, nom_affiche, _police_ar, _police_ar_ok, _mode_shaping):
+    """Dessine UNE fiche étudiant complète sur la page COURANTE du PDF (la page
+    doit déjà avoir été ajoutée par l'appelant). Retourne un message
+    d'avertissement si du texte arabe n'a pas pu être rendu, sinon None."""
     # ✨ Nom et prénom en arabe (colonnes اللقب / الإسم), si renseignés
     _nom_ar_pdf = ""
     try:
@@ -1392,10 +1386,73 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
             pdf.set_font("Helvetica", "B", 9.5)
             pdf.cell(0, 8, "ÉTUDIANT TRANSFÉRÉ (transfert : OUI)", 0, 1, "C", fill=True)
 
+
     _msg_avert = None
     if not _police_ar_ok and (_arabe_degrade[0] or _contient_arabe(_nom_ar_pdf)):
         _msg_avert = "Texte arabe non affiché (police arabe introuvable) : copiez Amiri-Regular.ttf à côté de l'application."
+    return _msg_avert
+
+
+def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
+    """Génère la Fiche Étudiant en PDF coloré (bytes prêts pour st.download_button).
+    Retourne (bytes, None) en cas de succès ou (None, message_d_erreur)."""
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return None, "La librairie fpdf2 n'est pas installée sur le serveur (pip install fpdf2)."
+
+    class PDFFiche(FPDF):
+        def footer(self):
+            self.set_y(-16)
+            self.set_font("Helvetica", "I", 7.5)
+            self.set_text_color(120, 128, 140)
+            self.cell(0, 5, "Plateforme de gestion des EDTs - Semestre 01 - 2026-2027 - département d'Électrotechnique - FGE/UDL-SBA", 0, 0, "C")
+
+    pdf = PDFFiche(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.add_page()
+    _police_ar, _police_ar_ok, _mode_shaping = _charger_police_arabe(pdf)
+    _msg_avert = _dessiner_fiche_etudiant(pdf, row, cols_map, nom_affiche, _police_ar, _police_ar_ok, _mode_shaping)
     return bytes(pdf.output()), _msg_avert
+
+
+def generer_pdf_fiches_promotion(df_promo, cols_map, nom_promotion):
+    """Génère UN SEUL PDF regroupant toutes les fiches des étudiants de la
+    promotion (une fiche par page, dans l'ordre du dataframe fourni —
+    l'appelant trie généralement par nom). Aucune librairie de fusion PDF
+    n'est requise. Retourne (bytes, avertissement_ou_None)."""
+    nb = len(df_promo)
+    if nb == 0:
+        return None, "Aucun étudiant dans cette promotion."
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return None, "La librairie fpdf2 n'est pas installée sur le serveur (pip install fpdf2)."
+
+    class PDFFiches(FPDF):
+        def footer(self):
+            self.set_y(-16)
+            self.set_font("Helvetica", "I", 7.5)
+            self.set_text_color(120, 128, 140)
+            self.cell(0, 5, "Plateforme de gestion des EDTs - Semestre 01 - 2026-2027 - département d'Électrotechnique - FGE/UDL-SBA", 0, 0, "C")
+
+    pdf = PDFFiches(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=18)
+    _police_ar, _police_ar_ok, _mode_shaping = _charger_police_arabe(pdf)
+    avertissement = None
+    for _i, (_idx, _row) in enumerate(df_promo.iterrows(), start=1):
+        _nom_aff = ""
+        try:
+            _nom_aff = str(_row.get("Nom_Complet", "")).strip()
+        except Exception:
+            _nom_aff = ""
+        if not _nom_aff or _nom_aff.lower() in ("nan", "none"):
+            _nom_aff = f"Etudiant {_i}"
+        pdf.add_page()
+        _m = _dessiner_fiche_etudiant(pdf, _row, cols_map, _nom_aff, _police_ar, _police_ar_ok, _mode_shaping)
+        if _m:
+            avertissement = _m
+    return bytes(pdf.output()), avertissement
 # =============================================================================
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
@@ -5179,6 +5236,55 @@ td{{word-wrap:break-word;}}
                 else:
                     st.caption("⚠️ Colonne 'Promotion' non trouvée")
             
+            # ═════════════════════════════════════════════════════════════════════
+            # ✨ FICHES PDF GROUPÉES : toutes les fiches d'une promotion dans un seul
+            # PDF (une fiche par page, ordre alphabétique) — via liste déroulante.
+            # ═════════════════════════════════════════════════════════════════════
+            try:
+                if "Nom_Complet" in df_etu_edt.columns and cols_map_temp.get('promotion'):
+                    with st.expander("📚 Télécharger toutes les fiches d'une promotion (PDF)", expanded=False):
+                        _promos_fiches = sorted(df_etu_edt[cols_map_temp['promotion']].dropna().astype(str).unique())
+                        if _promos_fiches:
+                            _fc1, _fc2 = st.columns([3, 2])
+                            with _fc1:
+                                sel_promo_fiches = st.selectbox("🎓 Promotion :", _promos_fiches, key="sel_promo_fiches_pdf")
+                            _df_fiches_promo = df_etu_edt[
+                                df_etu_edt[cols_map_temp['promotion']].astype(str) == sel_promo_fiches
+                            ].sort_values("Nom_Complet")
+                            _n_fiches = len(_df_fiches_promo)
+                            _cle_pdf = f"fiches_pdf_generes_{sel_promo_fiches}"
+                            with _fc2:
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                _btn_gen_fiches = st.button(f"⚙️ Générer les {_n_fiches} fiches PDF", key="btn_gen_fiches_promo", use_container_width=True)
+                            if _btn_gen_fiches:
+                                with st.spinner(f"Génération des {_n_fiches} fiches de {sel_promo_fiches} — veuillez patienter..."):
+                                    try:
+                                        _b_fiches_promo, _e_fiches_promo = generer_pdf_fiches_promotion(_df_fiches_promo, cols_map_temp, sel_promo_fiches)
+                                        st.session_state[_cle_pdf] = _b_fiches_promo
+                                        st.session_state[_cle_pdf + "_err"] = _e_fiches_promo
+                                    except Exception as _ex:
+                                        st.session_state[_cle_pdf] = None
+                                        st.session_state[_cle_pdf + "_err"] = f"Erreur génération PDF : {str(_ex)[:150]}"
+                            if st.session_state.get(_cle_pdf):
+                                _cD1, _cD2 = st.columns([3, 2])
+                                with _cD2:
+                                    st.download_button(
+                                        f"💾 Télécharger les {_n_fiches} fiches ({sel_promo_fiches})",
+                                        data=st.session_state[_cle_pdf],
+                                        file_name=f"Fiches_{sel_promo_fiches}_2026-2027.pdf",
+                                        mime="application/pdf",
+                                        use_container_width=True,
+                                        key=f"dl_fiches_promo_pdf_{sel_promo_fiches}",
+                                    )
+                                if st.session_state.get(_cle_pdf + "_err"):
+                                    with _cD1:
+                                        st.caption("ℹ️ " + str(st.session_state[_cle_pdf + "_err"]))
+                            elif st.session_state.get(_cle_pdf + "_err"):
+                                st.caption(f"⚠️ {st.session_state[_cle_pdf + '_err']}")
+                        else:
+                            st.caption("⚠️ Aucune promotion détectée dans la liste")
+            except Exception as e:
+                st.caption(f"⚠️ Fiches groupées indisponibles : {str(e)[:120]}")
             if sel_etud:
                 st.divider()
                 
