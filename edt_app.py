@@ -981,7 +981,7 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
         ("GROUPEMENT", (5, 150, 105), [
             ("Groupe", g("groupe")),
             ("Sous groupe", g("sous_groupe")),
-            ("Année du bac", _pdf_txt(row.get("Annee du bac"))),
+            ("Année du bac", _pdf_txt(row.get("Année du bac"))),
             ("Moyenne du bac", _pdf_txt(row.get("Moyenne du bac"))),
         ]),
         ("ÉTAT CIVIL", (180, 83, 9), [
