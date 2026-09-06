@@ -20,3 +20,6 @@ pillow
 pdfplumber
 pypdf
 PyMuPDF
+streamlit
+qrcode
+Pillow
