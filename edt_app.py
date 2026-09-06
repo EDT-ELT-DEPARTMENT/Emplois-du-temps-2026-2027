@@ -1087,7 +1087,7 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
             pdf.set_font("Helvetica", "B", 9.5)
             pdf.cell(0, 8, "ÉTUDIANT TRANSFÉRÉ (transfert : OUI)", 0, 1, "C", fill=True)
 
-    return pdf.output(), None
+    return bytes(pdf.output()), None
 # =============================================================================
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
