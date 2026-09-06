@@ -845,6 +845,205 @@ def format_date_naissance(val):
             pass
     
     return str(val)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GÉNÉRATION PDF DE LA FICHE ÉTUDIANT (bouton de téléchargement)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _pdf_txt(val, val_defaut="N/A"):
+    """Nettoie une valeur pour le PDF (None/NaN -> défaut, accents conservés)."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return val_defaut
+    s = str(val).strip()
+    if s == "" or s.lower() in ("nan", "none"):
+        return val_defaut
+    return s
+
+
+def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
+    """Génère la Fiche Étudiant en PDF coloré (bytes prêts pour st.download_button).
+    Retourne (bytes, None) en cas de succès ou (None, message_d_erreur)."""
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return None, "La librairie fpdf2 n'est pas installée sur le serveur (pip install fpdf2)."
+
+    class PDFFiche(FPDF):
+        def footer(self):
+            self.set_y(-16)
+            self.set_font("Helvetica", "I", 7.5)
+            self.set_text_color(120, 128, 140)
+            self.cell(0, 5, "Plateforme de gestion des EDTs - Semestre 01 - 2026-2027 - département d'Électrotechnique - FGE/UDL-SBA", 0, 0, "C")
+
+    pdf = PDFFiche(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.add_page()
+
+    # ---- Carte d'identité bleue (dégradé simulé par bandes) ----
+    x0, y0, w = pdf.l_margin, pdf.get_y() + 2, pdf.epw
+    H = 34
+    nb_bandes = 28
+    for i in range(nb_bandes):
+        r = int(30 + (59 - 30) * i / (nb_bandes - 1))
+        g = int(58 + (130 - 58) * i / (nb_bandes - 1))
+        b = int(138 + (246 - 138) * i / (nb_bandes - 1))
+        pdf.set_fill_color(r, g, b)
+        pdf.rect(x0 + w * i / nb_bandes, y0, w / nb_bandes + 0.35, H, "F")
+    pdf.set_fill_color(255, 255, 255)
+    pdf.set_draw_color(255, 255, 255)
+    pdf.set_text_color(255, 255, 255)
+
+    pdf.set_xy(x0 + 6, y0 + 4)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 5, "FICHE ÉTUDIANT - DÉPARTEMENT D'ÉLECTROTECHNIQUE", 0, 2, "L")
+    pdf.set_font("Helvetica", "B", 19)
+    pdf.cell(0, 10, _pdf_txt(nom_affiche)[:70], 0, 2, "L")
+
+    # ---- Badge d'inscription (couleur selon statut) ----
+    _col_sit = cols_map.get("sit_ins")
+    _sit = _pdf_txt(row.get(_col_sit, "")) if _col_sit else "N/A"
+    _up = _sit.upper()
+    if _up in ("N/A",):
+        badge_txt, (br, bg, bb) = "INSCRIPTION : NON RENSEIGNÉE", (100, 116, 139)
+    elif "VALID" in _up:
+        badge_txt, (br, bg, bb) = "INSCRIPTION VALIDÉE", (22, 163, 74)
+    else:
+        badge_txt, (br, bg, bb) = "INSCRIPTION NON VALIDÉE", (234, 88, 12)
+
+    pdf.set_fill_color(br, bg, bb)
+    pdf.set_font("Helvetica", "B", 10)
+    bw = 62
+    pdf.set_xy(x0 + 6, y0 + H - 9)
+    pdf.cell(bw, 6.5, badge_txt, 0, 0, "C", fill=True)
+    pdf.set_xy(x0 + w - 6 - 44, y0 + H - 9)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.cell(44, 6.5, "Année 2026-2027", 0, 0, "C")
+
+    pdf.set_y(y0 + H + 4)
+
+    # ---- 3 blocs côte à côte : Scolarité / Groupement / État civil ----
+    def g(col):
+        return _pdf_txt(row.get(cols_map.get(col)))
+
+    naiss = format_date_naissance(row.get(cols_map.get("date_naiss")))
+    blocs = [
+        ("SCOLARITÉ", (30, 58, 138), [
+            ("Promotion", g("promotion")),
+            ("Mat. BAC", g("mat_bac")),
+            ("Mat. Etudiant", g("mat_etud")),
+            ("Sit. d'ins.", _sit),
+        ]),
+        ("GROUPEMENT", (5, 150, 105), [
+            ("Groupe", g("groupe")),
+            ("Sous groupe", g("sous_groupe")),
+            ("Année du bac", _pdf_txt(row.get("Annee du bac"))),
+            ("Moyenne du bac", _pdf_txt(row.get("Moyenne du bac"))),
+        ]),
+        ("ÉTAT CIVIL", (180, 83, 9), [
+            ("Date de naissance", naiss),
+            ("Lieu de naissance", g("lieu_naiss")),
+            ("Sexe", _pdf_txt(row.get("Sexe"))),
+            ("Situation familiale", _pdf_txt(row.get("Situation familiale"))),
+        ]),
+    ]
+
+    y_blocs = pdf.get_y()
+    bw_ = (pdf.epw - 12) / 3
+    bh_ = 58
+    for bi, (titre, couleur, paires) in enumerate(blocs):
+        x = pdf.l_margin + bi * (bw_ + 6)
+        pdf.set_fill_color(248, 250, 252)
+        pdf.set_draw_color(226, 232, 240)
+        pdf.rect(x, y_blocs, bw_, bh_, "DF")
+        pdf.set_fill_color(*couleur)
+        pdf.rect(x, y_blocs, 2.2, bh_, "F")
+        pdf.set_xy(x + 5, y_blocs + 3.5)
+        pdf.set_font("Helvetica", "B", 10.5)
+        pdf.set_text_color(*couleur)
+        pdf.cell(bw_ - 10, 6, titre, 0, 2)
+        yy = y_blocs + 11
+        for lab, val in paires:
+            pdf.set_xy(x + 5, yy)
+            pdf.set_font("Helvetica", "", 7.3)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(bw_ - 10, 4, lab, 0, 2)
+            pdf.set_font("Helvetica", "B", 9.3)
+            pdf.set_text_color(15, 23, 42)
+            v = val if len(val) <= 27 else val[:24] + "..."
+            pdf.cell(bw_ - 10, 5.4, v, 0, 2)
+            yy += 11.4
+        pdf.set_text_color(51, 65, 85)
+
+    pdf.set_xy(pdf.l_margin, y_blocs + bh_ + 6)
+
+
+    # ---- Statuts spéciaux (2 cartes colorées) ----
+    pdf.set_y(pdf.get_y() + 2)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(30, 41, 59)
+    pdf.cell(0, 7, "Statuts spéciaux", 0, 2)
+    pdf.ln(1)
+
+    def carte_statut(label, est_vrai, col_on, txt_on, txt_off):
+        x, y = pdf.get_x(), pdf.get_y()
+        cw, ch = (pdf.epw - 6) / 2, 14
+        (r, g_, b), texte = (col_on, txt_on) if est_vrai else ((148, 163, 184), txt_off)
+        pdf.set_fill_color(r, g_, b)
+        pdf.rect(x, y, cw, ch, "F")
+        pdf.set_fill_color(255, 255, 255)
+        pdf.set_xy(x + 2, y + 2)
+        pdf.cell(cw - 4, ch - 4, texte, 0, 0, "C", fill=True)
+        pdf.set_xy(x, y + ch + 3)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(100, 116, 139)
+        pdf.cell(cw, 5, label, 0, 0, "C")
+        pdf.set_xy(x + cw + 6, y)
+
+    y_avant = pdf.get_y()
+    col_dette = cols_map.get("admis_dette")
+    v_dette = str(row.get(col_dette, "")).strip().upper() == "OUI" if col_dette else False
+    carte_statut("Admis dette", v_dette, (34, 197, 94), "ADMIS EN DETTE : OUI", "ADMIS EN DETTE : NON")
+    carte_statut("Congé académique", str(row.get(cols_map.get("conge_acad"), "")).strip().upper() == "OUI",
+                 (59, 130, 246), "EN CONGÉ ACADÉMIQUE", "PAS DE CONGÉ ACADÉMIQUE")
+    pdf.set_y(y_avant + 27)
+
+    # ---- Coordonnées ----
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(30, 41, 59)
+    pdf.cell(0, 7, "Coordonnées", 0, 2)
+    pdf.ln(1)
+    tel = _pdf_txt(row.get("N° de téléphone"))
+    dvi = row.get("Date validation inscription")
+    dvi_txt = ""
+    if dvi is not None and str(dvi).strip().lower() not in ("", "nan", "none"):
+        try:
+            _dvi_net = str(dvi).strip()
+            import re as _re_dvi
+            _dvi_net = _re_dvi.sub(r"\s+(CET|CEST|UTC|GMT)\s+", " ", _dvi_net)
+            dvi_txt = pd.to_datetime(_dvi_net, errors="raise").strftime("%d/%m/%Y à %H:%M")
+        except Exception:
+            dvi_txt = str(dvi).strip()
+    pdf.set_font("Helvetica", "", 9.5)
+    pdf.set_text_color(51, 65, 85)
+    pdf.set_fill_color(241, 245, 249)
+    pdf.cell(0, 7.5, "Téléphone : " + tel, 0, 1, "L", fill=True)
+    pdf.cell(0, 7.5, "Date validation inscription : " + (dvi_txt if dvi_txt else "non renseignée"), 0, 1, "L", fill=True)
+    if "Email" in row.index and str(row.get("Email", "")).strip().lower() not in ("", "nan", "none"):
+        pdf.cell(0, 7.5, "Email : " + str(row.get("Email")).strip(), 0, 1, "L", fill=True)
+
+    # ---- Transfert ----
+    if "transfert?" in row.index:
+        v_t = str(row.get("transfert?", "")).strip().upper()
+        if v_t == "OUI":
+            pdf.ln(2)
+            pdf.set_fill_color(124, 45, 18)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", "B", 9.5)
+            pdf.cell(0, 8, "ÉTUDIANT TRANSFÉRÉ (transfert : OUI)", 0, 1, "C", fill=True)
+
+    return pdf.output(), None
 # =============================================================================
 # MODULE 1 : SUIVI Assiduité DES ETUDIANTS
 # =============================================================================
@@ -4403,6 +4602,8 @@ td{{word-wrap:break-word;}}
     # ============================================================
     # PORTAIL : RECHERCHE ÉTUDIANT
     # ============================================================
+
+
     elif portail == "🎓 Recherche Étudiant":
         st.markdown("<h1 class='main-title'>🎓 Recherche d'Informations Étudiant</h1>", unsafe_allow_html=True)
         
@@ -4666,6 +4867,19 @@ td{{word-wrap:break-word;}}
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
+
+                # 📄 Bouton de téléchargement de la fiche en PDF coloré
+                try:
+                    _pdf_bytes, _pdf_err = generer_pdf_fiche_etudiant(row, cols_map, sel_etud)
+                    if _pdf_bytes:
+                        _nom_fichier_pdf = f"Fiche_{sel_etud.strip().replace(' ', '_')}.pdf"
+                        pdf_dl_c1, pdf_dl_c2 = st.columns([3, 1])
+                        with pdf_dl_c2:
+                            st.download_button("📄 Télécharger la fiche (PDF)", data=_pdf_bytes, file_name=_nom_fichier_pdf, mime="application/pdf", use_container_width=True, key="dl_fiche_pdf")
+                    else:
+                        st.caption(f"⚠️ PDF indisponible : {_pdf_err}")
+                except Exception as e:
+                    st.caption(f"⚠️ Erreur génération PDF : {str(e)[:120]}")
                 
                 ca, cb, cc = st.columns(3)
                 with ca:
@@ -10762,7 +10976,7 @@ if is_admin:
         pdf.cell(0, 8, _sanitize(f"EMPLOI DU TEMPS INDIVIDUEL - {nom_enseignant.upper()}"), 0, 1, "C")
         pdf.set_font("Arial", "I", 8)
         pdf.set_text_color(100, 100, 100)
-        pdf.cell(0, 5, _sanitize("Semestre 01 - departement d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+        pdf.cell(0, 5, _sanitize("Semestre 01 - département d'Électrotechnique - FGE/UDL-SBA"), 0, 1, "C")
         pdf.ln(3)
     
         if grid.empty or (grid.shape == (1, 1) and grid.iloc[0, 0] == "Aucun cours"):
