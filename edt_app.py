@@ -883,20 +883,28 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
     pdf = PDFFiche(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
-    # ✨ Police arabe (lettres connectées) : chargée si présente près de l'application
+    # ✨ Police arabe (lettres connectées) : chargée si présente près de l'application.
+    # Chemins recherchés à côté de CE script (__file__), puis dans le répertoire de
+    # travail (utile si Streamlit est lancé depuis un autre dossier).
     _police_ar, _police_ar_ok = "Amiri", False
+    _rep_script = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.getcwd()
     for _fam_ar, _cp_ar in [
+        ("Amiri", os.path.join(_rep_script, "Amiri-Regular.ttf")),
         ("Amiri", "Amiri-Regular.ttf"),
+        ("Amiri", os.path.join(_rep_script, "fonts", "Amiri-Regular.ttf")),
         ("Amiri", os.path.join("fonts", "Amiri-Regular.ttf")),
-        ("Amiri", os.path.join("static", "fonts", "Amiri-Regular.ttf")),
+        ("Amiri", os.path.join(_rep_script, "static", "fonts", "Amiri-Regular.ttf")),
         ("Amiri", "/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf"),
         ("NotoNaskhArabic", "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf"),
     ]:
         try:
             if os.path.isfile(_cp_ar):
                 pdf.add_font(_fam_ar, "", _cp_ar)
-                _police_ar, _police_ar_ok = _fam_ar, True
-                break
+                pdf.set_font(_fam_ar, "", 10)
+                _probe = pdf.current_font.cmap if hasattr(pdf.current_font, "cmap") else {}
+                if any(0x0600 <= o <= 0x06FF for o in _probe):
+                    _police_ar, _police_ar_ok = _fam_ar, True
+                    break
         except Exception:
             continue
     # Text shaping : indispensable pour connecter les lettres arabes
@@ -970,6 +978,31 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
     def g(col):
         return _pdf_txt(row.get(cols_map.get(col)))
 
+    def trouver_col(df_cols, cible):
+        """Trouve une colonne par nom, insensible aux accents/casse/espaces.
+        Évite le N/A causé par un nom codé en dur ("Annee du bac" vs "Année du bac")."""
+        import unicodedata as _ud
+        def _norm(s):
+            s = _ud.normalize("NFKD", str(s)).encode("ASCII", "ignore").decode("ASCII")
+            return s.strip().lower().replace(" ", "").replace("_", "").replace("-", "").replace(".", "")
+        cible_n = _norm(cible)
+        for c in df_cols:
+            if _norm(c) == cible_n:
+                return c
+        return None
+
+    _c_bac_an = trouver_col(row.index, "Année du bac")
+    _c_bac_mo = trouver_col(row.index, "Moyenne du bac")
+    bac_annee = _pdf_txt(row.get(_c_bac_an)) if _c_bac_an else "N/A"
+    bac_moyenne = _pdf_txt(row.get(_c_bac_mo)) if _c_bac_mo else "N/A"
+    # Année lue en float Excel (2024.0) -> entier propre
+    if bac_annee not in ("N/A", ""):
+        try:
+            _fl = float(str(bac_annee).replace(",", "."))
+            bac_annee = str(int(_fl)) if _fl == int(_fl) else str(_fl)
+        except (ValueError, TypeError):
+            pass
+
     naiss = format_date_naissance(row.get(cols_map.get("date_naiss")))
     blocs = [
         ("SCOLARITÉ", (30, 58, 138), [
@@ -981,8 +1014,8 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
         ("GROUPEMENT", (5, 150, 105), [
             ("Groupe", g("groupe")),
             ("Sous groupe", g("sous_groupe")),
-            ("Année du bac", _pdf_txt(row.get("Année du bac"))),
-            ("Moyenne du bac", _pdf_txt(row.get("Moyenne du bac"))),
+            ("Année du bac", bac_annee),
+            ("Moyenne du bac", bac_moyenne),
         ]),
         ("ÉTAT CIVIL", (180, 83, 9), [
             ("Date de naissance", naiss),
