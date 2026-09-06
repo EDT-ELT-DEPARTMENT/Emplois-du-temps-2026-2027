@@ -927,6 +927,20 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
     except Exception:
         _nom_ar_pdf = ""
 
+    # ✨ Rendu sécurisé des valeurs : si une valeur contient de l'arabe (ex. lieu de
+    # naissance saisi en arabe pour ~275 étudiants), on la rend avec la police arabe ;
+    # sinon on purifie en latin-1. Plus aucun crash possible sur une valeur inattendue.
+    def _latin1(t):
+        t = t.replace("\u2014", "-").replace("\u2026", "...")
+        return t.encode("latin-1", "replace").decode("latin-1")
+
+    def _rend_txt(t):
+        if _police_ar_ok and any("\u0600" <= c <= "\u06FF" for c in t):
+            pdf.set_font(_police_ar, "", 10)
+            return t
+        pdf.set_font("Helvetica", "B", 9.3)
+        return _latin1(t)
+
 
     # ---- Carte d'identité bleue (dégradé simulé par bandes) ----
     x0, y0, w = pdf.l_margin, pdf.get_y() + 2, pdf.epw
@@ -947,7 +961,7 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
     pdf.set_font("Helvetica", "", 9)
     pdf.cell(0, 5, "FICHE ÉTUDIANT - DÉPARTEMENT D'ÉLECTROTECHNIQUE", 0, 2, "L")
     pdf.set_font("Helvetica", "B", 19)
-    pdf.cell(0, 10, _pdf_txt(nom_affiche)[:70], 0, 2, "L")
+    pdf.cell(0, 10, _latin1(_pdf_txt(nom_affiche)[:70]), 0, 2, "L")
     if _avec_arabe:
         pdf.set_font(_police_ar, "", 13)
         pdf.cell(0, 8, _nom_ar_pdf[:70], 0, 2, "L")
@@ -1045,9 +1059,9 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
             pdf.set_font("Helvetica", "", 7.3)
             pdf.set_text_color(100, 116, 139)
             pdf.cell(bw_ - 10, 4, lab, 0, 2)
-            pdf.set_font("Helvetica", "B", 9.3)
             pdf.set_text_color(15, 23, 42)
             v = val if len(val) <= 27 else val[:24] + "..."
+            v = _rend_txt(v)
             pdf.cell(bw_ - 10, 5.4, v, 0, 2)
             yy += 11.4
         pdf.set_text_color(51, 65, 85)
@@ -1105,10 +1119,10 @@ def generer_pdf_fiche_etudiant(row, cols_map, nom_affiche):
     pdf.set_font("Helvetica", "", 9.5)
     pdf.set_text_color(51, 65, 85)
     pdf.set_fill_color(241, 245, 249)
-    pdf.cell(0, 7.5, "Téléphone : " + tel, 0, 1, "L", fill=True)
-    pdf.cell(0, 7.5, "Date validation inscription : " + (dvi_txt if dvi_txt else "non renseignée"), 0, 1, "L", fill=True)
+    pdf.cell(0, 7.5, _latin1("Téléphone : " + tel), 0, 1, "L", fill=True)
+    pdf.cell(0, 7.5, _latin1("Date validation inscription : " + (dvi_txt if dvi_txt else "non renseignée")), 0, 1, "L", fill=True)
     if "Email" in row.index and str(row.get("Email", "")).strip().lower() not in ("", "nan", "none"):
-        pdf.cell(0, 7.5, "Email : " + str(row.get("Email")).strip(), 0, 1, "L", fill=True)
+        pdf.cell(0, 7.5, _latin1("Email : " + str(row.get("Email")).strip()), 0, 1, "L", fill=True)
 
     # ---- Transfert ----
     if "transfert?" in row.index:
