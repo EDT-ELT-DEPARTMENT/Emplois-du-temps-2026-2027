@@ -3806,8 +3806,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         if not etu_data.empty:
             afficher_identifiants_fiche(etu_data.iloc[0], identifiants_institutionnels)
 
-elif portail == "👤 Mon Espace Enseignant":
-        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
+    elif portail == "👤 Mon Espace Enseignant":
+            poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
 
     # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
     
