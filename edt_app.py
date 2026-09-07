@@ -325,7 +325,6 @@ st.set_page_config(
     page_icon="🏛️",
     initial_sidebar_state="expanded"
 )
-# identifiants_institutionnels = charger_identifiants_depuis_pdfs()
 
 # Masquer les éléments du menu supérieur
 hide_st_style = """
@@ -338,7 +337,7 @@ footer {visibility: hidden;}
 </style>
 """
 st.markdown(hide_st_style, unsafe_allow_html=True)
-# identifiants_institutionnels = charger_identifiants_depuis_pdfs()
+
 # =============================================================================
 # CONNEXION SUPABASE GLOBALE (partagée)
 # =============================================================================
@@ -5045,219 +5044,8 @@ td{{word-wrap:break-word;}}
     # ============================================================
     # PORTAIL : RECHERCHE ÉTUDIANT
     # ============================================================
-    # ═══════════════════════════════════════════════════════════════════════════
-# EXTRACTION DES IDENTIFIANTS DEPUIS LES PDFs - VERSION AMÉLIORÉE
-# ═══════════════════════════════════════════════════════════════════════════
-
-import re
-import json
-
-def extraire_identifiants_pdf_robuste(pdf_path):
-    """
-    Extrait les identifiants des PDFs de comptes institutionnels de manière robuste
-    Structure du PDF: chaque étudiant occupe environ 20-25 lignes
-    """
-    try:
-        import subprocess
-        
-        # Extraire le texte du PDF
-        result = subprocess.run(
-            ['pdftotext', pdf_path, '-'],
-            capture_output=True,
-            text=True,
-            encoding='utf-8'
-        )
-        
-        texte = result.stdout
-        lignes = texte.split('\n')
-        
-        identifiants = {}
-        
-        i = 0
-        while i < len(lignes):
-            ligne = lignes[i].strip()
-            
-            # Chercher "N° inscription" ou "N° d'inscription"
-            if "N° inscription" in ligne or ("N°" in ligne and "inscription" in ligne):
-                try:
-                    # La ligne suivante contient le N° inscription
-                    if i + 1 < len(lignes):
-                        num_inscription = lignes[i + 1].strip()
-                        
-                        # Vérifier que c'est un numéro valide
-                        if re.match(r'^\d{12}$', num_inscription):
-                            
-                            # Chercher les données autour
-                            etud = {
-                                'num_inscription': num_inscription,
-                                'nom': '',
-                                'prenom': '',
-                                'email': '',
-                                'username': '',
-                                'password': '',
-                                'plateforme_url': 'http://learn.univ-sba.dz',
-                                'webmail_url': 'http://mail.univ-sba.dz'
-                            }
-                            
-                            # Chercher en arrière pour Nom et Prénom
-                            for j in range(max(0, i - 30), i):
-                                if "Nom :" in lignes[j]:
-                                    etud['nom'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
-                                if "Prénom :" in lignes[j]:
-                                    etud['prenom'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
-                            
-                            # Chercher en avant pour les identifiants
-                            for j in range(i, min(len(lignes), i + 50)):
-                                if "E-mail :" in lignes[j] or "E-Mail :" in lignes[j]:
-                                    etud['email'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
-                                if "Nom utilisateur :" in lignes[j]:
-                                    etud['username'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
-                                if "Mot de passe :" in lignes[j]:
-                                    etud['password'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
-                                
-                                # Stop quand on trouve un nouveau numéro
-                                if "N° inscription" in lignes[j] and j > i + 5:
-                                    break
-                            
-                            # Ajouter au dictionnaire
-                            identifiants[num_inscription] = etud
-                
-                except Exception as e:
-                    pass
-            
-            i += 1
-        
-        return identifiants
-    
-    except Exception as e:
-        return {}
 
 
-@st.cache_data(show_spinner=False)
-def charger_identifiants_depuis_pdfs():
-    """
-    Charge les identifiants depuis les deux PDFs
-    """
-    identifiants_total = {}
-    
-    # Chemins des PDFs
-    pdfs = [
-        "./comptes_etudiants_groupe_ING_ETT.pdf",
-        "./comptes_etudiants_groupe_MCIL_ETT.pdf"
-    ]
-    
-    for pdf_path in pdfs:
-        if os.path.exists(pdf_path):
-            try:
-                ident = extraire_identifiants_pdf_robuste(pdf_path)
-                identifiants_total.update(ident)
-            except Exception as e:
-                pass
-    
-    return identifiants_total
-
-
-def afficher_fiche_identifiants(etu_data, identifiants_db):
-    """
-    Affiche les identifiants institutionnels dans la fiche étudiant
-    """
-    
-    # Chercher le matricule (peut avoir plusieurs noms selon la source)
-    matricule = None
-    
-    for col_name in ['Mat. Etudiant', 'Matricule Étudiant', 'Mat. Étudiant', 'matricule']:
-        if col_name in etu_data:
-            matricule = str(etu_data[col_name]).strip()
-            if matricule and len(matricule) > 5:
-                break
-    
-    if not matricule:
-        st.warning("⚠️ Matricule étudiant non trouvé")
-        return
-    
-    # Chercher dans la base de données
-    ident = identifiants_db.get(matricule)
-    
-    if ident:
-        st.markdown("---")
-        st.markdown("### 🔐 Identifiants Institutionnels")
-        
-        # Informations personnelles
-        info_col1, info_col2 = st.columns(2)
-        
-        with info_col1:
-            st.write(f"**📧 E-mail:** `{ident.get('email', 'N/A')}`")
-            st.write(f"**👤 Nom d'utilisateur:** `{ident.get('username', 'N/A')}`")
-        
-        with info_col2:
-            # Afficher le mot de passe avec option de masquage
-            pwd = ident.get('password', 'N/A')
-            show_pwd = st.checkbox(
-                "Afficher le mot de passe",
-                key=f"show_pwd_{matricule}",
-                value=False
-            )
-            
-            if show_pwd:
-                st.write(f"**🔑 Mot de passe:** `{pwd}`")
-            else:
-                masked = '*' * len(pwd) if pwd != 'N/A' else 'N/A'
-                st.write(f"**🔑 Mot de passe:** `{masked}`")
-        
-        # Liens d'accès rapide
-        st.markdown("**🔗 Liens d'Accès Rapide:**")
-        btn_col1, btn_col2 = st.columns(2)
-        
-        with btn_col1:
-            st.link_button(
-                "📚 Plateforme e-Learning",
-                ident.get('plateforme_url', '#'),
-                use_container_width=True,
-                icon="🌐"
-            )
-        
-        with btn_col2:
-            st.link_button(
-                "📧 Webmail Universitaire",
-                ident.get('webmail_url', '#'),
-                use_container_width=True,
-                icon="📬"
-            )
-        
-        # Détails complets
-        with st.expander("📋 Détails complets"):
-            st.markdown("""
-**Informations de Connexion Complètes**
-
-| Champ | Valeur |
-|-------|--------|
-| **E-mail** | `{email}` |
-| **Nom d'utilisateur** | `{username}` |
-| **Mot de passe** | `{password}` |
-| **Plateforme e-Learning** | {plateforme} |
-| **Webmail** | {webmail} |
-
-**Conseils d'Utilisation:**
-- ✅ Préservez la casse (majuscules/minuscules)
-- ✅ Le mot de passe fonctionne pour les deux services
-- ✅ Gardez vos identifiants en sécurité
-- ✅ En cas de problème, contactez le support universitaire
-            """.format(
-                email=ident.get('email', 'N/A'),
-                username=ident.get('username', 'N/A'),
-                password=ident.get('password', 'N/A'),
-                plateforme=ident.get('plateforme_url', 'N/A'),
-                webmail=ident.get('webmail_url', 'N/A')
-            ))
-        
-        # Badge de succès
-        st.success(f"✅ Identifiants trouvés pour {matricule}")
-    
-    else:
-        st.info(f"ℹ️ Aucun identifiant trouvé pour le matricule: **{matricule}**")
-        st.caption("Les identifiants seront disponibles une fois les PDFs intégrés")
-
-    # afficher_fiche_identifiants(etu_row, identifiants_institutionnels)
     elif portail == "🎓 Recherche Étudiant":
         st.markdown("<h1 class='main-title'>🎓 Recherche d'Informations Étudiant</h1>", unsafe_allow_html=True)
         
@@ -7749,7 +7537,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-# identifiants_institutionnels = charger_identifiants_depuis_pdfs()
 
 # --- CONNEXION BASE DE DONNÉES ---
 
@@ -8452,7 +8239,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-# identifiants_institutionnels = charger_identifiants_depuis_pdfs()
 
 # --- CONNEXION BASE DE DONNÉES ---
 URL = st.secrets["SUPABASE_URL"]
