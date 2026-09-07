@@ -3420,20 +3420,85 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         )
                     else:
                         # Matricules disponibles dans l'Excel étudiant.
+                        # La sélection est organisée par PROMOTION :
+                        # 1) choisir la promotion ;
+                        # 2) choisir ensuite le matricule parmi les étudiants de cette promotion.
                         df_etu["_mat_recherche_ett"] = df_etu[col_mat].apply(normaliser_mat_etudiant)
-                        mats_valides = [m for m in df_etu["_mat_recherche_ett"].tolist() if m]
-                        mats_uniques = sorted(set(mats_valides))
+
+                        col_promo = cols_map.get("promotion")
+
+                        if col_promo:
+                            df_etu["_promotion_recherche_ett"] = (
+                                df_etu[col_promo]
+                                .fillna("")
+                                .astype(str)
+                                .str.strip()
+                                .replace({"nan": "", "None": ""})
+                            )
+                        else:
+                            # Si la colonne Promotion n'existe pas, on conserve une
+                            # catégorie unique afin que la recherche par matricule
+                            # continue de fonctionner.
+                            df_etu["_promotion_recherche_ett"] = "Toutes les promotions"
+
+                        promotions_valides = sorted(
+                            {
+                                str(p).strip()
+                                for p in df_etu["_promotion_recherche_ett"].tolist()
+                                if str(p).strip()
+                            },
+                            key=lambda x: x.lower()
+                        )
+
+                        if not promotions_valides:
+                            promotions_valides = ["Toutes les promotions"]
 
                         c1, c2 = st.columns([3, 1])
+
                         with c1:
-                            sel_mat = st.selectbox(
-                                "🔎 Sélectionner le Mat. Étudiant (N° inscription) :",
-                                [""] + mats_uniques,
-                                key="sel_mat_etudiant_tab4",
+                            sel_promotion = st.selectbox(
+                                "🎓 Sélectionner la promotion :",
+                                [""] + promotions_valides,
+                                key="sel_promotion_etudiant_tab4",
                             )
+
                         with c2:
                             st.markdown("<br>", unsafe_allow_html=True)
-                            st.caption(f"Total : {len(mats_uniques)} matricules")
+                            st.caption(f"Total : {len(promotions_valides)} promotions")
+
+                        # Filtrage des étudiants selon la promotion sélectionnée.
+                        if sel_promotion:
+                            df_promo = df_etu[
+                                df_etu["_promotion_recherche_ett"] == sel_promotion
+                            ].copy()
+                        else:
+                            df_promo = df_etu.iloc[0:0].copy()
+
+                        mats_promotion = sorted(
+                            {
+                                m for m in df_promo["_mat_recherche_ett"].tolist() if m
+                            }
+                        )
+
+                        if sel_promotion:
+                            c3, c4 = st.columns([3, 1])
+
+                            with c3:
+                                sel_mat = st.selectbox(
+                                    "🔎 Sélectionner le Mat. Étudiant (N° inscription) :",
+                                    [""] + mats_promotion,
+                                    key="sel_mat_etudiant_tab4",
+                                )
+
+                            with c4:
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                st.caption(f"Total : {len(mats_promotion)} matricules")
+
+                            # La recherche détaillée ne démarre qu'après sélection
+                            # de la promotion ET du matricule.
+                        else:
+                            sel_mat = ""
+                            st.info("👆 Sélectionnez d'abord une promotion pour afficher ses matricules.")
 
                         if sel_mat:
                             lignes = df_etu[
