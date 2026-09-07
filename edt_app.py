@@ -1373,14 +1373,14 @@ with st.sidebar:
     <p style='color: white; font-weight: bold; margin-bottom: 10px; margin-top: 10px;'>📂 MODULES</p>
     """, unsafe_allow_html=True)
     
-    for module_name, module_info in MODULES_NAVIGATION.items():
-        is_active = st.session_state.module_sel == module_name
-        
+    for idx, (module_name, module_info) in enumerate(modules.items()):
         if st.button(
-            f"{module_info['icon']} {module_name}",
-            use_container_width=True,
-            key=f"module_btn_{module_name.replace(' ', '_')}"
-        ):
+        f"{module_info['icon']} {module_name}",
+        use_container_width=True,
+        key=f"module_btn_{idx}_{module_name.replace(' ', '_')}",
+    ):
+        # Votre logique d'action lors du clic
+        pass
             st.session_state.module_sel = module_name
             st.session_state.page_active = module_info['pages'][0][1]
             st.rerun()
