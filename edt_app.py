@@ -949,7 +949,824 @@ AMIRI_TTF_B64 += "99Jq6QdpjbRWWif9KK2XNkgbpU3SZmmLtFX6SdombZd2SDulTGmXtFvaI+2Vfp
 AMIRI_TTF_B64 += "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"
 AMIRI_TTF_B64 += "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"
 AMIRI_TTF_B64 += "yLGZWe41vEO0hfeJtzLj3cb7RDt4z9j61lgHdm6z6esP7EkRfh8Kz/n8eM7Y6jw82YNt/D7gUXuqA5jHGtPCYxU2o2Bk3QKAURQMobcCt+AY2KA3O/UAkgU1dgBLqDEqbF3hsxwj1oVniGp+cyQ8L1AwsxojjgbM12HfHnbtawDYijd7rgVg2x5+6usBY4mfA48D+4EngMeAXwG/AMAmHlHCg4k9GNmDmZFVOA99velrLAguUPCIwrcV/qJmm/B9hX8r7F3NLxB9FFEEOb5TsKuC2dTKgX96RB1v7P59wNr0TuxbZCN/AL6WMBYvtnExEAdKgTIgBlj7FwGFAPxNUVdF/RX11C8C4BoF1yg4RhfA/lMo/2nAeAsRTcFdajwBn1PjMPCIwj/0Ts727RQMqog4sFyn4DC1yAduSRjzWzQEK+vFdm8CsAgAnkmm8Yuo46G3hw7efA4M78EtHv3mfwk8C1g0MMYGd6hFDfCSBz95cJM3zjXuTYfZutVmA4bfK/xawR8K/lbwCnI4pyvDzOJqkfYp4EksIwKpccX/AfB7D85W+LxapAQ/qvEL+BL27xKWITyDdUQvRcRGpuiSpj8yAQVnK3JKf8x4wh+l7OQz1K7Z/Hm4DOe8fDbmq+Zsjw3IqAuQxcyWNHOXnsyre8s2uVFOl+8hlz4HmfSTyG9ewN9sOYC/Vvk18uo25tJzXdx1kwWup+svS93ZbpCsdUPcELnMVbkRssFVI8e+3E10k/lfHT6/HltP6DGIesyiHq3Uo416zKEe86jHQupxIfVYRz02UI8vU49N1MOe4xb+lfHENnkZ4wkbN2zjuGE7r3EtrlEvX2EpD+K4iCxPLLYnfwm7Y7ApUUtpWf17CWSnri1h4/glx5/w8usfkTifxDclOsIT8MSS40+nU1NOPkNOTc19Tnzq09o0rpTamUbpqV3p0ZB702Mg70pjbJrakx4PeU96IuTuNNo2tRNH1fN3b3osf+9Kj+PvnvQE/t6TnsTf3SL/D+x/LHE="
+# =============================================================================
+# IMPORTS UNIFIES
+# =============================================================================
+import urllib.parse
+import streamlit as st
 
+# Dénomination officielle
+APP_TITLE = (
+    "Plateforme de gestion des EDTs-S2-2026-Département"
+    " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+)
+URL_PLATEFORME = (
+    "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
+)
+
+
+def render_sidebar_qr_api():
+    """Affiche le QR code via une API web sans nécessiter le module 'qrcode'."""
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📱 Accès Mobile (QR Code)")
+
+    # Encodage de l'URL pour l'API Google Chart
+    encoded_url = urllib.parse.quote(URL_PLATEFORME)
+    qr_api_url = f"https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl={encoded_url}&choe=UTF-8"
+
+    # Affichage direct de l'image issue de l'API
+    st.sidebar.image(
+        qr_api_url,
+        caption="Scannez pour accéder à la plateforme",
+        use_container_width=True,
+    )
+    st.sidebar.markdown("---")
+
+
+# Appel dans la barre latérale
+render_sidebar_qr_api()
+import streamlit as st
+import pandas as pd
+import base64
+import io
+import time
+import re
+import os
+import hashlib
+import zipfile
+import math
+import smtplib
+import secrets
+import mimetypes
+from datetime import datetime, timedelta, timezone
+from collections import defaultdict, Counter
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+from pathlib import Path
+
+try:
+    from supabase import create_client, Client
+except ImportError:
+    create_client = None
+    Client = None
+
+try:
+    from fpdf import FPDF
+except ImportError:
+    FPDF = None
+
+try:
+    from docx import Document
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+except ImportError:
+    Document = None
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FONCTIONS UTILITAIRES : Demande EDT + Email Admin
+# ═══════════════════════════════════════════════════════════════════════════
+
+def envoyer_email_notification_admin(demande_info, fichier_bytes=None):
+    """
+    Notifie l'admin par email qu'une nouvelle demande EDT est arrivée.
+    """
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.base import MIMEBase
+        from email import encoders
+
+        SMTP_SERVER = 'smtp.gmail.com'
+        SMTP_PORT = 587
+        SMTP_USER = "chef.department.elt.fge@gmail.com"
+        SMTP_PASS = "gkzs pdza yodb icvd"
+        EMAIL_ADMIN = "chef.department.elt.fge@gmail.com"
+
+        nom_ens = demande_info.get('enseignant_nom', 'Inconnu')
+        email_ens = demande_info.get('enseignant_email', 'N/A')
+        date_dem = demande_info.get('date_demande', datetime.now().strftime("%d/%m/%Y %H:%M"))
+        nb_lignes = len(demande_info.get('lignes', []))
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"📬 Nouvelle demande EDT — {nom_ens}"
+        msg["From"] = SMTP_USER
+        msg["To"] = EMAIL_ADMIN
+
+        html_body = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+<div style="background:linear-gradient(135deg,#DC2626 0%,#EF4444 100%);color:white;padding:25px;text-align:center;">
+<h2 style="margin:0;font-size:20px;">🔔 Plateforme EDT — Nouvelle Demande</h2>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">département d'Électrotechnique - FGE/UDL-SBA</p>
+</div>
+<div style="padding:30px;">
+<p style="color:#334155;font-size:15px;">Salem Admin,</p>
+<p style="color:#64748b;font-size:14px;">
+    L'enseignant <strong style="color:#1E3A8A;">{nom_ens}</strong> vient de soumettre 
+    une demande de mise à jour de son emploi du temps.
+</p>
+<div style="background:#fef2f2;border-left:5px solid #DC2626;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;">
+    <p style="margin:0 0 8px 0;color:#991b1b;font-weight:600;">📋 Récapitulatif</p>
+    <table style="width:100%;font-size:13px;color:#334155;">
+        <tr><td style="padding:4px 0;"><b>Enseignant :</b></td><td>{nom_ens}</td></tr>
+        <tr><td style="padding:4px 0;"><b>Email :</b></td><td>{email_ens}</td></tr>
+        <tr><td style="padding:4px 0;"><b>Date :</b></td><td>{date_dem}</td></tr>
+        <tr><td style="padding:4px 0;"><b>Créneaux proposés :</b></td><td><strong style="color:#DC2626;">{nb_lignes}</strong> ligne(s)</td></tr>
+    </table>
+</div>
+<div style="background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:15px;margin:20px 0;color:#1e40af;font-size:13px;">
+    <strong>⚡ Action requise :</strong><br>
+    Connectez-vous à la plateforme, rubrique <strong>"📝 Demandes de Mise à Jour EDT"</strong>.
+</div>
+<p style="color:#64748b;font-size:13px;"><i>Cet email est généré automatiquement. Le fichier Excel est joint.</i></p>
+</div>
+<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
+    Faculté de Génie Electrique - Université Djillali Liabes - Sidi Bel Abbes
+</div>
+</div>
+</body></html>"""
+
+        msg.attach(MIMEText(html_body, "html"))
+
+        if fichier_bytes:
+            part = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            part.set_payload(fichier_bytes)
+            encoders.encode_base64(part)
+            part.add_header(
+                "Content-Disposition",
+                f"attachment; filename=Demande_EDT_{nom_ens.replace(' ', '_')}.xlsx"
+            )
+            msg.attach(part)
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.send_message(msg)
+        server.quit()
+        return True
+
+    except Exception as e:
+        print(f"[EMAIL ADMIN] Erreur : {e}")
+        return False
+
+
+def generer_excel_demande_edt(donnees_lignes, nom_enseignant=""):
+    """
+    Génère un fichier Excel à partir des données de demande.
+    Retourne un BytesIO.
+    """
+    try:
+        df = pd.DataFrame(donnees_lignes)
+        ordre_cols = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+        cols_presentes = [c for c in ordre_cols if c in df.columns]
+        df = df[cols_presentes]
+
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Demande EDT', index=False)
+        excel_buffer.seek(0)
+        return excel_buffer
+
+    except Exception as e:
+        st.error(f"Erreur génération Excel : {e}")
+        return None
+
+
+def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_client):
+    """
+    Sauvegarde une demande EDT. Si Supabase échoue, bascule en local.
+    Garantit l'ordre des colonnes : Enseignements, Code, Enseignants, Horaire, Jours, Lieu, Promotion
+    """
+    try:
+        excel_buffer = generer_excel_demande_edt(donnees_lignes, nom_prof)
+        if excel_buffer is None:
+            return False, "❌ Erreur lors de la génération Excel", None
+        
+        excel_buffer.seek(0)
+        fichier_bytes = excel_buffer.getvalue()
+
+        date_now = datetime.now()
+        fichier_data = {
+            "enseignant_email": email_prof,
+            "enseignant_nom": nom_prof,
+            "lignes": donnees_lignes,
+            "date_generation": date_now.strftime("%d/%m/%Y %H:%M")
+        }
+
+        supabase_ok = False
+        if supabase_client:
+            try:
+                supabase_client.table("edt_update_requests").insert({
+                    "enseignant_id": email_prof,
+                    "enseignant_email": email_prof,
+                    "enseignant_nom": nom_prof,
+                    "fichier_data": fichier_data,
+                    "statut": "En attente",
+                    "date_demande": date_now.isoformat()
+                }).execute()
+                supabase_ok = True
+            except Exception as e:
+                print(f"[SUPABASE] Erreur : {e}")
+
+        if not supabase_ok:
+            if "demandes_edt_local" not in st.session_state:
+                st.session_state.demandes_edt_local = []
+            st.session_state.demandes_edt_local.append({
+                "id": len(st.session_state.demandes_edt_local) + 1,
+                "enseignant_email": email_prof,
+                "enseignant_nom": nom_prof,
+                "fichier_data": fichier_data,
+                "statut": "En attente",
+                "date_demande": date_now.strftime("%d/%m/%Y %H:%M"),
+                "excel_bytes": fichier_bytes
+            })
+
+        demande_info = {
+            "enseignant_nom": nom_prof,
+            "enseignant_email": email_prof,
+            "date_demande": date_now.strftime("%d/%m/%Y %H:%M"),
+            "lignes": donnees_lignes
+        }
+        email_envoye = envoyer_email_notification_admin(demande_info, fichier_bytes)
+
+        if supabase_ok:
+            msg = "✅ Demande enregistrée en ligne."
+        else:
+            msg = "✅ Demande enregistrée (mode local)."
+
+        if email_envoye:
+            msg += " 📧 Admin notifié."
+        else:
+            msg += " (Email non transmis.)"
+
+        return True, msg, fichier_bytes
+
+    except Exception as e:
+        return False, f"❌ Erreur : {str(e)[:150]}", None
+
+# =============================================================================
+# CONFIGURATION STREAMLIT (UNIQUE)
+# =============================================================================
+st.set_page_config(
+    page_title="Plateforme ELT - UDL-SBA",
+    layout="wide",
+    page_icon="🏛️",
+    initial_sidebar_state="expanded"
+)
+
+# Masquer les éléments du menu supérieur
+hide_st_style = """
+<style>
+#MainMenu {visibility: hidden;}
+header {visibility: hidden;}
+footer {visibility: hidden;}
+.stAppDeployButton {display:none;}
+#stDecoration {display:none;}
+</style>
+"""
+st.markdown(hide_st_style, unsafe_allow_html=True)
+
+# =============================================================================
+# CONNEXION SUPABASE GLOBALE (partagée)
+# =============================================================================
+MODE_SUPABASE = False
+supabase = None
+
+if create_client:
+    try:
+        SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+        SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+        if SUPABASE_URL and SUPABASE_KEY:
+            supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+            MODE_SUPABASE = True
+    except Exception:
+        pass
+
+# =============================================================================
+# CONSTANTES COMMUNES
+# =============================================================================
+_BASE_DIR = Path(__file__).parent.resolve()
+
+FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
+FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
+FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
+NOM_FICHIER_FIXE = FILE_EDT
+NOM_FICHIER_CONTACTS = FILE_ENS
+
+HORAIRES_LIST = [
+    "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
+]
+JOURS_SEMAINE = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+
+CAUSES_ABSENCES = [
+    "Non justifiee",
+    "Décès dans l'ascendance, la déscendance ou la parenté",
+    "Mariage de l'interessé(e)",
+    "Congé de paternité ou de maternité de l'interessé(e)",
+    "Mission ou convocation officielle",
+    "Maladie de l'interessé(e)",
+    "Autres"
+]
+
+CODE_ADMIN = "1234"
+CODE_ADMIN_EDT = "doctorat2026"
+
+# =============================================================================
+# CSS PERSONNALISÉ & STYLES
+# =============================================================================
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1e3a8a 0%, #3b82f6 100%);
+        min-height: 100vh;
+    }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] button {
+        width: 100%;
+        text-align: left;
+    }
+    .sidebar-active {
+        background: linear-gradient(90deg, #4f46e5, #6366f1) !important;
+        color: white !important;
+        border-radius: 8px !important;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 15px;
+        border-radius: 10px;
+        color: white;
+    }
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+# =============================================================================
+# SESSION STATE POUR NAVIGATION INTELLIGENTE
+# =============================================================================
+if "page_active" not in st.session_state:
+    st.session_state.page_active = "accueil_suivi"
+if "module_sel" not in st.session_state:
+    st.session_state.module_sel = "📊 Suivi d'Assiduite"
+
+# Structure de navigation intelligente
+MODULES_NAVIGATION = {
+    "📊 Suivi d'Assiduite": {
+        "icon": "📊",
+        "pages": [
+            ("🏠 Accueil", "accueil_suivi"),
+            ("📋 Saisir Absences", "saisir_abs"),
+            ("📊 Statistiques", "stats"),
+            ("📈 Rapports", "rapports"),
+            ("👥 Répertoire", "repertoire"),
+            ("🔔 Alertes", "alertes")
+        ]
+    },
+    "📅 Gestion des EDTs & Admin": {
+        "icon": "📅",
+        "pages": [
+            ("🏠 Accueil Admin", "accueil_admin"),
+            ("📅 Créer EDTs", "creer_edt"),
+            ("👨‍🏫 Enseignants", "gerer_ens"),
+            ("🎓 Promotions", "gerer_promo"),
+            ("⚙️ Paramètres", "parametres")
+        ]
+    },
+    "🧠 EDT Intelligent": {
+        "icon": "🧠",
+        "pages": [
+            ("🏠 Accueil IA", "accueil_ia"),
+            ("📊 Affichage EDT", "affichage"),
+            ("🔍 Recherche", "recherche"),
+            ("📤 Import/Export", "import_export"),
+            ("📊 Analytics", "analytics")
+        ]
+    }
+}
+
+# =============================================================================
+# SIDEBAR PRINCIPALE - BARRE LATÉRALE INTELLIGENTE
+# =============================================================================
+with st.sidebar:
+    st.markdown("""
+    <div style='text-align: center; padding: 20px 0;'>
+        <h1 style='color: white; margin: 0; font-size: 36px;'>🏛️</h1>
+        <h2 style='color: white; margin: 10px 0 0 0; font-size: 24px;'>UDL-SBA</h2>
+        <p style='color: rgba(255,255,255,0.85); margin: 5px 0 0 0; font-size: 11px;'>
+            Département d'Électrotechnique - FGE
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px; margin-top: 10px;'>📂 MODULES</p>
+    """, unsafe_allow_html=True)
+    
+    for module_name, module_info in MODULES_NAVIGATION.items():
+        is_active = st.session_state.module_sel == module_name
+        
+        if st.button(
+            f"{module_info['icon']} {module_name}",
+            use_container_width=True,
+            key=f"module_btn_{module_name.replace(' ', '_')}"
+        ):
+            st.session_state.module_sel = module_name
+            st.session_state.page_active = module_info['pages'][0][1]
+            st.rerun()
+    
+    st.markdown("---")
+    
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>📄 PAGES</p>
+    """, unsafe_allow_html=True)
+    
+    for module_name, module_info in MODULES_NAVIGATION.items():
+        if st.session_state.module_sel == module_name:
+            for page_name, page_key in module_info['pages']:
+                is_active_page = st.session_state.page_active == page_key
+                
+                if is_active_page:
+                    st.markdown(f"""
+                    <div style='
+                        background: linear-gradient(90deg, #4f46e5, #6366f1);
+                        color: white;
+                        padding: 10px 12px;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        margin: 5px 0;
+                        text-align: left;
+                    '>{page_name}</div>
+                    """, unsafe_allow_html=True)
+                else:
+                    if st.button(
+                        page_name,
+                        use_container_width=True,
+                        key=f"page_btn_{page_key}"
+                    ):
+                        st.session_state.page_active = page_key
+                        st.rerun()
+            break
+    
+    st.markdown("---")
+    
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>ℹ️ INFOS</p>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Année", "2026-2027", label_visibility="collapsed")
+    with col2:
+        st.metric("Semestre", "S1", label_visibility="collapsed")
+    
+    st.markdown("---")
+    
+    st.markdown("""
+    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>⚡ ACTIONS</p>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("🔄", use_container_width=True, help="Rafraîchir"):
+            st.rerun()
+    with col2:
+        if st.button("🌓", use_container_width=True, help="Thème"):
+            st.info("🌓 Thème switcher - À implémenter")
+    with col3:
+        if st.button("⚙️", use_container_width=True, help="Paramètres"):
+            st.session_state.module_sel = "📅 Gestion des EDTs & Admin"
+            st.session_state.page_active = "parametres"
+            st.rerun()
+    
+    st.markdown("---")
+    
+    st.markdown("""
+    <div style='text-align: center; color: rgba(255,255,255,0.7); font-size: 9px; padding: 15px 0 0 0;'>
+        <p style='margin: 0;'>v2.0 | Année 2026-2027</p>
+        <p style='margin: 0;'>© Département ELT</p>
+        <p style='margin: 5px 0 0 0; font-size: 8px;'>All rights reserved</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+module_sel = st.session_state.module_sel
+
+# =============================================================================
+# FONCTIONS UTILITAIRES COMMUNES
+# =============================================================================
+def nettoyer_nom_enseignant(nom):
+    n = str(nom).strip()
+    for prefix in ["Pr ", "Dr ", "Mme ", "Mr ", "Dr. ", "Pr. ", "M. "]:
+        if n.startswith(prefix):
+            n = n[len(prefix):]
+    return n.strip()
+
+def extraire_nom_famille(nom_complet):
+    n = nettoyer_nom_enseignant(nom_complet)
+    parts = n.split()
+    if not parts:
+        return ""
+    return parts[0].upper()
+
+def mapper_promotion(promo_edt):
+    p = str(promo_edt).strip().upper()
+    mapping_direct = {
+        "ING1": "ING1", "ING2RSE": "ING2", "ING3EI": "ING3EI", "ING3RSE": "ING3RSE",
+        "ING4EI": "ING4", "ING4RSE": "ING4RSE", "ING5RSE": "ING5RSE", "L1MCIL": "L1MCIL",
+        "L2ELT": "L2ELT", "L2MCIL": "MCIL2", "L3ELT": "L3ELT", "MCIL2": "MCIL2",
+        "MCIL3": "MCIL3", "M1CE": "M1CE", "M1ER": "M1ER", "M1MCIL": "M1MCIL",
+        "M1ME": "M1ME", "M1RE": "M1RE", "M2CE": "M2CE", "M2ER": "M2ER",
+        "M2MCIL": "M2MCIL", "M2ME": "M2ME", "M2RE": "M2RE",
+    }
+    if p in mapping_direct:
+        return mapping_direct[p]
+    for key, val in mapping_direct.items():
+        if key in p or p in key:
+            return val
+    if "ING1" in p: return "ING1"
+    elif "ING2" in p: return "ING2"
+    elif "ING3" in p: return "ING3RSE" if "RSE" in p else "ING3EI"
+    elif "ING4" in p: return "ING4"
+    elif "L1" in p and "MCIL" in p: return "L1MCIL"
+    elif "L2" in p and "ELT" in p: return "L2ELT"
+    elif "L2" in p and "MCIL" in p: return "MCIL2"
+    elif "L3" in p and "ELT" in p: return "L3ELT"
+    elif "MCIL3" in p: return "MCIL3"
+    elif "M1" in p:
+        for code in ["CE", "ER", "MCIL", "ME", "RE"]:
+            if code in p: return f"M1{code}"
+    elif "M2" in p:
+        for code in ["CE", "ER", "MCIL", "ME", "RE"]:
+            if code in p: return f"M2{code}"
+    return p
+
+def trouver_matiere_promo(nom_ens_complet, df_edt):
+    nom_fam = extraire_nom_famille(nom_ens_complet)
+    if not nom_fam or df_edt.empty:
+        return pd.DataFrame()
+    mask = df_edt["Enseignants"].astype(str).str.upper().str.contains(
+        re.escape(nom_fam), na=False, regex=True
+    )
+    df_filtre = df_edt[mask].copy()
+    if df_filtre.empty:
+        return pd.DataFrame()
+    df_filtre["Promotion_Mappee"] = df_filtre["Promotion"].apply(mapper_promotion)
+    df_filtre = df_filtre[df_filtre["Enseignants"].astype(str).str.strip().str.lower() != "non defini"]
+    return df_filtre
+
+def trouver_toutes_promos_matiere(nom_matiere, df_edt, df_etu):
+    if df_edt.empty or nom_matiere.strip() == "":
+        return [], pd.DataFrame(), ""
+    
+    mask_matiere = df_edt["Enseignements"].astype(str).str.strip().str.lower() == nom_matiere.strip().lower()
+    df_mat = df_edt[mask_matiere].copy()
+    
+    if df_mat.empty:
+        return [], pd.DataFrame(), ""
+    
+    promos_edt = []
+    for promo_brute in df_mat["Promotion"].dropna().unique():
+        promo_mapped = mapper_promotion(str(promo_brute).strip())
+        promos_edt.append(promo_mapped)
+    
+    promos_edt = list(set(promos_edt))
+    
+    if not promos_edt:
+        return [], pd.DataFrame(), ""
+    
+    promos_etu_uniques = df_etu["Promotion"].dropna().astype(str).str.strip().unique()
+    promos_finales = []
+    
+    for p_edt in promos_edt:
+        p_edt_upper = p_edt.upper()
+        if p_edt_upper in promos_etu_uniques:
+            promos_finales.append(p_edt)
+        else:
+            for p_etu in promos_etu_uniques:
+                p_etu_upper = p_etu.upper()
+                if p_edt_upper == p_etu_upper or p_edt_upper in p_etu_upper or p_etu_upper in p_edt_upper:
+                    promos_finales.append(p_etu)
+                    break
+    
+    promos_finales = list(set(promos_finales))
+    
+    if not promos_finales:
+        return [], pd.DataFrame(), ""
+    
+    df_etudiants_tous = pd.DataFrame()
+    for promo_final in promos_finales:
+        df_promo = df_etu[df_etu["Promotion"].astype(str).str.strip().str.upper() == promo_final.upper()]
+        df_etudiants_tous = pd.concat([df_etudiants_tous, df_promo], ignore_index=True)
+    
+    df_etudiants_tous = df_etudiants_tous.drop_duplicates(subset=["Nom_Complet"])
+    
+    return promos_finales, df_etudiants_tous, promos_finales[0] if promos_finales else ""
+
+def Génerer_page_html(df_data, titre_bilan, colonnes, entetes):
+    html_doc = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>{titre_bilan}</title>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+               background-color: #f1f5f9; color: #1e293b; padding: 30px; margin: 0; }}
+        .header {{ background-color: #1e3a8a; color: white; padding: 20px;
+                   border-radius: 8px 8px 0 0; }}
+        .header h1 {{ margin: 0; font-size: 1.5rem; }}
+        .content {{ background: white; padding: 20px; border-radius: 0 0 8px 8px;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.05); }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
+        th {{ background-color: #0f172a; color: white; padding: 12px 15px; text-align: left; }}
+        td {{ padding: 12px 15px; border-bottom: 1px solid #cbd5e1; font-size: 0.9rem; }}
+        tr:nth-child(even) {{ background-color: #f8fafc; }}
+        .abs-count {{ color: #b91c1c; font-weight: bold; }}
+        .badge-fav {{ background-color: #dcfce7; color: #166534; padding: 4px 8px;
+                      border-radius: 4px; font-weight: 600; font-size: 0.85em; }}
+        .badge-def {{ background-color: #fee2e2; color: #991b1b; padding: 4px 8px;
+                      border-radius: 4px; font-weight: 600; font-size: 0.85em; }}
+        .badge-att {{ background-color: #fef3c7; color: #92400e; padding: 4px 8px;
+                      border-radius: 4px; font-weight: 600; font-size: 0.85em; }}
+        .footer {{ text-align: center; margin-top: 25px; font-size: 0.8rem; color: #64748b; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 {titre_bilan}</h1>
+        <p>Suivi d'Assiduite - département d'Electrotechnique - UDL-SBA</p>
+    </div>
+    <div class="content">
+        <p>Genere le : {datetime.now().strftime('%d/%m/%Y a %H:%M')}</p>
+        <table>
+            <thead><tr>"""
+    for h in entetes:
+        html_doc += f"<th>{h}</th>"
+    html_doc += "</tr></thead><tbody>"
+    for _, row in df_data.iterrows():
+        html_doc += "<tr>"
+        for col in colonnes:
+            val = row.get(col, "")
+            if "Absences" in str(col) or "Total" in str(col):
+                html_doc += f"<td class='abs-count'>{val}</td>"
+            elif str(col).lower() == "statut":
+                if "favor" in str(val).lower() and "de" not in str(val).lower():
+                    html_doc += f"<td><span class='badge-fav'>{val}</span></td>"
+                elif "defavor" in str(val).lower():
+                    html_doc += f"<td><span class='badge-def'>{val}</span></td>"
+                else:
+                    html_doc += f"<td><span class='badge-att'>{val}</span></td>"
+            else:
+                html_doc += f"<td>{val}</td>"
+        html_doc += "</tr>"
+    html_doc += """</tbody></table></div>
+    <div class="footer">&copy; 2026 département d'Electrotechnique - UDL-SBA</div>
+</body>
+</html>"""
+    return html_doc
+
+def detecter_colonnes_etudiant(df):
+    import unicodedata
+    
+    def normalize_col(name):
+        if pd.isna(name):
+            return ""
+        s = str(name).strip().lower()
+        s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII')
+        s = s.replace(' ', '').replace('-', '').replace('_', '').replace('.', '').replace('/', '')
+        return s
+    
+    cols_norm = {normalize_col(c): c for c in df.columns}
+    
+    def find_col(variants):
+        best_match = None
+        best_score = 0
+        MIN_LEN = 4
+        
+        for v in variants:
+            v_norm = normalize_col(v)
+            if not v_norm:
+                continue
+            
+            for key, orig in cols_norm.items():
+                if not key:
+                    continue
+                score = 0
+                
+                if v_norm == key:
+                    score = 1000 + len(key)
+                elif len(v_norm) >= MIN_LEN and len(key) >= MIN_LEN:
+                    if v_norm in key:
+                        score = 500 + len(v_norm)
+                    elif key in v_norm:
+                        score = 200 + len(key)
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = orig
+        
+        return best_match
+    
+    mapping = {}
+    mapping['nom']           = find_col(['nom', 'name', 'familyname'])
+    mapping['prenom']        = find_col(['prenom', 'firstname', 'givenname'])
+    mapping['email']         = find_col(['email', 'e-mail', 'mail', 'courriel', 'adressemail'])
+    mapping['promotion']     = find_col(['promotion', 'promo', 'niveau', 'annee'])
+    mapping['mat_bac']       = find_col(['matbac', 'matriculebac', 'nombac', 'numbac', 'matriculedebac', 'mat.bac'])
+    mapping['mat_etud']      = find_col(['matetudiant', 'matriculeetudiant', 'numetudiant', 'netudiant', 'matetud', 'nometudiant', 'codeetudiant'])
+    mapping['groupe']        = find_col(['groupe', 'grp', 'group', 'section'])
+    mapping['sous_groupe']   = find_col(['sousgroupe', 'sousgrp', 'sg', 'subgroup', 'sousgroupe', 'sousgroupe'])
+    mapping['date_naiss']    = find_col(['datedenaissance', 'datenaiss', 'datenaissance', 'naissance', 'datenaiss.', 'datedenaiss.', 'birthdate', 'birth', 'daten'])
+    mapping['lieu_naiss']    = find_col(['lieudenaissance', 'lieunaiss', 'lieunaissance', 'lieunaiss.', 'lieudenaiss.', 'birthplace', 'lieu'])
+    mapping['admis_dette']   = find_col(['admisdette', 'admis_dette', 'admisdette', 'endette', 'en_dette', 'dette'])
+    mapping['conge_acad']    = find_col(['congeacademique', 'conge_academique', 'congeacad', 'conge_acad', 'congee', 'conge'])
+    mapping['sit_ins']       = find_col(["sitd'ins", 'sitdins', "situationd'inscription", 'situationinscription', 'situationins', 'statutinscription', 'statutins'])
+    mapping['nom_ar'] = next((c for c in df.columns if str(c).strip() in ('اللقب', 'لقب')), None)
+    mapping['prenom_ar'] = next((c for c in df.columns if str(c).strip() in ('الإسم', 'الاسم', 'إسم', 'اسم')), None)
+    
+    return mapping
+
+
+def format_date_naissance(val):
+    if pd.isna(val):
+        return 'N/A'
+    
+    if hasattr(val, 'strftime'):
+        try:
+            return val.strftime('%d/%m/%Y')
+        except:
+            pass
+    
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        try:
+            dt = pd.to_datetime(val, unit='D', origin='1899-12-30')
+            return dt.strftime('%d/%m/%Y')
+        except:
+            pass
+    
+    val_str = str(val).strip()
+    if val_str:
+        import re
+        if re.match(r'^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$', val_str):
+            try:
+                dt = pd.to_datetime(val_str, dayfirst=True, format='%d/%m/%Y')
+                return dt.strftime('%d/%m/%Y')
+            except:
+                pass
+        try:
+            dt = pd.to_datetime(val_str, dayfirst=True, errors='raise')
+            return dt.strftime('%d/%m/%Y')
+        except:
+            pass
+    
+    return str(val)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GÉNÉRATION PDF DE LA FICHE ÉTUDIANT (bouton de téléchargement)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _pdf_txt(val, val_defaut="N/A"):
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return val_defaut
+    s = str(val).strip()
+    if s == "" or s.lower() in ("nan", "none"):
+        return val_defaut
+    return s
+
+
+AMIRI_TTF_B64 = ""
+AMIRI_TTF_B64 += "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"
+AMIRI_TTF_B64 += "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"
+AMIRI_TTF_B64 += "ZSZoPiko6V56dEAmetvUxd+ee+iVvXBUDBpPZFnPm43v45dJjlsxH7V9cWMllmyFwZmqdJGgeALd+57koz4vzIKo5rpPqQ/6iQI7GgmcGhSIGsYkd8hRIY+YTw+0L4qc/NNFHkpFScP4sXSYeXbjB0QmHezeFHMnYHLnGSynH/tSwN6f4zH8FvEFMPZodYdkYpOGpmepokKfwZOjYlJNDXnTbZOjcI5kh/nSIAmHMrk5zV/LqsFeYfRkjcLkeLG+IxM5vKm4vwIb7JERDGfX5oLfDyJdYtyIHyVNaKIpEle9ncRyfrV3RC5dyUo34CZJ88DyCBHvoK6G5w4mvCFPYLAxmmw9oCPtyUjBk1eHYcNfWteXTsfqsyQLw1WXKGI4GdTbfFK2mNAKE5KBVINI6+b6iT7N17yyeY6WDoe75syARX46wvg1PAJutK6yFVkHwIJopdqYnt7PNs3unJX2dncvXlrfQLB34ZJOWYo2LO6rD+PtjWqwe/6lcwuFXP3cS/r2lejcjkQxpGdZicNa41v4Q9KDEmYHLCNqL9tSb7GR+bXSFiU9eFsdDW/yCUE13jtJgKjopsU+gWgtrau6leTPnqpLrutuP+zPx2mkZb8Am+clYFa7gS3s4KJ18KskaWJWWoQ5SPOSSsIlMHRRpoPpeW0i9SqBvrUtokZbTlZkGUtK42AsVliqEwpx15wL5lwyX/Ot6Mse/KdTAsT3wD8D3kO9/sEtpdJp0PM+xnZcJg2owKaTm1A0FndFNIWCpULbTffjMPDlnWfmmp33Hsw6n3CKrChYFITGgVisSPyiCrGgqM25YPal7v7vf8WvHyr5lcFjmQAEnQpL8k9kAQqhrLMoee8FbuiFuOV9SrDQXp47OZEkQpdfDAl+z5DykkR/E5jYH/IkGxfJgoY/3W+/xsNmfuPAVPyoJE1d+PXotvmJXp9/cr0/KgiqeS8CJ4InUNG8+SDmfYhs3YdgRI0mLKMHUZjXvMQqNx6wIcBsfEfpmOn1l/qnT2mZNrE1KkQ7Y+Llzanmg46cP5fS3MTBvjleUROYp2lGI7iFzOGcJDufbi0PYHx9hdPk7raIEJsYF/9S4dQ6tXeuzakVHY4/J0mkgnp6SvEeOV6US63D/aUd3+rfflk/3nr77RtvP/LI253z8Dlw0AjygwY/AuGL4LmLp4LW0+PRW8K1EKtZcZW1Rk9238YIF7uvViCCeQVO6e/Qp+1TvfC0cTY6G+DLAf4U/Y9z2t+CVghvAPzm8qNVWYAt6BZwvHCgwiKeQ7og7uliNybm+Z9kyO+RTdmFXsAXmUcoOBd2uTIMXfjbrIWF+Y6D6Qx/jN8RX3zKRcOOV8IM8jgyj1dF63gFeLIbX+FkB05zsgMP42fxfAc+x4E/YmcTytdWZSUewbvL13P6s13Zh6KZfeAJnRdRu8PvMKfdAw6/u6v4PYA/Lu9w6E9w4Dsd+nur6HdC//fZWQqy3c5SoA14Fc/CmPCVTvbiESt7MTb7MYxvMQrjwB/B15f/4/DZ6sBH9sDnAXxRhd4F34mvKv/LzpLQxU6W5GH0LEly+EU8m2LDH0UfwVGZwYtV8B3oU6PFhjt8iiafKjzLxtzktBs2szEAD1TxG0afGyFHLsmBjzj0DC468Aeq4BEHvtOd7SFvONmdh9HN+F4HfqYNR5vQw8aXDF6+nWeHbPpH0TpjJYePVMF34GD5Jxzeiw+swIFPefepNfRFkx5Jwo651zm9V7gNo4fw+Q78fAc+UgW/0oHvNOFWTmqBlZOCXlhOiuecvMYahi//neew7JzVAzRang335a94f/uFj1A9A0IvgA=
+"""
+
+def charger_police_arabe_fpdf(pdf):
+    """
+    Décode la police Amiri (enregistrée en base64) et l'ajoute à l'instance FPDF.
+    Si la conversion échoue, la fonction se termine sans interrompre l'exécution du script.
+    """
+    import tempfile, base64
+    try:
+        font_bytes = base64.b64decode(AMIRI_TTF_B64)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.ttf')
+        tmp.write(font_bytes)
+        tmp.close()
+        pdf.add_font('Amiri', '', tmp.name, uni=True)
+        pdf.add_font('Amiri', 'B', tmp.name, uni=True)
+        return True
+    except Exception as e:
+        print(f"[POLICE ARABE] Erreur de chargement : {e}")
+        return False
 # =============================================================================
 # ✨ RENDU ARABE DANS LES PDF - police Amiri embarquee + reshapeur pur Python.
 # Auto-suffisant : aucun fichier de police externe ni librairie uharfbuzz requis.
