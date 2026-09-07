@@ -3650,7 +3650,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                             st.markdown("#### 🌐 Accès aux services")
                                             if lien_learning:
                                                 st.markdown(
-                                                    f"**🎓 Plateforme E-Learning :** "
+                                                    f"**🎓 Plateforme E-Learning (http://learn.univ-sba.dz/) :** "
                                                     f"[Ouvrir la plateforme]({lien_learning})"
                                                 )
                                             else:
@@ -3660,7 +3660,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                                             if lien_webmail:
                                                 st.markdown(
-                                                    f"**📬 Webmail :** [Ouvrir le webmail]({lien_webmail})"
+                                                    f"**📬 Webmail (https://mail.univ-sba.dz/static/login/) :** [Ouvrir le webmail]({lien_webmail})"
                                                 )
                                             else:
                                                 st.markdown("**📬 Webmail :** *Non renseigné*")
