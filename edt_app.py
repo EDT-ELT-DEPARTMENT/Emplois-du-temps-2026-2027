@@ -3799,13 +3799,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         ], horizontal=True)
     
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
-    
-            
-            # Afficher les identifiants institutionnels
-                if not df_etu_edt.empty and sel_etud:
-                    etu_data = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud]
-                if not etu_data.empty:
-                    afficher_identifiants_fiche(etu_data.iloc[0], identifiants_institutionnels)
+                
+    # Afficher les identifiants institutionnels
+    if not df_etu_edt.empty and sel_etud:
+        etu_data = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud]
+        if not etu_data.empty:
+            afficher_identifiants_fiche(etu_data.iloc[0], identifiants_institutionnels)
 
 elif portail == "👤 Mon Espace Enseignant":
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
