@@ -3802,8 +3802,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     
             
             # Afficher les identifiants institutionnels
-            if not df_etu_edt.empty and sel_etud:
-                etu_data = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud]
+                if not df_etu_edt.empty and sel_etud:
+                    etu_data = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud]
                 if not etu_data.empty:
                     afficher_identifiants_fiche(etu_data.iloc[0], identifiants_institutionnels)
 
