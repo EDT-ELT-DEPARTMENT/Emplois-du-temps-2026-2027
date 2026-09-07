@@ -1,41 +1,183 @@
 # =============================================================================
 # IMPORTS UNIFIES
 # =============================================================================
-import urllib.parse
-import streamlit as st
-
-# Dénomination officielle
-APP_TITLE = (
-    "Plateforme de gestion des EDTs-S2-2026-Département"
-    " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
-)
-URL_PLATEFORME = (
-    "https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app/"
-)
-
-
-def render_sidebar_qr_api():
-    """Affiche le QR code via une API web sans nécessiter le module 'qrcode'."""
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📱 Accès Mobile (QR Code)")
-
-    # Encodage de l'URL pour l'API Google Chart
-    encoded_url = urllib.parse.quote(URL_PLATEFORME)
-    qr_api_url = f"https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl={encoded_url}&choe=UTF-8"
-
-    # Affichage direct de l'image issue de l'API
-    st.sidebar.image(
-        qr_api_url,
-        caption="Scannez pour accéder à la plateforme",
-        use_container_width=True,
-    )
-    st.sidebar.markdown("---")
-
-
-# Appel dans la barre latérale
-render_sidebar_qr_api()
 import streamlit as st
 import pandas as pd
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EXTRACTION DES IDENTIFIANTS DEPUIS LES PDFs INSTITUTIONNELS (AJOUTÉE)
+# ═══════════════════════════════════════════════════════════════════════════
+
+import re
+
+def extraire_identifiants_pdf_robuste(pdf_path):
+    """Extrait les identifiants des PDFs de comptes institutionnels"""
+    try:
+        import subprocess
+        
+        result = subprocess.run(
+            ['pdftotext', pdf_path, '-'],
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
+        )
+        
+        texte = result.stdout
+        lignes = texte.split('\n')
+        identifiants = {}
+        
+        i = 0
+        while i < len(lignes):
+            ligne = lignes[i].strip()
+            
+            if "N° inscription" in ligne or ("N°" in ligne and "inscription" in ligne):
+                try:
+                    if i + 1 < len(lignes):
+                        num_inscription = lignes[i + 1].strip()
+                        
+                        if re.match(r'^\d{12}$', num_inscription):
+                            etud = {
+                                'num_inscription': num_inscription,
+                                'nom': '',
+                                'prenom': '',
+                                'email': '',
+                                'username': '',
+                                'password': '',
+                                'plateforme_url': 'http://learn.univ-sba.dz',
+                                'webmail_url': 'http://mail.univ-sba.dz'
+                            }
+                            
+                            for j in range(max(0, i - 30), i):
+                                if "Nom :" in lignes[j]:
+                                    etud['nom'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
+                                if "Prénom :" in lignes[j]:
+                                    etud['prenom'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
+                            
+                            for j in range(i, min(len(lignes), i + 50)):
+                                if "E-mail :" in lignes[j] or "E-Mail :" in lignes[j]:
+                                    etud['email'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
+                                if "Nom utilisateur :" in lignes[j]:
+                                    etud['username'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
+                                if "Mot de passe :" in lignes[j]:
+                                    etud['password'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
+                                
+                                if "N° inscription" in lignes[j] and j > i + 5:
+                                    break
+                            
+                            identifiants[num_inscription] = etud
+                
+                except Exception as e:
+                    pass
+            
+            i += 1
+        
+        return identifiants
+    
+    except Exception as e:
+        return {}
+
+
+@st.cache_data(show_spinner=False)
+def charger_identifiants_depuis_pdfs():
+    """Charge les identifiants depuis les deux PDFs"""
+    identifiants_total = {}
+    
+    pdfs = [
+        "./comptes_etudiants_groupe_ING_ETT.pdf",
+        "./comptes_etudiants_groupe_MCIL_ETT.pdf"
+    ]
+    
+    for pdf_path in pdfs:
+        if os.path.exists(pdf_path):
+            try:
+                ident = extraire_identifiants_pdf_robuste(pdf_path)
+                identifiants_total.update(ident)
+            except Exception as e:
+                pass
+    
+    return identifiants_total
+
+
+def afficher_identifiants_fiche(etu_data, identifiants_db):
+    """Affiche les identifiants institutionnels dans la fiche étudiant"""
+    
+    matricule = None
+    
+    for col_name in ['Mat. Etudiant', 'Matricule Étudiant', 'Mat. Étudiant', 'matricule']:
+        if col_name in etu_data:
+            matricule = str(etu_data[col_name]).strip()
+            if matricule and len(matricule) > 5:
+                break
+    
+    if not matricule:
+        return
+    
+    ident = identifiants_db.get(matricule)
+    
+    if ident:
+        st.markdown("---")
+        st.markdown("### 🔐 Identifiants Institutionnels")
+        
+        info_col1, info_col2 = st.columns(2)
+        
+        with info_col1:
+            st.write(f"**📧 E-mail:** `{ident.get('email', 'N/A')}`")
+            st.write(f"**👤 Nom d'utilisateur:** `{ident.get('username', 'N/A')}`")
+        
+        with info_col2:
+            pwd = ident.get('password', 'N/A')
+            show_pwd = st.checkbox(
+                "Afficher le mot de passe",
+                key=f"show_pwd_{matricule}",
+                value=False
+            )
+            
+            if show_pwd:
+                st.write(f"**🔑 Mot de passe:** `{pwd}`")
+            else:
+                masked = '*' * len(pwd) if pwd != 'N/A' else 'N/A'
+                st.write(f"**🔑 Mot de passe:** `{masked}`")
+        
+        st.markdown("**🔗 Liens d'Accès Rapide:**")
+        btn_col1, btn_col2 = st.columns(2)
+        
+        with btn_col1:
+            st.link_button(
+                "📚 Plateforme e-Learning",
+                ident.get('plateforme_url', '#'),
+                use_container_width=True,
+                icon="🌐"
+            )
+        
+        with btn_col2:
+            st.link_button(
+                "📧 Webmail Universitaire",
+                ident.get('webmail_url', '#'),
+                use_container_width=True,
+                icon="📬"
+            )
+        
+        with st.expander("📋 Détails complets"):
+            st.markdown(f"""
+**Informations de Connexion Complètes**
+
+| Champ | Valeur |
+|-------|--------|
+| **E-mail** | `{ident.get('email', 'N/A')}` |
+| **Nom d'utilisateur** | `{ident.get('username', 'N/A')}` |
+| **Mot de passe** | `{ident.get('password', 'N/A')}` |
+
+**Conseils d'Utilisation:**
+- ✅ Préservez la casse (majuscules/minuscules)
+- ✅ Le mot de passe fonctionne pour les deux services
+- ✅ Gardez vos identifiants en sécurité
+            """)
+        
+        st.success(f"✅ Identifiants trouvés pour {matricule}")
+    
+    else:
+        st.info(f"ℹ️ Aucun identifiant trouvé pour le matricule: **{matricule}**")
+
 import base64
 import io
 import time
@@ -325,6 +467,13 @@ st.set_page_config(
     page_icon="🏛️",
     initial_sidebar_state="expanded"
 )
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CHARGEMENT DES IDENTIFIANTS AU DÉMARRAGE
+# ═══════════════════════════════════════════════════════════════════════════
+identifiants_institutionnels = charger_identifiants_depuis_pdfs()
+
+
 
 # Masquer les éléments du menu supérieur
 hide_st_style = """
@@ -3650,7 +3799,15 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         ], horizontal=True)
     
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
-    elif portail == "👤 Mon Espace Enseignant":
+    
+            
+            # Afficher les identifiants institutionnels
+            if not df_etu_edt.empty and sel_etud:
+                etu_data = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud]
+                if not etu_data.empty:
+                    afficher_identifiants_fiche(etu_data.iloc[0], identifiants_institutionnels)
+
+elif portail == "👤 Mon Espace Enseignant":
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
 
     # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
