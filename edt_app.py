@@ -325,7 +325,7 @@ st.set_page_config(
     page_icon="🏛️",
     initial_sidebar_state="expanded"
 )
-identifiants_institutionnels = charger_identifiants_depuis_pdfs()
+
 
 
 # Masquer les éléments du menu supérieur
