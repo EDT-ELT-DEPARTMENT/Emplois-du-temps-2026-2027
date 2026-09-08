@@ -325,6 +325,8 @@ st.set_page_config(
     page_icon="🏛️",
     initial_sidebar_state="expanded"
 )
+identifiants_institutionnels = charger_identifiants_depuis_pdfs()
+
 
 # Masquer les éléments du menu supérieur
 hide_st_style = """
@@ -15128,3 +15130,225 @@ if module_sel == "🔐 Portail Étudiant":
         page_mes_absences()
     elif page_active == "messages":
         page_messages()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EXTRACTION DES IDENTIFIANTS + GÉNÉRATION PDF COLORÉE (BLEU/ROUGE)
+# ═══════════════════════════════════════════════════════════════════════════
+
+import re as regex_module
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm, mm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+# ═════════════════════════════════════════════════════════════════════════════
+# FONCTIONS IDENTIFIANTS INSTITUTIONNELS
+# ═════════════════════════════════════════════════════════════════════════════
+
+def extraire_identifiants_pdf_robuste(pdf_path):
+    """Extrait les identifiants des PDFs de comptes institutionnels"""
+    try:
+        import subprocess
+        result = subprocess.run(['pdftotext', pdf_path, '-'], capture_output=True, text=True, encoding='utf-8')
+        texte = result.stdout
+        lignes = texte.split('\n')
+        identifiants = {}
+        i = 0
+        while i < len(lignes):
+            ligne = lignes[i].strip()
+            if "N° inscription" in ligne or ("N°" in ligne and "inscription" in ligne):
+                try:
+                    if i + 1 < len(lignes):
+                        num_inscription = lignes[i + 1].strip()
+                        if regex_module.match(r'^\d{12}$', num_inscription):
+                            etud = {'num_inscription': num_inscription, 'nom': '', 'prenom': '', 'email': '', 'username': '', 'password': '', 'plateforme_url': 'http://learn.univ-sba.dz', 'webmail_url': 'http://mail.univ-sba.dz'}
+                            for j in range(max(0, i - 30), i):
+                                if "Nom :" in lignes[j]: etud['nom'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
+                                if "Prénom :" in lignes[j]: etud['prenom'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
+                            for j in range(i, min(len(lignes), i + 50)):
+                                if "E-mail :" in lignes[j] or "E-Mail :" in lignes[j]: etud['email'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
+                                if "Nom utilisateur :" in lignes[j]: etud['username'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
+                                if "Mot de passe :" in lignes[j]: etud['password'] = lignes[j + 1].strip() if j + 1 < len(lignes) else ''
+                                if "N° inscription" in lignes[j] and j > i + 5: break
+                            identifiants[num_inscription] = etud
+                except: pass
+            i += 1
+        return identifiants
+    except: return {}
+
+@st.cache_data(show_spinner=False)
+def charger_identifiants_depuis_pdfs():
+    """Charge les identifiants depuis les deux PDFs"""
+    identifiants_total = {}
+    pdfs = ["./comptes_etudiants_groupe_ING_ETT.pdf", "./comptes_etudiants_groupe_MCIL_ETT.pdf"]
+    for pdf_path in pdfs:
+        if os.path.exists(pdf_path):
+            try: identifiants_total.update(extraire_identifiants_pdf_robuste(pdf_path))
+            except: pass
+    return identifiants_total
+
+# ═════════════════════════════════════════════════════════════════════════════
+# FONCTIONS GÉNÉRATION PDF COLORÉE (BLEU/ROUGE)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def creer_fiche_pdf_etudiant_coloree(etu_data, identifiants_db=None):
+    """Crée une fiche étudiant en PDF colorée (BLEU et ROUGE)"""
+    try:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=0.8*cm, leftMargin=0.8*cm, topMargin=1*cm, bottomMargin=1*cm)
+        styles = getSampleStyleSheet()
+        elements = []
+        
+        # EN-TÊTE PRINCIPAL (BLEU FONCÉ)
+        header_style = ParagraphStyle('Header', parent=styles['Heading1'], fontSize=22, textColor=colors.HexColor('#FFFFFF'), spaceAfter=12, alignment=TA_CENTER, fontName='Helvetica-Bold')
+        subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=11, textColor=colors.HexColor('#FFFFFF'), spaceAfter=4, alignment=TA_CENTER, fontName='Helvetica')
+        
+        header_data = [[Paragraph("🎓 FICHE D'ÉTUDIANT", header_style)], [Paragraph("Département d'Électrotechnique | UDL-SBA | 2026-2027", subtitle_style)]]
+        header_table = Table(header_data, colWidths=[19*cm])
+        header_table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#1e3a8a')), ('TEXTCOLOR', (0, 0), (-1, -1), colors.whitesmoke), ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('PADDING', (0, 0), (-1, -1), 0.4*cm), ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold')]))
+        elements.append(header_table)
+        elements.append(Spacer(1, 0.3*cm))
+        
+        # SECTION PERSONNELLE (EN-TÊTE ROUGE)
+        section_title_style = ParagraphStyle('SectionTitle', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#FFFFFF'), spaceAfter=10, fontName='Helvetica-Bold')
+        personal_header = Table([[Paragraph("👤 INFORMATIONS PERSONNELLES", section_title_style)]], colWidths=[19*cm])
+        personal_header.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#dc2626')), ('PADDING', (0, 0), (-1, -1), 0.3*cm)]))
+        elements.append(personal_header)
+        elements.append(Spacer(1, 0.15*cm))
+        
+        value_style = ParagraphStyle('Value', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#1e293b'), spaceAfter=4)
+        
+        nom = str(etu_data.get('Nom', 'N/A')).strip()
+        prenom = str(etu_data.get('Prénom', 'N/A')).strip()
+        date_naissance = str(etu_data.get('Date de naiss.', 'N/A')).strip()
+        lieu = str(etu_data.get('Lieu de naissance', 'N/A')).strip()
+        wilaya = str(etu_data.get('Wilaya de naissance', 'N/A')).strip()
+        sexe = str(etu_data.get('Sexe', 'N/A')).strip()
+        telephone = str(etu_data.get('N° de téléphone', 'N/A')).strip()
+        
+        personal_data = [
+            [Paragraph(f"<b>Nom:</b> {nom}", value_style), Paragraph(f"<b>Prénom:</b> {prenom}", value_style)],
+            [Paragraph(f"<b>Date naissance:</b> {date_naissance}", value_style), Paragraph(f"<b>Sexe:</b> {sexe}", value_style)],
+            [Paragraph(f"<b>Lieu:</b> {lieu}", value_style), Paragraph(f"<b>Wilaya:</b> {wilaya}", value_style)],
+            [Paragraph(f"<b>Téléphone:</b> {telephone}", value_style), Paragraph("&nbsp;", value_style)],
+        ]
+        
+        personal_table = Table(personal_data, colWidths=[9.5*cm, 9.5*cm])
+        personal_table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f0f9ff')), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#0284c7')), ('PADDING', (0, 0), (-1, -1), 0.25*cm), ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'), ('FONTSIZE', (0, 0), (-1, -1), 9)]))
+        elements.append(personal_table)
+        elements.append(Spacer(1, 0.25*cm))
+        
+        # SECTION ACADÉMIQUE (EN-TÊTE BLEU)
+        academic_header = Table([[Paragraph("🎓 INFORMATIONS ACADÉMIQUES", section_title_style)]], colWidths=[19*cm])
+        academic_header.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#0369a1')), ('PADDING', (0, 0), (-1, -1), 0.3*cm)]))
+        elements.append(academic_header)
+        elements.append(Spacer(1, 0.15*cm))
+        
+        mat_etud = str(etu_data.get('Mat. Etudiant', 'N/A')).strip()
+        mat_bac = str(etu_data.get('Mat. BAC', 'N/A')).strip()
+        promotion = str(etu_data.get('Promotion', 'N/A')).strip()
+        groupe = str(etu_data.get('Groupe', 'N/A')).strip()
+        sous_groupe = str(etu_data.get('Sous groupe', 'N/A')).strip()
+        filiere = str(etu_data.get('Libellé filière', 'N/A')).strip()
+        niveau = str(etu_data.get('Libellé niveau', 'N/A')).strip()
+        
+        academic_data = [
+            [Paragraph(f"<b>Matricule Étudiant:</b> {mat_etud}", value_style), Paragraph(f"<b>Matricule BAC:</b> {mat_bac}", value_style)],
+            [Paragraph(f"<b>Promotion:</b> {promotion}", value_style), Paragraph(f"<b>Niveau:</b> {niveau}", value_style)],
+            [Paragraph(f"<b>Groupe:</b> {groupe}", value_style), Paragraph(f"<b>Sous-Groupe:</b> {sous_groupe}", value_style)],
+            [Paragraph(f"<b>Filière:</b> {filiere}", value_style), Paragraph("&nbsp;", value_style)],
+        ]
+        
+        academic_table = Table(academic_data, colWidths=[9.5*cm, 9.5*cm])
+        academic_table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f0f4f8')), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#0369a1')), ('PADDING', (0, 0), (-1, -1), 0.25*cm), ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'), ('FONTSIZE', (0, 0), (-1, -1), 9)]))
+        elements.append(academic_table)
+        elements.append(Spacer(1, 0.25*cm))
+        
+        # SECTION IDENTIFIANTS (EN-TÊTE ROUGE FONCÉ)
+        if identifiants_db:
+            matricule = str(etu_data.get('Mat. Etudiant', '')).strip()
+            ident = identifiants_db.get(matricule) if matricule else None
+            if ident:
+                ident_header = Table([[Paragraph("🔐 IDENTIFIANTS INSTITUTIONNELS", section_title_style)]], colWidths=[19*cm])
+                ident_header.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#991b1b')), ('PADDING', (0, 0), (-1, -1), 0.3*cm)]))
+                elements.append(ident_header)
+                elements.append(Spacer(1, 0.15*cm))
+                
+                ident_data = [
+                    [Paragraph(f"<b>E-mail:</b> {ident.get('email', 'N/A')}", value_style), Paragraph(f"<b>Username:</b> {ident.get('username', 'N/A')}", value_style)],
+                    [Paragraph(f"<b>Mot de passe:</b> {ident.get('password', 'N/A')}", value_style), Paragraph(f"<b>Plateforme:</b> {ident.get('plateforme_url', 'N/A')}", value_style)],
+                ]
+                
+                ident_table = Table(ident_data, colWidths=[9.5*cm, 9.5*cm])
+                ident_table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fef2f2')), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dc2626')), ('PADDING', (0, 0), (-1, -1), 0.25*cm), ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'), ('FONTSIZE', (0, 0), (-1, -1), 9)]))
+                elements.append(ident_table)
+                elements.append(Spacer(1, 0.25*cm))
+        
+        # FOOTER
+        footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor('#64748b'), alignment=TA_CENTER)
+        current_date = datetime.now().strftime("%d/%m/%Y %H:%M")
+        footer_text = Paragraph(f"Fiche générée le {current_date}<br/>© 2026 Département d'Électrotechnique | FGE/UDL-SBA", footer_style)
+        elements.append(Spacer(1, 0.5*cm))
+        elements.append(footer_text)
+        
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer.getvalue()
+    except Exception as e:
+        return None
+
+def generer_pdf_promotion(df_etudiants, promotion, identifiants_db=None):
+    """Génère un PDF contenant toutes les fiches de la promotion"""
+    try:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=0.8*cm, leftMargin=0.8*cm, topMargin=1*cm, bottomMargin=1*cm)
+        styles = getSampleStyleSheet()
+        elements = []
+        
+        title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=20, textColor=colors.HexColor('#dc2626'), spaceAfter=12, alignment=TA_CENTER, fontName='Helvetica-Bold')
+        title = Paragraph(f"📋 LISTE DES ÉTUDIANTS - PROMOTION {promotion}", title_style)
+        elements.append(title)
+        
+        subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=11, textColor=colors.HexColor('#0369a1'), spaceAfter=12, alignment=TA_CENTER, fontName='Helvetica-Bold')
+        subtitle = Paragraph("Département d'Électrotechnique | Année 2026-2027", subtitle_style)
+        elements.append(subtitle)
+        elements.append(Spacer(1, 0.3*cm))
+        
+        table_data = [["N°", "Nom", "Prénom", "Matricule", "Groupe", "Email"]]
+        for i, (idx, row) in enumerate(df_etudiants.iterrows(), 1):
+            mat = str(row.get('Mat. Etudiant', '')).strip()
+            email = ""
+            if identifiants_db and mat in identifiants_db:
+                email = identifiants_db[mat].get('email', '')
+            table_data.append([str(i), str(row.get('Nom', 'N/A')), str(row.get('Prénom', 'N/A')), str(row.get('Mat. Etudiant', 'N/A')), str(row.get('Groupe', 'N/A')), email])
+        
+        table = Table(table_data, colWidths=[1.5*cm, 3*cm, 3*cm, 2.5*cm, 2*cm, 4*cm])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#dc2626')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')]),
+        ]))
+        elements.append(table)
+        elements.append(Spacer(1, 0.5*cm))
+        
+        footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor('#64748b'), alignment=TA_CENTER)
+        current_date = datetime.now().strftime("%d/%m/%Y %H:%M")
+        footer = Paragraph(f"Document généré le {current_date} | Total: {len(df_etudiants)} étudiants", footer_style)
+        elements.append(footer)
+        
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer.getvalue()
+    except Exception as e:
+        return None
+
