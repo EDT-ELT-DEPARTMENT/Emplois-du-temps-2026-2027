@@ -8317,11 +8317,11 @@ Réinitialiser mon mot de passe
     # ═══════════════════════════════════════════════════════════════
     with t_ins:
         st.subheader("📝 Demande d'activation de compte")
-        st.info("Saisissez votre email professionnel. Vos informations se rempliront automatiquement.")
+        st.info("Saisissez votre email. Vos informations se rempliront automatiquement.")
         
         # Initialisation défensive pour éviter NameError
         email_verif = st.text_input(
-            "📧 Saisissez votre email professionnel",
+            "📧 Saisissez votre email",
             key="verif_email_insc_v2",
             placeholder="ex: nom.prenom@univ-sba.dz"
         )
