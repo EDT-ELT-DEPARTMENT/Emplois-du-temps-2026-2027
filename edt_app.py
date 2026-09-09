@@ -6325,11 +6325,124 @@ def _pv_generer_word(data):
     _pv_docx_set_cell_text(table.cell(1,0),data.get("president","")+"\n\nSignature :",False,10,align=WD_ALIGN_PARAGRAPH.CENTER)
     _pv_docx_set_cell_text(table.cell(1,1),data.get("secretaire","")+"\n\nSignature :",False,10,align=WD_ALIGN_PARAGRAPH.CENTER)
 
-    # Pied de page
-    footer=section.footer.paragraphs[0]
-    footer.alignment=WD_ALIGN_PARAGRAPH.CENTER
-    rr=footer.add_run(f"PV Comité Pédagogique — {data['promotion']} — Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
-    rr.font.name="Arial"; rr.font.size=Pt(8)
+    # =====================================================================
+    # EN-TÊTE / LOGO — logo de l'université en haut à gauche sur toutes les pages
+    # =====================================================================
+    header=section.header
+    header.is_linked_to_previous=False
+    header.paragraphs[0].text=""
+    header_table=header.add_table(rows=1, cols=2, width=Inches(7.1))
+    header_table.autofit=True
+
+    # Supprimer les bordures du tableau d'en-tête pour conserver un rendu propre.
+    for row in header_table.rows:
+        for cell in row.cells:
+            tcPr=cell._tc.get_or_add_tcPr()
+            tcBorders=tcPr.first_child_found_in("w:tcBorders")
+            if tcBorders is None:
+                tcBorders=OxmlElement("w:tcBorders")
+                tcPr.append(tcBorders)
+            for edge in ("top","left","bottom","right","insideH","insideV"):
+                tag=qn(f"w:{edge}")
+                element=tcBorders.find(tag)
+                if element is None:
+                    element=OxmlElement(f"w:{edge}")
+                    tcBorders.append(element)
+                element.set(qn("w:val"),"nil")
+
+    p_logo=header_table.cell(0,0).paragraphs[0]
+    p_logo.alignment=WD_ALIGN_PARAGRAPH.LEFT
+    logo_path=_BASE_DIR / "logo.PNG"
+    if not logo_path.exists():
+        logo_path=Path("logo.PNG")
+    if logo_path.exists():
+        run_logo=p_logo.add_run()
+        run_logo.add_picture(str(logo_path), width=Inches(0.75))
+    else:
+        r_logo=p_logo.add_run("[LOGO]")
+        r_logo.font.name="Arial"
+        r_logo.font.size=Pt(7)
+        r_logo.font.italic=True
+
+    # La deuxième cellule reste vide afin de conserver le logo strictement à gauche.
+    header_table.cell(0,1).paragraphs[0].text=""
+
+    # =====================================================================
+    # PIED DE PAGE STANDARD — Référence à gauche + pagination X pages à droite
+    # =====================================================================
+    footer=section.footer
+    footer.is_linked_to_previous=False
+    footer.paragraphs[0].text=""
+
+    footer_table=footer.add_table(rows=1, cols=2, width=Inches(7.1))
+    footer_table.autofit=False
+    footer_table.columns[0].width=Inches(5.9)
+    footer_table.columns[1].width=Inches(1.2)
+
+    # Tableau de pied de page sans bordures.
+    for row in footer_table.rows:
+        for cell in row.cells:
+            tcPr=cell._tc.get_or_add_tcPr()
+            tcBorders=tcPr.first_child_found_in("w:tcBorders")
+            if tcBorders is None:
+                tcBorders=OxmlElement("w:tcBorders")
+                tcPr.append(tcBorders)
+            for edge in ("top","left","bottom","right","insideH","insideV"):
+                tag=qn(f"w:{edge}")
+                element=tcBorders.find(tag)
+                if element is None:
+                    element=OxmlElement(f"w:{edge}")
+                    tcBorders.append(element)
+                element.set(qn("w:val"),"nil")
+
+    # Référence standard, présente sur toutes les pages.
+    p_ref=footer_table.cell(0,0).paragraphs[0]
+    p_ref.alignment=WD_ALIGN_PARAGRAPH.LEFT
+    rr=p_ref.add_run("Réf : UDL-GEL-ER-006-2026")
+    rr.font.name="Arial"
+    rr.font.size=Pt(8)
+
+    # Pagination dynamique Word : PAGE / NUMPAGES donne par exemple 1/5, 2/5...
+    p_page=footer_table.cell(0,1).paragraphs[0]
+    p_page.alignment=WD_ALIGN_PARAGRAPH.RIGHT
+
+    run_page=p_page.add_run()
+    run_page.font.name="Arial"
+    run_page.font.size=Pt(8)
+    fld_page_begin=OxmlElement("w:fldChar")
+    fld_page_begin.set(qn("w:fldCharType"),"begin")
+    instr_page=OxmlElement("w:instrText")
+    instr_page.set(qn("xml:space"),"preserve")
+    instr_page.text=" PAGE "
+    fld_page_sep=OxmlElement("w:fldChar")
+    fld_page_sep.set(qn("w:fldCharType"),"separate")
+    fld_page_end=OxmlElement("w:fldChar")
+    fld_page_end.set(qn("w:fldCharType"),"end")
+    run_page._r.append(fld_page_begin)
+    run_page._r.append(instr_page)
+    run_page._r.append(fld_page_sep)
+    run_page._r.append(fld_page_end)
+
+    slash=p_page.add_run("/")
+    slash.font.name="Arial"
+    slash.font.size=Pt(8)
+
+    run_total=p_page.add_run()
+    run_total.font.name="Arial"
+    run_total.font.size=Pt(8)
+    fld_total_begin=OxmlElement("w:fldChar")
+    fld_total_begin.set(qn("w:fldCharType"),"begin")
+    instr_total=OxmlElement("w:instrText")
+    instr_total.set(qn("xml:space"),"preserve")
+    instr_total.text=" NUMPAGES "
+    fld_total_sep=OxmlElement("w:fldChar")
+    fld_total_sep.set(qn("w:fldCharType"),"separate")
+    fld_total_end=OxmlElement("w:fldChar")
+    fld_total_end.set(qn("w:fldCharType"),"end")
+    run_total._r.append(fld_total_begin)
+    run_total._r.append(instr_total)
+    run_total._r.append(fld_total_sep)
+    run_total._r.append(fld_total_end)
 
     buffer=io.BytesIO()
     doc.save(buffer)
