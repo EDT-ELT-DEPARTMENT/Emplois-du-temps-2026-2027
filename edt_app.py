@@ -841,6 +841,8 @@ def detecter_colonnes_etudiant(df):
     mapping['sit_ins']       = find_col(["sitd'ins", 'sitdins', "situationd'inscription", 'situationinscription', 'situationins', 'statutinscription', 'statutins'])
     # ✨ NOUVEAU : statut général de l'étudiant depuis la colonne source « Statut »
     mapping['statut']        = find_col(['statut', 'status'])
+    # ✨ NOUVEAU : numéro de téléphone depuis la colonne source « N° de téléphone »
+    mapping['telephone']    = find_col(['n° de téléphone', 'n° de telephone', 'numero de téléphone', 'numero de telephone', 'numéro de téléphone', 'numéro de telephone', 'telephone', 'téléphone', 'phone', 'mobile', 'tel', 'tél'])
     # ✨ Noms en arabe : colonnes اللقب (nom) et الإسم (prénom) - détection directe,
     # car la normalisation ASCII (NFKD) supprime les caractères arabes.
     mapping['nom_ar'] = next((c for c in df.columns if str(c).strip() in ('اللقب', 'لقب')), None)
@@ -1430,7 +1432,8 @@ def _dessiner_fiche_etudiant(pdf, row, cols_map, nom_affiche, _police_ar, _polic
     pdf.set_text_color(30, 41, 59)
     pdf.cell(0, 7, "Coordonnées", 0, 2)
     pdf.ln(1)
-    tel = _pdf_txt(row.get("N° de téléphone"))
+    _col_tel_pdf = cols_map.get("telephone")
+    tel = _pdf_txt(row.get(_col_tel_pdf, "")) if _col_tel_pdf else ""
     dvi = row.get("Date validation inscription")
     dvi_txt = ""
     if dvi is not None and str(dvi).strip().lower() not in ("", "nan", "none"):
@@ -5471,6 +5474,9 @@ td{{word-wrap:break-word;}}
                         # ✨ Statut général provenant directement du fichier source
                         if cols_map_temp.get('statut') and cols_map_temp['statut'] in df_special_filtered.columns:
                             colonnes_export3.append(cols_map_temp['statut'])
+                        # ✨ N° de téléphone provenant directement du fichier source
+                        if cols_map_temp.get('telephone') and cols_map_temp['telephone'] in df_special_filtered.columns:
+                            colonnes_export3.append(cols_map_temp['telephone'])
                         
                         if not colonnes_export3:
                             colonnes_export3 = df_special_filtered.columns.tolist()[:4]
@@ -5803,7 +5809,7 @@ td{{word-wrap:break-word;}}
                 # 4️⃣ STATUTS SPÉCIAUX
                 if cols_map.get('admis_dette') or cols_map.get('conge_acad') or cols_map.get('statut'):
                     st.markdown("### 📌 Statuts Spéciaux")
-                    sc1, sc2, sc3 = st.columns(3)
+                    sc1, sc2, sc3, sc4 = st.columns(4)
 
                     with sc1:
                         if cols_map.get('admis_dette'):
@@ -5866,6 +5872,35 @@ td{{word-wrap:break-word;}}
                                         border-left:4px solid #cbd5e1;text-align:center;min-height:78px;">
                                 <div style="font-size:11px;color:#64748b;text-transform:uppercase;
                                             font-weight:700;">Statut (source)</div>
+                                <div style="font-size:16px;font-weight:600;color:#64748b;margin-top:8px;">
+                                    Non renseigné
+                                </div>
+                            </div>
+                            ''', unsafe_allow_html=True)
+
+                    with sc4:
+                        _tel_special_col = cols_map.get('telephone')
+                        _tel_special = str(row.get(_tel_special_col, '')).strip() if _tel_special_col else ''
+                        if _tel_special.lower() in ('nan', 'none'):
+                            _tel_special = ''
+                        if _tel_special:
+                            st.markdown(f'''
+                            <div style="background:linear-gradient(135deg,#fff7ed 0%,#ffedd5 100%);
+                                        padding:12px;border-radius:8px;border-left:4px solid #ea580c;
+                                        text-align:center;min-height:78px;">
+                                <div style="font-size:11px;color:#7c2d12;text-transform:uppercase;
+                                            font-weight:700;">N° de téléphone (source)</div>
+                                <div style="font-size:17px;font-weight:bold;color:#c2410c;margin-top:5px;">
+                                    📞 {_tel_special}
+                                </div>
+                            </div>
+                            ''', unsafe_allow_html=True)
+                        else:
+                            st.markdown('''
+                            <div style="background:#f8fafc;padding:12px;border-radius:8px;
+                                        border-left:4px solid #cbd5e1;text-align:center;min-height:78px;">
+                                <div style="font-size:11px;color:#64748b;text-transform:uppercase;
+                                            font-weight:700;">N° de téléphone (source)</div>
                                 <div style="font-size:16px;font-weight:600;color:#64748b;margin-top:8px;">
                                     Non renseigné
                                 </div>
