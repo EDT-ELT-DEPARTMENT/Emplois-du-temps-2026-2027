@@ -6397,7 +6397,7 @@ def _pv_generer_word(data):
 
     # Référence standard, présente sur toutes les pages.
     p_ref=footer_table.cell(0,0).paragraphs[0]
-    p_ref.alignment=WD_ALIGN_PARAGRAPH.LEFT
+    p_ref.alignment=WD_ALIGN_PARAGRAPH.CENTER
     rr=p_ref.add_run("Réf : UDL-GEL-ER-006-2026")
     rr.font.name="Arial"
     rr.font.size=Pt(8)
