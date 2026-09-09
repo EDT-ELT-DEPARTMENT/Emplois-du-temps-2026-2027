@@ -425,6 +425,10 @@ if "page_active" not in st.session_state:
     st.session_state.page_active = "accueil_suivi"
 if "module_sel" not in st.session_state:
     st.session_state.module_sel = "📊 Suivi d'Assiduite"
+if "pv_pedagogique_data" not in st.session_state:
+    st.session_state.pv_pedagogique_data = {}
+if "pv_pedagogique_points" not in st.session_state:
+    st.session_state.pv_pedagogique_points = 3
 
 # Structure de navigation intelligente
 MODULES_NAVIGATION = {
@@ -457,6 +461,12 @@ MODULES_NAVIGATION = {
             ("🔍 Recherche", "recherche"),
             ("📤 Import/Export", "import_export"),
             ("📊 Analytics", "analytics")
+        ]
+    },
+    "📝 PV Comités Pédagogiques": {
+        "icon": "📝",
+        "pages": [
+            ("🏠 Générateur de PV", "pv_pedagogique")
         ]
     }
 }
@@ -5914,10 +5924,491 @@ td{{word-wrap:break-word;}}
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source") 
     
+# ═════════════════════════════════════════════════════════════════════════════
+# MODULE : GÉNÉRATION AUTOMATIQUE DES PV DES COMITÉS PÉDAGOGIQUES
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _pv_clean(value, default=""):
+    """Retourne une chaîne propre et exploitable dans l'interface/PV."""
+    if value is None:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+    except Exception:
+        pass
+    s = str(value).strip()
+    if s.lower() in {"nan", "none", "nat", "null", "<na>"}:
+        return default
+    return s
+
+
+def _pv_normalize(value):
+    """Normalisation souple pour les comparaisons de noms/matières/promotions."""
+    import unicodedata
+    s = _pv_clean(value).lower()
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _pv_col(df, candidats):
+    """Trouve une colonne en privilégiant la correspondance normalisée."""
+    if df is None or df.empty:
+        return None
+    normal = {_pv_normalize(c): c for c in df.columns}
+    for candidat in candidats:
+        if _pv_normalize(candidat) in normal:
+            return normal[_pv_normalize(candidat)]
+    for col in df.columns:
+        nc = _pv_normalize(col)
+        for candidat in candidats:
+            if _pv_normalize(candidat) in nc or nc in _pv_normalize(candidat):
+                return col
+    return None
+
+
+def _pv_promotions(df_source):
+    """Liste des promotions disponibles dans l'EDT."""
+    col = _pv_col(df_source, ["Promotion", "Promotions"])
+    if not col:
+        return []
+    valeurs = []
+    for v in df_source[col].dropna().tolist():
+        s = _pv_clean(v)
+        if s and s.lower() not in {"non defini", "non défini"}:
+            valeurs.append(s)
+    return sorted(set(valeurs), key=lambda x: _pv_normalize(x))
+
+
+def _pv_matiere_charge(df_source, df_contacts, promotion):
+    """Construit la liste unique des matières d'une promotion et leurs contacts."""
+    if df_source is None or df_source.empty:
+        return pd.DataFrame(columns=["Matière", "Chargé de matière", "Email", "Téléphone"])
+
+    col_mat = _pv_col(df_source, ["Enseignements", "Enseignement", "Matière", "Module"])
+    col_promo = _pv_col(df_source, ["Promotion", "Promotions"])
+    col_ens = _pv_col(df_source, ["Enseignants", "Enseignant", "Chargé de matière", "Charge de matiere"])
+
+    if not col_mat or not col_promo:
+        return pd.DataFrame(columns=["Matière", "Chargé de matière", "Email", "Téléphone"])
+
+    df = df_source.copy()
+    df["__promo"] = df[col_promo].map(_pv_clean)
+    df["__matiere"] = df[col_mat].map(_pv_clean)
+    if col_ens:
+        df["__ens"] = df[col_ens].map(_pv_clean)
+    else:
+        df["__ens"] = ""
+
+    mask = df["__promo"].map(_pv_normalize) == _pv_normalize(promotion)
+    df = df[mask & (df["__matiere"] != "")].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["Matière", "Chargé de matière", "Email", "Téléphone"])
+
+    lignes=[]
+    for matiere, groupe in df.groupby("__matiere", sort=True):
+        enseignants=[]
+        for v in groupe["__ens"].tolist():
+            if v and v not in enseignants:
+                enseignants.append(v)
+        # Un enseignement peut apparaître plusieurs fois dans l'EDT : on regroupe les enseignants.
+        charge = " / ".join(enseignants)
+        email=""
+        telephone=""
+        if df_contacts is not None and not df_contacts.empty and charge:
+            # On prend le premier enseignant pour l'identification principale, avec fallback sur chacun.
+            noms_a_tester=[]
+            for ens in enseignants:
+                noms_a_tester.extend([ens, nettoyer_nom_enseignant(ens), extraire_nom_famille(ens)])
+            for nom_test in noms_a_tester:
+                cible=_pv_normalize(nom_test)
+                for _, cr in df_contacts.iterrows():
+                    nom=_pv_clean(cr.get("NOM", ""))
+                    prenom=_pv_clean(cr.get("PRÉNOM", cr.get("PRENOM", "")))
+                    nom_complet=f"{nom} {prenom}".strip()
+                    candidats=[nom, nom_complet]
+                    if any(cible and cible == _pv_normalize(x) for x in candidats):
+                        email=_pv_clean(cr.get("Email", cr.get("E-mail", "")))
+                        telephone=_pv_clean(cr.get("N°/TEL", cr.get("N° de téléphone", cr.get("Téléphone", cr.get("Telephone", "")))))
+                        break
+                if email or telephone:
+                    break
+
+        lignes.append({
+            "Matière": matiere,
+            "Chargé de matière": charge or "Non renseigné",
+            "Email": email or "Non renseigné",
+            "Téléphone": telephone or "Non renseigné",
+        })
+
+    return pd.DataFrame(lignes).sort_values("Matière", key=lambda s: s.map(_pv_normalize)).reset_index(drop=True)
+
+
+def _pv_teacher_directory(df_contacts):
+    """Liste des membres potentiels du comité à partir du fichier contacts."""
+    if df_contacts is None or df_contacts.empty:
+        return []
+    result=[]
+    for _, row in df_contacts.iterrows():
+        nom=_pv_clean(row.get("NOM", ""))
+        prenom=_pv_clean(row.get("PRÉNOM", row.get("PRENOM", "")))
+        complet=f"{nom} {prenom}".strip()
+        if not complet:
+            continue
+        email=_pv_clean(row.get("Email", row.get("E-mail", "")))
+        tel=_pv_clean(row.get("N°/TEL", row.get("N° de téléphone", row.get("Téléphone", row.get("Telephone", "")))))
+        qualite=_pv_clean(row.get("Qualité", ""))
+        grade=_pv_clean(row.get("Grade", ""))
+        result.append({"Nom":complet, "Email":email, "Téléphone":tel, "Qualité":qualite, "Grade":grade})
+    return result
+
+
+def _pv_ajouter_point():
+    st.session_state.pv_pedagogique_points = int(st.session_state.get("pv_pedagogique_points", 3)) + 1
+
+
+def _pv_supprimer_point():
+    n=int(st.session_state.get("pv_pedagogique_points", 3))
+    if n > 1:
+        st.session_state.pv_pedagogique_points = n - 1
+
+
+def _pv_docx_set_cell_shading(cell, fill):
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = tcPr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tcPr.append(shd)
+    shd.set(qn("w:fill"), fill)
+
+
+def _pv_docx_set_cell_text(cell, text, bold=False, size=10, color="000000", align=WD_ALIGN_PARAGRAPH.LEFT):
+    cell.text = ""
+    p = cell.paragraphs[0]
+    p.alignment = align
+    r = p.add_run(_pv_clean(text))
+    r.bold = bold
+    r.font.name = "Arial"
+    r.font.size = Pt(size)
+    r.font.color.rgb = __import__("docx").shared.RGBColor.from_string(color)
+
+
+def _pv_docx_add_title(doc, text, size=15):
+    p=doc.add_paragraph()
+    p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    r=p.add_run(text)
+    r.bold=True
+    r.font.name="Arial"
+    r.font.size=Pt(size)
+    r.font.color.rgb=__import__("docx").shared.RGBColor.from_string("1E3A8A")
+    return p
+
+
+def _pv_generer_word(data):
+    """Génère le PV complet au format DOCX."""
+    if Document is None:
+        raise RuntimeError("python-docx n'est pas installé. Ajoutez 'python-docx' dans requirements.txt.")
+
+    doc=Document()
+    section=doc.sections[0]
+    section.top_margin=Inches(0.65)
+    section.bottom_margin=Inches(0.65)
+    section.left_margin=Inches(0.7)
+    section.right_margin=Inches(0.7)
+
+    styles=doc.styles
+    for style_name in ["Normal"]:
+        stl=styles[style_name]
+        stl.font.name="Arial"
+        stl.font.size=Pt(10.5)
+
+    # En-tête institutionnel
+    p=doc.add_paragraph()
+    p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    r=p.add_run("RÉPUBLIQUE ALGÉRIENNE DÉMOCRATIQUE ET POPULAIRE")
+    r.bold=True; r.font.name="Arial"; r.font.size=Pt(11)
+    p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    r=p.add_run("MINISTÈRE DE L'ENSEIGNEMENT SUPÉRIEUR ET DE LA RECHERCHE SCIENTIFIQUE")
+    r.bold=True; r.font.name="Arial"; r.font.size=Pt(10)
+    p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    r=p.add_run("UNIVERSITÉ DJILLALI LIABÈS DE SIDI BEL ABBÈS")
+    r.bold=True; r.font.name="Arial"; r.font.size=Pt(11)
+    p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    r=p.add_run("FACULTÉ DE GÉNIE ÉLECTRIQUE — DÉPARTEMENT D'ÉLECTROTECHNIQUE")
+    r.bold=True; r.font.name="Arial"; r.font.size=Pt(10)
+
+    doc.add_paragraph()
+    _pv_docx_add_title(doc,"PROCÈS-VERBAL DU COMITÉ PÉDAGOGIQUE",15)
+    p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    r=p.add_run(f"Promotion : {data['promotion']} — {data['annee']} — {data['semestre']}")
+    r.bold=True; r.font.name="Arial"; r.font.size=Pt(11)
+    p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    p.add_run(f"Date : {data['date']}    |    Heure : {data['heure']}    |    Lieu : {data['lieu']}").font.size=Pt(10)
+
+    doc.add_paragraph()
+    _pv_docx_add_title(doc,"1. OUVERTURE DE LA SÉANCE",12)
+    p=doc.add_paragraph(data["ouverture"])
+    p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
+
+    _pv_docx_add_title(doc,"2. LISTE DE PRÉSENCE",12)
+    presents=data.get("presents",[])
+    absents=data.get("absents",[])
+    rows=max(len(presents),len(absents),1)+1
+    table=doc.add_table(rows=rows, cols=3)
+    table.style="Table Grid"
+    headers=["N°","Membre du comité","État"]
+    for j,h in enumerate(headers):
+        _pv_docx_set_cell_text(table.cell(0,j),h,True,10,"FFFFFF",WD_ALIGN_PARAGRAPH.CENTER)
+        _pv_docx_set_cell_shading(table.cell(0,j),"1E3A8A")
+    all_members=[]
+    for m in presents:
+        all_members.append((m,"Présent"))
+    for m in absents:
+        all_members.append((m,"Absent"))
+    if not all_members:
+        all_members=[("Aucun membre renseigné","-")]
+    for i,(m,state) in enumerate(all_members,1):
+        _pv_docx_set_cell_text(table.cell(i,0),str(i),False,9,align=WD_ALIGN_PARAGRAPH.CENTER)
+        _pv_docx_set_cell_text(table.cell(i,1),m.get("Nom",m) if isinstance(m,dict) else m,False,9)
+        _pv_docx_set_cell_text(table.cell(i,2),state,True,9,align=WD_ALIGN_PARAGRAPH.CENTER)
+
+    if absents:
+        p=doc.add_paragraph()
+        r=p.add_run("Absences signalées : "); r.bold=True
+        p.add_run(", ".join([a.get("Nom",str(a)) if isinstance(a,dict) else str(a) for a in absents]))
+
+    _pv_docx_add_title(doc,"3. ORDRE DU JOUR",12)
+    for i,point in enumerate(data.get("ordre_du_jour",[]),1):
+        p=doc.add_paragraph(style=None)
+        p.paragraph_format.left_indent=Inches(0.15)
+        r=p.add_run(f"{i}. ")
+        r.bold=True
+        p.add_run(point)
+
+    _pv_docx_add_title(doc,"4. SUIVI DES ENSEIGNEMENTS ET ÉTAT D'AVANCEMENT",12)
+    matieres=data.get("matieres",[])
+    if matieres:
+        table=doc.add_table(rows=1, cols=5)
+        table.style="Table Grid"
+        heads=["Matière","Chargé de matière","Email","Téléphone","État d'avancement"]
+        for j,h in enumerate(heads):
+            _pv_docx_set_cell_text(table.cell(0,j),h,True,8.5,"FFFFFF",WD_ALIGN_PARAGRAPH.CENTER)
+            _pv_docx_set_cell_shading(table.cell(0,j),"1E3A8A")
+        for item in matieres:
+            cells=table.add_row().cells
+            vals=[item.get("Matière",""),item.get("Chargé de matière",""),item.get("Email",""),item.get("Téléphone",""),item.get("Etat d'avancement","")]
+            for j,v in enumerate(vals):
+                _pv_docx_set_cell_text(cells[j],v,False,8.2,"000000",WD_ALIGN_PARAGRAPH.LEFT)
+
+    _pv_docx_add_title(doc,"5. EXAMEN DES POINTS DE L'ORDRE DU JOUR",12)
+    for i,item in enumerate(data.get("points_pv",[]),1):
+        p=doc.add_paragraph()
+        r=p.add_run(f"Point {i} — {item.get('titre','')}")
+        r.bold=True; r.font.size=Pt(10.5)
+        contenu=item.get("contenu","").strip()
+        if contenu:
+            p=doc.add_paragraph(contenu)
+            p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
+        else:
+            p=doc.add_paragraph("Aucune observation renseignée pour ce point.")
+            p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
+
+    _pv_docx_add_title(doc,"6. DÉCISIONS ET RECOMMANDATIONS",12)
+    decisions=data.get("decisions","").strip()
+    p=doc.add_paragraph(decisions or "Aucune décision particulière n'a été renseignée.")
+    p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
+
+    _pv_docx_add_title(doc,"7. CLÔTURE DE LA SÉANCE",12)
+    p=doc.add_paragraph(data.get("cloture","").strip() or "La séance est levée après épuisement de l'ordre du jour.")
+    p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
+
+    doc.add_paragraph()
+    table=doc.add_table(rows=2,cols=2)
+    table.style="Table Grid"
+    _pv_docx_set_cell_text(table.cell(0,0),"Le Président du Comité Pédagogique",True,10,"FFFFFF",WD_ALIGN_PARAGRAPH.CENTER)
+    _pv_docx_set_cell_text(table.cell(0,1),"Le Secrétaire de séance",True,10,"FFFFFF",WD_ALIGN_PARAGRAPH.CENTER)
+    _pv_docx_set_cell_shading(table.cell(0,0),"1E3A8A"); _pv_docx_set_cell_shading(table.cell(0,1),"1E3A8A")
+    _pv_docx_set_cell_text(table.cell(1,0),data.get("president","")+"\n\nSignature :",False,10,align=WD_ALIGN_PARAGRAPH.CENTER)
+    _pv_docx_set_cell_text(table.cell(1,1),data.get("secretaire","")+"\n\nSignature :",False,10,align=WD_ALIGN_PARAGRAPH.CENTER)
+
+    # Pied de page
+    footer=section.footer.paragraphs[0]
+    footer.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    rr=footer.add_run(f"PV Comité Pédagogique — {data['promotion']} — Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
+    rr.font.name="Arial"; rr.font.size=Pt(8)
+
+    buffer=io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def run_pv_pedagogique():
+    """Interface complète de préparation et génération automatique des PV."""
+    st.markdown("<h1 class='main-title'>📝 Générateur automatique des PV des Comités Pédagogiques</h1>", unsafe_allow_html=True)
+    st.info("Sélectionnez une promotion : les matières, leurs chargés de matière, leurs emails et téléphones sont récupérés automatiquement depuis l'EDT et le répertoire des enseignants.")
+
+    # Récupération des sources déjà chargées par l'application.
+    df_source = None
+    if "df" in globals() and isinstance(df, pd.DataFrame) and not df.empty:
+        df_source = df.copy()
+    elif os.path.exists(FILE_EDT):
+        try:
+            df_source = pd.read_excel(FILE_EDT)
+            df_source.columns=[str(c).strip() for c in df_source.columns]
+        except Exception as exc:
+            st.error(f"Impossible de charger l'EDT : {exc}")
+            return
+
+    contacts = df_contacts if isinstance(df_contacts,pd.DataFrame) else None
+    if df_source is None or df_source.empty:
+        st.error("❌ Le fichier EDT est indisponible ou vide.")
+        return
+
+    promotions=_pv_promotions(df_source)
+    if not promotions:
+        st.error("❌ Aucune promotion n'a été trouvée dans la colonne Promotion de l'EDT.")
+        return
+
+    # ------------------ Informations générales ------------------
+    st.markdown("## 🏛️ 1. Informations générales du comité")
+    c1,c2,c3=st.columns(3)
+    with c1:
+        promotion=st.selectbox("🎓 Promotion",promotions,key="pv_promotion")
+        annee=st.text_input("📅 Année universitaire",value="2026-2027",key="pv_annee")
+    with c2:
+        semestre=st.selectbox("📚 Semestre",["Semestre 1","Semestre 2","Semestre 3"],key="pv_semestre")
+        date_pv=st.date_input("📆 Date de la réunion",value=datetime.now().date(),key="pv_date")
+    with c3:
+        heure=st.text_input("🕒 Heure",value="09:00",key="pv_heure")
+        lieu=st.text_input("🏢 Lieu",value="Salle de réunion du Département d'Électrotechnique",key="pv_lieu")
+
+    matieres_df=_pv_matiere_charge(df_source,contacts,promotion)
+    st.success(f"✅ {len(matieres_df)} matière(s) trouvée(s) pour la promotion **{promotion}**.")
+
+    # ------------------ Ordre du jour ------------------
+    st.markdown("## 📋 2. Ordre du jour")
+    st.caption("Au départ, plusieurs champs sont ouverts. Ajoutez ou supprimez des points selon vos besoins.")
+    nb_points=int(st.session_state.get("pv_pedagogique_points",3))
+    ordre=[]
+    for i in range(1,nb_points+1):
+        val=st.text_input(f"Point {i} de l'ordre du jour",key=f"pv_ordre_{i}",placeholder=f"Ex. Point {i} — ...")
+        ordre.append(val.strip())
+    ca,cb=st.columns(2)
+    with ca:
+        st.button("➕ Ajouter un point",key="pv_add_point",on_click=_pv_ajouter_point,use_container_width=True)
+    with cb:
+        st.button("➖ Supprimer le dernier point",key="pv_del_point",on_click=_pv_supprimer_point,use_container_width=True)
+
+    ordre_non_vides=[x for x in ordre if x]
+
+    # ------------------ Présence ------------------
+    st.markdown("## 👥 3. Liste de présence et des absents")
+    membres=_pv_teacher_directory(contacts)
+    noms_membres=[m["Nom"] for m in membres]
+    if not noms_membres:
+        st.warning("⚠️ Aucun répertoire d'enseignants exploitable. Vous pouvez tout de même saisir les noms manuellement ci-dessous.")
+        noms_membres=["Président du comité", "Secrétaire de séance"]
+
+    selection_presence=st.multiselect("👥 Membres présents",noms_membres,key="pv_presents")
+    selection_absence=st.multiselect("🚫 Membres absents",[n for n in noms_membres if n not in selection_presence],key="pv_absents")
+    c1,c2=st.columns(2)
+    with c1:
+        president=st.selectbox("👤 Président du comité",noms_membres,key="pv_president")
+    with c2:
+        secretaire=st.selectbox("🖊️ Secrétaire de séance",noms_membres,key="pv_secretaire")
+
+    # ------------------ Etat d'avancement des matières ------------------
+    st.markdown("## 📚 4. État d'avancement des matières")
+    st.caption("Cliquez sur une matière : son champ de saisie s'ouvre pour renseigner l'état d'avancement qui sera repris automatiquement dans le PV Word.")
+
+    if "pv_matieres_selectionnees" not in st.session_state:
+        st.session_state.pv_matieres_selectionnees=[]
+
+    options_matieres=matieres_df["Matière"].tolist() if not matieres_df.empty else []
+    selected_matieres=st.multiselect("📘 Sélectionner les matières à traiter dans le PV",options_matieres,default=st.session_state.pv_matieres_selectionnees,key="pv_matieres_selectionnees")
+
+    matieres_pv=[]
+    if selected_matieres:
+        for idx,matiere in enumerate(selected_matieres,1):
+            row=matieres_df[matieres_df["Matière"]==matiere].iloc[0].to_dict()
+            with st.expander(f"📘 {idx}. {matiere} — {row.get('Chargé de matière','')}",expanded=True):
+                c1,c2=st.columns(2)
+                with c1:
+                    st.markdown(f"**Chargé de matière :** {row.get('Chargé de matière','Non renseigné')}")
+                    st.markdown(f"**Email :** {row.get('Email','Non renseigné')}")
+                with c2:
+                    st.markdown(f"**Téléphone :** {row.get('Téléphone','Non renseigné')}")
+                etat=st.text_area("✍️ État d'avancement de cette matière",key=f"pv_etat_{_pv_normalize(matiere)}",height=130,placeholder="Décrire les chapitres réalisés, en cours, le taux d'avancement, les difficultés, les séances restantes, etc.")
+                row["Etat d'avancement"]=etat.strip()
+                matieres_pv.append(row)
+    else:
+        st.warning("Sélectionnez au moins une matière pour renseigner son état d'avancement.")
+
+    # ------------------ Rédaction du PV par point ------------------
+    st.markdown("## 🖊️ 5. Rédaction de chaque point du PV")
+    st.caption("Chaque point de l'ordre du jour dispose de son propre champ. Le contenu sera repris tel quel dans le document Word.")
+    points_pv=[]
+    for i,titre in enumerate(ordre_non_vides,1):
+        contenu=st.text_area(f"Point {i} — {titre}",key=f"pv_contenu_{i}",height=180,placeholder="Rédiger les échanges, constats, propositions, décisions et recommandations relatifs à ce point...")
+        points_pv.append({"titre":titre,"contenu":contenu.strip()})
+
+    # ------------------ Ouverture / décisions / clôture ------------------
+    st.markdown("## 📝 6. Ouverture, décisions et clôture")
+    ouverture=st.text_area("Texte d'ouverture de la séance",value=f"La séance du comité pédagogique de la promotion {promotion} est ouverte à {heure} sous la présidence de {president}. Les membres présents et absents sont consignés dans la présente liste. L'ordre du jour est soumis à l'examen du comité.",height=110,key="pv_ouverture")
+    decisions=st.text_area("Décisions et recommandations générales",height=150,key="pv_decisions",placeholder="Synthèse des décisions arrêtées par le comité...")
+    cloture=st.text_area("Texte de clôture",value="Après épuisement de l'ordre du jour, les travaux du comité pédagogique sont clôturés. Le présent procès-verbal est établi pour servir et valoir ce que de droit.",height=100,key="pv_cloture")
+
+    # ------------------ Aperçu ------------------
+    st.markdown("## 👁️ 7. Vérification avant génération")
+    st.dataframe(matieres_pv if matieres_pv else matieres_df.head(0),use_container_width=True,hide_index=True)
+    st.write(f"**Promotion :** {promotion}  |  **Matières sélectionnées :** {len(matieres_pv)}  |  **Présents :** {len(selection_presence)}  |  **Absents :** {len(selection_absence)}  |  **Points :** {len(points_pv)}")
+
+    st.markdown("## 📄 8. Génération du PV Word")
+    if st.button("📝 GÉNÉRER LE PV COMPLET EN WORD",type="primary",use_container_width=True,key="pv_generate_word"):
+        if not ordre_non_vides:
+            st.error("❌ Ajoutez au moins un point à l'ordre du jour.")
+            return
+        if not selected_matieres:
+            st.error("❌ Sélectionnez au moins une matière et renseignez son état d'avancement.")
+            return
+        if not any(x.get("contenu") for x in points_pv):
+            st.warning("⚠️ Aucun contenu n'a été renseigné dans les points du PV. Le document sera généré avec des rubriques à compléter.")
+
+        data={
+            "promotion":promotion,
+            "annee":annee,
+            "semestre":semestre,
+            "date":date_pv.strftime("%d/%m/%Y"),
+            "heure":heure,
+            "lieu":lieu,
+            "ouverture":ouverture,
+            "presents":[next((m for m in membres if m["Nom"]==n),{"Nom":n}) for n in selection_presence],
+            "absents":[next((m for m in membres if m["Nom"]==n),{"Nom":n}) for n in selection_absence],
+            "ordre_du_jour":ordre_non_vides,
+            "matieres":matieres_pv,
+            "points_pv":points_pv,
+            "decisions":decisions,
+            "cloture":cloture,
+            "president":president,
+            "secretaire":secretaire,
+        }
+        try:
+            word_bytes=_pv_generer_word(data)
+            nom_fichier=f"PV_Comite_Pedagogique_{promotion.replace('/','-').replace(' ','_')}_{date_pv.strftime('%Y%m%d')}.docx"
+            st.success("✅ PV Word généré avec succès.")
+            st.download_button("📥 Télécharger le PV Word",data=word_bytes,file_name=nom_fichier,mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",use_container_width=True,key="pv_download_word")
+        except Exception as exc:
+            st.error(f"❌ Erreur lors de la génération du Word : {exc}")
+
+
 if module_sel == "📊 Suivi d'Assiduite":
     run_Assiduité()
 elif module_sel == "📅 Gestion des EDTs & Admin":
     st.info("Module Gestion des EDTs & Admin")
+elif module_sel == "📝 PV Comités Pédagogiques":
+    run_pv_pedagogique()
 else:
     st.error(f"Module inconnu : {module_sel}")
 
