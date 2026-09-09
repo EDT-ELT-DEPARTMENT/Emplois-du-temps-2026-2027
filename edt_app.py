@@ -6,7 +6,7 @@ import streamlit as st
 
 # Dénomination officielle
 APP_TITLE = (
-    "Plateforme de gestion des EDTs-S1-2026-Département"
+    "Plateforme de gestion des EDTs-S2-2026-Département"
     " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 )
 URL_PLATEFORME = (
@@ -6696,7 +6696,20 @@ def run_pv_pedagogique():
         st.session_state.pv_matieres_selectionnees=[]
 
     options_matieres=matieres_df["Matière"].tolist() if not matieres_df.empty else []
-    selected_matieres=st.multiselect("📘 Sélectionner les matières à traiter dans le PV",options_matieres,default=st.session_state.pv_matieres_selectionnees,key="pv_matieres_selectionnees")
+    # IMPORTANT : après changement de promotion, certaines matières de l'ancienne
+    # promotion peuvent ne plus exister dans les nouvelles options. On conserve
+    # uniquement les valeurs encore valides avant d'appeler st.multiselect().
+    options_matieres_set=set(options_matieres)
+    st.session_state["pv_matieres_selectionnees"] = [
+        x for x in st.session_state.get("pv_matieres_selectionnees", [])
+        if x in options_matieres_set
+    ]
+    selected_matieres=st.multiselect(
+        "📘 Sélectionner les matières à traiter dans le PV",
+        options_matieres,
+        default=st.session_state["pv_matieres_selectionnees"],
+        key="pv_matieres_selectionnees"
+    )
 
     matieres_pv=[]
     if selected_matieres:
