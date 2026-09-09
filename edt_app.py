@@ -6258,50 +6258,162 @@ def _pv_generer_word(data):
 
 
 def _pv_enseignants_promotion(df_source, df_contacts, promotion):
-    """Retourne uniquement les enseignants qui enseignent réellement dans la promotion sélectionnée."""
-    if df_source is None or df_source.empty:
+    """
+    Retourne TOUS les enseignants affectés à la promotion sélectionnée.
+
+    La fonction exploite la colonne ``Enseignants`` de l'EDT complet et
+    accepte plusieurs formats de cellules :
+      - un seul nom ;
+      - plusieurs noms séparés par /, &, ;, virgule ou ``et`` ;
+      - répétition du même enseignant sur plusieurs lignes.
+
+    Les doublons sont supprimés uniquement après normalisation du nom.
+    Le répertoire des contacts sert ensuite à récupérer email/téléphone,
+    sans jamais supprimer un enseignant lorsqu'un contact n'est pas trouvé.
+    """
+    if df_source is None or not isinstance(df_source, pd.DataFrame) or df_source.empty:
         return []
 
     work = df_source.copy()
-    col_promo = next((c for c in work.columns if _pv_normalize(c) == _pv_normalize("Promotion")), None)
-    col_ens = next((c for c in work.columns if _pv_normalize(c) == _pv_normalize("Enseignants")), None)
+
+    def trouver_colonne(noms):
+        for colonne in work.columns:
+            if _pv_normalize(colonne) in [_pv_normalize(x) for x in noms]:
+                return colonne
+        return None
+
+    col_promo = trouver_colonne(["Promotion", "Promotions"])
+    col_ens = trouver_colonne([
+        "Enseignants", "Enseignant", "Chargé de matière",
+        "Charge de matiere", "Chargé matière", "Charge matière",
+        "Enseignant(s)", "Responsable matière"
+    ])
+
     if col_promo is None or col_ens is None:
         return []
 
-    work = work[work[col_promo].astype(str).map(_pv_normalize) == _pv_normalize(promotion)].copy()
+    promo_cible = _pv_normalize(promotion)
+    work = work[work[col_promo].fillna("").astype(str).map(_pv_normalize) == promo_cible].copy()
     if work.empty:
         return []
 
+    # Extraction exhaustive de tous les enseignants des lignes de la promotion.
     noms_edt = []
-    for valeur in work[col_ens].dropna().astype(str).tolist():
-        for morceau in re.split(r"\s*(?:/|&|;|,|\bet\b)\s*", valeur, flags=re.IGNORECASE):
+    vus_edt = set()
+
+    for valeur in work[col_ens].fillna("").astype(str).tolist():
+        valeur = _pv_clean(valeur)
+        if not valeur:
+            continue
+
+        morceaux = re.split(
+            r"\s*(?:/|\||&|;|,|\bet\b)\s*",
+            valeur,
+            flags=re.IGNORECASE
+        )
+
+        for morceau in morceaux:
             morceau = _pv_clean(morceau)
-            if morceau and _pv_normalize(morceau) not in [_pv_normalize(x) for x in noms_edt]:
+            if not morceau:
+                continue
+
+            # Nettoyage de préfixes éventuels sans modifier le nom réel.
+            morceau = re.sub(r"^(?:M\.?|Mme\.?|Mr\.?|Pr\.?|Dr\.?|Prof\.?)[\s:.-]+", "", morceau, flags=re.IGNORECASE).strip()
+            cle = _pv_normalize(morceau)
+
+            if cle and cle not in vus_edt:
+                vus_edt.add(cle)
                 noms_edt.append(morceau)
 
+    # Répertoire de contacts : il est utilisé uniquement pour enrichir les
+    # enseignants déjà détectés dans l'EDT.
     repertoire = _pv_teacher_directory(df_contacts)
     resultats = []
     deja = set()
 
+    def score_nom(candidat, recherche):
+        """Score souple pour retrouver un enseignant dans le répertoire."""
+        c = _pv_normalize(candidat)
+        r = _pv_normalize(recherche)
+        if not c or not r:
+            return 0
+        if c == r:
+            return 100
+
+        try:
+            fam_c = _pv_normalize(extraire_nom_famille(candidat))
+        except Exception:
+            fam_c = ""
+        try:
+            fam_r = _pv_normalize(extraire_nom_famille(recherche))
+        except Exception:
+            fam_r = ""
+
+        if fam_c and fam_r and fam_c == fam_r:
+            return 80
+
+        # Comparaison par ensembles de mots pour les formats
+        # ``NOM Prénom`` / ``Prénom NOM``.
+        tc = set(re.findall(r"[a-z0-9]+", c))
+        tr = set(re.findall(r"[a-z0-9]+", r))
+        if tc and tr:
+            communs = len(tc.intersection(tr))
+            if communs == len(tc) == len(tr):
+                return 90
+            if communs >= 2:
+                return 60 + communs
+
+        return 0
+
     for nom_edt in noms_edt:
-        cible = _pv_normalize(nom_edt)
-        famille = _pv_normalize(extraire_nom_famille(nom_edt)) if 'extraire_nom_famille' in globals() else ""
-        nettoyage = _pv_normalize(nettoyer_nom_enseignant(nom_edt)) if 'nettoyer_nom_enseignant' in globals() else ""
-
         meilleur = None
-        for membre in repertoire:
-            nom_rep = _pv_normalize(membre.get("Nom", ""))
-            fam_rep = _pv_normalize(extraire_nom_famille(membre.get("Nom", ""))) if 'extraire_nom_famille' in globals() else ""
-            if cible and (cible == nom_rep or cible == fam_rep or cible == nettoyage):
-                meilleur = membre
-                break
+        meilleur_score = 0
 
-        if meilleur is None:
-            # Fallback : conserver l'enseignant de l'EDT même si le répertoire ne permet pas de retrouver ses coordonnées.
-            meilleur = {"Nom": nom_edt, "Email": "", "Téléphone": "", "Qualité": "", "Grade": ""}
+        nettoyage = ""
+        if 'nettoyer_nom_enseignant' in globals():
+            try:
+                nettoyage = nettoyer_nom_enseignant(nom_edt)
+            except Exception:
+                nettoyage = ""
+
+        recherches = [nom_edt]
+        if nettoyage:
+            recherches.append(nettoyage)
+        try:
+            famille = extraire_nom_famille(nom_edt)
+            if famille:
+                recherches.append(famille)
+        except Exception:
+            pass
+
+        for membre in repertoire:
+            nom_rep = membre.get("Nom", "")
+            score = max(score_nom(nom_rep, recherche) for recherche in recherches)
+            if score > meilleur_score:
+                meilleur_score = score
+                meilleur = membre
+
+        if meilleur is None or meilleur_score < 60:
+            # Ne jamais perdre un enseignant simplement parce que son contact
+            # n'a pas été retrouvé.
+            meilleur = {
+                "Nom": nom_edt,
+                "Email": "",
+                "Téléphone": "",
+                "Qualité": "",
+                "Grade": ""
+            }
+        else:
+            # Garder le nom du répertoire lorsque la correspondance est fiable.
+            if not _pv_clean(meilleur.get("Nom", "")):
+                meilleur["Nom"] = nom_edt
 
         cle = _pv_normalize(meilleur.get("Nom", ""))
-        if cle and cle not in deja:
+        if not cle:
+            cle = _pv_normalize(nom_edt)
+            meilleur["Nom"] = nom_edt
+
+        if cle not in deja:
             deja.add(cle)
             resultats.append(meilleur)
 
@@ -6388,17 +6500,28 @@ def run_pv_pedagogique():
     st.markdown("<h1 class='main-title'>📝 Générateur automatique des PV des Comités Pédagogiques</h1>", unsafe_allow_html=True)
     st.info("Sélectionnez une promotion : les enseignants présents/absents, le délégué étudiant et les matières sont automatiquement limités à cette promotion.")
 
-    # Récupération des sources déjà chargées par l'application.
+    # Récupération de la source complète de l'EDT.
+    # IMPORTANT : ne pas utiliser en priorité la variable globale ``df`` car,
+    # dans certaines pages de la plateforme, elle peut être déjà filtrée
+    # (enseignant, matière, groupe, etc.). Cela pouvait provoquer l'affichage
+    # d'un seul enseignant dans la liste de présence alors que plusieurs
+    # enseignants enseignent réellement dans la promotion sélectionnée.
     df_source = None
-    if "df" in globals() and isinstance(df, pd.DataFrame) and not df.empty:
-        df_source = df.copy()
-    elif os.path.exists(FILE_EDT):
+    if os.path.exists(FILE_EDT):
         try:
             df_source = pd.read_excel(FILE_EDT)
             df_source.columns = [str(c).strip() for c in df_source.columns]
         except Exception as exc:
-            st.error(f"Impossible de charger l'EDT : {exc}")
-            return
+            st.warning(f"⚠️ Lecture du fichier EDT complet impossible : {exc}")
+
+    # Secours uniquement si le fichier complet n'est pas accessible.
+    if df_source is None or df_source.empty:
+        if "df" in globals() and isinstance(df, pd.DataFrame) and not df.empty:
+            df_source = df.copy()
+
+    if df_source is None or df_source.empty:
+        st.error("❌ Le fichier EDT complet est indisponible ou vide.")
+        return
 
     contacts = df_contacts if isinstance(df_contacts, pd.DataFrame) else None
     df_etu_pv = None
