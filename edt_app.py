@@ -6,7 +6,7 @@ import streamlit as st
 
 # Dénomination officielle
 APP_TITLE = (
-    "Plateforme de gestion des EDTs-S2-2026-Département"
+    "Plateforme de gestion des EDTs-S1-2026-Département"
     " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 )
 URL_PLATEFORME = (
@@ -6516,18 +6516,129 @@ def run_pv_pedagogique():
         st.error("❌ Aucune promotion n'a été trouvée dans la colonne Promotion de l'EDT.")
         return
 
+    # ------------------ Invitation à la réunion ------------------
+    # Cette section est volontairement placée en premier : elle permet de choisir
+    # immédiatement la promotion, la date, l'heure et le lieu de la réunion.
+    # L'ordre du jour est ensuite récupéré depuis les champs saisis dans la section 2.
+    st.markdown("## ✉️ Invitation à la réunion")
+    st.caption("Choisissez d'abord la promotion, la date, l'horaire et le lieu. L'invitation sera adressée automatiquement aux enseignants de la promotion et au délégué étudiant sélectionné lorsque leurs adresses email sont disponibles. L'ordre du jour saisi dans la section 2 sera repris automatiquement dans le message.")
+
+    c_inv1, c_inv2, c_inv3 = st.columns(3)
+    with c_inv1:
+        promotion = st.selectbox("🎓 Promotion concernée", promotions, key="pv_promotion")
+    with c_inv2:
+        date_pv = st.date_input("📆 Date de la réunion", value=datetime.now().date(), key="pv_date")
+    with c_inv3:
+        heure = st.text_input("🕒 Horaire de la réunion", value="09:00", key="pv_heure")
+
+    lieu = st.text_input("🏢 Lieu de la réunion", value="Salle de réunion du Département d'Électrotechnique", key="pv_lieu")
+
+    # Les étudiants proviennent du fichier étudiants déjà chargé par la plateforme.
+    df_etudiants_pv = globals().get("df_etu", None)
+    if not isinstance(df_etudiants_pv, pd.DataFrame) or df_etudiants_pv.empty:
+        df_etudiants_pv = globals().get("df_etu_edt", None)
+    etudiants_promo = _pv_etudiants_promotion(df_etudiants_pv, promotion)
+
+    # Les enseignants et leurs emails sont limités strictement à la promotion choisie.
+    enseignants_promo = _pv_enseignants_promotion(df_source, contacts, promotion)
+    emails_enseignants = [m.get("Email", "") for m in enseignants_promo if _pv_email_valide(m.get("Email", ""))]
+
+    if not etudiants_promo.empty:
+        noms_etudiants = etudiants_promo["Nom_Complet"].tolist()
+        st.session_state["pv_delegue"] = st.session_state.get("pv_delegue", "")
+        if st.session_state["pv_delegue"] not in noms_etudiants:
+            st.session_state["pv_delegue"] = noms_etudiants[0]
+        delegue = st.selectbox("🎓 Délégué de la promotion à inviter", noms_etudiants, key="pv_delegue")
+        row_delegue = etudiants_promo[etudiants_promo["Nom_Complet"] == delegue].iloc[0]
+        email_delegue = _pv_clean(row_delegue.get("Email_PV", ""))
+        if email_delegue:
+            st.caption(f"📧 Email du délégué : {email_delegue}")
+        else:
+            try:
+                email_delegue = _pv_clean(trouver_email_étudiant(delegue, df_etudiants_pv))
+            except Exception:
+                email_delegue = ""
+            if email_delegue:
+                st.caption(f"📧 Email du délégué : {email_delegue}")
+            else:
+                st.warning("⚠️ Aucun email valide n'est disponible pour cet étudiant. Les enseignants pourront néanmoins recevoir l'invitation.")
+    else:
+        delegue = ""
+        email_delegue = ""
+        st.warning(f"⚠️ Aucun étudiant n'a été trouvé dans la promotion **{promotion}**.")
+
+    st.write(f"📨 **Destinataires enseignants trouvés : {len(emails_enseignants)}** / {len(enseignants_promo)}")
+    if emails_enseignants:
+        with st.expander("👨‍🏫 Enseignants qui recevront l'invitation", expanded=False):
+            for m in enseignants_promo:
+                email_m = _pv_clean(m.get("Email", ""))
+                if _pv_email_valide(email_m):
+                    st.write(f"• {m.get('Nom','')} — {email_m}")
+                else:
+                    st.write(f"• {m.get('Nom','')} — ⚠️ email non renseigné")
+
+    # L'ordre du jour est saisi plus bas. On lit ici les valeurs déjà présentes
+    # dans session_state afin que le bouton d'envoi, placé en tête de page,
+    # puisse reprendre automatiquement les points saisis dans la section 2.
+    nb_points_invitation = int(st.session_state.get("pv_pedagogique_points", 3))
+    ordre_non_vides_invitation = []
+    for i in range(1, nb_points_invitation + 1):
+        valeur = _pv_clean(st.session_state.get(f"pv_ordre_{i}", ""))
+        if valeur:
+            ordre_non_vides_invitation.append(valeur)
+
+    if ordre_non_vides_invitation:
+        with st.expander("📋 Ordre du jour actuellement enregistré pour l'invitation", expanded=False):
+            for i, point in enumerate(ordre_non_vides_invitation, 1):
+                st.write(f"{i}. {point}")
+    else:
+        st.info("ℹ️ L'ordre du jour sera repris automatiquement après sa saisie dans la section 2. Vous pouvez préparer l'invitation maintenant, puis l'envoyer après avoir renseigné l'ordre du jour.")
+
+    if st.button("✉️ ENVOYER L'INVITATION DE RÉUNION", use_container_width=True, key="pv_send_invitation"):
+        destinataires = list(emails_enseignants)
+        if _pv_email_valide(email_delegue):
+            destinataires.append(email_delegue)
+        if not destinataires:
+            st.error("❌ Aucun destinataire ne possède une adresse email valide.")
+        else:
+            ordre_html = "".join(f"<li>{x}</li>" for x in ordre_non_vides_invitation) or "<li>Ordre du jour à compléter</li>"
+            objet = f"Invitation — Comité pédagogique {promotion} — {date_pv.strftime('%d/%m/%Y')}"
+            corps_html = f"""<!DOCTYPE html>
+<html lang='fr'><head><meta charset='UTF-8'></head>
+<body style='font-family:Arial,sans-serif;color:#1e293b;line-height:1.6;'>
+<h2 style='color:#1e3a8a;'>📋 Invitation au Comité Pédagogique</h2>
+<p>Madame, Monsieur,</p>
+<p>Vous êtes cordialement invité(e) à participer à la réunion du <strong>Comité Pédagogique</strong> de la promotion <strong>{promotion}</strong>.</p>
+<table style='border-collapse:collapse;width:100%;max-width:700px;'>
+<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Date</strong></td><td style='padding:7px;border:1px solid #ddd;'>{date_pv.strftime('%d/%m/%Y')}</td></tr>
+<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Heure</strong></td><td style='padding:7px;border:1px solid #ddd;'>{heure}</td></tr>
+<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Lieu</strong></td><td style='padding:7px;border:1px solid #ddd;'>{lieu}</td></tr>
+<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Délégué étudiant</strong></td><td style='padding:7px;border:1px solid #ddd;'>{delegue or 'Non sélectionné'}</td></tr>
+</table>
+<h3 style='color:#1e3a8a;'>📋 Ordre du jour</h3>
+<ol>{ordre_html}</ol>
+<p>Votre présence et votre participation sont souhaitées afin d'examiner les questions pédagogiques relatives à la promotion.</p>
+<p>Cordialement,<br><strong>Département d'Électrotechnique — FGE/UDL-SBA</strong></p>
+</body></html>"""
+            ok, message = _pv_envoyer_invitation_email(destinataires, objet, corps_html)
+            if ok:
+                st.success("✅ " + message)
+                st.info("📧 Destinataires : " + ", ".join(destinataires))
+            else:
+                st.error("❌ " + message)
+
     # ------------------ Informations générales ------------------
     st.markdown("## 🏛️ 1. Informations générales du comité")
     c1,c2,c3=st.columns(3)
     with c1:
-        promotion=st.selectbox("🎓 Promotion",promotions,key="pv_promotion")
+        st.markdown(f"**🎓 Promotion :** {promotion}")
         annee=st.text_input("📅 Année universitaire",value="2026-2027",key="pv_annee")
     with c2:
         semestre=st.selectbox("📚 Semestre",["Semestre 1","Semestre 2","Semestre 3"],key="pv_semestre")
-        date_pv=st.date_input("📆 Date de la réunion",value=datetime.now().date(),key="pv_date")
+        st.markdown(f"**📆 Date de la réunion :** {date_pv.strftime('%d/%m/%Y')}")
     with c3:
-        heure=st.text_input("🕒 Heure",value="09:00",key="pv_heure")
-        lieu=st.text_input("🏢 Lieu",value="Salle de réunion du Département d'Électrotechnique",key="pv_lieu")
+        st.markdown(f"**🕒 Heure :** {heure}")
+        st.markdown(f"**🏢 Lieu :** {lieu}")
 
     matieres_df=_pv_matiere_charge(df_source,contacts,promotion)
     st.success(f"✅ {len(matieres_df)} matière(s) trouvée(s) pour la promotion **{promotion}**.")
@@ -6576,82 +6687,6 @@ def run_pv_pedagogique():
         president=st.selectbox("👤 Président du comité",noms_membres,key="pv_president")
     with c2:
         secretaire=st.selectbox("🖊️ Secrétaire de séance",noms_membres,key="pv_secretaire")
-
-    # ------------------ Invitation à la réunion ------------------
-    st.markdown("### ✉️ Invitation à la réunion")
-    st.caption("Le délégué est limité aux étudiants de la promotion sélectionnée. L'invitation est envoyée au délégué et à tous les enseignants intervenant dans cette promotion dont l'adresse email est disponible.")
-
-    # Les étudiants proviennent du fichier étudiants déjà chargé par la plateforme.
-    df_etudiants_pv = globals().get("df_etu", None)
-    if not isinstance(df_etudiants_pv, pd.DataFrame) or df_etudiants_pv.empty:
-        df_etudiants_pv = globals().get("df_etu_edt", None)
-    etudiants_promo = _pv_etudiants_promotion(df_etudiants_pv, promotion)
-
-    if not etudiants_promo.empty:
-        noms_etudiants = etudiants_promo["Nom_Complet"].tolist()
-        st.session_state["pv_delegue"] = st.session_state.get("pv_delegue", "")
-        if st.session_state["pv_delegue"] not in noms_etudiants:
-            st.session_state["pv_delegue"] = noms_etudiants[0]
-        delegue = st.selectbox("🎓 Délégué de la promotion à inviter", noms_etudiants, key="pv_delegue")
-        row_delegue = etudiants_promo[etudiants_promo["Nom_Complet"] == delegue].iloc[0]
-        email_delegue = _pv_clean(row_delegue.get("Email_PV", ""))
-        if email_delegue:
-            st.caption(f"📧 Email du délégué : {email_delegue}")
-        else:
-            # Fallback sur la fonction existante de la plateforme si disponible.
-            try:
-                email_delegue = _pv_clean(trouver_email_étudiant(delegue, df_etudiants_pv))
-            except Exception:
-                email_delegue = ""
-            if email_delegue:
-                st.caption(f"📧 Email du délégué : {email_delegue}")
-            else:
-                st.warning("⚠️ Aucun email valide n'est disponible pour cet étudiant. Les enseignants pourront néanmoins recevoir l'invitation.")
-    else:
-        delegue = ""
-        email_delegue = ""
-        st.warning(f"⚠️ Aucun étudiant n'a été trouvé dans la promotion **{promotion}**.")
-
-    emails_enseignants = [m.get("Email", "") for m in enseignants_promo if _pv_email_valide(m.get("Email", ""))]
-    st.write(f"📨 **Destinataires enseignants trouvés : {len(emails_enseignants)}** / {len(enseignants_promo)}")
-    if emails_enseignants:
-        with st.expander("👨‍🏫 Enseignants qui recevront l'invitation", expanded=False):
-            for m in enseignants_promo:
-                email_m = _pv_clean(m.get("Email", ""))
-                if _pv_email_valide(email_m):
-                    st.write(f"• {m.get('Nom','')} — {email_m}")
-                else:
-                    st.write(f"• {m.get('Nom','')} — ⚠️ email non renseigné")
-
-    if st.button("✉️ ENVOYER L'INVITATION DE RÉUNION", use_container_width=True, key="pv_send_invitation"):
-        destinataires = list(emails_enseignants)
-        if _pv_email_valide(email_delegue):
-            destinataires.append(email_delegue)
-        ordre_html = "".join(f"<li>{x}</li>" for x in ordre_non_vides) or "<li>Ordre du jour à compléter</li>"
-        objet = f"Invitation — Comité pédagogique {promotion} — {date_pv.strftime('%d/%m/%Y')}"
-        corps_html = f"""<!DOCTYPE html>
-<html lang='fr'><head><meta charset='UTF-8'></head>
-<body style='font-family:Arial,sans-serif;color:#1e293b;line-height:1.6;'>
-<h2 style='color:#1e3a8a;'>📋 Invitation au Comité Pédagogique</h2>
-<p>Madame, Monsieur,</p>
-<p>Vous êtes cordialement invité(e) à participer à la réunion du <strong>Comité Pédagogique</strong> de la promotion <strong>{promotion}</strong>.</p>
-<table style='border-collapse:collapse;width:100%;max-width:700px;'>
-<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Date</strong></td><td style='padding:7px;border:1px solid #ddd;'>{date_pv.strftime('%d/%m/%Y')}</td></tr>
-<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Heure</strong></td><td style='padding:7px;border:1px solid #ddd;'>{heure}</td></tr>
-<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Lieu</strong></td><td style='padding:7px;border:1px solid #ddd;'>{lieu}</td></tr>
-<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Délégué étudiant</strong></td><td style='padding:7px;border:1px solid #ddd;'>{delegue or 'Non sélectionné'}</td></tr>
-</table>
-<h3 style='color:#1e3a8a;'>📋 Ordre du jour</h3>
-<ol>{ordre_html}</ol>
-<p>Votre présence et votre participation sont souhaitées afin d'examiner les questions pédagogiques relatives à la promotion.</p>
-<p>Cordialement,<br><strong>Département d'Électrotechnique — FGE/UDL-SBA</strong></p>
-</body></html>"""
-        ok, message = _pv_envoyer_invitation_email(destinataires, objet, corps_html)
-        if ok:
-            st.success("✅ " + message)
-            st.info("📧 Destinataires : " + ", ".join(destinataires))
-        else:
-            st.error("❌ " + message)
 
     # ------------------ Etat d'avancement des matières ------------------
     st.markdown("## 📚 4. État d'avancement des matières")
