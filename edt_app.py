@@ -468,16 +468,6 @@ MODULES_NAVIGATION = {
         "pages": [
             ("🏠 Générateur de PV", "pv_pedagogique")
         ]
-    },
-    "🔐 Portail Étudiant": {
-        "icon": "🔐",
-        "pages": [
-            ("👤 Mon Compte", "mon_compte"),
-            ("📅 Mon Emploi du Temps", "mon_edt"),
-            ("📥 Télécharger EDT PDF", "download_edt_pdf"),
-            ("📋 Mes Absences", "mes_absences"),
-            ("📧 Messages", "messages")
-        ]
     }
 }
 
@@ -6156,6 +6146,11 @@ def _pv_generer_word(data):
     p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
     p.add_run(f"Date : {data['date']}    |    Heure : {data['heure']}    |    Lieu : {data['lieu']}").font.size=Pt(10)
 
+    if data.get("delegue_promotion"):
+        p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+        r=p.add_run(f"Délégué de la promotion : {data.get('delegue_promotion')}" )
+        r.bold=True; r.font.name="Arial"; r.font.size=Pt(10)
+
     doc.add_paragraph()
     _pv_docx_add_title(doc,"1. OUVERTURE DE LA SÉANCE",12)
     p=doc.add_paragraph(data["ouverture"])
@@ -6188,7 +6183,15 @@ def _pv_generer_word(data):
         r=p.add_run("Absences signalées : "); r.bold=True
         p.add_run(", ".join([a.get("Nom",str(a)) if isinstance(a,dict) else str(a) for a in absents]))
 
-    _pv_docx_add_title(doc,"3. ORDRE DU JOUR",12)
+    if data.get("delegue_promotion"):
+        _pv_docx_add_title(doc,"3. DÉLÉGUÉ DE LA PROMOTION",12)
+        p=doc.add_paragraph()
+        p.add_run("Délégué étudiant : ").bold=True
+        p.add_run(str(data.get("delegue_promotion")))
+        if data.get("delegue_email"):
+            p.add_run(f" — Email : {data.get('delegue_email')}")
+
+    _pv_docx_add_title(doc,"4. ORDRE DU JOUR",12)
     for i,point in enumerate(data.get("ordre_du_jour",[]),1):
         p=doc.add_paragraph(style=None)
         p.paragraph_format.left_indent=Inches(0.15)
@@ -6196,7 +6199,7 @@ def _pv_generer_word(data):
         r.bold=True
         p.add_run(point)
 
-    _pv_docx_add_title(doc,"4. SUIVI DES ENSEIGNEMENTS ET ÉTAT D'AVANCEMENT",12)
+    _pv_docx_add_title(doc,"5. SUIVI DES ENSEIGNEMENTS ET ÉTAT D'AVANCEMENT",12)
     matieres=data.get("matieres",[])
     if matieres:
         table=doc.add_table(rows=1, cols=5)
@@ -6211,7 +6214,7 @@ def _pv_generer_word(data):
             for j,v in enumerate(vals):
                 _pv_docx_set_cell_text(cells[j],v,False,8.2,"000000",WD_ALIGN_PARAGRAPH.LEFT)
 
-    _pv_docx_add_title(doc,"5. EXAMEN DES POINTS DE L'ORDRE DU JOUR",12)
+    _pv_docx_add_title(doc,"6. EXAMEN DES POINTS DE L'ORDRE DU JOUR",12)
     for i,item in enumerate(data.get("points_pv",[]),1):
         p=doc.add_paragraph()
         r=p.add_run(f"Point {i} — {item.get('titre','')}")
@@ -6224,12 +6227,12 @@ def _pv_generer_word(data):
             p=doc.add_paragraph("Aucune observation renseignée pour ce point.")
             p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
 
-    _pv_docx_add_title(doc,"6. DÉCISIONS ET RECOMMANDATIONS",12)
+    _pv_docx_add_title(doc,"7. DÉCISIONS ET RECOMMANDATIONS",12)
     decisions=data.get("decisions","").strip()
     p=doc.add_paragraph(decisions or "Aucune décision particulière n'a été renseignée.")
     p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
 
-    _pv_docx_add_title(doc,"7. CLÔTURE DE LA SÉANCE",12)
+    _pv_docx_add_title(doc,"8. CLÔTURE DE LA SÉANCE",12)
     p=doc.add_paragraph(data.get("cloture","").strip() or "La séance est levée après épuisement de l'ordre du jour.")
     p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
 
@@ -6416,6 +6419,7 @@ def _pv_enseignants_promotion(df_source, df_contacts, promotion):
 
     return sorted(resultats, key=lambda x: _pv_normalize(x.get("Nom", "")))
 
+
 def _pv_etudiants_promotion(df_etu, promotion):
     """Retourne les étudiants appartenant uniquement à la promotion choisie, avec nom et email."""
     if df_etu is None or not isinstance(df_etu, pd.DataFrame) or df_etu.empty:
@@ -6453,6 +6457,7 @@ def _pv_etudiants_promotion(df_etu, promotion):
     resultats.sort(key=lambda x: _pv_normalize(x.get("Nom", "")))
     return resultats
 
+
 def _pv_envoyer_invitation_email(destinataires, objet, corps_html):
     """Envoie l'invitation du comité pédagogique par SMTP."""
     import os
@@ -6488,6 +6493,7 @@ def _pv_envoyer_invitation_email(destinataires, objet, corps_html):
         except Exception:
             pass
         return False, str(exc)
+
 
 def run_pv_pedagogique():
     """Interface complète de préparation, invitation et génération des PV."""
