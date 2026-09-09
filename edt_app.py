@@ -6146,6 +6146,11 @@ def _pv_generer_word(data):
     p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
     p.add_run(f"Date : {data['date']}    |    Heure : {data['heure']}    |    Lieu : {data['lieu']}").font.size=Pt(10)
 
+    if data.get("delegue_promotion"):
+        p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+        r=p.add_run(f"Délégué de la promotion : {data.get('delegue_promotion')}" )
+        r.bold=True; r.font.name="Arial"; r.font.size=Pt(10)
+
     doc.add_paragraph()
     _pv_docx_add_title(doc,"1. OUVERTURE DE LA SÉANCE",12)
     p=doc.add_paragraph(data["ouverture"])
@@ -6178,7 +6183,15 @@ def _pv_generer_word(data):
         r=p.add_run("Absences signalées : "); r.bold=True
         p.add_run(", ".join([a.get("Nom",str(a)) if isinstance(a,dict) else str(a) for a in absents]))
 
-    _pv_docx_add_title(doc,"3. ORDRE DU JOUR",12)
+    if data.get("delegue_promotion"):
+        _pv_docx_add_title(doc,"3. DÉLÉGUÉ DE LA PROMOTION",12)
+        p=doc.add_paragraph()
+        p.add_run("Délégué étudiant : ").bold=True
+        p.add_run(str(data.get("delegue_promotion")))
+        if data.get("delegue_email"):
+            p.add_run(f" — Email : {data.get('delegue_email')}")
+
+    _pv_docx_add_title(doc,"4. ORDRE DU JOUR",12)
     for i,point in enumerate(data.get("ordre_du_jour",[]),1):
         p=doc.add_paragraph(style=None)
         p.paragraph_format.left_indent=Inches(0.15)
@@ -6186,7 +6199,7 @@ def _pv_generer_word(data):
         r.bold=True
         p.add_run(point)
 
-    _pv_docx_add_title(doc,"4. SUIVI DES ENSEIGNEMENTS ET ÉTAT D'AVANCEMENT",12)
+    _pv_docx_add_title(doc,"5. SUIVI DES ENSEIGNEMENTS ET ÉTAT D'AVANCEMENT",12)
     matieres=data.get("matieres",[])
     if matieres:
         table=doc.add_table(rows=1, cols=5)
@@ -6201,7 +6214,7 @@ def _pv_generer_word(data):
             for j,v in enumerate(vals):
                 _pv_docx_set_cell_text(cells[j],v,False,8.2,"000000",WD_ALIGN_PARAGRAPH.LEFT)
 
-    _pv_docx_add_title(doc,"5. EXAMEN DES POINTS DE L'ORDRE DU JOUR",12)
+    _pv_docx_add_title(doc,"6. EXAMEN DES POINTS DE L'ORDRE DU JOUR",12)
     for i,item in enumerate(data.get("points_pv",[]),1):
         p=doc.add_paragraph()
         r=p.add_run(f"Point {i} — {item.get('titre','')}")
@@ -6214,12 +6227,12 @@ def _pv_generer_word(data):
             p=doc.add_paragraph("Aucune observation renseignée pour ce point.")
             p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
 
-    _pv_docx_add_title(doc,"6. DÉCISIONS ET RECOMMANDATIONS",12)
+    _pv_docx_add_title(doc,"7. DÉCISIONS ET RECOMMANDATIONS",12)
     decisions=data.get("decisions","").strip()
     p=doc.add_paragraph(decisions or "Aucune décision particulière n'a été renseignée.")
     p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
 
-    _pv_docx_add_title(doc,"7. CLÔTURE DE LA SÉANCE",12)
+    _pv_docx_add_title(doc,"8. CLÔTURE DE LA SÉANCE",12)
     p=doc.add_paragraph(data.get("cloture","").strip() or "La séance est levée après épuisement de l'ordre du jour.")
     p.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
 
@@ -6244,10 +6257,136 @@ def _pv_generer_word(data):
     return buffer.getvalue()
 
 
+def _pv_enseignants_promotion(df_source, df_contacts, promotion):
+    """Retourne uniquement les enseignants qui enseignent réellement dans la promotion sélectionnée."""
+    if df_source is None or df_source.empty:
+        return []
+
+    work = df_source.copy()
+    col_promo = next((c for c in work.columns if _pv_normalize(c) == _pv_normalize("Promotion")), None)
+    col_ens = next((c for c in work.columns if _pv_normalize(c) == _pv_normalize("Enseignants")), None)
+    if col_promo is None or col_ens is None:
+        return []
+
+    work = work[work[col_promo].astype(str).map(_pv_normalize) == _pv_normalize(promotion)].copy()
+    if work.empty:
+        return []
+
+    noms_edt = []
+    for valeur in work[col_ens].dropna().astype(str).tolist():
+        for morceau in re.split(r"\s*(?:/|&|;|,|\bet\b)\s*", valeur, flags=re.IGNORECASE):
+            morceau = _pv_clean(morceau)
+            if morceau and _pv_normalize(morceau) not in [_pv_normalize(x) for x in noms_edt]:
+                noms_edt.append(morceau)
+
+    repertoire = _pv_teacher_directory(df_contacts)
+    resultats = []
+    deja = set()
+
+    for nom_edt in noms_edt:
+        cible = _pv_normalize(nom_edt)
+        famille = _pv_normalize(extraire_nom_famille(nom_edt)) if 'extraire_nom_famille' in globals() else ""
+        nettoyage = _pv_normalize(nettoyer_nom_enseignant(nom_edt)) if 'nettoyer_nom_enseignant' in globals() else ""
+
+        meilleur = None
+        for membre in repertoire:
+            nom_rep = _pv_normalize(membre.get("Nom", ""))
+            fam_rep = _pv_normalize(extraire_nom_famille(membre.get("Nom", ""))) if 'extraire_nom_famille' in globals() else ""
+            if cible and (cible == nom_rep or cible == fam_rep or cible == nettoyage):
+                meilleur = membre
+                break
+
+        if meilleur is None:
+            # Fallback : conserver l'enseignant de l'EDT même si le répertoire ne permet pas de retrouver ses coordonnées.
+            meilleur = {"Nom": nom_edt, "Email": "", "Téléphone": "", "Qualité": "", "Grade": ""}
+
+        cle = _pv_normalize(meilleur.get("Nom", ""))
+        if cle and cle not in deja:
+            deja.add(cle)
+            resultats.append(meilleur)
+
+    return sorted(resultats, key=lambda x: _pv_normalize(x.get("Nom", "")))
+
+
+def _pv_etudiants_promotion(df_etu, promotion):
+    """Retourne les étudiants appartenant uniquement à la promotion choisie, avec nom et email."""
+    if df_etu is None or not isinstance(df_etu, pd.DataFrame) or df_etu.empty:
+        return []
+
+    work = df_etu.copy()
+    cols_map = detecter_colonnes_etudiant(work) if 'detecter_colonnes_etudiant' in globals() else {}
+    col_promo = cols_map.get('promotion') or next((c for c in work.columns if _pv_normalize(c) == _pv_normalize('Promotion')), None)
+    if not col_promo:
+        return []
+
+    work = work[work[col_promo].astype(str).str.strip().str.upper() == str(promotion).strip().upper()].copy()
+    if work.empty:
+        return []
+
+    col_nom_complet = 'Nom_Complet' if 'Nom_Complet' in work.columns else None
+    col_nom = cols_map.get('nom')
+    col_prenom = cols_map.get('prenom')
+    col_email = cols_map.get('email')
+
+    resultats = []
+    for _, row in work.iterrows():
+        if col_nom_complet:
+            nom = _pv_clean(row.get(col_nom_complet, ""))
+        else:
+            nom_part = _pv_clean(row.get(col_nom, "")) if col_nom else ""
+            prenom_part = _pv_clean(row.get(col_prenom, "")) if col_prenom else ""
+            nom = f"{nom_part} {prenom_part}".strip()
+
+        email = _pv_clean(row.get(col_email, "")) if col_email else ""
+        if not nom:
+            continue
+        resultats.append({"Nom": nom, "Email": email, "Matricule": _pv_clean(row.get(cols_map.get('mat_etud', ''), "")) if cols_map.get('mat_etud') else ""})
+
+    resultats.sort(key=lambda x: _pv_normalize(x.get("Nom", "")))
+    return resultats
+
+
+def _pv_envoyer_invitation_email(destinataires, objet, corps_html):
+    """Envoie l'invitation du comité pédagogique par SMTP."""
+    import os
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    destinataires = sorted(set(str(x).strip() for x in destinataires if x and "@" in str(x)))
+    if not destinataires:
+        return False, "Aucune adresse email valide n'a été trouvée."
+
+    smtp_user = os.getenv("SMTP_USER", "chef.department.elt.fge@gmail.com")
+    smtp_pass = os.getenv("SMTP_PASS", "gkzs pdza yodb icvd")
+    smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+
+    msg = MIMEMultipart("alternative")
+    msg["From"] = smtp_user
+    msg["To"] = ", ".join(destinataires)
+    msg["Subject"] = objet
+    msg.attach(MIMEText(corps_html, "html", "utf-8"))
+
+    try:
+        server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(smtp_user, destinataires, msg.as_string())
+        server.quit()
+        return True, f"Invitation envoyée à {len(destinataires)} destinataire(s)."
+    except Exception as exc:
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return False, str(exc)
+
+
 def run_pv_pedagogique():
-    """Interface complète de préparation et génération automatique des PV."""
+    """Interface complète de préparation, invitation et génération des PV."""
     st.markdown("<h1 class='main-title'>📝 Générateur automatique des PV des Comités Pédagogiques</h1>", unsafe_allow_html=True)
-    st.info("Sélectionnez une promotion : les matières, leurs chargés de matière, leurs emails et téléphones sont récupérés automatiquement depuis l'EDT et le répertoire des enseignants.")
+    st.info("Sélectionnez une promotion : les enseignants présents/absents, le délégué étudiant et les matières sont automatiquement limités à cette promotion.")
 
     # Récupération des sources déjà chargées par l'application.
     df_source = None
@@ -6256,167 +6395,244 @@ def run_pv_pedagogique():
     elif os.path.exists(FILE_EDT):
         try:
             df_source = pd.read_excel(FILE_EDT)
-            df_source.columns=[str(c).strip() for c in df_source.columns]
+            df_source.columns = [str(c).strip() for c in df_source.columns]
         except Exception as exc:
             st.error(f"Impossible de charger l'EDT : {exc}")
             return
 
-    contacts = df_contacts if isinstance(df_contacts,pd.DataFrame) else None
+    contacts = df_contacts if isinstance(df_contacts, pd.DataFrame) else None
+    df_etu_pv = None
+    if 'df_etu_edt' in globals() and isinstance(df_etu_edt, pd.DataFrame) and not df_etu_edt.empty:
+        df_etu_pv = df_etu_edt.copy()
+    elif os.path.exists(FILE_ETUDIANTS):
+        try:
+            df_etu_pv = lire_excel_robuste(FILE_ETUDIANTS)
+            df_etu_pv.columns = [str(c).strip() for c in df_etu_pv.columns]
+        except Exception:
+            df_etu_pv = pd.DataFrame()
+
     if df_source is None or df_source.empty:
         st.error("❌ Le fichier EDT est indisponible ou vide.")
         return
 
-    promotions=_pv_promotions(df_source)
+    promotions = _pv_promotions(df_source)
     if not promotions:
         st.error("❌ Aucune promotion n'a été trouvée dans la colonne Promotion de l'EDT.")
         return
 
-    # ------------------ Informations générales ------------------
+    # ------------------ 1. Informations générales ------------------
     st.markdown("## 🏛️ 1. Informations générales du comité")
-    c1,c2,c3=st.columns(3)
+    c1, c2, c3 = st.columns(3)
     with c1:
-        promotion=st.selectbox("🎓 Promotion",promotions,key="pv_promotion")
-        annee=st.text_input("📅 Année universitaire",value="2026-2027",key="pv_annee")
+        promotion = st.selectbox("🎓 Promotion", promotions, key="pv_promotion")
+        annee = st.text_input("📅 Année universitaire", value="2026-2027", key="pv_annee")
     with c2:
-        semestre=st.selectbox("📚 Semestre",["Semestre 1","Semestre 2","Semestre 3"],key="pv_semestre")
-        date_pv=st.date_input("📆 Date de la réunion",value=datetime.now().date(),key="pv_date")
+        semestre = st.selectbox("📚 Semestre", ["Semestre 1", "Semestre 2", "Semestre 3"], key="pv_semestre")
+        date_pv = st.date_input("📆 Date de la réunion", value=datetime.now().date(), key="pv_date")
     with c3:
-        heure=st.text_input("🕒 Heure",value="09:00",key="pv_heure")
-        lieu=st.text_input("🏢 Lieu",value="Salle de réunion du Département d'Électrotechnique",key="pv_lieu")
+        heure = st.text_input("🕒 Heure", value="09:00", key="pv_heure")
+        lieu = st.text_input("🏢 Lieu", value="Salle de réunion du Département d'Électrotechnique", key="pv_lieu")
 
-    matieres_df=_pv_matiere_charge(df_source,contacts,promotion)
-    st.success(f"✅ {len(matieres_df)} matière(s) trouvée(s) pour la promotion **{promotion}**.")
+    matieres_df = _pv_matiere_charge(df_source, contacts, promotion)
+    enseignants_promo = _pv_enseignants_promotion(df_source, contacts, promotion)
+    st.success(f"✅ {len(matieres_df)} matière(s) et {len(enseignants_promo)} enseignant(s) trouvé(s) pour la promotion **{promotion}**.")
 
-    # ------------------ Ordre du jour ------------------
+    # Nettoyage des sélections devenues invalides après changement de promotion.
+    noms_enseignants_promo = [m["Nom"] for m in enseignants_promo]
+    for cle in ["pv_presents", "pv_absents"]:
+        anciennes = st.session_state.get(cle, [])
+        if not isinstance(anciennes, list):
+            anciennes = list(anciennes) if anciennes else []
+        st.session_state[cle] = [x for x in anciennes if x in noms_enseignants_promo]
+    for cle in ["pv_president", "pv_secretaire"]:
+        if st.session_state.get(cle) not in noms_enseignants_promo and noms_enseignants_promo:
+            st.session_state[cle] = noms_enseignants_promo[0]
+
+    # ------------------ 2. Ordre du jour ------------------
     st.markdown("## 📋 2. Ordre du jour")
-    st.caption("Au départ, plusieurs champs sont ouverts. Ajoutez ou supprimez des points selon vos besoins.")
-    nb_points=int(st.session_state.get("pv_pedagogique_points",3))
-    ordre=[]
-    for i in range(1,nb_points+1):
-        val=st.text_input(f"Point {i} de l'ordre du jour",key=f"pv_ordre_{i}",placeholder=f"Ex. Point {i} — ...")
+    st.caption("L'ordre du jour servira directement à construire le texte de l'invitation envoyée par email aux enseignants de la promotion et au délégué étudiant.")
+    nb_points = int(st.session_state.get("pv_pedagogique_points", 3))
+    ordre = []
+    for i in range(1, nb_points + 1):
+        val = st.text_input(f"Point {i} de l'ordre du jour", key=f"pv_ordre_{i}", placeholder=f"Ex. Point {i} — ...")
         ordre.append(val.strip())
-    ca,cb=st.columns(2)
+    ca, cb = st.columns(2)
     with ca:
-        st.button("➕ Ajouter un point",key="pv_add_point",on_click=_pv_ajouter_point,use_container_width=True)
+        st.button("➕ Ajouter un point", key="pv_add_point", on_click=_pv_ajouter_point, use_container_width=True)
     with cb:
-        st.button("➖ Supprimer le dernier point",key="pv_del_point",on_click=_pv_supprimer_point,use_container_width=True)
+        st.button("➖ Supprimer le dernier point", key="pv_del_point", on_click=_pv_supprimer_point, use_container_width=True)
+    ordre_non_vides = [x for x in ordre if x]
 
-    ordre_non_vides=[x for x in ordre if x]
-
-    # ------------------ Présence ------------------
+    # ------------------ 3. Présence / Absence ------------------
     st.markdown("## 👥 3. Liste de présence et des absents")
-    membres=_pv_teacher_directory(contacts)
-    noms_membres=[m["Nom"] for m in membres]
-    if not noms_membres:
-        st.warning("⚠️ Aucun répertoire d'enseignants exploitable. Vous pouvez tout de même saisir les noms manuellement ci-dessous.")
-        noms_membres=["Président du comité", "Secrétaire de séance"]
+    if not noms_enseignants_promo:
+        st.warning("⚠️ Aucun enseignant de cette promotion n'a été retrouvé dans l'EDT.")
+    else:
+        st.caption(f"Les deux listes ci-dessous contiennent uniquement les enseignants affectés à la promotion **{promotion}**.")
 
-    # Nettoyage des anciennes sélections lorsque le répertoire change.
-    anciens_presents=st.session_state.get("pv_presents", [])
-    if not isinstance(anciens_presents, list):
-        anciens_presents=list(anciens_presents) if anciens_presents else []
-    st.session_state.pv_presents=[n for n in anciens_presents if n in noms_membres]
-
-    selection_presence=st.multiselect(
-        "👥 Membres présents",
-        options=noms_membres,
+    selection_presence = st.multiselect(
+        "👥 Enseignants présents",
+        options=noms_enseignants_promo,
         key="pv_presents"
     )
 
-    options_absents=[n for n in noms_membres if n not in selection_presence]
-    anciens_absents=st.session_state.get("pv_absents", [])
+    options_absents = [n for n in noms_enseignants_promo if n not in selection_presence]
+    anciens_absents = st.session_state.get("pv_absents", [])
     if not isinstance(anciens_absents, list):
-        anciens_absents=list(anciens_absents) if anciens_absents else []
-    st.session_state.pv_absents=[n for n in anciens_absents if n in options_absents]
+        anciens_absents = list(anciens_absents) if anciens_absents else []
+    st.session_state.pv_absents = [x for x in anciens_absents if x in options_absents]
 
-    selection_absence=st.multiselect(
-        "🚫 Membres absents",
+    selection_absence = st.multiselect(
+        "🚫 Enseignants absents",
         options=options_absents,
         key="pv_absents"
     )
 
-    c1,c2=st.columns(2)
-    with c1:
-        if st.session_state.get("pv_president") not in noms_membres:
-            st.session_state.pv_president=noms_membres[0]
-        president=st.selectbox(
-            "👤 Président du comité",
-            options=noms_membres,
-            key="pv_president"
-        )
-    with c2:
-        if st.session_state.get("pv_secretaire") not in noms_membres:
-            st.session_state.pv_secretaire=noms_membres[0]
-        secretaire=st.selectbox(
-            "🖊️ Secrétaire de séance",
-            options=noms_membres,
-            key="pv_secretaire"
-        )
+    if noms_enseignants_promo:
+        c1, c2 = st.columns(2)
+        with c1:
+            president = st.selectbox("👤 Président du comité", options=noms_enseignants_promo, key="pv_president")
+        with c2:
+            secretaire = st.selectbox("🖊️ Secrétaire de séance", options=noms_enseignants_promo, key="pv_secretaire")
+    else:
+        president = st.text_input("👤 Président du comité", key="pv_president_manual")
+        secretaire = st.text_input("🖊️ Secrétaire de séance", key="pv_secretaire_manual")
 
-    # ------------------ Etat d'avancement des matières ------------------
-    st.markdown("## 📚 4. État d'avancement des matières")
+    # ------------------ Délégué étudiant de la promotion ------------------
+    st.markdown("### 🎓 Délégué de la promotion")
+    etudiants_promo = _pv_etudiants_promotion(df_etu_pv, promotion)
+    if etudiants_promo:
+        noms_etudiants = [e["Nom"] for e in etudiants_promo]
+        if st.session_state.get("pv_delegue_promotion") not in noms_etudiants:
+            st.session_state.pv_delegue_promotion = noms_etudiants[0]
+        delegue = st.selectbox("👨‍🎓 Choisir le délégué étudiant de la promotion", options=noms_etudiants, key="pv_delegue_promotion")
+        delegue_data = next((e for e in etudiants_promo if e["Nom"] == delegue), {"Nom": delegue, "Email": "", "Matricule": ""})
+        if delegue_data.get("Email"):
+            st.success(f"📧 Email du délégué : **{delegue_data['Email']}**")
+        else:
+            st.warning("⚠️ Aucun email n'est renseigné pour ce délégué dans la liste des étudiants.")
+    else:
+        delegue = ""
+        delegue_data = {"Nom": "", "Email": "", "Matricule": ""}
+        st.warning(f"⚠️ Aucun étudiant trouvé pour la promotion **{promotion}** dans le fichier des étudiants.")
+
+    # ------------------ Invitation ------------------
+    st.markdown("## ✉️ 4. Invitation à la réunion")
+    st.caption("L'invitation est préparée automatiquement à partir de la promotion, de la date, de l'heure, du lieu et de l'ordre du jour. Les destinataires sont les enseignants de la promotion et le délégué étudiant sélectionné.")
+
+    emails_enseignants = [m.get("Email", "") for m in enseignants_promo if m.get("Email") and "@" in str(m.get("Email"))]
+    email_delegue = delegue_data.get("Email", "") if delegue_data else ""
+    destinataires_invitation = sorted(set(emails_enseignants + ([email_delegue] if email_delegue and "@" in str(email_delegue) else [])))
+
+    objet_defaut = f"Invitation au Comité Pédagogique — {promotion} — {date_pv.strftime('%d/%m/%Y')}"
+    objet_invitation = st.text_input("📨 Objet de l'email", value=objet_defaut, key="pv_objet_invitation")
+
+    if ordre_non_vides:
+        ordre_html = "".join([f"<li style='margin-bottom:7px;'>{x}</li>" for x in ordre_non_vides])
+    else:
+        ordre_html = "<li>Ordre du jour à compléter</li>"
+
+    corps_invitation_defaut = f"""
+    <html><body style='font-family:Arial,sans-serif;color:#1f2937;'>
+    <div style='max-width:760px;margin:auto;border:1px solid #dbeafe;border-radius:14px;overflow:hidden;'>
+      <div style='background:#1e3a8a;color:white;padding:22px;'>
+        <h2 style='margin:0;'>📨 Invitation au Comité Pédagogique</h2>
+        <div style='margin-top:8px;'>Promotion : <strong>{promotion}</strong></div>
+      </div>
+      <div style='padding:24px;'>
+        <p>Madame, Monsieur,</p>
+        <p>Vous êtes cordialement invité(e) à participer à la réunion du Comité Pédagogique de la promotion <strong>{promotion}</strong>.</p>
+        <table style='border-collapse:collapse;width:100%;margin:18px 0;'>
+          <tr><td style='padding:8px;border:1px solid #e5e7eb;'><strong>📆 Date</strong></td><td style='padding:8px;border:1px solid #e5e7eb;'>{date_pv.strftime('%d/%m/%Y')}</td></tr>
+          <tr><td style='padding:8px;border:1px solid #e5e7eb;'><strong>🕒 Heure</strong></td><td style='padding:8px;border:1px solid #e5e7eb;'>{heure}</td></tr>
+          <tr><td style='padding:8px;border:1px solid #e5e7eb;'><strong>🏢 Lieu</strong></td><td style='padding:8px;border:1px solid #e5e7eb;'>{lieu}</td></tr>
+          <tr><td style='padding:8px;border:1px solid #e5e7eb;'><strong>🎓 Délégué</strong></td><td style='padding:8px;border:1px solid #e5e7eb;'>{delegue or 'Non désigné'}</td></tr>
+        </table>
+        <h3 style='color:#1e3a8a;'>📋 Ordre du jour</h3>
+        <ol>{ordre_html}</ol>
+        <p style='margin-top:22px;'>Nous vous remercions de bien vouloir prendre les dispositions nécessaires pour participer à cette réunion.</p>
+        <p>Cordialement,<br><strong>Comité Pédagogique — Département d'Électrotechnique</strong><br>Faculté de Génie Électrique — Université Djillali Liabès de Sidi Bel Abbès</p>
+      </div>
+    </div>
+    </body></html>
+    """
+    corps_invitation = st.text_area("✍️ Contenu de l'invitation", value=corps_invitation_defaut, height=300, key="pv_corps_invitation")
+
+    st.write(f"**📬 Destinataires détectés :** {len(destinataires_invitation)}")
+    if destinataires_invitation:
+        with st.expander("👁️ Voir les destinataires", expanded=False):
+            st.write("; ".join(destinataires_invitation))
+    else:
+        st.warning("⚠️ Aucun destinataire email valide n'a été détecté pour cette promotion.")
+
+    if st.button("📨 ENVOYER L'INVITATION PAR EMAIL", type="primary", use_container_width=True, key="pv_send_invitation"):
+        if not ordre_non_vides:
+            st.error("❌ Ajoutez au moins un point à l'ordre du jour avant d'envoyer l'invitation.")
+        elif not destinataires_invitation:
+            st.error("❌ Aucun email valide à qui envoyer l'invitation.")
+        else:
+            ok, message = _pv_envoyer_invitation_email(destinataires_invitation, objet_invitation, corps_invitation)
+            if ok:
+                st.success(f"✅ {message}")
+            else:
+                st.error(f"❌ Échec de l'envoi de l'invitation : {message}")
+
+    # ------------------ 5. Etat d'avancement des matières ------------------
+    st.markdown("## 📚 5. État d'avancement des matières")
     st.caption("Cliquez sur une matière : son champ de saisie s'ouvre pour renseigner l'état d'avancement qui sera repris automatiquement dans le PV Word.")
 
     if "pv_matieres_selectionnees" not in st.session_state:
-        st.session_state.pv_matieres_selectionnees=[]
-
-    options_matieres=matieres_df["Matière"].dropna().astype(str).tolist() if not matieres_df.empty else []
-
-    # CORRECTION STREAMLIT : après un changement de promotion, certaines matières
-    # mémorisées dans session_state peuvent ne plus exister dans les options.
-    # Streamlit déclenche alors StreamlitDefaultNotInOptionsError.
-    # On nettoie donc systématiquement la sélection avant de créer le widget.
-    anciennes_matieres=st.session_state.get("pv_matieres_selectionnees", [])
+        st.session_state.pv_matieres_selectionnees = []
+    options_matieres = matieres_df["Matière"].dropna().astype(str).tolist() if not matieres_df.empty else []
+    anciennes_matieres = st.session_state.get("pv_matieres_selectionnees", [])
     if not isinstance(anciennes_matieres, list):
-        anciennes_matieres=list(anciennes_matieres) if anciennes_matieres else []
-    st.session_state.pv_matieres_selectionnees=[
-        str(m) for m in anciennes_matieres if str(m) in options_matieres
-    ]
+        anciennes_matieres = list(anciennes_matieres) if anciennes_matieres else []
+    st.session_state.pv_matieres_selectionnees = [str(m) for m in anciennes_matieres if str(m) in options_matieres]
 
-    selected_matieres=st.multiselect(
+    selected_matieres = st.multiselect(
         "📘 Sélectionner les matières à traiter dans le PV",
         options=options_matieres,
         key="pv_matieres_selectionnees"
     )
 
-    matieres_pv=[]
+    matieres_pv = []
     if selected_matieres:
-        for idx,matiere in enumerate(selected_matieres,1):
-            row=matieres_df[matieres_df["Matière"]==matiere].iloc[0].to_dict()
-            with st.expander(f"📘 {idx}. {matiere} — {row.get('Chargé de matière','')}",expanded=True):
-                c1,c2=st.columns(2)
+        for idx, matiere in enumerate(selected_matieres, 1):
+            row = matieres_df[matieres_df["Matière"] == matiere].iloc[0].to_dict()
+            with st.expander(f"📘 {idx}. {matiere} — {row.get('Chargé de matière','')}", expanded=True):
+                c1, c2 = st.columns(2)
                 with c1:
                     st.markdown(f"**Chargé de matière :** {row.get('Chargé de matière','Non renseigné')}")
                     st.markdown(f"**Email :** {row.get('Email','Non renseigné')}")
                 with c2:
                     st.markdown(f"**Téléphone :** {row.get('Téléphone','Non renseigné')}")
-                etat=st.text_area("✍️ État d'avancement de cette matière",key=f"pv_etat_{_pv_normalize(matiere)}",height=130,placeholder="Décrire les chapitres réalisés, en cours, le taux d'avancement, les difficultés, les séances restantes, etc.")
-                row["Etat d'avancement"]=etat.strip()
+                etat = st.text_area("✍️ État d'avancement de cette matière", key=f"pv_etat_{_pv_normalize(matiere)}", height=130, placeholder="Décrire les chapitres réalisés, en cours, le taux d'avancement, les difficultés, les séances restantes, etc.")
+                row["Etat d'avancement"] = etat.strip()
                 matieres_pv.append(row)
     else:
         st.warning("Sélectionnez au moins une matière pour renseigner son état d'avancement.")
 
-    # ------------------ Rédaction du PV par point ------------------
-    st.markdown("## 🖊️ 5. Rédaction de chaque point du PV")
-    st.caption("Chaque point de l'ordre du jour dispose de son propre champ. Le contenu sera repris tel quel dans le document Word.")
-    points_pv=[]
-    for i,titre in enumerate(ordre_non_vides,1):
-        contenu=st.text_area(f"Point {i} — {titre}",key=f"pv_contenu_{i}",height=180,placeholder="Rédiger les échanges, constats, propositions, décisions et recommandations relatifs à ce point...")
-        points_pv.append({"titre":titre,"contenu":contenu.strip()})
+    # ------------------ 6. Rédaction du PV ------------------
+    st.markdown("## 🖊️ 6. Rédaction de chaque point du PV")
+    points_pv = []
+    for i, titre in enumerate(ordre_non_vides, 1):
+        contenu = st.text_area(f"Point {i} — {titre}", key=f"pv_contenu_{i}", height=180, placeholder="Rédiger les échanges, constats, propositions, décisions et recommandations relatifs à ce point...")
+        points_pv.append({"titre": titre, "contenu": contenu.strip()})
 
-    # ------------------ Ouverture / décisions / clôture ------------------
-    st.markdown("## 📝 6. Ouverture, décisions et clôture")
-    ouverture=st.text_area("Texte d'ouverture de la séance",value=f"La séance du comité pédagogique de la promotion {promotion} est ouverte à {heure} sous la présidence de {president}. Les membres présents et absents sont consignés dans la présente liste. L'ordre du jour est soumis à l'examen du comité.",height=110,key="pv_ouverture")
-    decisions=st.text_area("Décisions et recommandations générales",height=150,key="pv_decisions",placeholder="Synthèse des décisions arrêtées par le comité...")
-    cloture=st.text_area("Texte de clôture",value="Après épuisement de l'ordre du jour, les travaux du comité pédagogique sont clôturés. Le présent procès-verbal est établi pour servir et valoir ce que de droit.",height=100,key="pv_cloture")
+    # ------------------ 7. Ouverture / décisions / clôture ------------------
+    st.markdown("## 📝 7. Ouverture, décisions et clôture")
+    ouverture = st.text_area("Texte d'ouverture de la séance", value=f"La séance du comité pédagogique de la promotion {promotion} est ouverte à {heure} sous la présidence de {president}. Les membres présents et absents sont consignés dans la présente liste. L'ordre du jour est soumis à l'examen du comité.", height=110, key="pv_ouverture")
+    decisions = st.text_area("Décisions et recommandations générales", height=150, key="pv_decisions", placeholder="Synthèse des décisions arrêtées par le comité...")
+    cloture = st.text_area("Texte de clôture", value="Après épuisement de l'ordre du jour, les travaux du comité pédagogique sont clôturés. Le présent procès-verbal est établi pour servir et valoir ce que de droit.", height=100, key="pv_cloture")
 
-    # ------------------ Aperçu ------------------
-    st.markdown("## 👁️ 7. Vérification avant génération")
-    st.dataframe(matieres_pv if matieres_pv else matieres_df.head(0),use_container_width=True,hide_index=True)
-    st.write(f"**Promotion :** {promotion}  |  **Matières sélectionnées :** {len(matieres_pv)}  |  **Présents :** {len(selection_presence)}  |  **Absents :** {len(selection_absence)}  |  **Points :** {len(points_pv)}")
+    # ------------------ 8. Aperçu ------------------
+    st.markdown("## 👁️ 8. Vérification avant génération")
+    st.dataframe(matieres_pv if matieres_pv else matieres_df.head(0), use_container_width=True, hide_index=True)
+    st.write(f"**Promotion :** {promotion} | **Délégué :** {delegue or 'Non renseigné'} | **Matières sélectionnées :** {len(matieres_pv)} | **Présents :** {len(selection_presence)} | **Absents :** {len(selection_absence)} | **Points :** {len(points_pv)}")
 
-    st.markdown("## 📄 8. Génération du PV Word")
-    if st.button("📝 GÉNÉRER LE PV COMPLET EN WORD",type="primary",use_container_width=True,key="pv_generate_word"):
+    # ------------------ 9. Génération Word ------------------
+    st.markdown("## 📄 9. Génération du PV Word")
+    if st.button("📝 GÉNÉRER LE PV COMPLET EN WORD", type="primary", use_container_width=True, key="pv_generate_word"):
         if not ordre_non_vides:
             st.error("❌ Ajoutez au moins un point à l'ordre du jour.")
             return
@@ -6426,29 +6642,31 @@ def run_pv_pedagogique():
         if not any(x.get("contenu") for x in points_pv):
             st.warning("⚠️ Aucun contenu n'a été renseigné dans les points du PV. Le document sera généré avec des rubriques à compléter.")
 
-        data={
-            "promotion":promotion,
-            "annee":annee,
-            "semestre":semestre,
-            "date":date_pv.strftime("%d/%m/%Y"),
-            "heure":heure,
-            "lieu":lieu,
-            "ouverture":ouverture,
-            "presents":[next((m for m in membres if m["Nom"]==n),{"Nom":n}) for n in selection_presence],
-            "absents":[next((m for m in membres if m["Nom"]==n),{"Nom":n}) for n in selection_absence],
-            "ordre_du_jour":ordre_non_vides,
-            "matieres":matieres_pv,
-            "points_pv":points_pv,
-            "decisions":decisions,
-            "cloture":cloture,
-            "president":president,
-            "secretaire":secretaire,
+        data = {
+            "promotion": promotion,
+            "annee": annee,
+            "semestre": semestre,
+            "date": date_pv.strftime("%d/%m/%Y"),
+            "heure": heure,
+            "lieu": lieu,
+            "ouverture": ouverture,
+            "presents": [next((m for m in enseignants_promo if m["Nom"] == n), {"Nom": n}) for n in selection_presence],
+            "absents": [next((m for m in enseignants_promo if m["Nom"] == n), {"Nom": n}) for n in selection_absence],
+            "ordre_du_jour": ordre_non_vides,
+            "matieres": matieres_pv,
+            "points_pv": points_pv,
+            "decisions": decisions,
+            "cloture": cloture,
+            "president": president,
+            "secretaire": secretaire,
+            "delegue_promotion": delegue,
+            "delegue_email": email_delegue,
         }
         try:
-            word_bytes=_pv_generer_word(data)
-            nom_fichier=f"PV_Comite_Pedagogique_{promotion.replace('/','-').replace(' ','_')}_{date_pv.strftime('%Y%m%d')}.docx"
+            word_bytes = _pv_generer_word(data)
+            nom_fichier = f"PV_Comite_Pedagogique_{promotion.replace('/','-').replace(' ','_')}_{date_pv.strftime('%Y%m%d')}.docx"
             st.success("✅ PV Word généré avec succès.")
-            st.download_button("📥 Télécharger le PV Word",data=word_bytes,file_name=nom_fichier,mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",use_container_width=True,key="pv_download_word")
+            st.download_button("📥 Télécharger le PV Word", data=word_bytes, file_name=nom_fichier, mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, key="pv_download_word")
         except Exception as exc:
             st.error(f"❌ Erreur lors de la génération du Word : {exc}")
 
