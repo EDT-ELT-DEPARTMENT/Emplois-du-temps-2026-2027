@@ -468,6 +468,16 @@ MODULES_NAVIGATION = {
         "pages": [
             ("🏠 Générateur de PV", "pv_pedagogique")
         ]
+    },
+    "🔐 Portail Étudiant": {
+        "icon": "🔐",
+        "pages": [
+            ("👤 Mon Compte", "mon_compte"),
+            ("📅 Mon Emploi du Temps", "mon_edt"),
+            ("📥 Télécharger EDT PDF", "download_edt_pdf"),
+            ("📋 Mes Absences", "mes_absences"),
+            ("📧 Messages", "messages")
+        ]
     }
 }
 
