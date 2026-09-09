@@ -6034,6 +6034,110 @@ def _pv_matiere_charge(df_source, df_contacts, promotion):
     return pd.DataFrame(lignes).sort_values("Matière", key=lambda s: s.map(_pv_normalize)).reset_index(drop=True)
 
 
+def _pv_enseignants_promotion(df_source, df_contacts, promotion):
+    """Retourne uniquement les enseignants qui interviennent réellement dans la promotion sélectionnée."""
+    if df_source is None or df_source.empty:
+        return []
+    col_promo = _pv_col(df_source, ["Promotion", "Promotions"])
+    col_ens = _pv_col(df_source, ["Enseignants", "Enseignant", "Chargé de matière", "Charge de matiere"])
+    if not col_promo or not col_ens:
+        return []
+
+    def split_enseignants(val):
+        s = _pv_clean(val)
+        if not s or s.lower() in {"non defini", "non défini", "nan"}:
+            return []
+        # Les EDT peuvent contenir plusieurs enseignants dans une même cellule.
+        parts = re.split(r"\s*(?:/|;|\\|\s+et\s+)\s*", s, flags=re.IGNORECASE)
+        return [x.strip() for x in parts if x.strip()]
+
+    df = df_source.copy()
+    df["__promo"] = df[col_promo].map(_pv_clean)
+    df = df[df["__promo"].map(_pv_normalize) == _pv_normalize(promotion)].copy()
+
+    noms_edt = []
+    for val in df[col_ens].tolist():
+        for ens in split_enseignants(val):
+            if _pv_normalize(ens) not in {_pv_normalize(x) for x in noms_edt}:
+                noms_edt.append(ens)
+
+    contacts_list = _pv_teacher_directory(df_contacts)
+    result = []
+    for ens in noms_edt:
+        cible = _pv_normalize(ens)
+        famille = _pv_normalize(extraire_nom_famille(ens))
+        trouve = None
+        for c in contacts_list:
+            nom = _pv_normalize(c.get("Nom", ""))
+            if cible == nom or (famille and famille == _pv_normalize(extraire_nom_famille(c.get("Nom", "")))):
+                trouve = dict(c)
+                break
+        if trouve is None:
+            trouve = {"Nom": ens, "Email": "", "Téléphone": "", "Qualité": "", "Grade": ""}
+        result.append(trouve)
+    return result
+
+
+def _pv_etudiants_promotion(df_etudiants, promotion):
+    """Retourne les étudiants appartenant uniquement à la promotion sélectionnée."""
+    if df_etudiants is None or df_etudiants.empty:
+        return pd.DataFrame()
+    col_promo = _pv_col(df_etudiants, ["Promotion", "Promotions", "Promo", "Niveau", "Année"])
+    if not col_promo:
+        return pd.DataFrame()
+    d = df_etudiants.copy()
+    d["__promo_pv"] = d[col_promo].map(_pv_clean)
+    d = d[d["__promo_pv"].map(_pv_normalize) == _pv_normalize(promotion)].copy()
+    if d.empty:
+        return d
+    col_nom = _pv_col(d, ["Nom", "NOM", "Nom de famille"])
+    col_prenom = _pv_col(d, ["Prénom", "PRENOM", "Prenom"])
+    col_email = _pv_col(d, ["Email", "E-mail", "Mail", "Courriel", "Adresse mail"])
+    if "Nom_Complet" not in d.columns:
+        if col_nom and col_prenom:
+            d["Nom_Complet"] = d[col_nom].map(_pv_clean) + " " + d[col_prenom].map(_pv_clean)
+        elif col_nom:
+            d["Nom_Complet"] = d[col_nom].map(_pv_clean)
+        else:
+            d["Nom_Complet"] = d.index.map(lambda x: f"Étudiant {x}")
+    d["Nom_Complet"] = d["Nom_Complet"].map(_pv_clean)
+    if col_email:
+        d["Email_PV"] = d[col_email].map(_pv_clean)
+    else:
+        d["Email_PV"] = ""
+    d = d[d["Nom_Complet"] != ""].drop_duplicates(subset=["Nom_Complet"])
+    return d.sort_values("Nom_Complet", key=lambda s: s.map(_pv_normalize)).reset_index(drop=True)
+
+
+def _pv_email_valide(email):
+    email = _pv_clean(email)
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email))
+
+
+def _pv_envoyer_invitation_email(destinataires, objet, corps_html):
+    """Envoie l'invitation aux enseignants de la promotion et au délégué choisi."""
+    destinataires = sorted(set(e.strip() for e in destinataires if _pv_email_valide(e)))
+    if not destinataires:
+        return False, "Aucune adresse email valide n'a été trouvée."
+    try:
+        SMTP_SERVER = "smtp.gmail.com"
+        SMTP_PORT = 587
+        SMTP_USER = "chef.department.elt.fge@gmail.com"
+        SMTP_PASS = "gkzs pdza yodb icvd"
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = objet
+        msg["From"] = SMTP_USER
+        msg["To"] = ", ".join(destinataires)
+        msg.attach(MIMEText(corps_html, "html", "utf-8"))
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+        return True, f"Invitation envoyée à {len(destinataires)} destinataire(s)."
+    except Exception as exc:
+        return False, f"Échec de l'envoi de l'invitation : {exc}"
+
+
 def _pv_teacher_directory(df_contacts):
     """Liste des membres potentiels du comité à partir du fichier contacts."""
     if df_contacts is None or df_contacts.empty:
@@ -6294,11 +6398,24 @@ def run_pv_pedagogique():
 
     # ------------------ Présence ------------------
     st.markdown("## 👥 3. Liste de présence et des absents")
-    membres=_pv_teacher_directory(contacts)
-    noms_membres=[m["Nom"] for m in membres]
+    # IMPORTANT : la liste est construite à partir de l'EDT de la promotion sélectionnée.
+    # Ainsi, plusieurs enseignants peuvent apparaître et aucun enseignant d'une autre promotion
+    # n'est proposé dans les listes de présence/absence.
+    enseignants_promo = _pv_enseignants_promotion(df_source, contacts, promotion)
+    membres = enseignants_promo
+    noms_membres = [m["Nom"] for m in membres if _pv_clean(m.get("Nom", ""))]
     if not noms_membres:
-        st.warning("⚠️ Aucun répertoire d'enseignants exploitable. Vous pouvez tout de même saisir les noms manuellement ci-dessous.")
+        st.warning(f"⚠️ Aucun enseignant intervenant dans la promotion **{promotion}** n'a été trouvé dans l'EDT.")
         noms_membres=["Président du comité", "Secrétaire de séance"]
+
+    # Nettoyage des anciennes sélections lorsque la promotion change : évite les erreurs
+    # StreamlitDefaultNotInOptionsError avec des options devenues invalides.
+    st.session_state["pv_presents"] = [x for x in st.session_state.get("pv_presents", []) if x in noms_membres]
+    st.session_state["pv_absents"] = [x for x in st.session_state.get("pv_absents", []) if x in noms_membres]
+    if st.session_state.get("pv_president") not in noms_membres:
+        st.session_state["pv_president"] = noms_membres[0]
+    if st.session_state.get("pv_secretaire") not in noms_membres:
+        st.session_state["pv_secretaire"] = noms_membres[0]
 
     selection_presence=st.multiselect("👥 Membres présents",noms_membres,key="pv_presents")
     selection_absence=st.multiselect("🚫 Membres absents",[n for n in noms_membres if n not in selection_presence],key="pv_absents")
@@ -6307,6 +6424,82 @@ def run_pv_pedagogique():
         president=st.selectbox("👤 Président du comité",noms_membres,key="pv_president")
     with c2:
         secretaire=st.selectbox("🖊️ Secrétaire de séance",noms_membres,key="pv_secretaire")
+
+    # ------------------ Invitation à la réunion ------------------
+    st.markdown("### ✉️ Invitation à la réunion")
+    st.caption("Le délégué est limité aux étudiants de la promotion sélectionnée. L'invitation est envoyée au délégué et à tous les enseignants intervenant dans cette promotion dont l'adresse email est disponible.")
+
+    # Les étudiants proviennent du fichier étudiants déjà chargé par la plateforme.
+    df_etudiants_pv = globals().get("df_etu", None)
+    if not isinstance(df_etudiants_pv, pd.DataFrame) or df_etudiants_pv.empty:
+        df_etudiants_pv = globals().get("df_etu_edt", None)
+    etudiants_promo = _pv_etudiants_promotion(df_etudiants_pv, promotion)
+
+    if not etudiants_promo.empty:
+        noms_etudiants = etudiants_promo["Nom_Complet"].tolist()
+        st.session_state["pv_delegue"] = st.session_state.get("pv_delegue", "")
+        if st.session_state["pv_delegue"] not in noms_etudiants:
+            st.session_state["pv_delegue"] = noms_etudiants[0]
+        delegue = st.selectbox("🎓 Délégué de la promotion à inviter", noms_etudiants, key="pv_delegue")
+        row_delegue = etudiants_promo[etudiants_promo["Nom_Complet"] == delegue].iloc[0]
+        email_delegue = _pv_clean(row_delegue.get("Email_PV", ""))
+        if email_delegue:
+            st.caption(f"📧 Email du délégué : {email_delegue}")
+        else:
+            # Fallback sur la fonction existante de la plateforme si disponible.
+            try:
+                email_delegue = _pv_clean(trouver_email_étudiant(delegue, df_etudiants_pv))
+            except Exception:
+                email_delegue = ""
+            if email_delegue:
+                st.caption(f"📧 Email du délégué : {email_delegue}")
+            else:
+                st.warning("⚠️ Aucun email valide n'est disponible pour cet étudiant. Les enseignants pourront néanmoins recevoir l'invitation.")
+    else:
+        delegue = ""
+        email_delegue = ""
+        st.warning(f"⚠️ Aucun étudiant n'a été trouvé dans la promotion **{promotion}**.")
+
+    emails_enseignants = [m.get("Email", "") for m in enseignants_promo if _pv_email_valide(m.get("Email", ""))]
+    st.write(f"📨 **Destinataires enseignants trouvés : {len(emails_enseignants)}** / {len(enseignants_promo)}")
+    if emails_enseignants:
+        with st.expander("👨‍🏫 Enseignants qui recevront l'invitation", expanded=False):
+            for m in enseignants_promo:
+                email_m = _pv_clean(m.get("Email", ""))
+                if _pv_email_valide(email_m):
+                    st.write(f"• {m.get('Nom','')} — {email_m}")
+                else:
+                    st.write(f"• {m.get('Nom','')} — ⚠️ email non renseigné")
+
+    if st.button("✉️ ENVOYER L'INVITATION DE RÉUNION", use_container_width=True, key="pv_send_invitation"):
+        destinataires = list(emails_enseignants)
+        if _pv_email_valide(email_delegue):
+            destinataires.append(email_delegue)
+        ordre_html = "".join(f"<li>{x}</li>" for x in ordre_non_vides) or "<li>Ordre du jour à compléter</li>"
+        objet = f"Invitation — Comité pédagogique {promotion} — {date_pv.strftime('%d/%m/%Y')}"
+        corps_html = f"""<!DOCTYPE html>
+<html lang='fr'><head><meta charset='UTF-8'></head>
+<body style='font-family:Arial,sans-serif;color:#1e293b;line-height:1.6;'>
+<h2 style='color:#1e3a8a;'>📋 Invitation au Comité Pédagogique</h2>
+<p>Madame, Monsieur,</p>
+<p>Vous êtes cordialement invité(e) à participer à la réunion du <strong>Comité Pédagogique</strong> de la promotion <strong>{promotion}</strong>.</p>
+<table style='border-collapse:collapse;width:100%;max-width:700px;'>
+<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Date</strong></td><td style='padding:7px;border:1px solid #ddd;'>{date_pv.strftime('%d/%m/%Y')}</td></tr>
+<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Heure</strong></td><td style='padding:7px;border:1px solid #ddd;'>{heure}</td></tr>
+<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Lieu</strong></td><td style='padding:7px;border:1px solid #ddd;'>{lieu}</td></tr>
+<tr><td style='padding:7px;border:1px solid #ddd;'><strong>Délégué étudiant</strong></td><td style='padding:7px;border:1px solid #ddd;'>{delegue or 'Non sélectionné'}</td></tr>
+</table>
+<h3 style='color:#1e3a8a;'>📋 Ordre du jour</h3>
+<ol>{ordre_html}</ol>
+<p>Votre présence et votre participation sont souhaitées afin d'examiner les questions pédagogiques relatives à la promotion.</p>
+<p>Cordialement,<br><strong>Département d'Électrotechnique — FGE/UDL-SBA</strong></p>
+</body></html>"""
+        ok, message = _pv_envoyer_invitation_email(destinataires, objet, corps_html)
+        if ok:
+            st.success("✅ " + message)
+            st.info("📧 Destinataires : " + ", ".join(destinataires))
+        else:
+            st.error("❌ " + message)
 
     # ------------------ Etat d'avancement des matières ------------------
     st.markdown("## 📚 4. État d'avancement des matières")
