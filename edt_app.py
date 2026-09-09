@@ -6403,14 +6403,8 @@ def run_pv_pedagogique():
             st.error(f"❌ Erreur lors de la génération du Word : {exc}")
 
 
-if module_sel == "📊 Suivi d'Assiduite":
-    run_Assiduité()
-elif module_sel == "📅 Gestion des EDTs & Admin":
-    st.info("Module Gestion des EDTs & Admin")
-elif module_sel == "📝 PV Comités Pédagogiques":
-    run_pv_pedagogique()
-else:
-    st.error(f"Module inconnu : {module_sel}")
+# Le générateur des PV n'est plus affiché ici.
+# Il est placé à la toute fin de la page principale de la plateforme.
 
     
 import streamlit as st
@@ -15985,4 +15979,57 @@ def generer_pdf_promotion(df_etudiants, promotion, identifiants_db=None):
         return buffer.getvalue()
     except Exception as e:
         return None
+
+# =============================================================================
+# 📝 GÉNÉRATEUR AUTOMATIQUE DES PV DES COMITÉS PÉDAGOGIQUES
+# =============================================================================
+# IMPORTANT :
+# Ce module est volontairement appelé à la FIN du fichier afin que son contenu
+# apparaisse à la fin de la page de la plateforme et non dans la barre latérale.
+# Toutes les fonctionnalités du générateur restent identiques :
+#   - choix de la promotion ;
+#   - récupération des matières ;
+#   - chargé de matière ;
+#   - email ;
+#   - téléphone ;
+#   - état d'avancement de chaque matière ;
+#   - ordre du jour dynamique ;
+#   - rédaction de chaque point ;
+#   - présents ;
+#   - absents ;
+#   - président ;
+#   - secrétaire ;
+#   - décisions et recommandations ;
+#   - génération du PV Word.
+# =============================================================================
+
+st.markdown("---")
+st.markdown(
+    """
+    <div style="
+        margin-top:35px;
+        margin-bottom:20px;
+        padding:22px 26px;
+        border-radius:18px;
+        background:linear-gradient(135deg,#eff6ff 0%,#ffffff 55%,#f5f3ff 100%);
+        border:2px solid #c7d2fe;
+        box-shadow:0 5px 18px rgba(15,23,42,.08);
+    ">
+        <div style="font-size:28px;font-weight:800;color:#1e3a8a;">
+            📝 Génération automatique des PV des Comités Pédagogiques
+        </div>
+        <div style="font-size:14px;color:#475569;margin-top:8px;">
+            Cette rubrique est intégrée directement à la fin de la page de la
+            plateforme pour préparer et générer les PV complets en Word.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+with st.expander(
+    "📂 Ouvrir le répertoire — Générateur des PV des Comités Pédagogiques",
+    expanded=True
+):
+    run_pv_pedagogique()
 
