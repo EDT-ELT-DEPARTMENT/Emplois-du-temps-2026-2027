@@ -425,10 +425,6 @@ if "page_active" not in st.session_state:
     st.session_state.page_active = "accueil_suivi"
 if "module_sel" not in st.session_state:
     st.session_state.module_sel = "📊 Suivi d'Assiduite"
-if "pv_pedagogique_data" not in st.session_state:
-    st.session_state.pv_pedagogique_data = {}
-if "pv_pedagogique_points" not in st.session_state:
-    st.session_state.pv_pedagogique_points = 3
 
 # Structure de navigation intelligente
 MODULES_NAVIGATION = {
@@ -461,12 +457,6 @@ MODULES_NAVIGATION = {
             ("🔍 Recherche", "recherche"),
             ("📤 Import/Export", "import_export"),
             ("📊 Analytics", "analytics")
-        ]
-    },
-    "📝 PV Comités Pédagogiques": {
-        "icon": "📝",
-        "pages": [
-            ("🏠 Générateur de PV", "pv_pedagogique")
         ]
     }
 }
@@ -5923,7 +5913,6 @@ td{{word-wrap:break-word;}}
                     st.info(f"📧 **Email :** `{email_val}`")
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source") 
-    
 # ═════════════════════════════════════════════════════════════════════════════
 # MODULE : GÉNÉRATION AUTOMATIQUE DES PV DES COMITÉS PÉDAGOGIQUES
 # ═════════════════════════════════════════════════════════════════════════════
@@ -6311,47 +6300,13 @@ def run_pv_pedagogique():
         st.warning("⚠️ Aucun répertoire d'enseignants exploitable. Vous pouvez tout de même saisir les noms manuellement ci-dessous.")
         noms_membres=["Président du comité", "Secrétaire de séance"]
 
-    # Nettoyage des anciennes sélections lorsque le répertoire change.
-    anciens_presents=st.session_state.get("pv_presents", [])
-    if not isinstance(anciens_presents, list):
-        anciens_presents=list(anciens_presents) if anciens_presents else []
-    st.session_state.pv_presents=[n for n in anciens_presents if n in noms_membres]
-
-    selection_presence=st.multiselect(
-        "👥 Membres présents",
-        options=noms_membres,
-        key="pv_presents"
-    )
-
-    options_absents=[n for n in noms_membres if n not in selection_presence]
-    anciens_absents=st.session_state.get("pv_absents", [])
-    if not isinstance(anciens_absents, list):
-        anciens_absents=list(anciens_absents) if anciens_absents else []
-    st.session_state.pv_absents=[n for n in anciens_absents if n in options_absents]
-
-    selection_absence=st.multiselect(
-        "🚫 Membres absents",
-        options=options_absents,
-        key="pv_absents"
-    )
-
+    selection_presence=st.multiselect("👥 Membres présents",noms_membres,key="pv_presents")
+    selection_absence=st.multiselect("🚫 Membres absents",[n for n in noms_membres if n not in selection_presence],key="pv_absents")
     c1,c2=st.columns(2)
     with c1:
-        if st.session_state.get("pv_president") not in noms_membres:
-            st.session_state.pv_president=noms_membres[0]
-        president=st.selectbox(
-            "👤 Président du comité",
-            options=noms_membres,
-            key="pv_president"
-        )
+        president=st.selectbox("👤 Président du comité",noms_membres,key="pv_president")
     with c2:
-        if st.session_state.get("pv_secretaire") not in noms_membres:
-            st.session_state.pv_secretaire=noms_membres[0]
-        secretaire=st.selectbox(
-            "🖊️ Secrétaire de séance",
-            options=noms_membres,
-            key="pv_secretaire"
-        )
+        secretaire=st.selectbox("🖊️ Secrétaire de séance",noms_membres,key="pv_secretaire")
 
     # ------------------ Etat d'avancement des matières ------------------
     st.markdown("## 📚 4. État d'avancement des matières")
@@ -6360,24 +6315,8 @@ def run_pv_pedagogique():
     if "pv_matieres_selectionnees" not in st.session_state:
         st.session_state.pv_matieres_selectionnees=[]
 
-    options_matieres=matieres_df["Matière"].dropna().astype(str).tolist() if not matieres_df.empty else []
-
-    # CORRECTION STREAMLIT : après un changement de promotion, certaines matières
-    # mémorisées dans session_state peuvent ne plus exister dans les options.
-    # Streamlit déclenche alors StreamlitDefaultNotInOptionsError.
-    # On nettoie donc systématiquement la sélection avant de créer le widget.
-    anciennes_matieres=st.session_state.get("pv_matieres_selectionnees", [])
-    if not isinstance(anciennes_matieres, list):
-        anciennes_matieres=list(anciennes_matieres) if anciennes_matieres else []
-    st.session_state.pv_matieres_selectionnees=[
-        str(m) for m in anciennes_matieres if str(m) in options_matieres
-    ]
-
-    selected_matieres=st.multiselect(
-        "📘 Sélectionner les matières à traiter dans le PV",
-        options=options_matieres,
-        key="pv_matieres_selectionnees"
-    )
+    options_matieres=matieres_df["Matière"].tolist() if not matieres_df.empty else []
+    selected_matieres=st.multiselect("📘 Sélectionner les matières à traiter dans le PV",options_matieres,default=st.session_state.pv_matieres_selectionnees,key="pv_matieres_selectionnees")
 
     matieres_pv=[]
     if selected_matieres:
@@ -6455,6 +6394,17 @@ def run_pv_pedagogique():
 
 # Le générateur des PV n'est plus affiché ici.
 # Il est placé à la toute fin de la page principale de la plateforme.
+    
+
+
+
+
+if module_sel == "📊 Suivi d'Assiduite":
+    run_Assiduité()
+elif module_sel == "📅 Gestion des EDTs & Admin":
+    st.info("Module Gestion des EDTs & Admin")
+else:
+    st.error(f"Module inconnu : {module_sel}")
 
     
 import streamlit as st
