@@ -839,6 +839,8 @@ def detecter_colonnes_etudiant(df):
     mapping['admis_dette']   = find_col(['admisdette', 'admis_dette', 'admisdette', 'endette', 'en_dette', 'dette'])
     mapping['conge_acad']    = find_col(['congeacademique', 'conge_academique', 'congeacad', 'conge_acad', 'congee', 'conge'])
     mapping['sit_ins']       = find_col(["sitd'ins", 'sitdins', "situationd'inscription", 'situationinscription', 'situationins', 'statutinscription', 'statutins'])
+    # ✨ NOUVEAU : statut général de l'étudiant depuis la colonne source « Statut »
+    mapping['statut']        = find_col(['statut', 'status'])
     # ✨ Noms en arabe : colonnes اللقب (nom) et الإسم (prénom) - détection directe,
     # car la normalisation ASCII (NFKD) supprime les caractères arabes.
     mapping['nom_ar'] = next((c for c in df.columns if str(c).strip() in ('اللقب', 'لقب')), None)
@@ -1356,7 +1358,7 @@ def _dessiner_fiche_etudiant(pdf, row, cols_map, nom_affiche, _police_ar, _polic
     pdf.set_xy(pdf.l_margin, y_blocs + bh_ + 6)
 
 
-    # ---- Statuts spéciaux (2 cartes colorées) ----
+    # ---- Statuts spéciaux (2 cartes + statut source) ----
     pdf.set_y(pdf.get_y() + 2)
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(30, 41, 59)
@@ -1371,11 +1373,12 @@ def _dessiner_fiche_etudiant(pdf, row, cols_map, nom_affiche, _police_ar, _polic
         pdf.rect(x, y, cw, ch, "F")
         pdf.set_fill_color(255, 255, 255)
         pdf.set_xy(x + 2, y + 2)
-        pdf.cell(cw - 4, ch - 4, texte, 0, 0, "C", fill=True)
+        pdf.set_font("Helvetica", "B", 8.2)
+        pdf.cell(cw - 4, ch - 4, _latin1(texte), 0, 0, "C", fill=True)
         pdf.set_xy(x, y + ch + 3)
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(100, 116, 139)
-        pdf.cell(cw, 5, label, 0, 0, "C")
+        pdf.cell(cw, 5, _latin1(label), 0, 0, "C")
         pdf.set_xy(x + cw + 6, y)
 
     y_avant = pdf.get_y()
@@ -1384,7 +1387,42 @@ def _dessiner_fiche_etudiant(pdf, row, cols_map, nom_affiche, _police_ar, _polic
     carte_statut("Admis dette", v_dette, (34, 197, 94), "ADMIS EN DETTE : OUI", "ADMIS EN DETTE : NON")
     carte_statut("Congé académique", str(row.get(cols_map.get("conge_acad"), "")).strip().upper() == "OUI",
                  (59, 130, 246), "EN CONGÉ ACADÉMIQUE", "PAS DE CONGÉ ACADÉMIQUE")
-    pdf.set_y(y_avant + 27)
+
+    # ✨ NOUVEAU : afficher la valeur EXACTE de la colonne « Statut » du fichier source.
+    _col_statut_pdf = cols_map.get("statut")
+    _statut_pdf = _pdf_txt(row.get(_col_statut_pdf, "")) if _col_statut_pdf else "N/A"
+    _statut_pdf_aff = _statut_pdf if _statut_pdf not in ("N/A", "") else "NON RENSEIGNÉ"
+
+    _x_statut = pdf.l_margin
+    _y_statut = y_avant + 27
+    _cw_statut = pdf.epw
+    _ch_statut = 16
+
+    pdf.set_fill_color(124, 58, 237)
+    pdf.rect(_x_statut, _y_statut, _cw_statut, _ch_statut, "F")
+
+    pdf.set_fill_color(255, 255, 255)
+    pdf.set_xy(_x_statut + 3, _y_statut + 2)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(_cw_statut - 6, 5, "STATUT (SOURCE)", 0, 2, "C", fill=True)
+
+    pdf.set_xy(_x_statut + 4, _y_statut + 7)
+    pdf.set_font("Helvetica", "B", 10)
+    _statut_pdf_rendu = _rend_txt(_statut_pdf_aff[:85])
+    pdf.cell(_cw_statut - 8, 5.5, _statut_pdf_rendu, 0, 0, "C", fill=True)
+
+    pdf.set_y(_y_statut + _ch_statut + 5)
+    pdf.set_font("Helvetica", "", 8.2)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(
+        _cw_statut,
+        5,
+        _latin1("Valeur lue directement dans la colonne « Statut » du fichier source étudiant"),
+        0,
+        0,
+        "C"
+    )
+    pdf.set_y(_y_statut + _ch_statut + 12)
 
     # ---- Coordonnées ----
     pdf.ln(4)
@@ -5430,6 +5468,9 @@ td{{word-wrap:break-word;}}
                             colonnes_export3.append('Admis_Dette')
                         if has_conge:
                             colonnes_export3.append('Conge_Acad')
+                        # ✨ Statut général provenant directement du fichier source
+                        if cols_map_temp.get('statut') and cols_map_temp['statut'] in df_special_filtered.columns:
+                            colonnes_export3.append(cols_map_temp['statut'])
                         
                         if not colonnes_export3:
                             colonnes_export3 = df_special_filtered.columns.tolist()[:4]
@@ -5689,7 +5730,33 @@ td{{word-wrap:break-word;}}
                             lieu = 'N/A'
                         st.write(f"**Date de naiss. :** {naiss_str}")
                         st.write(f"**Lieu de naissance :** {lieu}")
-                
+                                
+                # ✨ NOUVEAU : afficher le contenu EXACT de la colonne « Statut »
+                _col_statut_general = cols_map.get('statut')
+                _statut_general_val = ""
+                if _col_statut_general:
+                    _statut_general_val = str(row.get(_col_statut_general, "")).strip()
+                if _statut_general_val.lower() in ("nan", "none"):
+                    _statut_general_val = ""
+
+                st.markdown("### 🏷️ Statut de l'étudiant")
+                if _statut_general_val:
+                    st.markdown(f'''
+                    <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+                                padding: 16px 20px; border-radius: 10px;
+                                border-left: 5px solid #2563eb;
+                                box-shadow: 0 2px 8px rgba(37,99,235,0.10);
+                                margin-bottom: 8px;">
+                        <div style="font-size:12px;color:#64748b;text-transform:uppercase;
+                                    letter-spacing:0.5px;font-weight:700;">Statut</div>
+                        <div style="font-size:20px;color:#1e3a8a;font-weight:700;margin-top:4px;">
+                            {_statut_general_val}
+                        </div>
+                    </div>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.info("ℹ️ Colonne « Statut » détectée mais aucune valeur renseignée pour cet étudiant.")
+
                 st.divider()
                 
                 # 2️⃣ MÉTRIQUE INSCRITS
@@ -5734,10 +5801,10 @@ td{{word-wrap:break-word;}}
                 st.divider()
                 
                 # 4️⃣ STATUTS SPÉCIAUX
-                if cols_map.get('admis_dette') or cols_map.get('conge_acad'):
+                if cols_map.get('admis_dette') or cols_map.get('conge_acad') or cols_map.get('statut'):
                     st.markdown("### 📌 Statuts Spéciaux")
-                    sc1, sc2 = st.columns(2)
-                    
+                    sc1, sc2, sc3 = st.columns(3)
+
                     with sc1:
                         if cols_map.get('admis_dette'):
                             admis_dette_val = row.get(cols_map['admis_dette'], '')
@@ -5745,12 +5812,19 @@ td{{word-wrap:break-word;}}
                             status_icon = "✅" if is_admis_dette else "❌"
                             status_color = "#22c55e" if is_admis_dette else "#e5e7eb"
                             status_text = "Admis en Dette" if is_admis_dette else "Non admis en dette"
-                            st.markdown(f"""
-                            <div style="background:{status_color};padding:12px;border-radius:8px;border-left:4px solid {'#22c55e' if is_admis_dette else '#9ca3af'};text-align:center;">
-                                <div style="font-size:20px;font-weight:bold;color:{'#166534' if is_admis_dette else '#4b5563'};">{status_icon} {status_text}</div>
+                            st.markdown(f'''
+                            <div style="background:{status_color};padding:12px;border-radius:8px;
+                                        border-left:4px solid {'#22c55e' if is_admis_dette else '#9ca3af'};
+                                        text-align:center;min-height:78px;">
+                                <div style="font-size:20px;font-weight:bold;
+                                            color:{'#166534' if is_admis_dette else '#4b5563'};">
+                                    {status_icon} {status_text}
+                                </div>
                             </div>
-                            """, unsafe_allow_html=True)
-                    
+                            ''', unsafe_allow_html=True)
+                        else:
+                            st.caption("Admis en dette : non disponible")
+
                     with sc2:
                         if cols_map.get('conge_acad'):
                             conge_val = row.get(cols_map['conge_acad'], '')
@@ -5758,12 +5832,46 @@ td{{word-wrap:break-word;}}
                             status_icon = "✅" if is_conge else "❌"
                             status_color = "#3b82f6" if is_conge else "#e5e7eb"
                             status_text = "Congé Académique" if is_conge else "Pas de congé académique"
-                            st.markdown(f"""
-                            <div style="background:{status_color}15;padding:12px;border-radius:8px;border-left:4px solid {'#3b82f6' if is_conge else '#9ca3af'};text-align:center;">
-                                <div style="font-size:20px;font-weight:bold;color:{'#1e40af' if is_conge else '#4b5563'};">{status_icon} {status_text}</div>
+                            st.markdown(f'''
+                            <div style="background:{status_color}15;padding:12px;border-radius:8px;
+                                        border-left:4px solid {'#3b82f6' if is_conge else '#9ca3af'};
+                                        text-align:center;min-height:78px;">
+                                <div style="font-size:20px;font-weight:bold;
+                                            color:{'#1e40af' if is_conge else '#4b5563'};">
+                                    {status_icon} {status_text}
+                                </div>
                             </div>
-                            """, unsafe_allow_html=True)
-                
+                            ''', unsafe_allow_html=True)
+                        else:
+                            st.caption("Congé académique : non disponible")
+
+                    with sc3:
+                        _statut_special = str(row.get(cols_map['statut'], '')).strip() if cols_map.get('statut') else ''
+                        if _statut_special.lower() in ('nan', 'none'):
+                            _statut_special = ''
+                        if _statut_special:
+                            st.markdown(f'''
+                            <div style="background:linear-gradient(135deg,#f5f3ff 0%,#ede9fe 100%);
+                                        padding:12px;border-radius:8px;border-left:4px solid #7c3aed;
+                                        text-align:center;min-height:78px;">
+                                <div style="font-size:11px;color:#6b7280;text-transform:uppercase;
+                                            font-weight:700;">Statut (source)</div>
+                                <div style="font-size:18px;font-weight:bold;color:#5b21b6;margin-top:5px;
+                                            word-break:break-word;">{_statut_special}</div>
+                            </div>
+                            ''', unsafe_allow_html=True)
+                        else:
+                            st.markdown('''
+                            <div style="background:#f8fafc;padding:12px;border-radius:8px;
+                                        border-left:4px solid #cbd5e1;text-align:center;min-height:78px;">
+                                <div style="font-size:11px;color:#64748b;text-transform:uppercase;
+                                            font-weight:700;">Statut (source)</div>
+                                <div style="font-size:16px;font-weight:600;color:#64748b;margin-top:8px;">
+                                    Non renseigné
+                                </div>
+                            </div>
+                            ''', unsafe_allow_html=True)
+
                 st.divider()
                 email_val = row.get(cols_map['email'], '')
                 if email_val and str(email_val).lower() not in ['nan', 'none', '']:
