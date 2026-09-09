@@ -5970,72 +5970,100 @@ def _pv_promotions(df_source):
     return sorted(set(valeurs), key=lambda x: _pv_normalize(x))
 
 
-def _pv_matiere_charge(df_source, df_contacts, promotion):
-    """Construit la liste unique des matières d'une promotion et leurs contacts."""
+@st.cache_data(show_spinner=False, ttl=600)
+def _pv_contacts_index(df_contacts):
+    """Index rapide des contacts pour éviter les recherches ligne par ligne à chaque rerun."""
+    if df_contacts is None or df_contacts.empty:
+        return {}
+    result = {}
+    cols = {str(c).strip().upper(): c for c in df_contacts.columns}
+    col_nom = cols.get("NOM")
+    col_prenom = cols.get("PRÉNOM") or cols.get("PRENOM")
+    col_email = cols.get("EMAIL") or cols.get("E-MAIL")
+    col_tel = cols.get("N°/TEL") or cols.get("N° DE TÉLÉPHONE") or cols.get("TÉLÉPHONE") or cols.get("TELEPHONE")
+    col_qual = cols.get("QUALITÉ")
+    col_grade = cols.get("GRADE")
+    for row in df_contacts.itertuples(index=False):
+        d = row._asdict() if hasattr(row, "_asdict") else {}
+        nom = _pv_clean(d.get(col_nom, "")) if col_nom else ""
+        prenom = _pv_clean(d.get(col_prenom, "")) if col_prenom else ""
+        complet = f"{nom} {prenom}".strip()
+        if not complet:
+            continue
+        item = {
+            "Nom": complet,
+            "Email": _pv_clean(d.get(col_email, "")) if col_email else "",
+            "Téléphone": _pv_clean(d.get(col_tel, "")) if col_tel else "",
+            "Qualité": _pv_clean(d.get(col_qual, "")) if col_qual else "",
+            "Grade": _pv_clean(d.get(col_grade, "")) if col_grade else "",
+        }
+        result[_pv_normalize(complet)] = item
+        if nom:
+            result.setdefault(_pv_normalize(nom), item)
+    return result
+
+
+@st.cache_data(show_spinner=False, ttl=600)
+def _pv_matiere_charge_cached(df_source, df_contacts, promotion):
+    """Version optimisée : filtre vectoriel + index de contacts, sans iterrows imbriqués."""
     if df_source is None or df_source.empty:
         return pd.DataFrame(columns=["Matière", "Chargé de matière", "Email", "Téléphone"])
 
     col_mat = _pv_col(df_source, ["Enseignements", "Enseignement", "Matière", "Module"])
     col_promo = _pv_col(df_source, ["Promotion", "Promotions"])
     col_ens = _pv_col(df_source, ["Enseignants", "Enseignant", "Chargé de matière", "Charge de matiere"])
-
     if not col_mat or not col_promo:
         return pd.DataFrame(columns=["Matière", "Chargé de matière", "Email", "Téléphone"])
 
-    df = df_source.copy()
-    df["__promo"] = df[col_promo].map(_pv_clean)
-    df["__matiere"] = df[col_mat].map(_pv_clean)
-    if col_ens:
-        df["__ens"] = df[col_ens].map(_pv_clean)
-    else:
-        df["__ens"] = ""
-
-    mask = df["__promo"].map(_pv_normalize) == _pv_normalize(promotion)
-    df = df[mask & (df["__matiere"] != "")].copy()
+    promo_norm = _pv_normalize(promotion)
+    promo_values = df_source[col_promo].fillna("").astype(str).str.strip()
+    mat_values = df_source[col_mat].fillna("").astype(str).str.strip()
+    mask = promo_values.map(_pv_normalize).eq(promo_norm) & mat_values.ne("")
+    df = df_source.loc[mask, [col_mat] + ([col_ens] if col_ens else [])].copy()
     if df.empty:
         return pd.DataFrame(columns=["Matière", "Chargé de matière", "Email", "Téléphone"])
 
-    lignes=[]
-    for matiere, groupe in df.groupby("__matiere", sort=True):
-        enseignants=[]
-        for v in groupe["__ens"].tolist():
-            if v and v not in enseignants:
-                enseignants.append(v)
-        # Un enseignement peut apparaître plusieurs fois dans l'EDT : on regroupe les enseignants.
+    contacts_index = _pv_contacts_index(df_contacts)
+    lignes = []
+    ens_col = col_ens
+    for matiere, groupe in df.groupby(col_mat, sort=True):
+        enseignants = []
+        vus = set()
+        if ens_col:
+            for v in groupe[ens_col].tolist():
+                ens = _pv_clean(v)
+                if ens and _pv_normalize(ens) not in vus:
+                    vus.add(_pv_normalize(ens))
+                    enseignants.append(ens)
         charge = " / ".join(enseignants)
-        email=""
-        telephone=""
-        if df_contacts is not None and not df_contacts.empty and charge:
-            # On prend le premier enseignant pour l'identification principale, avec fallback sur chacun.
-            noms_a_tester=[]
-            for ens in enseignants:
-                noms_a_tester.extend([ens, nettoyer_nom_enseignant(ens), extraire_nom_famille(ens)])
-            for nom_test in noms_a_tester:
-                cible=_pv_normalize(nom_test)
-                for _, cr in df_contacts.iterrows():
-                    nom=_pv_clean(cr.get("NOM", ""))
-                    prenom=_pv_clean(cr.get("PRÉNOM", cr.get("PRENOM", "")))
-                    nom_complet=f"{nom} {prenom}".strip()
-                    candidats=[nom, nom_complet]
-                    if any(cible and cible == _pv_normalize(x) for x in candidats):
-                        email=_pv_clean(cr.get("Email", cr.get("E-mail", "")))
-                        telephone=_pv_clean(cr.get("N°/TEL", cr.get("N° de téléphone", cr.get("Téléphone", cr.get("Telephone", "")))))
-                        break
-                if email or telephone:
+        email = ""
+        telephone = ""
+        for ens in enseignants:
+            candidats = [ens, nettoyer_nom_enseignant(ens), extraire_nom_famille(ens)]
+            for candidat in candidats:
+                item = contacts_index.get(_pv_normalize(candidat))
+                if item:
+                    email = item.get("Email", "")
+                    telephone = item.get("Téléphone", "")
                     break
-
+            if email or telephone:
+                break
         lignes.append({
-            "Matière": matiere,
+            "Matière": _pv_clean(matiere),
             "Chargé de matière": charge or "Non renseigné",
             "Email": email or "Non renseigné",
             "Téléphone": telephone or "Non renseigné",
         })
-
     return pd.DataFrame(lignes).sort_values("Matière", key=lambda s: s.map(_pv_normalize)).reset_index(drop=True)
 
 
-def _pv_enseignants_promotion(df_source, df_contacts, promotion):
-    """Retourne uniquement les enseignants qui interviennent réellement dans la promotion sélectionnée."""
+def _pv_matiere_charge(df_source, df_contacts, promotion):
+    return _pv_matiere_charge_cached(df_source, df_contacts, promotion)
+
+
+@st.cache_data(show_spinner=False, ttl=600)
+def _pv_enseignants_promotion_cached(df_source, df_contacts, promotion):
+    """Liste optimisée des enseignants d'une promotion, avec recherche de contacts indexée."""
     if df_source is None or df_source.empty:
         return []
     col_promo = _pv_col(df_source, ["Promotion", "Promotions"])
@@ -6043,51 +6071,62 @@ def _pv_enseignants_promotion(df_source, df_contacts, promotion):
     if not col_promo or not col_ens:
         return []
 
-    def split_enseignants(val):
-        s = _pv_clean(val)
-        if not s or s.lower() in {"non defini", "non défini", "nan"}:
-            return []
-        # Les EDT peuvent contenir plusieurs enseignants dans une même cellule.
-        parts = re.split(r"\s*(?:/|;|\\|\s+et\s+)\s*", s, flags=re.IGNORECASE)
-        return [x.strip() for x in parts if x.strip()]
-
-    df = df_source.copy()
-    df["__promo"] = df[col_promo].map(_pv_clean)
-    df = df[df["__promo"].map(_pv_normalize) == _pv_normalize(promotion)].copy()
+    promo_norm = _pv_normalize(promotion)
+    promo_values = df_source[col_promo].fillna("").astype(str).str.strip()
+    df = df_source.loc[promo_values.map(_pv_normalize).eq(promo_norm), [col_ens]]
+    if df.empty:
+        return []
 
     noms_edt = []
+    vus = set()
     for val in df[col_ens].tolist():
-        for ens in split_enseignants(val):
-            if _pv_normalize(ens) not in {_pv_normalize(x) for x in noms_edt}:
+        s = _pv_clean(val)
+        if not s:
+            continue
+        parts = re.split(r"\s*(?:/|;|\\|\s+et\s+)\s*", s, flags=re.IGNORECASE)
+        for ens in (x.strip() for x in parts):
+            if not ens:
+                continue
+            key = _pv_normalize(ens)
+            if key not in vus:
+                vus.add(key)
                 noms_edt.append(ens)
 
-    contacts_list = _pv_teacher_directory(df_contacts)
+    contacts_index = _pv_contacts_index(df_contacts)
     result = []
+    used_contacts = set()
     for ens in noms_edt:
-        cible = _pv_normalize(ens)
-        famille = _pv_normalize(extraire_nom_famille(ens))
         trouve = None
-        for c in contacts_list:
-            nom = _pv_normalize(c.get("Nom", ""))
-            if cible == nom or (famille and famille == _pv_normalize(extraire_nom_famille(c.get("Nom", "")))):
-                trouve = dict(c)
-                break
+        for candidat in (ens, nettoyer_nom_enseignant(ens), extraire_nom_famille(ens)):
+            item = contacts_index.get(_pv_normalize(candidat))
+            if item:
+                # Évite de dupliquer un même contact si plusieurs écritures de son nom existent dans l'EDT.
+                key = _pv_normalize(item.get("Nom", ""))
+                if key not in used_contacts:
+                    trouve = dict(item)
+                    used_contacts.add(key)
+                    break
         if trouve is None:
             trouve = {"Nom": ens, "Email": "", "Téléphone": "", "Qualité": "", "Grade": ""}
         result.append(trouve)
     return result
 
 
-def _pv_etudiants_promotion(df_etudiants, promotion):
-    """Retourne les étudiants appartenant uniquement à la promotion sélectionnée."""
+def _pv_enseignants_promotion(df_source, df_contacts, promotion):
+    return _pv_enseignants_promotion_cached(df_source, df_contacts, promotion)
+
+
+@st.cache_data(show_spinner=False, ttl=600)
+def _pv_etudiants_promotion_cached(df_etudiants, promotion):
+    """Filtre les étudiants avec cache pour éviter de retraiter tout le fichier à chaque interaction."""
     if df_etudiants is None or df_etudiants.empty:
         return pd.DataFrame()
     col_promo = _pv_col(df_etudiants, ["Promotion", "Promotions", "Promo", "Niveau", "Année"])
     if not col_promo:
         return pd.DataFrame()
-    d = df_etudiants.copy()
-    d["__promo_pv"] = d[col_promo].map(_pv_clean)
-    d = d[d["__promo_pv"].map(_pv_normalize) == _pv_normalize(promotion)].copy()
+    promo_norm = _pv_normalize(promotion)
+    promo_values = df_etudiants[col_promo].fillna("").astype(str).str.strip()
+    d = df_etudiants.loc[promo_values.map(_pv_normalize).eq(promo_norm)].copy()
     if d.empty:
         return d
     col_nom = _pv_col(d, ["Nom", "NOM", "Nom de famille"])
@@ -6095,19 +6134,19 @@ def _pv_etudiants_promotion(df_etudiants, promotion):
     col_email = _pv_col(d, ["Email", "E-mail", "Mail", "Courriel", "Adresse mail"])
     if "Nom_Complet" not in d.columns:
         if col_nom and col_prenom:
-            d["Nom_Complet"] = d[col_nom].map(_pv_clean) + " " + d[col_prenom].map(_pv_clean)
+            d["Nom_Complet"] = d[col_nom].fillna("").astype(str).map(_pv_clean) + " " + d[col_prenom].fillna("").astype(str).map(_pv_clean)
         elif col_nom:
-            d["Nom_Complet"] = d[col_nom].map(_pv_clean)
+            d["Nom_Complet"] = d[col_nom].fillna("").astype(str).map(_pv_clean)
         else:
             d["Nom_Complet"] = d.index.map(lambda x: f"Étudiant {x}")
     d["Nom_Complet"] = d["Nom_Complet"].map(_pv_clean)
-    if col_email:
-        d["Email_PV"] = d[col_email].map(_pv_clean)
-    else:
-        d["Email_PV"] = ""
-    d = d[d["Nom_Complet"] != ""].drop_duplicates(subset=["Nom_Complet"])
+    d["Email_PV"] = d[col_email].map(_pv_clean) if col_email else ""
+    d = d[d["Nom_Complet"].ne("")].drop_duplicates(subset=["Nom_Complet"])
     return d.sort_values("Nom_Complet", key=lambda s: s.map(_pv_normalize)).reset_index(drop=True)
 
+
+def _pv_etudiants_promotion(df_etudiants, promotion):
+    return _pv_etudiants_promotion_cached(df_etudiants, promotion)
 
 def _pv_email_valide(email):
     email = _pv_clean(email)
@@ -6397,7 +6436,7 @@ def _pv_generer_word(data):
 
     # Référence standard, présente sur toutes les pages.
     p_ref=footer_table.cell(0,0).paragraphs[0]
-    p_ref.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    p_ref.alignment=WD_ALIGN_PARAGRAPH.LEFT
     rr=p_ref.add_run("Réf : UDL-GEL-ER-006-2026")
     rr.font.name="Arial"
     rr.font.size=Pt(8)
