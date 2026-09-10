@@ -4538,7 +4538,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     items.append(
                         f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;border-radius:4px;'>"
                         f"<b>{nat} {r['Enseignements']}</b><br>"
-                        f"<small>👤 {r['Enseignants']} | 📍 {r['Lieu']}</small>"
+                        f"<small>👤 {r['Enseignants']} | 📍 {r['Lieu']} | 🎓 {r['Promotion']}</small>"
                         f"</div>"
                     )
                 return "".join(items)
@@ -4606,7 +4606,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
                     nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'AUTRE')
-                    items.append(f"{nat} – {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}")
+                    items.append(f"{nat} – {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']} | 🎓 {r['Promotion']}")
                 return "\n────────\n".join(items)
 
             grid_text = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_text, include_groups=False).unstack('j_norm')
