@@ -4648,7 +4648,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         "nan", "none", "nat", "n/a", "na", "non défini", "non defini"
                     ]))
                 ]
-                return sorted(valeurs.unique().tolist(), key=lambda x: x.casefold())
+                return sorted(valeurs.unique().tolist(), key=lambda x: str(x).casefold())
 
             def _compter_groupes_promotion(df_source, promotion):
                 if df_source is None or df_source.empty:
