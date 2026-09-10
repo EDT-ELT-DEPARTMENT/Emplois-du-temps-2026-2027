@@ -6,7 +6,7 @@ import streamlit as st
 
 # Dénomination officielle
 APP_TITLE = (
-    "Plateforme de gestion des EDTs-S1-2026-Département"
+    "Plateforme de gestion des EDTs-S2-2026-Département"
     " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 )
 URL_PLATEFORME = (
@@ -5728,33 +5728,83 @@ td{{word-wrap:break-word;}}
             # source étudiant. Aucune autre donnée ou fonctionnalité n'est modifiée.
             # ═════════════════════════════════════════════════════════════════════
             with db5:
-                if cols_map_temp.get('statut') and cols_map_temp['statut'] in df_etu_edt.columns:
-                    try:
-                        colonne_statut_doublons = cols_map_temp['statut']
-                        masque_doublant = (
-                            df_etu_edt[colonne_statut_doublons]
-                            .fillna('')
-                            .astype(str)
-                            .str.strip()
-                            .str.lower()
-                            .str.contains('doublon', na=False)
+                # ================================================================
+                # LISTE DES ÉTUDIANTS DONT Statut = « Doublant (e) »
+                # IMPORTANT : le fichier source contient une colonne EXACTEMENT
+                # nommée « Statut ». On la recherche directement, sans dépendre
+                # du mapping général des colonnes.
+                # ================================================================
+                try:
+                    import unicodedata
+                    import re
+
+                    def _normaliser_nom_colonne_statut(valeur):
+                        texte = '' if pd.isna(valeur) else str(valeur)
+                        texte = texte.replace('\u00a0', ' ')
+                        texte = unicodedata.normalize('NFKC', texte)
+                        texte = texte.strip().casefold()
+                        texte = re.sub(r'\s+', ' ', texte)
+                        return texte
+
+                    def _normaliser_valeur_statut(valeur):
+                        if pd.isna(valeur):
+                            return ''
+                        texte = str(valeur)
+                        # Nettoyage des caractères invisibles/espaces Excel
+                        for car in ('\u00a0', '\u200b', '\u200c', '\u200d', '\ufeff'):
+                            texte = texte.replace(car, ' ')
+                        texte = unicodedata.normalize('NFKC', texte)
+                        texte = texte.casefold().strip()
+                        # « Doublant (e) », « Doublant(e) » et les espaces
+                        # internes sont considérés comme le même statut.
+                        texte = re.sub(r'\s+', '', texte)
+                        return texte
+
+                    # 1. PRIORITÉ ABSOLUE : colonne source « Statut »
+                    colonne_statut_doublants = None
+                    for _col in df_etu_edt.columns:
+                        if _normaliser_nom_colonne_statut(_col) == 'statut':
+                            colonne_statut_doublants = _col
+                            break
+
+                    # 2. Si elle n'existe pas, accepter « Statut (source) »
+                    if colonne_statut_doublants is None:
+                        for _col in df_etu_edt.columns:
+                            _nc = _normaliser_nom_colonne_statut(_col)
+                            if _nc in ('statut(source)', 'statut (source)'):
+                                colonne_statut_doublants = _col
+                                break
+
+                    # 3. Dernier secours : colonne commençant par « statut »
+                    #    mais pas « statut d'inscription » / « situation... ».
+                    if colonne_statut_doublants is None:
+                        for _col in df_etu_edt.columns:
+                            _nc = _normaliser_nom_colonne_statut(_col)
+                            if _nc.startswith('statut') and 'inscription' not in _nc:
+                                colonne_statut_doublants = _col
+                                break
+
+                    if colonne_statut_doublants is not None:
+                        _statuts_normalises = df_etu_edt[colonne_statut_doublants].map(
+                            _normaliser_valeur_statut
                         )
-                        df_doublons_etudiants = df_etu_edt[masque_doublant].copy()
 
-                        if not df_doublons_etudiants.empty:
-                            # On conserve toutes les colonnes du fichier source étudiant
-                            # afin de ne perdre aucune information concernant les doublons.
-                            colonnes_doublons = df_doublons_etudiants.columns.tolist()
+                        # Le fichier source « Liste des étudiants_2026-2027.xlsx »
+                        # contient précisément la valeur « Doublant (e) ».
+                        masque_doublant = _statuts_normalises.eq('doublant(e)')
+                        df_doublants_etudiants = df_etu_edt.loc[masque_doublant].copy()
 
-                            # Tri alphabétique si la colonne Nom_Complet existe.
-                            if 'Nom_Complet' in df_doublons_etudiants.columns:
-                                df_doublons_etudiants = df_doublons_etudiants.sort_values(
+                        if not df_doublants_etudiants.empty:
+                            colonnes_doublons = df_doublants_etudiants.columns.tolist()
+
+                            if 'Nom_Complet' in df_doublants_etudiants.columns:
+                                df_doublants_etudiants = df_doublants_etudiants.sort_values(
                                     by='Nom_Complet', na_position='last'
                                 )
 
                             excel_buffer5 = io.BytesIO()
                             with pd.ExcelWriter(excel_buffer5, engine='openpyxl') as writer:
-                                df_doublons_etudiants[colonnes_doublons].to_excel(
+                                df_doublants_etudiants[colonnes_doublons].to_excel(
                                     writer,
                                     sheet_name='Doublants',
                                     index=False
@@ -5763,19 +5813,42 @@ td{{word-wrap:break-word;}}
                             excel_buffer5.seek(0)
 
                             st.download_button(
-                                label=f"💾 Doublants ({len(df_doublons_etudiants)})",
+                                label=f"💾 Doublants ({len(df_doublants_etudiants)})",
                                 data=excel_buffer5.getvalue(),
                                 file_name=f"Liste_Doublants_Etudiants_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 use_container_width=True,
-                                key="dl_doublons_etudiants_statut"
+                                key="dl_doublants_etudiants_statut"
+                            )
+
+                            # Petit diagnostic visible : confirme la colonne réellement utilisée.
+                            st.caption(
+                                f"✅ Colonne source utilisée : « {colonne_statut_doublants} » | "
+                                f"Statut « Doublant (e) » : {len(df_doublants_etudiants)} étudiant(s)"
                             )
                         else:
-                            st.caption("❌ Aucun étudiant avec le statut « Doublant (e) »")
-                    except Exception as e:
-                        st.error(f"❌ Erreur génération Excel des doublants: {str(e)[:150]}")
-                else:
-                    st.caption("⚠️ Colonne « Statut » non trouvée dans le fichier source étudiant")
+                            # Diagnostic utile au lieu d'afficher seulement « aucun ».
+                            valeurs_non_vides = (
+                                df_etu_edt[colonne_statut_doublants]
+                                .dropna()
+                                .astype(str)
+                                .str.strip()
+                            )
+                            valeurs_uniques = valeurs_non_vides.value_counts().head(10).to_dict()
+                            st.error(
+                                "❌ Aucun étudiant trouvé avec le statut « Doublant (e) ». "
+                                f"Colonne utilisée : « {colonne_statut_doublants} »."
+                            )
+                            st.caption(f"Valeurs détectées dans cette colonne : {valeurs_uniques}")
+                    else:
+                        st.error(
+                            "❌ La colonne source « Statut » n'a pas été trouvée dans "
+                            "df_etu_edt. Colonnes disponibles : "
+                            + ", ".join(str(c) for c in df_etu_edt.columns)
+                        )
+
+                except Exception as e:
+                    st.error(f"❌ Erreur génération Excel des doublants : {str(e)[:250]}")
 
             # ═════════════════════════════════════════════════════════════════════
             # ✨ FICHES PDF GROUPÉES : toutes les fiches d'une promotion dans un seul
