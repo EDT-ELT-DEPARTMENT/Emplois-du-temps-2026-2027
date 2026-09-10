@@ -6,7 +6,7 @@ import streamlit as st
 
 # Dénomination officielle
 APP_TITLE = (
-    "Plateforme de gestion des EDTs-S2-2026-Département"
+    "Plateforme de gestion des EDTs-S1-2026-Département"
     " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 )
 URL_PLATEFORME = (
@@ -4567,6 +4567,55 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         return nom_col
                 return None
 
+            def _trouver_colonne_conge_academique(df_source):
+                if df_source is None or df_source.empty:
+                    return None
+
+                # Recherche STRICTE de la colonne « Congé académique ».
+                # On évite toute correspondance partielle avec une autre colonne.
+                import unicodedata
+
+                def _normaliser_nom_colonne(nom):
+                    s = str(nom).strip().lower()
+                    s = unicodedata.normalize("NFKD", s).encode("ASCII", "ignore").decode("ASCII")
+                    s = s.replace(" ", "").replace("-", "").replace("_", "").replace(".", "").replace("/", "")
+                    return s
+
+                noms_recherches = {
+                    "congeacademique",
+                    "congeacad",
+                }
+
+                for nom_colonne in df_source.columns:
+                    if _normaliser_nom_colonne(nom_colonne) in noms_recherches:
+                        return nom_colonne
+
+                return None
+
+            def _est_en_conge_academique(valeur):
+                if pd.isna(valeur):
+                    return False
+
+                valeur_normalisee = str(valeur).strip().casefold()
+
+                # Valeurs utilisées pour signaler qu'un étudiant est en congé.
+                return valeur_normalisee in {
+                    "oui",
+                    "yes",
+                    "y",
+                    "true",
+                    "vrai",
+                    "1",
+                    "en conge",
+                    "en congé",
+                    "conge",
+                    "congé",
+                    "conge academique",
+                    "congé académique",
+                    "en conge academique",
+                    "en congé académique",
+                }
+
             def _compter_etudiants_promotion(df_source, promotion):
                 if df_source is None or df_source.empty:
                     return 0
@@ -4578,6 +4627,20 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 serie_promo = df_source[col_promo_etu].astype(str).str.strip()
                 masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
                 df_match = df_source.loc[masque].copy()
+
+                if df_match.empty:
+                    return 0
+
+                # ========================================================
+                # EXCLUSION DES ÉTUDIANTS EN CONGÉ ACADÉMIQUE
+                # ========================================================
+                # Le nombre affiché correspond uniquement aux étudiants
+                # qui ne sont PAS en congé académique.
+                col_conge_acad = _trouver_colonne_conge_academique(df_match)
+
+                if col_conge_acad:
+                    masque_conge = df_match[col_conge_acad].apply(_est_en_conge_academique)
+                    df_match = df_match.loc[~masque_conge].copy()
 
                 if df_match.empty:
                     return 0
@@ -4614,41 +4677,103 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             # ============================================================
             # COMPTAGE DES GROUPES ET SOUS-GROUPES PAR PROMOTION
             # ============================================================
+            def _normaliser_nom_colonne_groupe(nom_colonne):
+                import unicodedata
+
+                s = str(nom_colonne).strip().lower()
+                s = unicodedata.normalize("NFKD", s).encode("ASCII", "ignore").decode("ASCII")
+                s = s.replace(" ", "").replace("-", "").replace("_", "").replace(".", "").replace("/", "")
+                return s
+
             def _trouver_colonne_groupe_etudiants(df_source):
                 if df_source is None or df_source.empty:
                     return None
-                for nom_col in [
-                    "Groupe", "groupe", "GROUPE",
-                    "Groupe étudiant", "Groupe Etudiant", "Groupe_étudiant",
-                    "Groupe_etu", "Groupe_Etu"
-                ]:
-                    if nom_col in df_source.columns:
+
+                # IMPORTANT :
+                # Recherche STRICTE de la colonne « Groupe ».
+                # On ne fait PAS de recherche partielle.
+                # Ainsi « Groupe sanguin » ne peut jamais être sélectionnée.
+                for nom_col in df_source.columns:
+                    if _normaliser_nom_colonne_groupe(nom_col) == "groupe":
                         return nom_col
+
                 return None
 
             def _trouver_colonne_sous_groupe_etudiants(df_source):
                 if df_source is None or df_source.empty:
                     return None
-                for nom_col in [
-                    "Sous groupe", "Sous-groupe", "Sous Groupe", "sous groupe",
-                    "sous-groupe", "SOUS GROUPE", "Sous_groupe", "Sous_groupe_etu",
-                    "Sous groupe étudiant", "Sous groupe Etudiant"
-                ]:
-                    if nom_col in df_source.columns:
+
+                # IMPORTANT :
+                # Recherche STRICTE de la colonne « Sous groupe ».
+                # On ne fait PAS de recherche partielle.
+                for nom_col in df_source.columns:
+                    if _normaliser_nom_colonne_groupe(nom_col) == "sousgroupe":
                         return nom_col
+
                 return None
 
             def _valeurs_uniques_valides(df_source, colonne):
                 if df_source is None or df_source.empty or not colonne:
                     return []
+
                 valeurs = df_source[colonne].astype(str).str.strip()
+
                 valeurs = valeurs[
                     (valeurs != "")
                     & (~valeurs.str.casefold().isin([
-                        "nan", "none", "nat", "n/a", "na", "non défini", "non defini"
+                        "nan", "none", "nat", "n/a", "na",
+                        "non défini", "non defini"
                     ]))
                 ]
-                return sorted(valeurs.unique().tolist(), key=lambda x: str(x).casefold())
+
+                # Chaque valeur distincte trouvée dans la colonne compte
+                # comme un groupe ou un sous-groupe.
+                #
+                # IMPORTANT :
+                # Les sous-groupes de cette application sont codés sous la forme :
+                # SG11, SG12, SG21, SG22, ...
+                #
+                # Exemple :
+                # Sous groupe : SG11       -> 1 sous-groupe
+                # Sous groupe : SG11, SG12 -> 2 sous-groupes
+                # Sous groupe : SG11, SG12, SG21, SG22 -> 4 sous-groupes
+                #
+                # Même logique pour les groupes :
+                # Groupe : G1              -> 1 groupe
+                # Groupe : G1, G2          -> 2 groupes
+                # Groupe : G1, G2, G3      -> 3 groupes
+                #
+                # Si plusieurs valeurs sont présentes dans une même cellule,
+                # elles sont séparées lorsqu'elles utilisent une virgule,
+                # un point-virgule, une barre oblique ou un retour à la ligne.
+                valeurs_uniques = set()
+
+                for valeur in valeurs.tolist():
+                    valeur = str(valeur).strip()
+
+                    if not valeur:
+                        continue
+
+                    morceaux = re.split(r"[,;/\\n]+", valeur)
+
+                    for morceau in morceaux:
+                        morceau = str(morceau).strip()
+
+                        if not morceau:
+                            continue
+
+                        if morceau.casefold() in [
+                            "nan", "none", "nat", "n/a", "na",
+                            "non défini", "non defini"
+                        ]:
+                            continue
+
+                        valeurs_uniques.add(morceau)
+
+                return sorted(
+                    valeurs_uniques,
+                    key=lambda x: str(x).casefold()
+                )
 
             def _compter_groupes_promotion(df_source, promotion):
                 if df_source is None or df_source.empty:
@@ -4656,12 +4781,17 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 col_promo_etu = _colonne_promotion_etudiants(df_source)
                 col_groupe = _trouver_colonne_groupe_etudiants(df_source)
+
                 if not col_promo_etu or not col_groupe:
                     return 0
 
                 serie_promo = df_source[col_promo_etu].astype(str).str.strip()
                 masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
                 df_match = df_source.loc[masque].copy()
+
+                if df_match.empty:
+                    return 0
+
                 return len(_valeurs_uniques_valides(df_match, col_groupe))
 
             def _compter_sous_groupes_promotion(df_source, promotion):
@@ -4670,12 +4800,17 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 col_promo_etu = _colonne_promotion_etudiants(df_source)
                 col_sous_groupe = _trouver_colonne_sous_groupe_etudiants(df_source)
+
                 if not col_promo_etu or not col_sous_groupe:
                     return 0
 
                 serie_promo = df_source[col_promo_etu].astype(str).str.strip()
                 masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
                 df_match = df_source.loc[masque].copy()
+
+                if df_match.empty:
+                    return 0
+
                 return len(_valeurs_uniques_valides(df_match, col_sous_groupe))
 
             groupes_par_promotion = {
