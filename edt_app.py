@@ -4447,10 +4447,84 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib.units import mm
 
-            p_sel = st.selectbox("Choisir Promotion :", sorted(df["Promotion"].unique()))
-            df_p = df[df["Promotion"] == p_sel].copy()
+            # ============================================================
+            # CHOIX DE LA / DES PROMOTIONS
+            # ============================================================
+            liste_promotions_admin = sorted([
+                str(p).strip()
+                for p in df["Promotion"].dropna().unique()
+                if str(p).strip() and str(p).strip() != "Non défini"
+            ])
 
-            st.markdown(f"### 📚 EDT Promotion : {p_sel}")
+            mode_selection_promotions = st.radio(
+                "Mode d'affichage des promotions :",
+                ["Une promotion", "Plusieurs promotions"],
+                horizontal=True,
+                key="mode_selection_promotions_admin"
+            )
+
+            if mode_selection_promotions == "Une promotion":
+                p_sel = st.selectbox(
+                    "Choisir Promotion :",
+                    liste_promotions_admin,
+                    key="promotion_admin_unique"
+                )
+                promotions_selectionnees = [p_sel]
+            else:
+                promotions_selectionnees = st.multiselect(
+                    "Choisir les promotions (sélection progressive) :",
+                    liste_promotions_admin,
+                    default=liste_promotions_admin[:1],
+                    key="promotions_admin_multiples",
+                    help="Sélectionnez d'abord une promotion, puis ajoutez progressivement une deuxième, une troisième, etc."
+                )
+                if not promotions_selectionnees:
+                    st.warning("⚠️ Sélectionnez au moins une promotion pour afficher l'EDT.")
+                    st.stop()
+                p_sel = promotions_selectionnees[0]
+
+            filtre_type_admin = st.selectbox(
+                "Type d'enseignement à afficher :",
+                ["Tous les enseignements", "Cours seulement", "TD seulement", "TP seulement"],
+                key="filtre_type_edt_promotion_admin"
+            )
+
+            df_p = df[df["Promotion"].isin(promotions_selectionnees)].copy()
+
+            def _type_enseignement_admin(valeur_code):
+                code_up = str(valeur_code).upper()
+                if "COURS" in code_up:
+                    return "COURS"
+                if "TD" in code_up:
+                    return "TD"
+                if "TP" in code_up:
+                    return "TP"
+                return "AUTRE"
+
+            df_p["_type_affichage_admin"] = df_p["Code"].apply(_type_enseignement_admin)
+
+            if filtre_type_admin == "Cours seulement":
+                df_p = df_p[df_p["_type_affichage_admin"] == "COURS"].copy()
+            elif filtre_type_admin == "TD seulement":
+                df_p = df_p[df_p["_type_affichage_admin"] == "TD"].copy()
+            elif filtre_type_admin == "TP seulement":
+                df_p = df_p[df_p["_type_affichage_admin"] == "TP"].copy()
+
+            libelle_promotions = " + ".join(promotions_selectionnees)
+
+            if len(promotions_selectionnees) == 1:
+                st.markdown(f"### 📚 EDT Promotion : {libelle_promotions}")
+            else:
+                st.markdown(f"### 📚 EDT Promotions : {libelle_promotions}")
+
+            st.caption(
+                f"📌 {len(promotions_selectionnees)} promotion(s) sélectionnée(s) | "
+                f"Filtre : {filtre_type_admin} | {len(df_p)} créneau(x)"
+            )
+
+            if df_p.empty:
+                st.warning("⚠️ Aucun enseignement ne correspond aux promotions et au filtre sélectionnés.")
+                st.stop()
 
             # ═══════════════════════════════════════════════════════
             # 1) AFFICHAGE HTML (Streamlit) avec EN-TÊTE ISO
@@ -4514,7 +4588,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             iso_header_html_p = f"""
             <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:15px;border-radius:8px 8px 0 0;margin-bottom:0;text-align:center;">
                 <h2 style="margin:0;font-size:18px;">📚 EMPLOI DU TEMPS — PROMOTION</h2>
-                <p style="margin:5px 0 0 0;opacity:0.9;font-size:13px;">{p_sel} | Semestre 01 — 2026-2027</p>
+                <p style="margin:5px 0 0 0;opacity:0.9;font-size:13px;">{libelle_promotions} | Semestre 01 — 2026-2027</p>
                 <div style="display:flex;justify-content:center;gap:20px;margin-top:10px;font-size:11px;opacity:0.85;">
                     <span>📋 Code : PPER.03</span>
                     <span>🔄 Révision : 00</span>
@@ -4545,6 +4619,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             grid_text.columns = [map_j.get(c, c) for c in grid_text.columns]
 
             # ═══════════════════════════════════════════════════════
+            # La colonne technique du filtre reste interne à l'interface.
+            if "_type_affichage_admin" in df_p.columns:
+                df_p = df_p.drop(columns=["_type_affichage_admin"])
+
             # 3) EXCEL (openpyxl) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
             buf_xlsx = io.BytesIO()
@@ -4567,7 +4645,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 # EN-TÊTE ISO (lignes fusionnées)
                 ws.merge_cells('A1:F1')
-                ws['A1'] = f"EMPLOI DU TEMPS — PROMOTION : {p_sel}"
+                ws['A1'] = f"EMPLOI DU TEMPS — PROMOTION : {libelle_promotions}"
                 ws['A1'].font = font_iso
                 ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
                 ws.row_dimensions[1].height = 25
@@ -4694,7 +4772,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
             elements = []
             elements.append(Paragraph(f"📚 EMPLOI DU TEMPS — PROMOTION", title_style))
-            elements.append(Paragraph(f"<b>{p_sel}</b> | Semestre 01 — 2026-2027", iso_style))
+            elements.append(Paragraph(f"<b>{libelle_promotions}</b> | Semestre 01 — 2026-2027", iso_style))
             elements.append(Paragraph(f"📋 Code : PPER.03 &nbsp;&nbsp;|&nbsp;&nbsp; 🔄 Révision : 00 &nbsp;&nbsp;|&nbsp;&nbsp; 📅 Date : {datetime.now().strftime('%d/%m/%Y')}", iso_style))
             elements.append(Spacer(1, 8*mm))
             elements.append(table)
@@ -4709,19 +4787,19 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             c1.download_button(
                 "📥 Excel",
                 buf_xlsx.getvalue(),
-                f"EDT_{p_sel}.xlsx",
+                f"EDT_{libelle_promotions}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             c2.download_button(
                 "🌐 HTML",
                 iso_header_html_p + html_table,
-                f"EDT_{p_sel}.html",
+                f"EDT_{libelle_promotions}.html",
                 "text/html"
             )
             c3.download_button(
                 "📄 PDF",
                 buf_pdf.getvalue(),
-                f"EDT_{p_sel}.pdf",
+                f"EDT_{libelle_promotions}.pdf",
                 "application/pdf"
             )
                               
