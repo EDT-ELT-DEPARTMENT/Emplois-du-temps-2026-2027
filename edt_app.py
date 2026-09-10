@@ -187,6 +187,137 @@ def generer_excel_demande_edt(donnees_lignes, nom_enseignant=""):
         return None
 
 
+def generer_excel_toutes_demandes_edt(demandes):
+    """
+    Génère un fichier Excel récapitulatif de toutes les demandes EDT,
+    avec le statut de chaque demande et le détail des créneaux proposés.
+    Retourne un BytesIO prêt pour st.download_button.
+    """
+    try:
+        lignes_recap = []
+        lignes_detail = []
+
+        for demande in demandes or []:
+            nom_ens = demande.get("enseignant_nom", "Inconnu")
+            email_ens = demande.get("enseignant_email", "N/A")
+            statut = demande.get("statut", "En attente")
+            date_dem = demande.get("date_demande", "")
+            demande_id = demande.get("id", "")
+
+            fichier_data = demande.get("fichier_data", {})
+            lignes = fichier_data.get("lignes", []) if isinstance(fichier_data, dict) else []
+            if not isinstance(lignes, list):
+                lignes = []
+
+            promotions = []
+            for ligne in lignes:
+                if isinstance(ligne, dict):
+                    promo = str(
+                        ligne.get("Promotion", "")
+                    ).strip()
+                    if promo and promo not in promotions:
+                        promotions.append(promo)
+
+            lignes_recap.append({
+                "ID demande": demande_id,
+                "Enseignant": nom_ens,
+                "Email": email_ens,
+                "Date de la demande": date_dem,
+                "Statut": statut,
+                "Nombre de créneaux": len(lignes),
+                "Promotion(s)": ", ".join(promotions),
+            })
+
+            for numero, ligne in enumerate(lignes, 1):
+                if not isinstance(ligne, dict):
+                    ligne = {"Donnée": str(ligne)}
+                lignes_detail.append({
+                    "ID demande": demande_id,
+                    "Enseignant": nom_ens,
+                    "Email": email_ens,
+                    "Date de la demande": date_dem,
+                    "Statut": statut,
+                    "N° créneau": numero,
+                    "Enseignements": ligne.get("Enseignements", ""),
+                    "Code": ligne.get("Code", ""),
+                    "Enseignants": ligne.get("Enseignants", ""),
+                    "Horaire": ligne.get("Horaire", ""),
+                    "Jours": ligne.get("Jours", ""),
+                    "Lieu": ligne.get("Lieu", ""),
+                    "Promotion": ligne.get("Promotion", ""),
+                })
+
+        df_recap = pd.DataFrame(lignes_recap, columns=[
+            "ID demande", "Enseignant", "Email", "Date de la demande",
+            "Statut", "Nombre de créneaux", "Promotion(s)"
+        ])
+        df_detail = pd.DataFrame(lignes_detail, columns=[
+            "ID demande", "Enseignant", "Email", "Date de la demande",
+            "Statut", "N° créneau", "Enseignements", "Code",
+            "Enseignants", "Horaire", "Jours", "Lieu", "Promotion"
+        ])
+
+        # Une feuille statistique par enseignant est également créée.
+        if not df_recap.empty:
+            df_par_enseignant = (
+                df_recap.groupby(["Enseignant", "Email"], dropna=False)
+                .agg(
+                    **{
+                        "Nombre de demandes": ("ID demande", "count"),
+                        "Demandes en attente": ("Statut", lambda x: int((x == "En attente").sum())),
+                        "Demandes approuvées": ("Statut", lambda x: int((x == "Approuvée").sum())),
+                        "Demandes rejetées": ("Statut", lambda x: int((x == "Rejetée").sum())),
+                        "Total créneaux": ("Nombre de créneaux", "sum"),
+                    }
+                )
+                .reset_index()
+            )
+        else:
+            df_par_enseignant = pd.DataFrame(columns=[
+                "Enseignant", "Email", "Nombre de demandes", "Demandes en attente",
+                "Demandes approuvées", "Demandes rejetées", "Total créneaux"
+            ])
+
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+            df_recap.to_excel(writer, sheet_name="Toutes les demandes", index=False)
+            df_par_enseignant.to_excel(writer, sheet_name="Par enseignant", index=False)
+            df_detail.to_excel(writer, sheet_name="Détail des créneaux", index=False)
+
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
+
+            header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+            header_font = Font(color="FFFFFF", bold=True, size=11)
+            thin = Side(style="thin", color="D1D5DB")
+            border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+            for ws in writer.book.worksheets:
+                ws.freeze_panes = "A2"
+                ws.auto_filter.ref = ws.dimensions
+                for cell in ws[1]:
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                    cell.border = border
+                for row in ws.iter_rows(min_row=2):
+                    for cell in row:
+                        cell.alignment = Alignment(vertical="top", wrap_text=True)
+                        cell.border = border
+                for col_cells in ws.columns:
+                    max_len = 0
+                    for cell in col_cells:
+                        value = "" if cell.value is None else str(cell.value)
+                        max_len = max(max_len, len(value))
+                    ws.column_dimensions[get_column_letter(col_cells[0].column)].width = min(max(max_len + 2, 12), 45)
+
+        excel_buffer.seek(0)
+        return excel_buffer
+    except Exception as e:
+        st.error(f"Erreur génération Excel global des demandes : {e}")
+        return None
+
+
 def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_client):
 
     """
@@ -8726,6 +8857,22 @@ def render_download_hub(df_global, user_data, is_admin):
                            or filtre_lower in d.get('enseignant_email', '').lower()]
     
     st.divider()
+
+    # ─── EXPORT GLOBAL DES DEMANDES ───
+    st.markdown("### 📥 Export global des demandes")
+    st.caption("Télécharge toutes les demandes reçues avec leur statut, regroupées par enseignant, ainsi que le détail des créneaux proposés.")
+    excel_toutes_demandes = generer_excel_toutes_demandes_edt(demandes)
+    if excel_toutes_demandes:
+        st.download_button(
+            label="📥 Télécharger toutes les demandes + statuts par enseignant",
+            data=excel_toutes_demandes.getvalue(),
+            file_name=f"Toutes_les_demandes_EDT_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="dl_toutes_demandes_edt"
+        )
+
+    st.divider()
     
     # ─── AFFICHAGE DES DEMANDES ───
     if not demandes_filtrees:
@@ -8784,6 +8931,29 @@ def render_download_hub(df_global, user_data, is_admin):
                                 key=f"dl_admin_{demande.get('id', hash(nom_ens))}"
                             )
                     
+                    # Suppression de la demande
+                    if st.button("🗑️ Supprimer la demande", use_container_width=True, key=f"sup_{demande.get('id', hash(nom_ens))}"):
+                        demande_id = demande.get("id")
+                        suppression_ok = False
+
+                        if supabase and demande_id is not None:
+                            try:
+                                supabase.table("edt_update_requests").delete().eq("id", demande_id).execute()
+                                suppression_ok = True
+                            except Exception as e:
+                                st.error(f"❌ Erreur lors de la suppression dans Supabase : {e}")
+                        else:
+                            demandes_locales = st.session_state.get("demandes_edt_local", [])
+                            avant = len(demandes_locales)
+                            st.session_state.demandes_edt_local = [
+                                d for d in demandes_locales if d.get("id") != demande_id
+                            ]
+                            suppression_ok = len(st.session_state.demandes_edt_local) < avant
+
+                        if suppression_ok:
+                            st.success("🗑️ Demande supprimée avec succès.")
+                            st.rerun()
+
                     # Boutons de décision
                     if statut == "En attente":
                         if st.button("✅ Approuver", use_container_width=True, key=f"app_{demande.get('id', 0)}"):
