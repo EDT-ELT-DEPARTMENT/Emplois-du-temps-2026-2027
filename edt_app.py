@@ -5512,7 +5512,7 @@ td{{word-wrap:break-word;}}
             
             # ✨ Boutons de téléchargement Excel (AVANT les congés)
             st.markdown("### 📥 Télécharger les Listes")
-            db1, db2, db3, db4 = st.columns(4)
+            db1, db2, db3, db4, db5 = st.columns(5)
             
             cols_map_temp = detecter_colonnes_etudiant(df_etu_edt)
             
@@ -5723,6 +5723,60 @@ td{{word-wrap:break-word;}}
                 else:
                     st.caption("⚠️ Colonne 'Promotion' non trouvée")
             
+            # ═════════════════════════════════════════════════════════════════════
+            # ✨ NOUVEAU : Liste des doublons depuis la colonne « Statut » du fichier
+            # source étudiant. Aucune autre donnée ou fonctionnalité n'est modifiée.
+            # ═════════════════════════════════════════════════════════════════════
+            with db5:
+                if cols_map_temp.get('statut') and cols_map_temp['statut'] in df_etu_edt.columns:
+                    try:
+                        colonne_statut_doublons = cols_map_temp['statut']
+                        masque_doublant = (
+                            df_etu_edt[colonne_statut_doublons]
+                            .fillna('')
+                            .astype(str)
+                            .str.strip()
+                            .str.lower()
+                            .str.contains('doublon', na=False)
+                        )
+                        df_doublons_etudiants = df_etu_edt[masque_doublant].copy()
+
+                        if not df_doublons_etudiants.empty:
+                            # On conserve toutes les colonnes du fichier source étudiant
+                            # afin de ne perdre aucune information concernant les doublons.
+                            colonnes_doublons = df_doublons_etudiants.columns.tolist()
+
+                            # Tri alphabétique si la colonne Nom_Complet existe.
+                            if 'Nom_Complet' in df_doublons_etudiants.columns:
+                                df_doublons_etudiants = df_doublons_etudiants.sort_values(
+                                    by='Nom_Complet', na_position='last'
+                                )
+
+                            excel_buffer5 = io.BytesIO()
+                            with pd.ExcelWriter(excel_buffer5, engine='openpyxl') as writer:
+                                df_doublons_etudiants[colonnes_doublons].to_excel(
+                                    writer,
+                                    sheet_name='Doublants',
+                                    index=False
+                                )
+
+                            excel_buffer5.seek(0)
+
+                            st.download_button(
+                                label=f"💾 Doublants ({len(df_doublons_etudiants)})",
+                                data=excel_buffer5.getvalue(),
+                                file_name=f"Liste_Doublants_Etudiants_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key="dl_doublons_etudiants_statut"
+                            )
+                        else:
+                            st.caption("❌ Aucun étudiant avec le statut « Doublant (e) »")
+                    except Exception as e:
+                        st.error(f"❌ Erreur génération Excel des doublants: {str(e)[:150]}")
+                else:
+                    st.caption("⚠️ Colonne « Statut » non trouvée dans le fichier source étudiant")
+
             # ═════════════════════════════════════════════════════════════════════
             # ✨ FICHES PDF GROUPÉES : toutes les fiches d'une promotion dans un seul
             # PDF (une fiche par page, ordre alphabétique) — via liste déroulante.
