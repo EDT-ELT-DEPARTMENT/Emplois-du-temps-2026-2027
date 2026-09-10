@@ -4512,10 +4512,214 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
             libelle_promotions = " + ".join(promotions_selectionnees)
 
+            # ============================================================
+            # INFORMATIONS SUPPLÉMENTAIRES POUR L'EDT :
+            # - lieux / salles / amphis réellement utilisés
+            # - nombre d'étudiants inscrits par promotion sélectionnée
+            # ============================================================
+            lieux_edt = []
+            if "Lieu" in df_p.columns:
+                lieux_edt = sorted({
+                    str(l).strip()
+                    for l in df_p["Lieu"].dropna().tolist()
+                    if str(l).strip() and str(l).strip().lower() not in ["nan", "none", "non défini"]
+                })
+
+            def _format_lieux_edt(lieux):
+                salles = []
+                amphis = []
+                autres = []
+                for lieu in lieux:
+                    lieu_up = str(lieu).strip().upper()
+                    if lieu_up.startswith("AS"):
+                        salles.append(str(lieu).strip())
+                    elif lieu_up.startswith("A") and len(lieu_up) > 1 and lieu_up[1:].isdigit():
+                        amphis.append(str(lieu).strip())
+                    else:
+                        autres.append(str(lieu).strip())
+
+                parties_lieux = []
+                if salles:
+                    parties_lieux.append("Salles : " + ", ".join(salles))
+                if amphis:
+                    parties_lieux.append("Amphis : " + ", ".join(amphis))
+                if autres:
+                    parties_lieux.append("Autres : " + ", ".join(autres))
+                return " | ".join(parties_lieux) if parties_lieux else "Non défini"
+
+            libelle_lieux = _format_lieux_edt(lieux_edt)
+
+            # Recherche du fichier étudiant déjà chargé par la plateforme.
+            # On conserve exactement la structure existante et on ne modifie
+            # pas les données sources : le comptage est réalisé uniquement
+            # pour l'affichage de l'EDT.
+            df_etudiants_comptage = None
+            if 'df_etu_edt' in locals() and isinstance(df_etu_edt, pd.DataFrame) and not df_etu_edt.empty:
+                df_etudiants_comptage = df_etu_edt.copy()
+            elif 'df_etu' in locals() and isinstance(df_etu, pd.DataFrame) and not df_etu.empty:
+                df_etudiants_comptage = df_etu.copy()
+
+            def _colonne_promotion_etudiants(df_source):
+                if df_source is None or df_source.empty:
+                    return None
+                for nom_col in ["Promotion", "promotion", "PROMOTION"]:
+                    if nom_col in df_source.columns:
+                        return nom_col
+                return None
+
+            def _compter_etudiants_promotion(df_source, promotion):
+                if df_source is None or df_source.empty:
+                    return 0
+
+                col_promo_etu = _colonne_promotion_etudiants(df_source)
+                if not col_promo_etu:
+                    return 0
+
+                serie_promo = df_source[col_promo_etu].astype(str).str.strip()
+                masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
+                df_match = df_source.loc[masque].copy()
+
+                if df_match.empty:
+                    return 0
+
+                # Si le matricule étudiant existe, on compte les étudiants
+                # uniques afin d'éviter un double comptage éventuel.
+                for col_mat in ["Mat. Etudiant", "Matricule", "Matricule Etudiant", "matricule"]:
+                    if col_mat in df_match.columns:
+                        valeurs = df_match[col_mat].astype(str).str.strip()
+                        valeurs = valeurs[
+                            (valeurs != "")
+                            & (~valeurs.str.casefold().isin(["nan", "none", "nat"]))
+                        ]
+                        if not valeurs.empty:
+                            return int(valeurs.nunique())
+
+                if "Nom_Complet" in df_match.columns:
+                    valeurs_noms = df_match["Nom_Complet"].astype(str).str.strip()
+                    valeurs_noms = valeurs_noms[
+                        (valeurs_noms != "")
+                        & (~valeurs_noms.str.casefold().isin(["nan", "none", "nat"]))
+                    ]
+                    if not valeurs_noms.empty:
+                        return int(valeurs_noms.nunique())
+
+                return int(len(df_match))
+
+            etudiants_par_promotion = {
+                promo: _compter_etudiants_promotion(df_etudiants_comptage, promo)
+                for promo in promotions_selectionnees
+            }
+            total_etudiants_inscrits = sum(etudiants_par_promotion.values())
+
+            # ============================================================
+            # COMPTAGE DES GROUPES ET SOUS-GROUPES PAR PROMOTION
+            # ============================================================
+            def _trouver_colonne_groupe_etudiants(df_source):
+                if df_source is None or df_source.empty:
+                    return None
+                for nom_col in [
+                    "Groupe", "groupe", "GROUPE",
+                    "Groupe étudiant", "Groupe Etudiant", "Groupe_étudiant",
+                    "Groupe_etu", "Groupe_Etu"
+                ]:
+                    if nom_col in df_source.columns:
+                        return nom_col
+                return None
+
+            def _trouver_colonne_sous_groupe_etudiants(df_source):
+                if df_source is None or df_source.empty:
+                    return None
+                for nom_col in [
+                    "Sous groupe", "Sous-groupe", "Sous Groupe", "sous groupe",
+                    "sous-groupe", "SOUS GROUPE", "Sous_groupe", "Sous_groupe_etu",
+                    "Sous groupe étudiant", "Sous groupe Etudiant"
+                ]:
+                    if nom_col in df_source.columns:
+                        return nom_col
+                return None
+
+            def _valeurs_uniques_valides(df_source, colonne):
+                if df_source is None or df_source.empty or not colonne:
+                    return []
+                valeurs = df_source[colonne].astype(str).str.strip()
+                valeurs = valeurs[
+                    (valeurs != "")
+                    & (~valeurs.str.casefold().isin([
+                        "nan", "none", "nat", "n/a", "na", "non défini", "non defini"
+                    ]))
+                ]
+                return sorted(valeurs.unique().tolist(), key=lambda x: x.casefold())
+
+            def _compter_groupes_promotion(df_source, promotion):
+                if df_source is None or df_source.empty:
+                    return 0
+
+                col_promo_etu = _colonne_promotion_etudiants(df_source)
+                col_groupe = _trouver_colonne_groupe_etudiants(df_source)
+                if not col_promo_etu or not col_groupe:
+                    return 0
+
+                serie_promo = df_source[col_promo_etu].astype(str).str.strip()
+                masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
+                df_match = df_source.loc[masque].copy()
+                return len(_valeurs_uniques_valides(df_match, col_groupe))
+
+            def _compter_sous_groupes_promotion(df_source, promotion):
+                if df_source is None or df_source.empty:
+                    return 0
+
+                col_promo_etu = _colonne_promotion_etudiants(df_source)
+                col_sous_groupe = _trouver_colonne_sous_groupe_etudiants(df_source)
+                if not col_promo_etu or not col_sous_groupe:
+                    return 0
+
+                serie_promo = df_source[col_promo_etu].astype(str).str.strip()
+                masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
+                df_match = df_source.loc[masque].copy()
+                return len(_valeurs_uniques_valides(df_match, col_sous_groupe))
+
+            groupes_par_promotion = {
+                promo: _compter_groupes_promotion(df_etudiants_comptage, promo)
+                for promo in promotions_selectionnees
+            }
+            sous_groupes_par_promotion = {
+                promo: _compter_sous_groupes_promotion(df_etudiants_comptage, promo)
+                for promo in promotions_selectionnees
+            }
+            total_groupes = sum(groupes_par_promotion.values())
+            total_sous_groupes = sum(sous_groupes_par_promotion.values())
+
             if len(promotions_selectionnees) == 1:
                 st.markdown(f"### 📚 EDT Promotion : {libelle_promotions}")
             else:
                 st.markdown(f"### 📚 EDT Promotions : {libelle_promotions}")
+
+            st.markdown(
+                f"**📍 Lieu(x) :** {libelle_lieux} &nbsp;&nbsp;|&nbsp;&nbsp; "
+                f"**👥 Étudiants inscrits :** {total_etudiants_inscrits} &nbsp;&nbsp;|&nbsp;&nbsp; "
+                f"**👥 Groupes :** {total_groupes} &nbsp;&nbsp;|&nbsp;&nbsp; "
+                f"**🔹 Sous-groupes :** {total_sous_groupes}",
+                unsafe_allow_html=True
+            )
+
+            if len(promotions_selectionnees) > 1:
+                detail_etudiants = " | ".join(
+                    f"{promo} : {etudiants_par_promotion.get(promo, 0)} étudiant(s)"
+                    for promo in promotions_selectionnees
+                )
+                st.caption(f"👥 Répartition des étudiants inscrits : {detail_etudiants}")
+
+                detail_groupes = " | ".join(
+                    f"{promo} : {groupes_par_promotion.get(promo, 0)} groupe(s) / {sous_groupes_par_promotion.get(promo, 0)} sous-groupe(s)"
+                    for promo in promotions_selectionnees
+                )
+                st.caption(f"👥 Répartition des groupes et sous-groupes : {detail_groupes}")
+            else:
+                promo_unique = promotions_selectionnees[0]
+                st.caption(
+                    f"👥 {groupes_par_promotion.get(promo_unique, 0)} groupe(s) | "
+                    f"🔹 {sous_groupes_par_promotion.get(promo_unique, 0)} sous-groupe(s) pour {promo_unique}"
+                )
 
             st.caption(
                 f"📌 {len(promotions_selectionnees)} promotion(s) sélectionnée(s) | "
@@ -4589,6 +4793,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:15px;border-radius:8px 8px 0 0;margin-bottom:0;text-align:center;">
                 <h2 style="margin:0;font-size:18px;">📚 EMPLOI DU TEMPS — PROMOTION</h2>
                 <p style="margin:5px 0 0 0;opacity:0.9;font-size:13px;">{libelle_promotions} | Semestre 01 — 2026-2027</p>
+                <p style="margin:7px 0 0 0;opacity:0.95;font-size:12px;">📍 <b>Lieu(x) :</b> {libelle_lieux}</p>
+                <p style="margin:5px 0 0 0;opacity:0.95;font-size:12px;">👥 <b>Étudiants inscrits :</b> {total_etudiants_inscrits}</p>
+                <p style="margin:5px 0 0 0;opacity:0.95;font-size:12px;">👥 <b>Groupes :</b> {total_groupes} &nbsp;&nbsp;|&nbsp;&nbsp; 🔹 <b>Sous-groupes :</b> {total_sous_groupes}</p>
                 <div style="display:flex;justify-content:center;gap:20px;margin-top:10px;font-size:11px;opacity:0.85;">
                     <span>📋 Code : PPER.03</span>
                     <span>🔄 Révision : 00</span>
@@ -4661,6 +4868,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 ws['A3'].font = Font(bold=True, size=10, color='334155')
                 ws['A3'].alignment = Alignment(horizontal='center', vertical='center')
                 ws.row_dimensions[3].height = 20
+
+                ws.merge_cells('A4:F4')
+                ws['A4'] = f"📍 Lieu(x) : {libelle_lieux}  |  👥 Étudiants inscrits : {total_etudiants_inscrits}  |  👥 Groupes : {total_groupes}  |  🔹 Sous-groupes : {total_sous_groupes}"
+                ws['A4'].font = Font(bold=True, size=10, color='334155')
+                ws['A4'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                ws.row_dimensions[4].height = 30
 
                 ws.column_dimensions['A'].width = 18
 
@@ -4773,6 +4986,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             elements = []
             elements.append(Paragraph(f"📚 EMPLOI DU TEMPS — PROMOTION", title_style))
             elements.append(Paragraph(f"<b>{libelle_promotions}</b> | Semestre 01 — 2026-2027", iso_style))
+            elements.append(Paragraph(f"📍 Lieu(x) : {libelle_lieux} &nbsp;&nbsp;|&nbsp;&nbsp; 👥 Étudiants inscrits : {total_etudiants_inscrits} &nbsp;&nbsp;|&nbsp;&nbsp; 👥 Groupes : {total_groupes} &nbsp;&nbsp;|&nbsp;&nbsp; 🔹 Sous-groupes : {total_sous_groupes}", iso_style))
             elements.append(Paragraph(f"📋 Code : PPER.03 &nbsp;&nbsp;|&nbsp;&nbsp; 🔄 Révision : 00 &nbsp;&nbsp;|&nbsp;&nbsp; 📅 Date : {datetime.now().strftime('%d/%m/%Y')}", iso_style))
             elements.append(Spacer(1, 8*mm))
             elements.append(table)
