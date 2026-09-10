@@ -4260,6 +4260,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             # 3) EXCEL (openpyxl) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
             import io
+            import re
             from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
             buf_xlsx_e = io.BytesIO()
 
