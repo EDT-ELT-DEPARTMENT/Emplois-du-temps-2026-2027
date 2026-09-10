@@ -6,7 +6,7 @@ import streamlit as st
 
 # Dénomination officielle
 APP_TITLE = (
-    "Plateforme de gestion des EDTs-S1-2026-Département"
+    "Plateforme de gestion des EDTs-S1-2026-2027-Département"
     " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 )
 URL_PLATEFORME = (
@@ -4714,6 +4714,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 return None
 
             def _valeurs_uniques_valides(df_source, colonne):
+                import re
+
                 if df_source is None or df_source.empty or not colonne:
                     return []
 
