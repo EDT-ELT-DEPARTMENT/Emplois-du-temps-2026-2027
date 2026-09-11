@@ -4779,6 +4779,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 )
 
             def _compter_groupes_promotion(df_source, promotion):
+                import re
+
                 if df_source is None or df_source.empty:
                     return 0
 
