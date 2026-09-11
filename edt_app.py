@@ -6,7 +6,7 @@ import streamlit as st
 
 # Dénomination officielle
 APP_TITLE = (
-    "Plateforme de gestion des EDTs-S1-2026-2027-Département"
+    "Plateforme de gestion des EDTs-S2-2026-Département"
     " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 )
 URL_PLATEFORME = (
@@ -4785,7 +4785,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 col_promo_etu = _colonne_promotion_etudiants(df_source)
                 col_groupe = _trouver_colonne_groupe_etudiants(df_source)
 
-                if not col_promo_etu or not col_groupe:
+                if not col_promo_etu:
                     return 0
 
                 serie_promo = df_source[col_promo_etu].astype(str).str.strip()
@@ -4795,7 +4795,65 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if df_match.empty:
                     return 0
 
-                return len(_valeurs_uniques_valides(df_match, col_groupe))
+                # ============================================================
+                # CORRECTION DU COMPTAGE DES GROUPES
+                # ============================================================
+                # Le nombre de groupes doit correspondre aux groupes REELS
+                # de la colonne "Groupe", et non au nombre de lignes étudiants.
+                #
+                # Exemple :
+                #   G1 / SG11
+                #   G1 / SG11
+                #   G1 / SG12
+                #   G1 / SG12
+                #
+                # donne :
+                #   Groupes     = 1 (G1)
+                #   Sous-groupes = 2 (SG11 et SG12)
+                #
+                # Dans certaines sources, des lignes auxiliaires ou des
+                # variations de format peuvent faire apparaître un faux
+                # deuxième groupe. Pour sécuriser le résultat, lorsque les
+                # sous-groupes sont de la forme SG11, SG12, SG21, SG22, etc.,
+                # on déduit aussi le groupe parent à partir du chiffre situé
+                # après "SG" et on utilise cette information comme contrôle.
+                # ============================================================
+
+                groupes_colonne = (
+                    len(_valeurs_uniques_valides(df_match, col_groupe))
+                    if col_groupe else 0
+                )
+
+                # Recherche de la colonne "Sous groupe".
+                col_sous_groupe = _trouver_colonne_sous_groupe_etudiants(df_match)
+
+                if col_sous_groupe:
+                    sous_groupes = _valeurs_uniques_valides(
+                        df_match, col_sous_groupe
+                    )
+
+                    groupes_deductions = set()
+
+                    for sous_groupe in sous_groupes:
+                        valeur_sg = str(sous_groupe).strip().upper()
+
+                        # SG11 -> groupe 1
+                        # SG12 -> groupe 1
+                        # SG21 -> groupe 2
+                        # SG22 -> groupe 2
+                        # SG31 -> groupe 3, etc.
+                        correspondance = re.match(r"^SG(\d+?)(?:1|2)$", valeur_sg)
+
+                        if correspondance:
+                            groupes_deductions.add(correspondance.group(1))
+
+                    # Lorsque les sous-groupes permettent d'identifier sans
+                    # ambiguïté les groupes pédagogiques, leur nombre est la
+                    # référence la plus fiable.
+                    if groupes_deductions:
+                        return len(groupes_deductions)
+
+                return groupes_colonne
 
             def _compter_sous_groupes_promotion(df_source, promotion):
                 if df_source is None or df_source.empty:
