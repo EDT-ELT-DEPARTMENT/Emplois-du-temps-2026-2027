@@ -4898,6 +4898,23 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             )
             html_table = styled.to_html(escape=False)
 
+            # ============================================================
+            # COMPTEURS GROUPES / SOUS-GROUPES
+            # ============================================================
+            # Règle définitive :
+            #   - Groupes = nombre de groupes distincts dans la colonne Groupe
+            #   - Sous-groupes = nombre de groupes * 2
+            # Ces variables doivent être définies AVANT leur utilisation
+            # dans l'en-tête HTML, Excel et PDF.
+            total_groupes = _compter_groupes_promotion(
+                df_etudiants_comptage,
+                promotions_selectionnees[0] if len(promotions_selectionnees) == 1 else None
+            ) if len(promotions_selectionnees) == 1 else sum(
+                _compter_groupes_promotion(df_etudiants_comptage, promo)
+                for promo in promotions_selectionnees
+            )
+            total_sous_groupes = total_groupes * 2
+
             # EN-TÊTE ISO pour le HTML
             iso_header_html_p = f"""
             <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:15px;border-radius:8px 8px 0 0;margin-bottom:0;text-align:center;">
