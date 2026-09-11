@@ -6,7 +6,7 @@ import streamlit as st
 
 # Dénomination officielle
 APP_TITLE = (
-    "Plateforme de gestion des EDTs-S2-2026-Département"
+    "Plateforme de gestion des EDTs-S1-2026-Département"
     " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 )
 URL_PLATEFORME = (
@@ -4589,6 +4589,85 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         return nom_col
                 return None
 
+            def _resoudre_libelles_promotion_fichier(df_source, promotion):
+                # ============================================================
+                # CORRECTION DU COMPTEUR DE GROUPES / SOUS-GROUPES
+                # ============================================================
+                # Le libellé de la promotion choisi dans l'EDT (exemples :
+                # ING4, L2MCIL, MCIL1, L1ELT...) peut être différent du
+                # libellé utilisé dans le fichier des étudiants (exemples :
+                # ING4EI, MCIL2, L1MCIL...).
+                #
+                # La comparaison stricte échouait alors silencieusement et
+                # le comptage retournait 0 groupes / 0 sous-groupes.
+                #
+                # Cette fonction retourne la liste des libellés RÉELS du
+                # fichier des étudiants qui correspondent à la promotion
+                # sélectionnée dans l'EDT, en essayant successivement :
+                #   1. la correspondance directe (insensible à la casse) ;
+                #   2. la correspondance via mapper_promotion (déjà utilisée
+                #      partout dans l'application) ;
+                #   3. la normalisation des caractères (accents, espaces,
+                #      tirets, ponctuation) ;
+                #   4. la correspondance par inclusion (le libellé EDT est
+                #      contenu dans le libellé du fichier, ou l'inverse).
+                # ============================================================
+                import unicodedata as _unicodedata
+                import re as _re
+
+                if df_source is None or df_source.empty or not promotion:
+                    return []
+
+                col_promo_etu = _colonne_promotion_etudiants(df_source)
+                if not col_promo_etu:
+                    return []
+
+                serie_promo_fichier = df_source[col_promo_etu].astype(str).str.strip()
+                cible_edt = str(promotion).strip()
+
+                # 1) Correspondance directe, insensible à la casse
+                masque_direct = serie_promo_fichier.str.casefold() == cible_edt.casefold()
+                if masque_direct.any():
+                    return sorted(serie_promo_fichier.loc[masque_direct].unique().tolist())
+
+                # 2) Correspondance via mapper_promotion (norme de l'application)
+                try:
+                    cible_mapee = mapper_promotion(cible_edt)
+                    masque_mape = serie_promo_fichier.apply(
+                        lambda libelle_fichier: mapper_promotion(libelle_fichier) == cible_mapee
+                    )
+                    if masque_mape.any():
+                        return sorted(serie_promo_fichier.loc[masque_mape].unique().tolist())
+                except Exception:
+                    pass
+
+                # 3) Correspondance par normalisation des caractères
+                def _normaliser_libelle_promotion(libelle):
+                    s = str(libelle).strip().casefold()
+                    s = _unicodedata.normalize("NFKD", s).encode("ASCII", "ignore").decode("ASCII")
+                    return _re.sub(r"[^a-z0-9]", "", s)
+
+                cible_normalisee = _normaliser_libelle_promotion(cible_edt)
+                if cible_normalisee:
+                    masque_normalise = serie_promo_fichier.apply(
+                        lambda libelle_fichier: _normaliser_libelle_promotion(libelle_fichier) == cible_normalisee
+                    )
+                    if masque_normalise.any():
+                        return sorted(serie_promo_fichier.loc[masque_normalise].unique().tolist())
+
+                # 4) Correspondance par inclusion
+                if cible_normalisee:
+                    masque_inclusion = serie_promo_fichier.apply(
+                        lambda libelle_fichier: (
+                            cible_normalisee in _normaliser_libelle_promotion(libelle_fichier)
+                            or _normaliser_libelle_promotion(libelle_fichier) in cible_normalisee
+                        )
+                    )
+                    if masque_inclusion.any():
+                        return sorted(serie_promo_fichier.loc[masque_inclusion].unique().tolist())
+
+                return []
+
             def _trouver_colonne_conge_academique(df_source):
                 if df_source is None or df_source.empty:
                     return None
@@ -4646,8 +4725,26 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if not col_promo_etu:
                     return 0
 
-                serie_promo = df_source[col_promo_etu].astype(str).str.strip()
-                masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
+                # ============================================================
+                # CORRECTION DU COMPTEUR D'ÉTUDIANTS
+                # ============================================================
+                # On utilise la résolution robuste des libellés de promotion
+                # pour ne plus perdre les étudiants lorsque le libellé de
+                # l'EDT (ex : ING4, L2MCIL, MCIL1) diffère du libellé du
+                # fichier des étudiants (ex : ING4EI, MCIL2, L1MCIL).
+                libelles_fichier = _resoudre_libelles_promotion_fichier(
+                    df_source, promotion
+                )
+
+                if libelles_fichier:
+                    serie_promo = df_source[col_promo_etu].astype(str).str.strip()
+                    masque = serie_promo.str.casefold().isin(
+                        [str(libelle).strip().casefold() for libelle in libelles_fichier]
+                    )
+                else:
+                    serie_promo = df_source[col_promo_etu].astype(str).str.strip()
+                    masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
+
                 df_match = df_source.loc[masque].copy()
 
                 if df_match.empty:
@@ -4778,7 +4875,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     if not valeur:
                         continue
 
-                    morceaux = re.split(r"[,;/\\n]+", valeur)
+                    morceaux = re.split(r"[,;/\n]+", valeur)
 
                     for morceau in morceaux:
                         morceau = str(morceau).strip()
@@ -4811,8 +4908,31 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if not col_promo_etu:
                     return 0
 
+                # ============================================================
+                # CORRECTION DU COMPTEUR DE GROUPES
+                # ============================================================
+                # Le libellé de la promotion sélectionnée dans l'EDT peut
+                # différer du libellé utilisé dans le fichier des étudiants
+                # (exemples : ING4 dans l'EDT / ING4EI dans les étudiants ;
+                # L2MCIL dans l'EDT / MCIL2 dans les étudiants).
+                #
+                # On résout d'abord les libellés réels du fichier des
+                # étudiants correspondant à la promotion choisie, puis on
+                # filtre les lignes avec TOUS ces libellés.
+                # ============================================================
+                libelles_fichier = _resoudre_libelles_promotion_fichier(
+                    df_source, promotion
+                )
+
                 serie_promo = df_source[col_promo_etu].astype(str).str.strip()
-                masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
+
+                if libelles_fichier:
+                    masque = serie_promo.str.casefold().isin(
+                        [str(libelle).strip().casefold() for libelle in libelles_fichier]
+                    )
+                else:
+                    masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
+
                 df_match = df_source.loc[masque].copy()
 
                 if df_match.empty:
@@ -4827,8 +4947,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 # Exemple : G1 répété sur plusieurs étudiants = 1 groupe.
                 # Exemple : G1 et G2 présents = 2 groupes.
                 #
-                # Le nombre de sous-groupes est ensuite calculé séparément
-                # avec la règle définitive : nombre de groupes * 2.
+                # Les sous-groupes sont comptés séparément à partir de la
+                # colonne "Sous groupe" (voir _compter_sous_groupes_promotion).
                 # ============================================================
 
                 if not col_groupe:
@@ -4837,27 +4957,70 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 return len(_valeurs_uniques_valides(df_match, col_groupe))
 
             def _compter_sous_groupes_promotion(df_source, promotion):
+                import re
+
                 if df_source is None or df_source.empty:
                     return 0
 
                 # ============================================================
-                # LOGIQUE DEFINITIVE DES SOUS-GROUPES
+                # LOGIQUE CORRIGÉE DES SOUS-GROUPES
                 # ============================================================
-                # Une fois pour toutes, le nombre de sous-groupes est égal
-                # au nombre de groupes multiplié par 2.
+                # Le nombre de sous-groupes affiché correspond désormais
+                # aux valeurs RÉELLES distinctes de la colonne "Sous groupe"
+                # du fichier des étudiants pour la promotion sélectionnée.
                 #
-                # Exemples :
-                #   1 groupe  -> 2 sous-groupes
-                #   2 groupes -> 4 sous-groupes
-                #   3 groupes -> 6 sous-groupes
-                #   4 groupes -> 8 sous-groupes
+                # Exemples (fichier réel des étudiants 2026-2027) :
+                #   L1MCIL : SG11, SG12, SG21, SG22, ..., SG91, SG92
+                #            -> 9 groupes, 18 sous-groupes réels
+                #   MCIL2  : SG11, SG12, ..., SG51, SG52
+                #            -> 5 groupes, 10 sous-groupes réels
+                #   MCIL3  : SG11, SG12, ..., SG31, SG32
+                #            -> 3 groupes, 6 sous-groupes réels
+                #   L2ELT  : SG11, SG12, SG21, SG22
+                #            -> 2 groupes, 4 sous-groupes réels
                 #
-                # Les codes SG11, SG12, SG21, SG22, SG31, SG32, SG41,
-                # SG42, etc. correspondent aux sous-groupes pédagogiques,
-                # mais ils ne sont pas utilisés pour recalculer le nombre
-                # affiché. La règle unique est : groupes * 2.
+                # La multiplication par 2 (groupes * 2) n'est conservée
+                # QUE comme repli, uniquement si la colonne "Sous groupe"
+                # est absente ou totalement vide pour la promotion.
                 # ============================================================
+                col_promo_etu = _colonne_promotion_etudiants(df_source)
+                col_sous_groupe = _trouver_colonne_sous_groupe_etudiants(df_source)
 
+                if not col_promo_etu:
+                    return 0
+
+                # Résolution robuste des libellés de promotion (l'EDT peut
+                # utiliser ING4, L2MCIL, MCIL1... alors que le fichier des
+                # étudiants utilise ING4EI, MCIL2, L1MCIL...).
+                libelles_fichier = _resoudre_libelles_promotion_fichier(
+                    df_source, promotion
+                )
+
+                serie_promo = df_source[col_promo_etu].astype(str).str.strip()
+
+                if libelles_fichier:
+                    masque = serie_promo.str.casefold().isin(
+                        [str(libelle).strip().casefold() for libelle in libelles_fichier]
+                    )
+                else:
+                    masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
+
+                df_match = df_source.loc[masque].copy()
+
+                if df_match.empty:
+                    return 0
+
+                # 1) Comptage RÉEL : valeurs distinctes de "Sous groupe"
+                if col_sous_groupe:
+                    valeurs_sous_groupes = _valeurs_uniques_valides(
+                        df_match, col_sous_groupe
+                    )
+
+                    if valeurs_sous_groupes:
+                        return len(valeurs_sous_groupes)
+
+                # 2) Repli : uniquement si la colonne "Sous groupe" est
+                #    absente ou vide pour cette promotion.
                 nombre_groupes = _compter_groupes_promotion(
                     df_source, promotion
                 )
@@ -4920,11 +5083,22 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             html_table = styled.to_html(escape=False)
 
             # ============================================================
-            # COMPTEURS GROUPES / SOUS-GROUPES
+            # COMPTEURS GROUPES / SOUS-GROUPES (CORRIGÉS)
             # ============================================================
-            # Règle définitive :
-            #   - Groupes = nombre de groupes distincts dans la colonne Groupe
-            #   - Sous-groupes = nombre de groupes * 2
+            # Règle corrigée :
+            #   - Groupes = nombre de groupes distincts (valeurs réelles de
+            #     la colonne "Groupe" du fichier des étudiants) pour la ou
+            #     les promotions sélectionnées ;
+            #   - Sous-groupes = nombre de sous-groupes distincts (valeurs
+            #     réelles de la colonne "Sous groupe" : SG11, SG12, SG21,
+            #     SG22, ...) pour la ou les promotions sélectionnées.
+            #
+            # La résolution des libellés de promotion est intégrée dans
+            # _compter_groupes_promotion et _compter_sous_groupes_promotion :
+            # même si l'EDT affiche ING4, L2MCIL ou MCIL1 alors que le
+            # fichier des étudiants contient ING4EI, MCIL2 ou L1MCIL, les
+            # compteurs trouvent les bonnes lignes.
+            #
             # Ces variables doivent être définies AVANT leur utilisation
             # dans l'en-tête HTML, Excel et PDF.
             total_groupes = _compter_groupes_promotion(
@@ -4934,7 +5108,13 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 _compter_groupes_promotion(df_etudiants_comptage, promo)
                 for promo in promotions_selectionnees
             )
-            total_sous_groupes = total_groupes * 2
+            total_sous_groupes = _compter_sous_groupes_promotion(
+                df_etudiants_comptage,
+                promotions_selectionnees[0] if len(promotions_selectionnees) == 1 else None
+            ) if len(promotions_selectionnees) == 1 else sum(
+                _compter_sous_groupes_promotion(df_etudiants_comptage, promo)
+                for promo in promotions_selectionnees
+            )
 
             # EN-TÊTE ISO pour le HTML
             iso_header_html_p = f"""
