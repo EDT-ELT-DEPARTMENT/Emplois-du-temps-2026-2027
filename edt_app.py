@@ -6,7 +6,7 @@ import streamlit as st
 
 # Dénomination officielle
 APP_TITLE = (
-    "Plateforme de gestion des EDTs-S2-2026-Département"
+    "Plateforme de gestion des EDTs-S1-2026-Département"
     " d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
 )
 URL_PLATEFORME = (
@@ -4798,139 +4798,51 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     return 0
 
                 # ============================================================
-                # CORRECTION DU COMPTAGE DES GROUPES
+                # COMPTAGE DEFINITIF DES GROUPES
                 # ============================================================
-                # Le nombre de groupes doit correspondre aux groupes REELS
-                # de la colonne "Groupe", et non au nombre de lignes étudiants.
+                # Le nombre de groupes est déterminé UNIQUEMENT par les
+                # valeurs distinctes de la colonne "Groupe".
                 #
-                # Exemple :
-                #   G1 / SG11
-                #   G1 / SG11
-                #   G1 / SG12
-                #   G1 / SG12
+                # Exemple : G1 répété sur plusieurs étudiants = 1 groupe.
+                # Exemple : G1 et G2 présents = 2 groupes.
                 #
-                # donne :
-                #   Groupes     = 1 (G1)
-                #   Sous-groupes = 2 (SG11 et SG12)
-                #
-                # Dans certaines sources, des lignes auxiliaires ou des
-                # variations de format peuvent faire apparaître un faux
-                # deuxième groupe. Pour sécuriser le résultat, lorsque les
-                # sous-groupes sont de la forme SG11, SG12, SG21, SG22, etc.,
-                # on déduit aussi le groupe parent à partir du chiffre situé
-                # après "SG" et on utilise cette information comme contrôle.
+                # Le nombre de sous-groupes est ensuite calculé séparément
+                # avec la règle définitive : nombre de groupes * 2.
                 # ============================================================
 
-                groupes_colonne = (
-                    len(_valeurs_uniques_valides(df_match, col_groupe))
-                    if col_groupe else 0
-                )
+                if not col_groupe:
+                    return 0
 
-                # Recherche de la colonne "Sous groupe".
-                col_sous_groupe = _trouver_colonne_sous_groupe_etudiants(df_match)
-
-                if col_sous_groupe:
-                    sous_groupes = _valeurs_uniques_valides(
-                        df_match, col_sous_groupe
-                    )
-
-                    groupes_deductions = set()
-
-                    for sous_groupe in sous_groupes:
-                        valeur_sg = str(sous_groupe).strip().upper()
-
-                        # SG11 -> groupe 1
-                        # SG12 -> groupe 1
-                        # SG21 -> groupe 2
-                        # SG22 -> groupe 2
-                        # SG31 -> groupe 3, etc.
-                        correspondance = re.match(r"^SG(\d+?)(?:1|2)$", valeur_sg)
-
-                        if correspondance:
-                            groupes_deductions.add(correspondance.group(1))
-
-                    # Lorsque les sous-groupes permettent d'identifier sans
-                    # ambiguïté les groupes pédagogiques, leur nombre est la
-                    # référence la plus fiable.
-                    if groupes_deductions:
-                        return len(groupes_deductions)
-
-                return groupes_colonne
+                return len(_valeurs_uniques_valides(df_match, col_groupe))
 
             def _compter_sous_groupes_promotion(df_source, promotion):
                 if df_source is None or df_source.empty:
                     return 0
 
-                col_promo_etu = _colonne_promotion_etudiants(df_source)
-                col_sous_groupe = _trouver_colonne_sous_groupe_etudiants(df_source)
+                # ============================================================
+                # LOGIQUE DEFINITIVE DES SOUS-GROUPES
+                # ============================================================
+                # Une fois pour toutes, le nombre de sous-groupes est égal
+                # au nombre de groupes multiplié par 2.
+                #
+                # Exemples :
+                #   1 groupe  -> 2 sous-groupes
+                #   2 groupes -> 4 sous-groupes
+                #   3 groupes -> 6 sous-groupes
+                #   4 groupes -> 8 sous-groupes
+                #
+                # Les codes SG11, SG12, SG21, SG22, SG31, SG32, SG41,
+                # SG42, etc. correspondent aux sous-groupes pédagogiques,
+                # mais ils ne sont pas utilisés pour recalculer le nombre
+                # affiché. La règle unique est : groupes * 2.
+                # ============================================================
 
-                if not col_promo_etu or not col_sous_groupe:
-                    return 0
-
-                serie_promo = df_source[col_promo_etu].astype(str).str.strip()
-                masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
-                df_match = df_source.loc[masque].copy()
-
-                if df_match.empty:
-                    return 0
-
-                return len(_valeurs_uniques_valides(df_match, col_sous_groupe))
-
-            groupes_par_promotion = {
-                promo: _compter_groupes_promotion(df_etudiants_comptage, promo)
-                for promo in promotions_selectionnees
-            }
-            sous_groupes_par_promotion = {
-                promo: _compter_sous_groupes_promotion(df_etudiants_comptage, promo)
-                for promo in promotions_selectionnees
-            }
-            total_groupes = sum(groupes_par_promotion.values())
-            total_sous_groupes = sum(sous_groupes_par_promotion.values())
-
-            if len(promotions_selectionnees) == 1:
-                st.markdown(f"### 📚 EDT Promotion : {libelle_promotions}")
-            else:
-                st.markdown(f"### 📚 EDT Promotions : {libelle_promotions}")
-
-            st.markdown(
-                f"**📍 Lieu(x) :** {libelle_lieux} &nbsp;&nbsp;|&nbsp;&nbsp; "
-                f"**👥 Étudiants inscrits :** {total_etudiants_inscrits} &nbsp;&nbsp;|&nbsp;&nbsp; "
-                f"**👥 Groupes :** {total_groupes} &nbsp;&nbsp;|&nbsp;&nbsp; "
-                f"**🔹 Sous-groupes :** {total_sous_groupes}",
-                unsafe_allow_html=True
-            )
-
-            if len(promotions_selectionnees) > 1:
-                detail_etudiants = " | ".join(
-                    f"{promo} : {etudiants_par_promotion.get(promo, 0)} étudiant(s)"
-                    for promo in promotions_selectionnees
-                )
-                st.caption(f"👥 Répartition des étudiants inscrits : {detail_etudiants}")
-
-                detail_groupes = " | ".join(
-                    f"{promo} : {groupes_par_promotion.get(promo, 0)} groupe(s) / {sous_groupes_par_promotion.get(promo, 0)} sous-groupe(s)"
-                    for promo in promotions_selectionnees
-                )
-                st.caption(f"👥 Répartition des groupes et sous-groupes : {detail_groupes}")
-            else:
-                promo_unique = promotions_selectionnees[0]
-                st.caption(
-                    f"👥 {groupes_par_promotion.get(promo_unique, 0)} groupe(s) | "
-                    f"🔹 {sous_groupes_par_promotion.get(promo_unique, 0)} sous-groupe(s) pour {promo_unique}"
+                nombre_groupes = _compter_groupes_promotion(
+                    df_source, promotion
                 )
 
-            st.caption(
-                f"📌 {len(promotions_selectionnees)} promotion(s) sélectionnée(s) | "
-                f"Filtre : {filtre_type_admin} | {len(df_p)} créneau(x)"
-            )
+                return nombre_groupes * 2
 
-            if df_p.empty:
-                st.warning("⚠️ Aucun enseignement ne correspond aux promotions et au filtre sélectionnés.")
-                st.stop()
-
-            # ═══════════════════════════════════════════════════════
-            # 1) AFFICHAGE HTML (Streamlit) avec EN-TÊTE ISO
-            # ═══════════════════════════════════════════════════════
             def fmt_p(rows):
                 items = []
                 for _, r in rows.iterrows():
