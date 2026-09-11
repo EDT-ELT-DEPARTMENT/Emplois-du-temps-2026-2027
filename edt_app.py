@@ -4933,6 +4933,155 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             st.write(iso_header_html_p + html_table, unsafe_allow_html=True)
 
             # ═══════════════════════════════════════════════════════
+            # 📚 ÉDITION INTERACTIVE DES CELLULES DE L'EDT (PROMOTION)
+            # ═══════════════════════════════════════════════════════
+            # Permet, directement depuis l'EDT affiché ci-dessus :
+            #   - d'éditer le contenu d'une cellule (enseignement, type,
+            #     enseignant, lieu)
+            #   - de déplacer ("glisser") une cellule vers un autre
+            #     jour / horaire
+            #   - de supprimer une cellule
+            # Les modifications sont appliquées sur la source de données
+            # (df) et sauvegardées dans NOM_FICHIER_FIXE, puis l'EDT est
+            # rafraîchi automatiquement (st.rerun()).
+            # ═══════════════════════════════════════════════════════
+            st.markdown("---")
+            st.markdown("### 📚 Éditer une cellule de l'EDT")
+            st.caption(
+                "Sélectionnez un jour et un horaire pour éditer, déplacer "
+                "(glisser vers une autre case) ou supprimer un enseignement "
+                "affiché dans l'emploi du temps ci-dessus."
+            )
+
+            jours_disponibles_edit_promo = list(grid_p.columns)
+            horaires_disponibles_edit_promo = list(grid_p.index)
+
+            if not jours_disponibles_edit_promo or not horaires_disponibles_edit_promo:
+                st.info("ℹ️ Aucune cellule à éditer pour cette sélection.")
+            else:
+                cej1, cej2 = st.columns(2)
+                jour_cellule_edit_promo = cej1.selectbox(
+                    "🗓️ Jour de la cellule à éditer :",
+                    jours_disponibles_edit_promo,
+                    key="jour_cellule_edit_promo"
+                )
+                horaire_cellule_edit_promo = cej2.selectbox(
+                    "🕒 Horaire de la cellule à éditer :",
+                    horaires_disponibles_edit_promo,
+                    key="horaire_cellule_edit_promo"
+                )
+
+                masque_cellule_edit_promo = (
+                    (df_p["j_norm"] == normalize(jour_cellule_edit_promo))
+                    & (df_p["h_norm"] == normalize(horaire_cellule_edit_promo))
+                )
+                df_cellule_edit_promo = df_p.loc[masque_cellule_edit_promo].copy()
+
+                if df_cellule_edit_promo.empty:
+                    st.info("ℹ️ Cette cellule est vide. Aucun enseignement à éditer, déplacer ou supprimer.")
+                else:
+                    options_lignes_edit_promo = {
+                        idx: f"{row.get('Enseignements', '')} — {row.get('Enseignants', '')} ({row.get('Code', '')})"
+                        for idx, row in df_cellule_edit_promo.iterrows()
+                    }
+
+                    index_ligne_choisie_edit_promo = st.selectbox(
+                        "📌 Enseignement à éditer dans cette cellule :",
+                        list(options_lignes_edit_promo.keys()),
+                        format_func=lambda i: options_lignes_edit_promo[i],
+                        key="index_ligne_choisie_edit_promo"
+                    )
+
+                    ligne_edit_promo = df.loc[index_ligne_choisie_edit_promo]
+
+                    jour_actuel_edit_promo = map_j.get(
+                        normalize(jour_cellule_edit_promo), jour_cellule_edit_promo
+                    )
+                    horaire_actuel_edit_promo = map_h.get(
+                        normalize(horaire_cellule_edit_promo), horaire_cellule_edit_promo
+                    )
+
+                    with st.form(key=f"form_edit_cellule_promo_{index_ligne_choisie_edit_promo}"):
+                        st.markdown("#### ✏️ Modifier le contenu de la cellule")
+
+                        nouveau_enseignement_promo = st.text_input(
+                            "📖 Enseignement :",
+                            value=str(ligne_edit_promo.get("Enseignements", "")),
+                            key=f"edit_enseignement_promo_{index_ligne_choisie_edit_promo}"
+                        )
+                        nouveau_code_promo = st.text_input(
+                            "🏷️ Type / Code (COURS, TD, TP...) :",
+                            value=str(ligne_edit_promo.get("Code", "")),
+                            key=f"edit_code_promo_{index_ligne_choisie_edit_promo}"
+                        )
+                        nouveau_enseignant_promo = st.text_input(
+                            "👤 Enseignant :",
+                            value=str(ligne_edit_promo.get("Enseignants", "")),
+                            key=f"edit_enseignant_promo_{index_ligne_choisie_edit_promo}"
+                        )
+                        nouveau_lieu_promo = st.text_input(
+                            "📍 Lieu :",
+                            value=str(ligne_edit_promo.get("Lieu", "")),
+                            key=f"edit_lieu_promo_{index_ligne_choisie_edit_promo}"
+                        )
+
+                        st.markdown("#### ➡️ Déplacer cette cellule (glisser vers une autre case)")
+                        cdj1, cdj2 = st.columns(2)
+                        nouveau_jour_promo = cdj1.selectbox(
+                            "🗓️ Nouveau jour :",
+                            jours_list,
+                            index=(jours_list.index(jour_actuel_edit_promo)
+                                   if jour_actuel_edit_promo in jours_list else 0),
+                            key=f"edit_jour_promo_{index_ligne_choisie_edit_promo}"
+                        )
+                        nouveau_horaire_promo = cdj2.selectbox(
+                            "🕒 Nouvel horaire :",
+                            horaires_list,
+                            index=(horaires_list.index(horaire_actuel_edit_promo)
+                                   if horaire_actuel_edit_promo in horaires_list else 0),
+                            key=f"edit_horaire_promo_{index_ligne_choisie_edit_promo}"
+                        )
+
+                        cbtn1, cbtn2 = st.columns(2)
+                        soumettre_modif_promo = cbtn1.form_submit_button(
+                            "💾 Enregistrer les modifications", use_container_width=True
+                        )
+                        soumettre_suppr_promo = cbtn2.form_submit_button(
+                            "🗑️ Supprimer cet enseignement", use_container_width=True
+                        )
+
+                    if soumettre_modif_promo:
+                        df.loc[index_ligne_choisie_edit_promo, "Enseignements"] = nouveau_enseignement_promo
+                        df.loc[index_ligne_choisie_edit_promo, "Code"] = nouveau_code_promo
+                        df.loc[index_ligne_choisie_edit_promo, "Enseignants"] = nouveau_enseignant_promo
+                        df.loc[index_ligne_choisie_edit_promo, "Lieu"] = nouveau_lieu_promo
+                        df.loc[index_ligne_choisie_edit_promo, "Jours"] = nouveau_jour_promo
+                        df.loc[index_ligne_choisie_edit_promo, "Horaire"] = nouveau_horaire_promo
+                        df.loc[index_ligne_choisie_edit_promo, "j_norm"] = normalize(nouveau_jour_promo)
+                        df.loc[index_ligne_choisie_edit_promo, "h_norm"] = normalize(nouveau_horaire_promo)
+
+                        try:
+                            colonnes_a_exclure_sauvegarde = [c for c in ["h_norm", "j_norm"] if c in df.columns]
+                            df.drop(columns=colonnes_a_exclure_sauvegarde).to_excel(NOM_FICHIER_FIXE, index=False)
+                            st.success("✅ Modifications enregistrées avec succès.")
+                        except Exception as e:
+                            st.error(f"❌ Erreur lors de l'enregistrement : {e}")
+
+                        st.rerun()
+
+                    if soumettre_suppr_promo:
+                        df.drop(index=index_ligne_choisie_edit_promo, inplace=True)
+
+                        try:
+                            colonnes_a_exclure_sauvegarde = [c for c in ["h_norm", "j_norm"] if c in df.columns]
+                            df.drop(columns=colonnes_a_exclure_sauvegarde).to_excel(NOM_FICHIER_FIXE, index=False)
+                            st.success("🗑️ Enseignement supprimé avec succès.")
+                        except Exception as e:
+                            st.error(f"❌ Erreur lors de la suppression : {e}")
+
+                        st.rerun()
+
+            # ═══════════════════════════════════════════════════════
             # 2) DONNÉES BRUTES (même structure, sans HTML)
             # ═══════════════════════════════════════════════════════
             def fmt_p_text(rows):
