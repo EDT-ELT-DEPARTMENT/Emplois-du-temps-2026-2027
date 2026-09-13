@@ -4244,7 +4244,18 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
                     nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'AUTRE')
-                    items.append(f"{nat} – {r['Enseignements']}\n📍 {r['Lieu']} | 🎓 {r['Promotion']}")
+                    # Éviter le doublon du type dans la cellule (PDF et
+                    # export Excel) : si le nom de l'enseignement commence
+                    # déjà par le type (ex : « Cours-Stabilité et dynamique
+                    # des réseaux électriques »), on n'ajoute pas le préfixe
+                    # « COURS – » (sinon le type apparaîtrait en double,
+                    # comme « COURS – Cours-Stabilité… »).
+                    nom_ens_txt = str(r['Enseignements']).strip()
+                    if re.match(r'^' + re.escape(nat) + r'\b', nom_ens_txt.upper()):
+                        entete_enseignement = nom_ens_txt
+                    else:
+                        entete_enseignement = f"{nat} – {nom_ens_txt}"
+                    items.append(f"{entete_enseignement}\n📍 {r['Lieu']} | 🎓 {r['Promotion']}")
                 return "\n────────\n".join(items)
 
             grid_text_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e_text, include_groups=False).unstack('j_norm')
@@ -6231,7 +6242,16 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
                     nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'AUTRE')
-                    items.append(f"{nat} – {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']} | 🎓 {r['Promotion']}")
+                    # Éviter le doublon du type dans la cellule (PDF et
+                    # export Excel) : même logique que la vue Enseignant —
+                    # si le nom commence déjà par le type, pas de préfixe
+                    # (ex : « COURS – Cours-Stabilité… » → « Cours-Stabilité… »).
+                    nom_ens_txt = str(r['Enseignements']).strip()
+                    if re.match(r'^' + re.escape(nat) + r'\b', nom_ens_txt.upper()):
+                        entete_enseignement = nom_ens_txt
+                    else:
+                        entete_enseignement = f"{nat} – {nom_ens_txt}"
+                    items.append(f"{entete_enseignement}\n👤 {r['Enseignants']} | 📍 {r['Lieu']} | 🎓 {r['Promotion']}")
                 return "\n────────\n".join(items)
 
             grid_text = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_text, include_groups=False).unstack('j_norm')
@@ -9086,7 +9106,18 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
                 nat = '[T]'
             else:
                 nat = '[P]'
-            txt = f"{nat} {r.get('Enseignements', '')}\n{r.get('Lieu', '')}\n{r.get('Promotion', '')}"
+            # Éviter le doublon du type dans la cellule du PDF :
+            # si le nom de l'enseignement commence déjà par le type
+            # (ex : « Cours-Stabilité… » ou « TD-… »), on n'ajoute pas
+            # le préfixe « [C] » / « [TD] » / « [TP] » devant.
+            nom_ens_txt = str(r.get('Enseignements', '')).strip()
+            nom_ens_up = nom_ens_txt.upper()
+            type_deja_dans_nom = (
+                re.match(r'^COURS\b', nom_ens_up) if 'COURS' in code_up else
+                (re.match(r'^TD\b', nom_ens_up) if 'TD' in code_up else
+                 re.match(r'^TP\b', nom_ens_up))
+            )
+            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\n{r.get('Lieu', '')}\n{r.get('Promotion', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -9348,7 +9379,18 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
                 nat = '[TD]'
             else:
                 nat = '[TP]'
-            txt = f"{nat} {r.get('Enseignements', '')}\nPromo: {r.get('Promotion', '')}\ {r.get('Lieu', '')}"
+            # Éviter le doublon du type dans la cellule du PDF :
+            # si le nom de l'enseignement commence déjà par le type
+            # (ex : « Cours-Stabilité… » ou « TD-… »), on n'ajoute pas
+            # le préfixe « [C] » / « [TD] » / « [TP] » devant.
+            nom_ens_txt = str(r.get('Enseignements', '')).strip()
+            nom_ens_up = nom_ens_txt.upper()
+            type_deja_dans_nom = (
+                re.match(r'^COURS\b', nom_ens_up) if 'COURS' in code_up else
+                (re.match(r'^TD\b', nom_ens_up) if 'TD' in code_up else
+                 re.match(r'^TP\b', nom_ens_up))
+            )
+            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\nPromo: {r.get('Promotion', '')}\ {r.get('Lieu', '')}"
             items.append(txt)
         return "\n".join(items)
 
@@ -9622,7 +9664,18 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
             else:
                 nat = '[TP]'
             
-            txt = f"{nat} {r.get('Enseignements', '')}\ {r.get('Enseignants', '')}\ {r.get('Lieu', '')}"
+            # Éviter le doublon du type dans la cellule du PDF :
+            # si le nom de l'enseignement commence déjà par le type
+            # (ex : « Cours-Stabilité… » ou « TD-… »), on n'ajoute pas
+            # le préfixe « [C] » / « [TD] » / « [TP] » devant.
+            nom_ens_txt = str(r.get('Enseignements', '')).strip()
+            nom_ens_up = nom_ens_txt.upper()
+            type_deja_dans_nom = (
+                re.match(r'^COURS\b', nom_ens_up) if 'COURS' in code_up else
+                (re.match(r'^TD\b', nom_ens_up) if 'TD' in code_up else
+                 re.match(r'^TP\b', nom_ens_up))
+            )
+            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\ {r.get('Enseignants', '')}\ {r.get('Lieu', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -9894,7 +9947,18 @@ def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
                 nat = '[TD]'
             else:
                 nat = '[TP]'
-            txt = f"{nat} {r.get('Enseignements', '')}\ {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
+            # Éviter le doublon du type dans la cellule du PDF :
+            # si le nom de l'enseignement commence déjà par le type
+            # (ex : « Cours-Stabilité… » ou « TD-… »), on n'ajoute pas
+            # le préfixe « [C] » / « [TD] » / « [TP] » devant.
+            nom_ens_txt = str(r.get('Enseignements', '')).strip()
+            nom_ens_up = nom_ens_txt.upper()
+            type_deja_dans_nom = (
+                re.match(r'^COURS\b', nom_ens_up) if 'COURS' in code_up else
+                (re.match(r'^TD\b', nom_ens_up) if 'TD' in code_up else
+                 re.match(r'^TP\b', nom_ens_up))
+            )
+            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\ {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -10166,7 +10230,18 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
                 nat = '[TD]'
             else:
                 nat = '[TP]'
-            txt = f"{nat} {r.get('Enseignements', '')}\ {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
+            # Éviter le doublon du type dans la cellule du PDF :
+            # si le nom de l'enseignement commence déjà par le type
+            # (ex : « Cours-Stabilité… » ou « TD-… »), on n'ajoute pas
+            # le préfixe « [C] » / « [TD] » / « [TP] » devant.
+            nom_ens_txt = str(r.get('Enseignements', '')).strip()
+            nom_ens_up = nom_ens_txt.upper()
+            type_deja_dans_nom = (
+                re.match(r'^COURS\b', nom_ens_up) if 'COURS' in code_up else
+                (re.match(r'^TD\b', nom_ens_up) if 'TD' in code_up else
+                 re.match(r'^TP\b', nom_ens_up))
+            )
+            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\ {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -14740,7 +14815,18 @@ if is_admin:
                     nat = '[TD]'
                 else:
                     nat = '[TP]'
-                txt = f"{nat} {r.get('Enseignements', '')}\nPromo: {r.get('Promotion', '')}\nSalle: {r.get('Lieu', '')}"
+                # Éviter le doublon du type dans la cellule du PDF :
+                # si le nom de l'enseignement commence déjà par le type
+                # (ex : « Cours-Stabilité… » ou « TD-… »), on n'ajoute pas
+                # le préfixe « [C] » / « [TD] » / « [TP] » devant.
+                nom_ens_txt = str(r.get('Enseignements', '')).strip()
+                nom_ens_up = nom_ens_txt.upper()
+                type_deja_dans_nom = (
+                    re.match(r'^COURS\b', nom_ens_up) if 'COURS' in code_up else
+                    (re.match(r'^TD\b', nom_ens_up) if 'TD' in code_up else
+                     re.match(r'^TP\b', nom_ens_up))
+                )
+                txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\nPromo: {r.get('Promotion', '')}\nSalle: {r.get('Lieu', '')}"
                 items.append(txt)
             return "\n".join(items)
     
