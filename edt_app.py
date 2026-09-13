@@ -1740,6 +1740,80 @@ def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
     raise ValueError(f"❌ Format non reconnu. Utilisez un fichier Excel valide (.xlsx, .xls, .xlsb). Erreur : {last_err}")
 
 
+# ============================================================
+# GÉNÉRATEUR HTML « UNE SEULE PAGE » (AUTO-CONTENU)
+# ============================================================
+# Construit un fichier HTML complet (DOCTYPE + CSS inclus)
+# formaté pour tenir sur UNE SEULE page A4 paysage à
+# l'impression :
+#   - @page : A4 paysage, marges réduites (8 mm) ;
+#   - le contenu (en-tête ISO + grille) est placé dans un
+#     conteneur de largeur fixe, réduit (zoom CSS) selon le
+#     nombre de jours et de créneaux afin que TOUT tienne
+#     sur une seule page ;
+#   - print-color-adjust:exact conserve les couleurs à
+#     l'impression (en-tête bleu, bordures de la grille).
+# ============================================================
+def _html_document_une_page(contenu_html, nb_jours=6, nb_creneaux=8,
+                            titre="EMPLOI DU TEMPS"):
+    # Dimensions imprimables A4 paysage (marges 8 mm), en pixels
+    # CSS (≈ 96 dpi) : largeur ≈ 1063 px, hauteur ≈ 737 px.
+    page_w_px = 1063.0
+    page_h_px = 737.0
+    # Estimation de la taille NATURELLE du contenu :
+    #   - colonne « Horaire » ≈ 120 px, chaque jour ≈ 210 px ;
+    #   - en-tête ISO ≈ 160 px, chaque créneau ≈ 92 px.
+    largeur_naturelle = 120.0 + nb_jours * 210.0
+    hauteur_naturelle = 160.0 + nb_creneaux * 92.0
+    # Zoom = facteur le plus contraignant (jamais > 100 %).
+    zoom = min(1.0, page_w_px / largeur_naturelle,
+               page_h_px / hauteur_naturelle)
+    zoom_pct = max(35, int(round(zoom * 100)))
+    return f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>{titre}</title>
+<style>
+    @page {{ size: A4 landscape; margin: 8mm; }}
+    * {{ box-sizing: border-box; }}
+    html, body {{ margin: 0; padding: 0; }}
+    body {{
+        font-family: 'Segoe UI', Arial, sans-serif;
+        color: #1e293b;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }}
+    @media screen {{
+        body {{ background: #f1f5f9; padding: 16px; }}
+    }}
+    #conteneur_edt_1page {{
+        width: {int(largeur_naturelle)}px;
+        margin: 0 auto;
+        background: #ffffff;
+        padding: 6px;
+        zoom: {zoom_pct}%;
+    }}
+    #conteneur_edt_1page table {{
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        page-break-inside: avoid;
+    }}
+    #conteneur_edt_1page th, #conteneur_edt_1page td {{
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }}
+</style>
+</head>
+<body>
+<div id="conteneur_edt_1page">
+{contenu_html}
+</div>
+</body>
+</html>"""
+
+
 def run_Assiduité():
     import io
     from fpdf import FPDF
@@ -4244,15 +4318,21 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 items = []
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
-                    nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'AUTRE')
+                    nat = 'COURS' if 'COURS' in code_up else (
+                        'TD' if 'TD' in code_up else (
+                        'TP' if 'TP' in code_up else ''))
                     # Éviter le doublon du type dans la cellule (PDF et
                     # export Excel) : si le nom de l'enseignement commence
                     # déjà par le type (ex : « Cours-Stabilité et dynamique
                     # des réseaux électriques »), on n'ajoute pas le préfixe
                     # « COURS – » (sinon le type apparaîtrait en double,
                     # comme « COURS – Cours-Stabilité… »).
+                    # Type inconnu (ni COURS, ni TD, ni TP) : AUCUN préfixe
+                    # (le terme « AUTRE » n'apparaît donc jamais).
                     nom_ens_txt = str(r['Enseignements']).strip()
-                    if re.match(r'^' + re.escape(nat) + r'\b', nom_ens_txt.upper()):
+                    if nat and re.match(r'^' + re.escape(nat) + r'\b', nom_ens_txt.upper()):
+                        entete_enseignement = nom_ens_txt
+                    elif not nat:
                         entete_enseignement = nom_ens_txt
                     else:
                         entete_enseignement = f"{nat} – {nom_ens_txt}"
@@ -4349,6 +4429,22 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 key="pdf_une_page_enseignant_admin",
                 help="Le PDF téléchargé est ajusté (réduit) pour tenir sur "
                      "UNE SEULE page A4 paysage — idéal pour l'impression."
+            )
+
+            # ============================================================
+            # OPTION : HTML SUR UNE SEULE PAGE (ENSEIGNANT)
+            # ============================================================
+            # Si activée, le bouton 🌐 HTML télécharge un fichier HTML
+            # complet auto-contenu (CSS d'impression inclus) calibré pour
+            # tenir sur UNE SEULE page A4 paysage à l'impression.
+            # ============================================================
+            html_une_page_enseignant = st.checkbox(
+                "🌐 HTML sur une seule page (pour l'impression)",
+                value=False,
+                key="html_une_page_enseignant_admin",
+                help="Le fichier HTML téléchargé est un document complet "
+                     "auto-contenu, ajusté (zoom) pour tenir sur UNE SEULE "
+                     "page A4 paysage à l'impression."
             )
 
             # ═══════════════════════════════════════════════════════
@@ -4473,9 +4569,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             ce2.download_button(
-                "🌐 HTML",
-                iso_header_html + html_table_e,
-                f"EDT_Ens_{cible.replace(' ', '_')}.html",
+                "🌐 HTML" + (" (1 page)" if html_une_page_enseignant else ""),
+                _html_document_une_page(
+                    iso_header_html + html_table_e,
+                    nb_jours=max(1, grid_e.shape[1]),
+                    nb_creneaux=max(1, grid_e.shape[0]),
+                    titre=f"EDT Enseignant — {cible}"
+                ) if html_une_page_enseignant else (iso_header_html + html_table_e),
+                f"EDT_Ens_{cible.replace(' ', '_')}" + ("_1page" if html_une_page_enseignant else "") + ".html",
                 "text/html"
             )
             ce3.download_button(
@@ -5279,7 +5380,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         elif "TP" in val_type_courant:
                             type_courant = "TP"
                         else:
-                            type_courant = "AUTRE"
+                            type_courant = "COURS"
 
                         f1, f2 = st.columns(2)
                         with f1:
@@ -5336,8 +5437,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             )
                             nouveau_type = st.radio(
                                 "Type d'enseignement :",
-                                ["COURS", "TD", "TP", "AUTRE"],
-                                index=["COURS", "TD", "TP", "AUTRE"].index(type_courant),
+                                ["COURS", "TD", "TP"],
+                                index=(["COURS", "TD", "TP"].index(type_courant) if type_courant in ["COURS", "TD", "TP"] else 0),
                                 horizontal=True,
                                 key=f"edit_type_{idx_edition}"
                             )
@@ -5673,7 +5774,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     )
                     ajout_type = st.selectbox(
                         "Type :",
-                        ["COURS", "TD", "TP", "AUTRE"],
+                        ["COURS", "TD", "TP"],
                         key="ajout_type_edt_promo"
                     )
                 with a4:
@@ -5927,7 +6028,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 #     un fichier JSON téléchargeable, à recharger plus
                 #     tard avec la section 8) « Charger une cellule ».
                 # ========================================================
-                st.markdown("##### 🗓 Dupliquer une cellule")
+                st.markdown(
+                    "##### 🗳 Dupliquer une cellule "
+                    "(valable pour tous les types : COURS, TD et TP)"
+                )
 
                 dup1, dup2 = st.columns(2)
                 with dup1:
@@ -6183,7 +6287,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                             seance_chargee.get("Enseignements", "")
                                         ).strip(),
                                         "Code": str(
-                                            seance_chargee.get("Code", "AUTRE")
+                                            seance_chargee.get("Code", "")
                                         ),
                                         "Enseignants": str(
                                             seance_chargee.get("Enseignants", "Non défini")
@@ -6243,13 +6347,19 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 items = []
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
-                    nat = 'COURS' if 'COURS' in code_up else ('TD' if 'TD' in code_up else 'AUTRE')
+                    nat = 'COURS' if 'COURS' in code_up else (
+                        'TD' if 'TD' in code_up else (
+                        'TP' if 'TP' in code_up else ''))
                     # Éviter le doublon du type dans la cellule (PDF et
                     # export Excel) : même logique que la vue Enseignant —
                     # si le nom commence déjà par le type, pas de préfixe
                     # (ex : « COURS – Cours-Stabilité… » → « Cours-Stabilité… »).
+                    # Type inconnu (ni COURS, ni TD, ni TP) : AUCUN préfixe
+                    # (le terme « AUTRE » n'apparaît donc jamais).
                     nom_ens_txt = str(r['Enseignements']).strip()
-                    if re.match(r'^' + re.escape(nat) + r'\b', nom_ens_txt.upper()):
+                    if nat and re.match(r'^' + re.escape(nat) + r'\b', nom_ens_txt.upper()):
+                        entete_enseignement = nom_ens_txt
+                    elif not nat:
                         entete_enseignement = nom_ens_txt
                     else:
                         entete_enseignement = f"{nat} – {nom_ens_txt}"
@@ -6357,6 +6467,22 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 key="pdf_une_page_promotion_admin",
                 help="Le PDF téléchargé est ajusté (réduit) pour tenir sur "
                      "UNE SEULE page A4 paysage — idéal pour l'impression."
+            )
+
+            # ============================================================
+            # OPTION : HTML SUR UNE SEULE PAGE (PROMOTION)
+            # ============================================================
+            # Si activée, le bouton 🌐 HTML télécharge un fichier HTML
+            # complet auto-contenu (CSS d'impression inclus) calibré pour
+            # tenir sur UNE SEULE page A4 paysage à l'impression.
+            # ============================================================
+            html_une_page_promotion = st.checkbox(
+                "🌐 HTML sur une seule page (pour l'impression)",
+                value=False,
+                key="html_une_page_promotion_admin",
+                help="Le fichier HTML téléchargé est un document complet "
+                     "auto-contenu, ajusté (zoom) pour tenir sur UNE SEULE "
+                     "page A4 paysage à l'impression."
             )
 
             # ═══════════════════════════════════════════════════════
@@ -6481,9 +6607,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             c2.download_button(
-                "🌐 HTML",
-                iso_header_html_p + html_table,
-                f"EDT_{libelle_promotions}.html",
+                "🌐 HTML" + (" (1 page)" if html_une_page_promotion else ""),
+                _html_document_une_page(
+                    iso_header_html_p + html_table,
+                    nb_jours=max(1, grid_text.shape[1]),
+                    nb_creneaux=max(1, grid_text.shape[0]),
+                    titre=f"EDT Promotion — {libelle_promotions}"
+                ) if html_une_page_promotion else (iso_header_html_p + html_table),
+                f"EDT_{libelle_promotions}" + ("_1page" if html_une_page_promotion else "") + ".html",
                 "text/html"
             )
             c3.download_button(
