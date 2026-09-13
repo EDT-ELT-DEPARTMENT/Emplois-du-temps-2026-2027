@@ -4324,12 +4324,27 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 for r in range(6, ws.max_row + 1):
                     ws.row_dimensions[r].height = 65
 
+            # ============================================================
+            # OPTION : PDF SUR UNE SEULE PAGE (ENSEIGNANT)
+            # ============================================================
+            # Si activée, le PDF téléchargé est ajusté automatiquement
+            # (réduit homothétiquement) pour tenir sur UNE SEULE page
+            # A4 paysage — idéal pour l'impression de l'EDT.
+            # ============================================================
+            pdf_une_page_enseignant = st.checkbox(
+                "📄 PDF sur une seule page (pour l'impression)",
+                value=False,
+                key="pdf_une_page_enseignant_admin",
+                help="Le PDF téléchargé est ajusté (réduit) pour tenir sur "
+                     "UNE SEULE page A4 paysage — idéal pour l'impression."
+            )
+
             # ═══════════════════════════════════════════════════════
             # 4) PDF (ReportLab) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
             from reportlab.lib import colors
             from reportlab.lib.pagesizes import landscape, A4
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepInFrame
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib.units import mm
 
@@ -4415,7 +4430,24 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             elements_e.append(Spacer(1, 8*mm))
             elements_e.append(table_e)
 
-            doc_e.build(elements_e)
+            if pdf_une_page_enseignant:
+                # Option « PDF sur une seule page » : tout le contenu
+                # (en-tête ISO + tableau EDT) est enveloppé dans un
+                # KeepInFrame en mode 'shrink' : il est réduit
+                # homothétiquement pour tenir sur UNE SEULE page A4
+                # paysage, prête pour l'impression.
+                hauteur_utile_pdf_enseignant = (
+                    landscape(A4)[1] - 20*mm - 15*mm - 10*mm
+                )
+                cadre_une_page_enseignant = KeepInFrame(
+                    maxWidth=page_width_e,
+                    maxHeight=hauteur_utile_pdf_enseignant,
+                    content=elements_e,
+                    mode='shrink',
+                )
+                doc_e.build([cadre_une_page_enseignant])
+            else:
+                doc_e.build(elements_e)
 
             # ═══════════════════════════════════════════════════════
             # 5) BOUTONS DE TÉLÉCHARGEMENT
@@ -4446,7 +4478,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
             from reportlab.lib import colors
             from reportlab.lib.pagesizes import landscape, A4
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepInFrame
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib.units import mm
 
@@ -5671,6 +5703,523 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             except Exception as e:
                                 st.error(f"Erreur d'ajout : {e}")
 
+                # ========================================================
+                # 6) CHANGEMENT AUTOMATIQUE DU LIEU DES ENSEIGNEMENTS
+                # ========================================================
+                # Permet de changer le lieu des enseignements de l'EDT
+                # sélectionné :
+                #   • D'un seul coup : tout l'EDT affiché, ou uniquement
+                #     les enseignements situés dans un lieu donné
+                #   • Par cellule : uniquement les enseignements d'une
+                #     cellule (jour + horaire) choisie
+                # Les modifications sont enregistrées dans le fichier
+                # source (NOM_FICHIER_FIXE) via le même mécanisme que
+                # l'éditeur de cellules existant.
+                # ========================================================
+                st.markdown("##### 📍 Changer le lieu des enseignements")
+
+                mode_changement_lieu = st.radio(
+                    "Mode de changement du lieu :",
+                    [
+                        "D'un seul coup (tout l'EDT affiché)",
+                        "Par cellule (jour + horaire)"
+                    ],
+                    horizontal=True,
+                    key="mode_changement_lieu_edt_promo"
+                )
+
+                # --- Options communes : choix du nouveau lieu ---
+                options_lieux_changement = liste_lieux_edt + [
+                    "Non défini",
+                    "➕ Saisie libre (voir champ suivant)"
+                ]
+
+                if mode_changement_lieu == "D'un seul coup (tout l'EDT affiché)":
+                    lieux_presents_edt_affiche = sorted([
+                        str(l).strip()
+                        for l in df_p["Lieu"].dropna().unique()
+                        if str(l).strip()
+                    ])
+                    options_lieux_a_remplacer = ["Tous les lieux"] + lieux_presents_edt_affiche
+                    lieu_a_remplacer = st.selectbox(
+                        "📍 Lieu actuel à remplacer :",
+                        options_lieux_a_remplacer,
+                        key="lieu_a_remplacer_edt_promo",
+                        help="Choisissez le lieu à remplacer, ou « Tous les lieux » pour "
+                             "changer le lieu de tous les enseignements de l'EDT affiché."
+                    )
+                    ch1, ch2 = st.columns(2)
+                    with ch1:
+                        nouveau_lieu_choix = st.selectbox(
+                            "Nouveau lieu :",
+                            options_lieux_changement,
+                            key="nouveau_lieu_global_edt_promo"
+                        )
+                    with ch2:
+                        nouveau_lieu_libre = st.text_input(
+                            "Nouveau lieu en saisie libre (si absent de la liste) :",
+                            value="",
+                            key="nouveau_lieu_libre_global_edt_promo",
+                            help="Utilisé uniquement si « Saisie libre » est choisi "
+                                 "dans la liste ci-contre."
+                        )
+
+                    if nouveau_lieu_choix == "➕ Saisie libre (voir champ suivant)":
+                        lieu_final_changement = str(nouveau_lieu_libre).strip()
+                    else:
+                        lieu_final_changement = str(nouveau_lieu_choix).strip()
+
+                    if st.button(
+                        "📍 Changer le lieu maintenant",
+                        use_container_width=True,
+                        key="btn_changer_lieu_global_edt_promo"
+                    ):
+                        if not lieu_final_changement:
+                            st.error("⚠️ Veuillez préciser le nouveau lieu.")
+                        else:
+                            try:
+                                if lieu_a_remplacer == "Tous les lieux":
+                                    idx_concernes_lieu = list(df_p.index)
+                                else:
+                                    idx_concernes_lieu = [
+                                        i for i in df_p.index
+                                        if str(df_p.loc[i, "Lieu"]).strip()
+                                        == str(lieu_a_remplacer).strip()
+                                    ]
+                                if not idx_concernes_lieu:
+                                    st.warning(
+                                        "⚠️ Aucun enseignement à changer pour ce lieu."
+                                    )
+                                else:
+                                    nb_lignes_changees_lieu = 0
+                                    for idx_lieu in idx_concernes_lieu:
+                                        df.loc[idx_lieu, "Lieu"] = lieu_final_changement
+                                        nb_lignes_changees_lieu += 1
+                                    _sauvegarder_fichier_edt_source()
+                                    st.success(
+                                        f"✅ Lieu changé pour {nb_lignes_changees_lieu} "
+                                        f"enseignement(s) → {lieu_final_changement}"
+                                    )
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Erreur de changement de lieu : {e}")
+
+                else:
+                    # --- Changement par cellule (jour + horaire) ---
+                    cc1, cc2 = st.columns(2)
+                    with cc1:
+                        cellule_jour_lieu = st.selectbox(
+                            "📅 Jour de la cellule :",
+                            jours_list,
+                            key="cellule_jour_lieu_edt_promo"
+                        )
+                    with cc2:
+                        cellule_horaire_lieu = st.selectbox(
+                            "⏰ Horaire de la cellule :",
+                            horaires_list,
+                            key="cellule_horaire_lieu_edt_promo"
+                        )
+
+                    idx_cellule_lieu = [
+                        i for i in df_p.index
+                        if str(df_p.loc[i, "Jours"]) == str(cellule_jour_lieu)
+                        and str(df_p.loc[i, "Horaire"]) == str(cellule_horaire_lieu)
+                    ]
+
+                    if not idx_cellule_lieu:
+                        st.info(
+                            "ℹ️ La cellule choisie est vide : aucun enseignement "
+                            "à modifier."
+                        )
+                    else:
+                        seances_cellule_lieu = [
+                            f"{df_p.loc[i, 'Enseignements']} — "
+                            f"{df_p.loc[i, 'Enseignants']} "
+                            f"(lieu actuel : {df_p.loc[i, 'Lieu']})"
+                            for i in idx_cellule_lieu
+                        ]
+                        options_cible_cellule = (
+                            ["Tous les enseignements de la cellule"]
+                            + seances_cellule_lieu
+                        )
+                        cible_changement_cellule = st.selectbox(
+                            "Enseignement(s) à modifier :",
+                            options_cible_cellule,
+                            key="cible_changement_cellule_edt_promo"
+                        )
+
+                        cc3, cc4 = st.columns(2)
+                        with cc3:
+                            nouveau_lieu_cellule_choix = st.selectbox(
+                                "Nouveau lieu :",
+                                options_lieux_changement,
+                                key="nouveau_lieu_cellule_edt_promo"
+                            )
+                        with cc4:
+                            nouveau_lieu_cellule_libre = st.text_input(
+                                "Nouveau lieu en saisie libre (si absent de la liste) :",
+                                value="",
+                                key="nouveau_lieu_cellule_libre_edt_promo",
+                                help="Utilisé uniquement si « Saisie libre » est choisi "
+                                     "dans la liste ci-contre."
+                            )
+
+                        if nouveau_lieu_cellule_choix == "➕ Saisie libre (voir champ suivant)":
+                            lieu_final_cellule = str(nouveau_lieu_cellule_libre).strip()
+                        else:
+                            lieu_final_cellule = str(nouveau_lieu_cellule_choix).strip()
+
+                        if st.button(
+                            "📍 Changer le lieu de la cellule",
+                            use_container_width=True,
+                            key="btn_changer_lieu_cellule_edt_promo"
+                        ):
+                            if not lieu_final_cellule:
+                                st.error("⚠️ Veuillez préciser le nouveau lieu.")
+                            else:
+                                try:
+                                    if cible_changement_cellule == (
+                                        "Tous les enseignements de la cellule"
+                                    ):
+                                        idx_a_changer_cellule = list(idx_cellule_lieu)
+                                    else:
+                                        idx_a_changer_cellule = [
+                                            idx_cellule_lieu[
+                                                seances_cellule_lieu.index(
+                                                    cible_changement_cellule
+                                                )
+                                            ]
+                                        ]
+                                    for idx_cell in idx_a_changer_cellule:
+                                        df.loc[idx_cell, "Lieu"] = lieu_final_cellule
+                                    _sauvegarder_fichier_edt_source()
+                                    st.success(
+                                        f"✅ Lieu changé pour "
+                                        f"{len(idx_a_changer_cellule)} enseignement(s) "
+                                        f"→ {lieu_final_cellule}"
+                                    )
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erreur de changement de lieu : {e}")
+
+                st.divider()
+
+                # ========================================================
+                # 7) DUPLICATION AUTOMATIQUE D'UNE CELLULE
+                # ========================================================
+                # Deux usages :
+                #   • Duplication immédiate : la cellule choisie est
+                #     recopiée automatiquement dans une autre cellule de
+                #     l'EDT (jour + horaire de destination).
+                #   • Sauvegarde en fichier : la cellule est exportée dans
+                #     un fichier JSON téléchargeable, à recharger plus
+                #     tard avec la section 8) « Charger une cellule ».
+                # ========================================================
+                st.markdown("##### 🗓 Dupliquer une cellule")
+
+                dup1, dup2 = st.columns(2)
+                with dup1:
+                    dup_source_jour = st.selectbox(
+                        "📅 Jour de la cellule à dupliquer :",
+                        jours_list,
+                        key="dup_source_jour_edt_promo"
+                    )
+                with dup2:
+                    dup_source_horaire = st.selectbox(
+                        "⏰ Horaire de la cellule à dupliquer :",
+                        horaires_list,
+                        key="dup_source_horaire_edt_promo"
+                    )
+
+                idx_cellule_dupliquee = [
+                    i for i in df_p.index
+                    if str(df_p.loc[i, "Jours"]) == str(dup_source_jour)
+                    and str(df_p.loc[i, "Horaire"]) == str(dup_source_horaire)
+                ]
+
+                if not idx_cellule_dupliquee:
+                    st.info(
+                        "ℹ️ La cellule choisie est vide : rien à dupliquer."
+                    )
+                else:
+                    st.caption(
+                        f"La cellule **{dup_source_jour} — {dup_source_horaire}** "
+                        f"contient **{len(idx_cellule_dupliquee)}** enseignement(s)."
+                    )
+                    for idx_dup in idx_cellule_dupliquee:
+                        r_dup = df_p.loc[idx_dup]
+                        st.markdown(
+                            f"<div style='border-left:3px solid #1e40af;"
+                            f"padding:4px;margin:2px 0;background:#f8fafc;"
+                            f"border-radius:4px;'>"
+                            f"<b>{r_dup['Enseignements']}</b><br>"
+                            f"<small>👤 {r_dup['Enseignants']} | "
+                            f"📍 {r_dup['Lieu']} | 🎓 {r_dup['Promotion']}</small>"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
+
+                    mode_duplication = st.radio(
+                        "Type de duplication :",
+                        [
+                            "Dupliquer maintenant dans une autre cellule",
+                            "Sauvegarder la cellule (fichier à charger plus tard)"
+                        ],
+                        horizontal=True,
+                        key="mode_duplication_edt_promo"
+                    )
+
+                    if mode_duplication == "Dupliquer maintenant dans une autre cellule":
+                        dupd1, dupd2 = st.columns(2)
+                        with dupd1:
+                            dup_dest_jour = st.selectbox(
+                                "📅 Jour de destination :",
+                                jours_list,
+                                key="dup_dest_jour_edt_promo"
+                            )
+                        with dupd2:
+                            dup_dest_horaire = st.selectbox(
+                                "⏰ Horaire de destination :",
+                                horaires_list,
+                                key="dup_dest_horaire_edt_promo"
+                            )
+
+                        if (str(dup_dest_jour) == str(dup_source_jour)
+                                and str(dup_dest_horaire) == str(dup_source_horaire)):
+                            st.warning(
+                                "⚠️ La cellule de destination est la même que la "
+                                "cellule source : choisissez une autre cellule."
+                            )
+                        else:
+                            if st.button(
+                                "🗓 Dupliquer la cellule maintenant",
+                                use_container_width=True,
+                                key="btn_dupliquer_cellule_edt_promo"
+                            ):
+                                try:
+                                    lignes_dupliquees = []
+                                    for idx_dup in idx_cellule_dupliquee:
+                                        r_dup = df_p.loc[idx_dup]
+                                        lignes_dupliquees.append({
+                                            "Enseignements": str(r_dup["Enseignements"]),
+                                            "Code": str(r_dup["Code"]),
+                                            "Enseignants": str(r_dup["Enseignants"]),
+                                            "Horaire": str(dup_dest_horaire),
+                                            "Jours": str(dup_dest_jour),
+                                            "Lieu": str(r_dup["Lieu"]),
+                                            "Promotion": str(r_dup["Promotion"]),
+                                        })
+                                    df_lignes_dupliquees = pd.DataFrame(lignes_dupliquees)
+                                    global_df_dup = pd.concat(
+                                        [
+                                            df.drop(columns=[
+                                                c for c in ["h_norm", "j_norm"]
+                                                if c in df.columns
+                                            ]),
+                                            df_lignes_dupliquees,
+                                        ],
+                                        ignore_index=True,
+                                    )
+                                    global_df_dup.to_excel(NOM_FICHIER_FIXE, index=False)
+                                    st.success(
+                                        f"✅ {len(lignes_dupliquees)} enseignement(s) "
+                                        f"dupliqué(s) vers {dup_dest_jour} — "
+                                        f"{dup_dest_horaire}"
+                                    )
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erreur de duplication : {e}")
+
+                    else:
+                        # --- Sauvegarde de la cellule dans un fichier JSON ---
+                        import json
+
+                        donnees_cellule_sauvegardee = {
+                            "cellule": {
+                                "jour": str(dup_source_jour),
+                                "horaire": str(dup_source_horaire),
+                            },
+                            "seances": [
+                                {
+                                    "Enseignements": str(df_p.loc[i, "Enseignements"]),
+                                    "Code": str(df_p.loc[i, "Code"]),
+                                    "Enseignants": str(df_p.loc[i, "Enseignants"]),
+                                    "Lieu": str(df_p.loc[i, "Lieu"]),
+                                    "Promotion": str(df_p.loc[i, "Promotion"]),
+                                }
+                                for i in idx_cellule_dupliquee
+                            ],
+                        }
+                        contenu_json_cellule = json.dumps(
+                            donnees_cellule_sauvegardee,
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                        nom_fichier_cellule = (
+                            f"cellule_EDT_"
+                            f"{str(dup_source_jour).replace(' ', '_')}_"
+                            f"{str(dup_source_horaire).replace(' - ', 'h').replace(' ', '_')}.json"
+                        )
+                        st.download_button(
+                            "📥 Télécharger la cellule (fichier JSON)",
+                            contenu_json_cellule,
+                            nom_fichier_cellule,
+                            "application/json",
+                            use_container_width=True,
+                            key="btn_telecharger_cellule_edt_promo",
+                            help="Enregistrez ce fichier, puis rechargez-le avec la "
+                                 "section « Charger une cellule » ci-dessous."
+                        )
+
+                st.divider()
+
+                # ========================================================
+                # 8) CHARGER UNE CELLULE SAUVEGARDÉE (LA GÉNÉRER DANS L'EDT)
+                # ========================================================
+                # Recharge un fichier JSON produit par la section 7) et
+                # génère automatiquement son contenu dans une cellule
+                # (jour + horaire) choisie de l'EDT.
+                # ========================================================
+                st.markdown("##### 📦 Charger une cellule sauvegardée")
+
+                import json
+
+                fichier_cellule_chargee = st.file_uploader(
+                    "Charger le fichier de la cellule (JSON) :",
+                    type=["json"],
+                    key="fichier_cellule_chargee_edt_promo"
+                )
+
+                if fichier_cellule_chargee is None:
+                    st.caption(
+                        "Aucun fichier chargé. Utilisez la section « Dupliquer une "
+                        "cellule » ci-dessus pour produire un fichier de cellule, "
+                        "puis chargez-le ici pour la générer dans l'EDT."
+                    )
+                else:
+                    try:
+                        donnees_cellule_chargee = json.load(fichier_cellule_chargee)
+                        if (not isinstance(donnees_cellule_chargee, dict)
+                                or "seances" not in donnees_cellule_chargee
+                                or not isinstance(donnees_cellule_chargee["seances"], list)):
+                            raise ValueError("format de fichier de cellule invalide")
+                        seances_cellule_chargee = donnees_cellule_chargee["seances"]
+                        cellule_source_chargee = donnees_cellule_chargee.get(
+                            "cellule", {}
+                        )
+                        st.success(
+                            f"✅ Fichier chargé : {len(seances_cellule_chargee)} "
+                            f"enseignement(s) — cellule d'origine : "
+                            f"{cellule_source_chargee.get('jour', '?')} — "
+                            f"{cellule_source_chargee.get('horaire', '?')}"
+                        )
+                        for seance_chargee in seances_cellule_chargee:
+                            st.markdown(
+                                f"<div style='border-left:3px solid #166534;"
+                                f"padding:4px;margin:2px 0;background:#f8fafc;"
+                                f"border-radius:4px;'>"
+                                f"<b>{seance_chargee.get('Enseignements', '')}</b><br>"
+                                f"<small>👤 {seance_chargee.get('Enseignants', '')} | "
+                                f"📍 {seance_chargee.get('Lieu', '')} | "
+                                f"🎓 {seance_chargee.get('Promotion', '')}</small>"
+                                f"</div>",
+                                unsafe_allow_html=True
+                            )
+
+                        chg1, chg2 = st.columns(2)
+                        with chg1:
+                            chargement_dest_jour = st.selectbox(
+                                "📅 Jour de destination :",
+                                jours_list,
+                                key="chargement_dest_jour_edt_promo"
+                            )
+                        with chg2:
+                            chargement_dest_horaire = st.selectbox(
+                                "⏰ Horaire de destination :",
+                                horaires_list,
+                                key="chargement_dest_horaire_edt_promo"
+                            )
+
+                        options_promotion_chargement = (
+                            ["Conserver la promotion d'origine"]
+                            + [str(p) for p in promotions_selectionnees]
+                        )
+                        chargement_promotion = st.selectbox(
+                            "🎓 Promotion des enseignements chargés :",
+                            options_promotion_chargement,
+                            key="chargement_promotion_edt_promo",
+                            help="La promotion enregistrée dans le fichier est "
+                                 "conservée, ou remplacée par la promotion choisie."
+                        )
+
+                        if st.button(
+                            "📦 Générer la cellule dans l'EDT",
+                            use_container_width=True,
+                            key="btn_generer_cellule_chargee_edt_promo"
+                        ):
+                            try:
+                                lignes_cellule_chargee = []
+                                for seance_chargee in seances_cellule_chargee:
+                                    if chargement_promotion == "Conserver la promotion d'origine":
+                                        promotion_finale_chargee = str(
+                                            seance_chargee.get("Promotion", "Non défini")
+                                        )
+                                    else:
+                                        promotion_finale_chargee = str(chargement_promotion)
+                                    lignes_cellule_chargee.append({
+                                        "Enseignements": str(
+                                            seance_chargee.get("Enseignements", "")
+                                        ).strip(),
+                                        "Code": str(
+                                            seance_chargee.get("Code", "AUTRE")
+                                        ),
+                                        "Enseignants": str(
+                                            seance_chargee.get("Enseignants", "Non défini")
+                                        ),
+                                        "Horaire": str(chargement_dest_horaire),
+                                        "Jours": str(chargement_dest_jour),
+                                        "Lieu": str(
+                                            seance_chargee.get("Lieu", "Non défini")
+                                        ),
+                                        "Promotion": promotion_finale_chargee,
+                                    })
+                                lignes_valides_chargees = [
+                                    l for l in lignes_cellule_chargee
+                                    if l["Enseignements"]
+                                ]
+                                if not lignes_valides_chargees:
+                                    st.error(
+                                        "⚠️ Aucun enseignement valide dans le fichier chargé."
+                                    )
+                                else:
+                                    df_cellule_chargee = pd.DataFrame(
+                                        lignes_valides_chargees
+                                    )
+                                    global_df_charge = pd.concat(
+                                        [
+                                            df.drop(columns=[
+                                                c for c in ["h_norm", "j_norm"]
+                                                if c in df.columns
+                                            ]),
+                                            df_cellule_chargee,
+                                        ],
+                                        ignore_index=True,
+                                    )
+                                    global_df_charge.to_excel(NOM_FICHIER_FIXE, index=False)
+                                    st.success(
+                                        f"✅ {len(lignes_valides_chargees)} enseignement(s) "
+                                        f"généré(s) dans {chargement_dest_jour} — "
+                                        f"{chargement_dest_horaire}"
+                                    )
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Erreur de chargement de cellule : {e}")
+                    except Exception as e:
+                        st.error(
+                            f"❌ Fichier de cellule invalide : {e}. Utilisez un "
+                            f"fichier produit par la section « Dupliquer une cellule »."
+                        )
+
             else:
                 st.write(iso_header_html_p + html_table, unsafe_allow_html=True)
 
@@ -5773,6 +6322,21 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 for r in range(6, ws.max_row + 1):
                     ws.row_dimensions[r].height = 65
 
+            # ============================================================
+            # OPTION : PDF SUR UNE SEULE PAGE (PROMOTION)
+            # ============================================================
+            # Si activée, le PDF téléchargé est ajusté automatiquement
+            # (réduit homothétiquement) pour tenir sur UNE SEULE page
+            # A4 paysage — idéal pour l'impression de l'EDT.
+            # ============================================================
+            pdf_une_page_promotion = st.checkbox(
+                "📄 PDF sur une seule page (pour l'impression)",
+                value=False,
+                key="pdf_une_page_promotion_admin",
+                help="Le PDF téléchargé est ajusté (réduit) pour tenir sur "
+                     "UNE SEULE page A4 paysage — idéal pour l'impression."
+            )
+
             # ═══════════════════════════════════════════════════════
             # 4) PDF (ReportLab) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
@@ -5864,7 +6428,24 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             elements.append(Spacer(1, 8*mm))
             elements.append(table)
 
-            doc.build(elements)
+            if pdf_une_page_promotion:
+                # Option « PDF sur une seule page » : tout le contenu
+                # (en-tête ISO + tableau EDT) est enveloppé dans un
+                # KeepInFrame en mode 'shrink' : il est réduit
+                # homothétiquement pour tenir sur UNE SEULE page A4
+                # paysage, prête pour l'impression.
+                hauteur_utile_pdf_promotion = (
+                    landscape(A4)[1] - 20*mm - 15*mm - 10*mm
+                )
+                cadre_une_page_promotion = KeepInFrame(
+                    maxWidth=page_width,
+                    maxHeight=hauteur_utile_pdf_promotion,
+                    content=elements,
+                    mode='shrink',
+                )
+                doc.build([cadre_une_page_promotion])
+            else:
+                doc.build(elements)
 
             # ═══════════════════════════════════════════════════════
             # 5) BOUTONS DE TÉLÉCHARGEMENT
