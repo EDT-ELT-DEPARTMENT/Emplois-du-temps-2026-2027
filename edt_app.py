@@ -4240,6 +4240,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             # 2) DONNÉES BRUTES (sans HTML)
             # ═══════════════════════════════════════════════════════
             def fmt_e_text(rows):
+                import re  # local : la portée englobante peut masquer le re global
                 items = []
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
@@ -6238,6 +6239,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             # 2) DONNÉES BRUTES (même structure, sans HTML)
             # ═══════════════════════════════════════════════════════
             def fmt_p_text(rows):
+                import re  # local : la portée englobante peut masquer le re global
                 items = []
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
@@ -9097,6 +9099,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     
     # Remplacer les emojis par des codes courts pour un calcul de largeur fiable
     def format_cell(rows):
+        import re  # local : la portée englobante peut masquer le re global
         items = []
         for _, r in rows.iterrows():
             code_up = str(r.get('Code', '')).upper()
@@ -9370,6 +9373,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
     map_h = {norm(h): h for h in horaires_ordre}
 
     def format_cell(rows):
+        import re  # local : la portée englobante peut masquer le re global
         items = []
         for _, r in rows.iterrows():
             code_up = str(r.get('Code', '')).upper()
@@ -9654,6 +9658,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
     map_h = {norm(h): h for h in horaires_ordre}
     
     def format_cell(rows):
+        import re  # local : la portée englobante peut masquer le re global
         items = []
         for _, r in rows.iterrows():
             code_up = str(r.get('Code', '')).upper()
@@ -9938,6 +9943,7 @@ def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
     map_h = {norm(h): h for h in horaires_ordre}
     
     def format_cell(rows):
+        import re  # local : la portée englobante peut masquer le re global
         items = []
         for _, r in rows.iterrows():
             code_up = str(r.get('Code', '')).upper()
@@ -10221,6 +10227,7 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
     map_h = {norm(h): h for h in horaires_ordre}
     
     def format_cell(rows):
+        import re  # local : la portée englobante peut masquer le re global
         items = []
         for _, r in rows.iterrows():
             code_up = str(r.get('Code', '')).upper()
@@ -14806,6 +14813,7 @@ if is_admin:
             return t.encode('latin-1', 'ignore').decode('latin-1')
     
         def _format_cell(rows):
+            import re  # local : la portée englobante peut masquer le re global
             items = []
             for _, r in rows.iterrows():
                 code_up = str(r.get('Code', '')).upper()
