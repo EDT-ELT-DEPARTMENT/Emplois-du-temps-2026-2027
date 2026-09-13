@@ -4444,7 +4444,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
             from reportlab.lib import colors
             from reportlab.lib.pagesizes import landscape, A4
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepInFrame
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib.units import mm
 
@@ -5798,29 +5798,65 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 fontSize=9, leading=12, alignment=1, spaceAfter=2
             )
 
+            # Largeurs des colonnes
+            # (calculées AVANT la construction des cellules afin de pouvoir
+            # borner la taille de chaque cellule — voir correction ci-dessous)
+            page_width = landscape(A4)[0] - 30*mm
+            col_w_horaire = 30*mm
+            col_w_jour = (page_width - col_w_horaire) / len(grid_text.columns)
+            col_widths = [col_w_horaire] + [col_w_jour] * len(grid_text.columns)
+
+            # ============================================================
+            # CORRECTION DE L'ERREUR "reportlab.platypus.doctemplate.LayoutError"
+            # ============================================================
+            # Cette erreur survenait lorsque le contenu d'une cellule (par
+            # exemple un créneau regroupant plusieurs enseignements issus
+            # de plusieurs promotions sélectionnées en même temps) devenait
+            # plus haut que l'espace disponible sur une page entière : dans
+            # ce cas, ReportLab ne pouvait plus placer la ligne du tableau,
+            # même sur une nouvelle page, et l'application plantait.
+            #
+            # Chaque cellule est désormais placée dans un "KeepInFrame" en
+            # mode "shrink" : si son contenu est trop volumineux pour tenir
+            # dans la hauteur maximale autorisée, le texte est automatique-
+            # ment réduit pour rester lisible et tenir dans la cellule, au
+            # lieu de faire planter la génération du PDF.
+            # ============================================================
+            HAUTEUR_MAX_CELLULE_PDF_PROMO = 420
+
+            def _cellule_pdf_promo(contenu_paragraphe, largeur_colonne):
+                return KeepInFrame(
+                    max(largeur_colonne - 12, 10),
+                    HAUTEUR_MAX_CELLULE_PDF_PROMO,
+                    [contenu_paragraphe],
+                    mode='shrink'
+                )
+
             # Construction des données du tableau
             table_data = []
-            header_row = [Paragraph('<b>Horaire</b>', cell_style)]
+            header_row = [
+                _cellule_pdf_promo(Paragraph('<b>Horaire</b>', cell_style), col_w_horaire)
+            ]
             for jour in grid_text.columns:
-                header_row.append(Paragraph(f'<b>{jour}</b>', cell_style))
+                header_row.append(
+                    _cellule_pdf_promo(Paragraph(f'<b>{jour}</b>', cell_style), col_w_jour)
+                )
             table_data.append(header_row)
 
             for horaire in grid_text.index:
-                row = [Paragraph(f'<b>{horaire}</b>', cell_style)]
+                row = [
+                    _cellule_pdf_promo(Paragraph(f'<b>{horaire}</b>', cell_style), col_w_horaire)
+                ]
                 for jour in grid_text.columns:
                     val = grid_text.loc[horaire, jour]
                     if val == '':
                         row.append('')
                     else:
                         val_html = val.replace('\n', '<br/>')
-                        row.append(Paragraph(val_html, cell_style))
+                        row.append(
+                            _cellule_pdf_promo(Paragraph(val_html, cell_style), col_w_jour)
+                        )
                 table_data.append(row)
-
-            # Largeurs des colonnes
-            page_width = landscape(A4)[0] - 30*mm
-            col_w_horaire = 30*mm
-            col_w_jour = (page_width - col_w_horaire) / len(grid_text.columns)
-            col_widths = [col_w_horaire] + [col_w_jour] * len(grid_text.columns)
 
             table = Table(table_data, colWidths=col_widths, repeatRows=1)
 
