@@ -12195,11 +12195,11 @@ if is_admin:
                 st.warning("⚠️ Aucun enseignant trouvé dans les données EDT.")
 
 
-# 1. Définition précise de votre nouvelle liste d'horaires (16 créneaux)
+# 1. Définition précise de votre nouvelle liste d'horaires (18 créneaux)
 horaires_list = [
-    "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
+    "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
     "10h - 11h", "11h - 12h", "11h - 12h30", 
-    "12h - 13h", "12h30 - 14h", "13h - 14h30", "14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 13h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
 ]
 
 # 2. Définition des jours de la semaine
@@ -12962,7 +12962,9 @@ if df is not None:
                         pdf.ln(4)
 
                         # --- LOGIQUE DE TRI & FUSION ---
-                        ordre_horaires = ["8h-9h30", "9h30-11h", "11h-12h30", "12h30-14h", "13h-14h30", "14h-15h30", "15h30-17h"]
+                        ordre_horaires = ["8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 13h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"]
                         df_pdf = df_f.copy()
                         
                         def merge_info(row):
@@ -13054,9 +13056,9 @@ if df is not None:
                         col_dl3.error(f"Erreur rendu PDF : {e}")
                     # --- LOGIQUE DE TRI CHRONOLOGIQUE (Ajoutée pour l'ordre) ---
                     ordre_horaires = [
-                        "8h-9h30", "8h-10h", "8h-11h", "9h30-11h", "10h-11h", 
-                        "11h-12h30", "11h-12h", "12h30-14h", "13h-14h", 
-                        "14h-15h30", "14h-16h", "15h30-17h"
+                        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 13h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
                     ]
                     # Normalisation pour éviter les erreurs d'espaces
                     df_f['Horaire'] = df_f['Horaire'].astype(str).str.replace(' ', '').str.strip()
@@ -18258,7 +18260,9 @@ def generer_edt_pdf_iso(df_edt, promo, groupe, semestre="S1", nom_etudiant=""):
         
         # Table données
         jours = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-        horaires = ["8h-9h30", "9h30-11h", "11h-12h30", "12h30-14h", "14h-15h","14h-15h30","15h-16h", "15h30-17h"]
+        horaires = ["8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 13h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"]
         
         data = [["JOUR"] + horaires]
         for jour in jours:
