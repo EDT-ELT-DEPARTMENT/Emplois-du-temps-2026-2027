@@ -499,7 +499,9 @@ NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
 HORAIRES_LIST = [
-    "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
+    "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
 ]
 JOURS_SEMAINE = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
@@ -4179,8 +4181,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     
     # Constantes locales pour EDT
     horaires_list = [
-        "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
-        "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
     ]
     jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     map_h = {normalize(h): h for h in horaires_list}
@@ -6858,7 +6861,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         st.markdown("### 📥 Exporter mon EDT (Grille complète)")
 
         # --- Constantes locales ---
-        _HORAIRES = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"]
+        _HORAIRES = ["8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"]
         _JOURS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
         def _norm_h(h):
@@ -7238,7 +7243,9 @@ td{{word-wrap:break-word;}}
             liste_promos = [""] + sorted([p for p in df["Promotion"].unique() 
                                          if p and str(p).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
             
-            horaires_list = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"]
+            horaires_list = ["8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"]
             jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
             codes_list = ["", "COURS", "TD", "TP"]
             
@@ -9213,9 +9220,9 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     horaires_ordre = [
-        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h","14h - 15h30", "14h - 16h","15h - 16h", "15h30 - 17h"
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
     ]
     
     def norm(x):
@@ -9488,9 +9495,9 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
 
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     horaires_ordre = [
-        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h","14h - 15h30", "14h - 16h","15h - 16h", "15h30 - 17h"
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
     ]
 
     def norm(x):
@@ -9773,9 +9780,9 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
     
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     horaires_ordre = [
-        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h","14h - 15h30", "14h - 16h","15h - 16h", "15h30 - 17h"
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
     ]
     
     def norm(x):
@@ -10058,9 +10065,9 @@ def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
     
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     horaires_ordre = [
-        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h","14h - 15h30", "14h - 16h","15h - 16h", "15h30 - 17h"
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
     ]
     
     def norm(x):
@@ -10342,9 +10349,9 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
     
     jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     horaires_ordre = [
-        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-        "12h30 - 14h", "13h - 14h30", "14h - 15h","14h - 15h30", "14h - 16h","1h - 16h", "15h30 - 17h"
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
     ]
     
     def norm(x):
@@ -12199,7 +12206,7 @@ if is_admin:
 horaires_list = [
     "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
     "10h - 11h", "11h - 12h", "11h - 12h30", 
-    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 13h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
 ]
 
 # 2. Définition des jours de la semaine
@@ -12964,7 +12971,7 @@ if df is not None:
                         # --- LOGIQUE DE TRI & FUSION ---
                         ordre_horaires = ["8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
     "10h - 11h", "11h - 12h", "11h - 12h30", 
-    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 13h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"]
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"]
                         df_pdf = df_f.copy()
                         
                         def merge_info(row):
@@ -13058,7 +13065,7 @@ if df is not None:
                     ordre_horaires = [
                         "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
     "10h - 11h", "11h - 12h", "11h - 12h30", 
-    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 13h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
                     ]
                     # Normalisation pour éviter les erreurs d'espaces
                     df_f['Horaire'] = df_f['Horaire'].astype(str).str.replace(' ', '').str.strip()
@@ -14093,7 +14100,9 @@ if df is not None:
                                     lieux_compatibles.append(l)
 
                             # 3. RECHERCHE DE CRÉNEAUX ET LIEUX DISPONIBLES (Même Jour)
-                            tous_horaires = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h"]
+                            tous_horaires = ["8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"]
                             suggestions_valides = []
                             
                             for hor in tous_horaires:
@@ -14906,8 +14915,9 @@ if is_admin:
     
         jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
         horaires_ordre = [
-            "8h - 9h30", "9h30 - 11h", "11h - 12h30",
-            "12h30 - 14h", "14h - 15h30","14h - 15h","15h - 16h", "15h30 - 17h"
+            "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
         ]
     
         def _norm(x):
@@ -16549,7 +16559,9 @@ except ImportError:
 
 # --- Constantes ---
 HORAIRES_STD = [
-    "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30","14h - 15h","15h - 16h", "15h30 - 17h"
+    "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
 ]
 JOURS_STD = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
@@ -18262,7 +18274,7 @@ def generer_edt_pdf_iso(df_edt, promo, groupe, semestre="S1", nom_etudiant=""):
         jours = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
         horaires = ["8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", "9h30 - 12h", 
     "10h - 11h", "11h - 12h", "11h - 12h30", 
-    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 13h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"]
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "13h - 15h30","14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"]
         
         data = [["JOUR"] + horaires]
         for jour in jours:
