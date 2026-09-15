@@ -1903,21 +1903,48 @@ def _lieux_eclater(valeur):
 
 
 def _lieux_occups(df, horaires_list, jours_list):
-    """Ensemble des (jour, creneau_affiche, lieu) occupes — EXACTEMENT
-    selon les grilles EDT de l'application : une seance occupe la case
-    (jour, creneau) uniquement si ses libelles « Jours » et « Horaire »
-    normalises correspondent EXACTEMENT (h_norm / j_norm) a ceux du jour
-    et du creneau affiches. Un libelle non reconnu (ex. multi-jours,
-    horaire hors liste) n'occupe aucune case — comme dans les grilles EDT.
-    Les lieux composites (« A08/G1 ») restent eclates salle par salle."""
+    """Ensemble des (jour, creneau_affiche, lieu) occupes.
+
+    ------------------------------------------------------------------
+    CORRECTIF — correspondance par CHEVAUCHEMENT HORAIRE REEL :
+    ------------------------------------------------------------------
+    Les differentes promotions de l'etablissement n'utilisent pas
+    toujours EXACTEMENT le meme libelle pour designer le meme creneau
+    (ou des creneaux qui se recouvrent dans le temps) : par exemple
+    « 14h - 15h30 » pour l'une, « 14h - 15h » et « 15h - 16h » pour une
+    autre. Une correspondance par simple EGALITE de libelle normalise
+    ratait alors les occupations reelles des lieux des lors que le
+    libelle exact utilise par la seance ne correspondait pas MOT POUR
+    MOT au libelle du creneau affiche — un lieu apparaissait alors a
+    tort comme « libre » alors qu'il etait reellement occupe pendant
+    (une partie de) ce creneau, faussant le comptage des lieux non
+    occupes dans un sens comme dans l'autre selon les creneaux.
+
+    Desormais, une seance occupe un creneau affiche des que sa PLAGE
+    HORAIRE REELLE (heure de debut / heure de fin, en minutes) CHEVAUCHE
+    reellement celle du creneau affiche — quel que soit le libelle exact
+    utilise par la promotion source pour designer cette seance. C'est le
+    fonctionnement standard d'un planificateur de salles : une salle
+    occupee de 14h a 15h30 est bien occupee — et donc indisponible —
+    pendant le creneau « 14h - 15h » ET pendant le creneau « 15h - 16h ».
+
+    Si l'horaire d'une seance n'est pas parsable (format inhabituel), on
+    se rabat sur la correspondance par libelle normalise EXACT (ancien
+    comportement), pour ne perdre aucune occupation.
+
+    Les lieux composites (« A08/G1 ») restent eclates salle par salle.
+    """
     normes_j = {_lieux_norm_creneau(j): j for j in jours_list}
-    normes_h = {_lieux_norm_creneau(h): h for h in horaires_list}
+    normes_h_exact = {_lieux_norm_creneau(h): h for h in horaires_list}
+    bornes_h = {h: _lieux_parse_intervalle(h) for h in horaires_list}
+
     occupe = set()
     if df is None or not hasattr(df, "columns"):
         return occupe
     if ("Lieu" not in df.columns or "Jours" not in df.columns
             or "Horaire" not in df.columns):
         return occupe
+
     for _, r in df.iterrows():
         lieux = _lieux_eclater(r.get("Lieu"))
         if not lieux:
@@ -1925,12 +1952,33 @@ def _lieux_occups(df, horaires_list, jours_list):
         j_aff = normes_j.get(_lieux_norm_creneau(r.get("Jours")))
         if j_aff is None:
             continue
-        h_aff = normes_h.get(_lieux_norm_creneau(r.get("Horaire")))
-        if h_aff is None:
-            continue
-        for l in lieux:
-            occupe.add((j_aff, h_aff, l))
+
+        horaire_brut = r.get("Horaire")
+        debut_r, fin_r = _lieux_parse_intervalle(horaire_brut)
+
+        creneaux_touches = []
+        if debut_r is not None and fin_r is not None:
+            for h_aff, (d_c, f_c) in bornes_h.items():
+                if d_c is None or f_c is None:
+                    continue
+                # Chevauchement strict de deux intervalles [debut_r, fin_r[
+                # et [d_c, f_c[ : deux creneaux simplement adjacents (qui se
+                # touchent sans se recouvrir) ne sont PAS consideres en
+                # conflit.
+                if debut_r < f_c and d_c < fin_r:
+                    creneaux_touches.append(h_aff)
+        if not creneaux_touches:
+            # Repli : correspondance exacte par libelle normalise, pour
+            # les horaires non parsables au format « debut - fin ».
+            h_aff = normes_h_exact.get(_lieux_norm_creneau(horaire_brut))
+            if h_aff is not None:
+                creneaux_touches.append(h_aff)
+
+        for h_aff in creneaux_touches:
+            for l in lieux:
+                occupe.add((j_aff, h_aff, l))
     return occupe
+
 
 
 def _lieux_tous(df):
@@ -1999,30 +2047,79 @@ def _lieux_horaires_dynamiques(df, horaires_reference):
     """Liste des créneaux horaires à utiliser pour la correspondance
     « Lieux Non Occupés », déterminée de façon FLEXIBLE à partir de la
     colonne « Horaire » du fichier source Data (donc selon les EDT déjà
-    générés pour TOUTES les promotions) :
+    générés pour TOUTES les promotions).
+
+    Cohérente avec _lieux_occups (correspondance par CHEVAUCHEMENT
+    HORAIRE REEL, pas par égalité stricte de libellé) :
       - un horaire de la liste de référence n'est conservé que s'il est
-        réellement utilisé par au moins une séance des données sources ;
-      - un horaire présent dans les données mais absent de la liste de
-        référence est ajouté automatiquement.
+        réellement utilisé, OU CHEVAUCHÉ dans le temps par au moins une
+        séance des données sources (sinon c'est un créneau « fantôme »
+        toujours vide, donc toujours compté comme libre pour tous les
+        lieux, ce qui fausse le comptage) ;
+      - un horaire présent dans les données dont la plage horaire ne
+        chevauche AUCUN horaire de référence (un créneau réellement
+        nouveau, par ex. un cours du soir) est ajouté automatiquement.
     Résultat trié chronologiquement (heure de début)."""
     if df is None or not hasattr(df, "columns") or "Horaire" not in df.columns:
         return list(horaires_reference)
 
+    bornes_ref = {h: _lieux_parse_intervalle(h) for h in horaires_reference}
     normes_ref = {_lieux_norm_creneau(h): h for h in horaires_reference}
-    horaires_reels = {}
+
+    valeurs_reelles = []
     for v in df["Horaire"].dropna().unique():
         v_norm = _lieux_norm_creneau(v)
         if v_norm == "vide":
             continue
-        if v_norm in normes_ref:
-            horaires_reels[v_norm] = normes_ref[v_norm]
-        else:
-            horaires_reels[v_norm] = str(v).strip()
+        d_v, f_v = _lieux_parse_intervalle(v)
+        valeurs_reelles.append((v_norm, str(v).strip(), d_v, f_v))
 
-    if not horaires_reels:
+    if not valeurs_reelles:
         return list(horaires_reference)
 
-    return sorted(horaires_reels.values(), key=_lieux_creneau_key)
+    def _chevauche_ref(d_v, f_v, d_ref, f_ref):
+        if None in (d_v, f_v, d_ref, f_ref):
+            return False
+        return d_v < f_ref and d_ref < f_v
+
+    # 1) Créneaux de référence réellement utilisés (libellé identique)
+    #    ou chevauchés (plage horaire différente mais qui se recoupe)
+    #    par au moins une séance des données sources.
+    conserves = []
+    for h in horaires_reference:
+        v_norm_h = _lieux_norm_creneau(h)
+        d_h, f_h = bornes_ref[h]
+        utilise = any(
+            v_norm == v_norm_h or _chevauche_ref(d_v, f_v, d_h, f_h)
+            for (v_norm, v_brut, d_v, f_v) in valeurs_reelles
+        )
+        if utilise:
+            conserves.append(h)
+
+    # 2) Horaires réellement présents dans les données mais dont la
+    #    plage horaire ne chevauche AUCUN créneau de référence : ce
+    #    sont de véritables nouveaux créneaux, à ajouter tels quels.
+    for (v_norm, v_brut, d_v, f_v) in valeurs_reelles:
+        if v_norm in normes_ref:
+            continue
+        if d_v is None:
+            # Libellé non parsable : ajouté par précaution (repli), pour
+            # ne perdre aucune occupation potentielle.
+            if v_brut not in conserves:
+                conserves.append(v_brut)
+            continue
+        chevauche_qqch = any(
+            _chevauche_ref(d_v, f_v, bornes_ref[h][0], bornes_ref[h][1])
+            for h in horaires_reference
+        )
+        if not chevauche_qqch and v_brut not in conserves:
+            conserves.append(v_brut)
+
+    if not conserves:
+        return list(horaires_reference)
+
+    return sorted(set(conserves), key=_lieux_creneau_key)
+
 
 
 def _lieux_jours_dynamiques(df, jours_reference):
