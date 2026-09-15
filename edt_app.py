@@ -1959,6 +1959,101 @@ def _lieux_libres(df, horaires_list, jours_list):
     return occupes, libres, tous
 
 
+# ============================================================
+# CORRECTIF : correspondance FLEXIBLE des créneaux horaires et
+# des jours, à partir des EDT RÉELLEMENT GÉNÉRÉS (colonnes
+# « Horaire » et « Jours » du fichier source Data), et non plus
+# d'une liste figée en dur.
+# ------------------------------------------------------------
+# Problème corrigé : la liste fixe d'horaires utilisée par les
+# grilles EDT contient des libellés proches mais distincts (ex.
+# « 14h - 15h » ET « 14h - 15h30 », « 15h - 16h » ET « 15h30 - 17h »).
+# Si les données sources n'utilisent réellement que l'un des deux,
+# l'autre devient une colonne « fantôme » toujours vide, donc
+# toujours comptée comme « libre » pour TOUS les lieux — ce qui
+# gonflait artificiellement le nombre de lieux non occupés.
+# À l'inverse, un horaire utilisé dans les données mais absent de
+# la liste figée était tout simplement ignoré par la correspondance
+# (aucune occupation détectée pour ce créneau), ce qui gonflait
+# également le nombre de lieux considérés comme libres.
+#
+# Les fonctions ci-dessous reconstruisent donc la liste des
+# créneaux (et des jours) à utiliser pour la correspondance
+# lieu / horaire / jour en ne conservant QUE ce qui est
+# effectivement utilisé dans les EDT déjà générés (toutes
+# promotions confondues, puisque df est le fichier source complet),
+# tout en ajoutant automatiquement les créneaux/jours réellement
+# utilisés mais absents de la liste de référence.
+# ============================================================
+def _lieux_creneau_key(txt):
+    """Clé de tri chronologique d'un horaire (heure de début, heure de
+    fin, libellé). Les libellés non parsables sont repoussés en fin de
+    liste plutôt que d'être perdus."""
+    debut, fin = _lieux_parse_intervalle(txt)
+    if debut is None:
+        return (10**9, 10**9, str(txt))
+    return (debut, fin, str(txt))
+
+
+def _lieux_horaires_dynamiques(df, horaires_reference):
+    """Liste des créneaux horaires à utiliser pour la correspondance
+    « Lieux Non Occupés », déterminée de façon FLEXIBLE à partir de la
+    colonne « Horaire » du fichier source Data (donc selon les EDT déjà
+    générés pour TOUTES les promotions) :
+      - un horaire de la liste de référence n'est conservé que s'il est
+        réellement utilisé par au moins une séance des données sources ;
+      - un horaire présent dans les données mais absent de la liste de
+        référence est ajouté automatiquement.
+    Résultat trié chronologiquement (heure de début)."""
+    if df is None or not hasattr(df, "columns") or "Horaire" not in df.columns:
+        return list(horaires_reference)
+
+    normes_ref = {_lieux_norm_creneau(h): h for h in horaires_reference}
+    horaires_reels = {}
+    for v in df["Horaire"].dropna().unique():
+        v_norm = _lieux_norm_creneau(v)
+        if v_norm == "vide":
+            continue
+        if v_norm in normes_ref:
+            horaires_reels[v_norm] = normes_ref[v_norm]
+        else:
+            horaires_reels[v_norm] = str(v).strip()
+
+    if not horaires_reels:
+        return list(horaires_reference)
+
+    return sorted(horaires_reels.values(), key=_lieux_creneau_key)
+
+
+def _lieux_jours_dynamiques(df, jours_reference):
+    """Liste des jours à utiliser pour la correspondance « Lieux Non
+    Occupés », déterminée de façon FLEXIBLE à partir de la colonne
+    « Jours » du fichier source Data (mêmes principes que
+    _lieux_horaires_dynamiques). Les jours de référence réellement
+    utilisés conservent leur ordre habituel ; tout jour présent dans les
+    données mais absent de la liste de référence est ajouté à la suite."""
+    if df is None or not hasattr(df, "columns") or "Jours" not in df.columns:
+        return list(jours_reference)
+
+    normes_ref = {_lieux_norm_creneau(j): j for j in jours_reference}
+    jours_reels_norm = set()
+    jours_reels_bruts = {}
+    for v in df["Jours"].dropna().unique():
+        v_norm = _lieux_norm_creneau(v)
+        if v_norm == "vide":
+            continue
+        jours_reels_norm.add(v_norm)
+        if v_norm not in normes_ref:
+            jours_reels_bruts[v_norm] = str(v).strip()
+
+    if not jours_reels_norm:
+        return list(jours_reference)
+
+    resultat = [normes_ref[n] for n in normes_ref if n in jours_reels_norm]
+    nouveaux = sorted(jours_reels_bruts.values())
+    return resultat + nouveaux
+
+
 def _lieux_libres_excel_bytes(jours, horaires, cellules, detail, synthese,
                               titre, sous_titre):
     """Construit le classeur Excel des lieux non occupés (3 feuilles) :
@@ -7007,8 +7102,16 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             if df is None or df.empty:
                 st.error("❌ Les données EDT ne sont pas disponibles.")
             else:
+                # Correspondance FLEXIBLE : les creneaux horaires et
+                # les jours utilises pour l'analyse de disponibilite
+                # sont reconstruits a partir des EDT deja generes
+                # (colonnes «Horaire» et «Jours» du fichier source
+                # Data, toutes promotions confondues), et non plus
+                # d'une liste figee en dur.
+                horaires_list_lx = _lieux_horaires_dynamiques(df, horaires_list)
+                jours_list_lx = _lieux_jours_dynamiques(df, jours_list)
                 occupes_lx, libres_lx, tous_lieux_lx = _lieux_libres(
-                    df, horaires_list, jours_list)
+                    df, horaires_list_lx, jours_list_lx)
                 if not tous_lieux_lx:
                     st.warning("⚠️ Aucun lieu exploitable dans les données EDT.")
                 else:
@@ -7023,13 +7126,13 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     if salle_lx:
                         grille_aff_lx = pd.DataFrame(
                             [["🟢 Libre" if (j, h, salle_lx) not in occupes_lx
-                              else "🔴 Occupé" for h in horaires_list]
-                             for j in jours_list],
-                            index=jours_list, columns=horaires_list)
+                              else "🔴 Occupé" for h in horaires_list_lx]
+                             for j in jours_list_lx],
+                            index=jours_list_lx, columns=horaires_list_lx)
                         nb_libres_lx = sum(
-                            1 for j in jours_list for h in horaires_list
+                            1 for j in jours_list_lx for h in horaires_list_lx
                             if (j, h, salle_lx) not in occupes_lx)
-                        nb_total_lx = len(jours_list) * len(horaires_list)
+                        nb_total_lx = len(jours_list_lx) * len(horaires_list_lx)
                         m1, m2, m3 = st.columns(3)
                         m1.metric("🟢 Créneaux libres", nb_libres_lx)
                         m2.metric("🔴 Créneaux occupés", nb_total_lx - nb_libres_lx)
@@ -7042,7 +7145,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         st.dataframe(grille_aff_lx, use_container_width=True)
                         libres_liste_lx = [
                             {"Jour": j, "Horaire": h}
-                            for j in jours_list for h in horaires_list
+                            for j in jours_list_lx for h in horaires_list_lx
                             if (j, h, salle_lx) not in occupes_lx]
                         if libres_liste_lx:
                             apercu_lx = " ; ".join(
@@ -7059,18 +7162,18 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                      use_container_width=True, hide_index=True)
                     else:
                         grille_cnt_lx = pd.DataFrame(
-                            [[len(libres_lx[(j, h)]) for h in horaires_list]
-                             for j in jours_list],
-                            index=jours_list, columns=horaires_list)
+                            [[len(libres_lx[(j, h)]) for h in horaires_list_lx]
+                             for j in jours_list_lx],
+                            index=jours_list_lx, columns=horaires_list_lx)
                         st.markdown(
                             "#### 🗓 Nombre de lieux non occupés "
                             "(jours en vertical, horaires en horizontal)")
                         st.dataframe(grille_cnt_lx, use_container_width=True)
                         fj_lx, fh_lx = st.columns(2)
                         j_sel_lx = fj_lx.selectbox(
-                            "Jour :", ["Tous"] + jours_list, key="lx1_jour")
+                            "Jour :", ["Tous"] + jours_list_lx, key="lx1_jour")
                         h_sel_lx = fh_lx.selectbox(
-                            "Horaire :", ["Tous"] + horaires_list,
+                            "Horaire :", ["Tous"] + horaires_list_lx,
                             key="lx1_horaire")
                         lignes_glob_lx = []
                         for (j, h), lls in libres_lx.items():
@@ -7091,23 +7194,23 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             (j, h): ("Libre" if (j, h, salle_lx) not in occupes_lx
                                      else "Occupé",
                                      (j, h, salle_lx) not in occupes_lx)
-                            for j in jours_list for h in horaires_list}
+                            for j in jours_list_lx for h in horaires_list_lx}
                         detail_lx = [
                             (j, h, salle_lx)
-                            for j in jours_list for h in horaires_list
+                            for j in jours_list_lx for h in horaires_list_lx
                             if (j, h, salle_lx) not in occupes_lx]
                         titre_lx = f"LIEUX NON OCCUPÉS — SALLE {salle_lx}"
                         nom_f_lx = salle_lx.replace(" ", "_").replace("/", "-")
                     else:
                         cellules_lx = {
                             (j, h): (f"{len(libres_lx[(j, h)])} libres", True)
-                            for j in jours_list for h in horaires_list}
+                            for j in jours_list_lx for h in horaires_list_lx}
                         detail_lx = [
                             (j, h, l)
                             for (j, h), lls in libres_lx.items() for l in lls]
                         titre_lx = "LIEUX NON OCCUPÉS — TOUS LES LIEUX"
                         nom_f_lx = "TOUS_LES_LIEUX"
-                    total_c_lx = len(jours_list) * len(horaires_list)
+                    total_c_lx = len(jours_list_lx) * len(horaires_list_lx)
                     synthese_lx = []
                     for l in tous_lieux_lx:
                         nb_o_lx = sum(1 for (jj, hh, ll) in occupes_lx if ll == l)
@@ -7117,7 +7220,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     bx1_lx, bx2_lx = st.columns(2)
                     try:
                         xlsx_lx = _lieux_libres_excel_bytes(
-                            jours_list, horaires_list, cellules_lx, detail_lx,
+                            jours_list_lx, horaires_list_lx, cellules_lx, detail_lx,
                             synthese_lx, titre_lx,
                             f"{etab_lx} | Semestre 01 — 2026-2027 | Date : {date_lx}")
                         bx1_lx.download_button(
@@ -7131,7 +7234,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         bx1_lx.error(f"Erreur Excel : {e}")
                     try:
                         pdf_lx = _lieux_libres_pdf_bytes(
-                            jours_list, horaires_list, cellules_lx, titre_lx,
+                            jours_list_lx, horaires_list_lx, cellules_lx, titre_lx,
                             f"{etab_lx} | Semestre 01 — 2026-2027 | Date : {date_lx}",
                             salle=salle_lx)
                         bx2_lx.download_button(
@@ -14448,8 +14551,16 @@ if df is not None:
             if df is None or df.empty:
                 st.error("❌ Les données EDT ne sont pas disponibles.")
             else:
+                # Correspondance FLEXIBLE : les creneaux horaires et
+                # les jours utilises pour l'analyse de disponibilite
+                # sont reconstruits a partir des EDT deja generes
+                # (colonnes «Horaire» et «Jours» du fichier source
+                # Data, toutes promotions confondues), et non plus
+                # d'une liste figee en dur.
+                horaires_list_lx = _lieux_horaires_dynamiques(df, horaires_list)
+                jours_list_lx = _lieux_jours_dynamiques(df, jours_list)
                 occupes_lx, libres_lx, tous_lieux_lx = _lieux_libres(
-                    df, horaires_list, jours_list)
+                    df, horaires_list_lx, jours_list_lx)
                 if not tous_lieux_lx:
                     st.warning("⚠️ Aucun lieu exploitable dans les données EDT.")
                 else:
@@ -14464,13 +14575,13 @@ if df is not None:
                     if salle_lx:
                         grille_aff_lx = pd.DataFrame(
                             [["🟢 Libre" if (j, h, salle_lx) not in occupes_lx
-                              else "🔴 Occupé" for h in horaires_list]
-                             for j in jours_list],
-                            index=jours_list, columns=horaires_list)
+                              else "🔴 Occupé" for h in horaires_list_lx]
+                             for j in jours_list_lx],
+                            index=jours_list_lx, columns=horaires_list_lx)
                         nb_libres_lx = sum(
-                            1 for j in jours_list for h in horaires_list
+                            1 for j in jours_list_lx for h in horaires_list_lx
                             if (j, h, salle_lx) not in occupes_lx)
-                        nb_total_lx = len(jours_list) * len(horaires_list)
+                        nb_total_lx = len(jours_list_lx) * len(horaires_list_lx)
                         m1, m2, m3 = st.columns(3)
                         m1.metric("🟢 Créneaux libres", nb_libres_lx)
                         m2.metric("🔴 Créneaux occupés", nb_total_lx - nb_libres_lx)
@@ -14483,7 +14594,7 @@ if df is not None:
                         st.dataframe(grille_aff_lx, use_container_width=True)
                         libres_liste_lx = [
                             {"Jour": j, "Horaire": h}
-                            for j in jours_list for h in horaires_list
+                            for j in jours_list_lx for h in horaires_list_lx
                             if (j, h, salle_lx) not in occupes_lx]
                         if libres_liste_lx:
                             apercu_lx = " ; ".join(
@@ -14500,18 +14611,18 @@ if df is not None:
                                      use_container_width=True, hide_index=True)
                     else:
                         grille_cnt_lx = pd.DataFrame(
-                            [[len(libres_lx[(j, h)]) for h in horaires_list]
-                             for j in jours_list],
-                            index=jours_list, columns=horaires_list)
+                            [[len(libres_lx[(j, h)]) for h in horaires_list_lx]
+                             for j in jours_list_lx],
+                            index=jours_list_lx, columns=horaires_list_lx)
                         st.markdown(
                             "#### 🗓 Nombre de lieux non occupés "
                             "(jours en vertical, horaires en horizontal)")
                         st.dataframe(grille_cnt_lx, use_container_width=True)
                         fj_lx, fh_lx = st.columns(2)
                         j_sel_lx = fj_lx.selectbox(
-                            "Jour :", ["Tous"] + jours_list, key="lx2_jour")
+                            "Jour :", ["Tous"] + jours_list_lx, key="lx2_jour")
                         h_sel_lx = fh_lx.selectbox(
-                            "Horaire :", ["Tous"] + horaires_list,
+                            "Horaire :", ["Tous"] + horaires_list_lx,
                             key="lx2_horaire")
                         lignes_glob_lx = []
                         for (j, h), lls in libres_lx.items():
@@ -14532,23 +14643,23 @@ if df is not None:
                             (j, h): ("Libre" if (j, h, salle_lx) not in occupes_lx
                                      else "Occupé",
                                      (j, h, salle_lx) not in occupes_lx)
-                            for j in jours_list for h in horaires_list}
+                            for j in jours_list_lx for h in horaires_list_lx}
                         detail_lx = [
                             (j, h, salle_lx)
-                            for j in jours_list for h in horaires_list
+                            for j in jours_list_lx for h in horaires_list_lx
                             if (j, h, salle_lx) not in occupes_lx]
                         titre_lx = f"LIEUX NON OCCUPÉS — SALLE {salle_lx}"
                         nom_f_lx = salle_lx.replace(" ", "_").replace("/", "-")
                     else:
                         cellules_lx = {
                             (j, h): (f"{len(libres_lx[(j, h)])} libres", True)
-                            for j in jours_list for h in horaires_list}
+                            for j in jours_list_lx for h in horaires_list_lx}
                         detail_lx = [
                             (j, h, l)
                             for (j, h), lls in libres_lx.items() for l in lls]
                         titre_lx = "LIEUX NON OCCUPÉS — TOUS LES LIEUX"
                         nom_f_lx = "TOUS_LES_LIEUX"
-                    total_c_lx = len(jours_list) * len(horaires_list)
+                    total_c_lx = len(jours_list_lx) * len(horaires_list_lx)
                     synthese_lx = []
                     for l in tous_lieux_lx:
                         nb_o_lx = sum(1 for (jj, hh, ll) in occupes_lx if ll == l)
@@ -14558,7 +14669,7 @@ if df is not None:
                     bx1_lx, bx2_lx = st.columns(2)
                     try:
                         xlsx_lx = _lieux_libres_excel_bytes(
-                            jours_list, horaires_list, cellules_lx, detail_lx,
+                            jours_list_lx, horaires_list_lx, cellules_lx, detail_lx,
                             synthese_lx, titre_lx,
                             f"{etab_lx} | Semestre 01 — 2026-2027 | Date : {date_lx}")
                         bx1_lx.download_button(
@@ -14572,7 +14683,7 @@ if df is not None:
                         bx1_lx.error(f"Erreur Excel : {e}")
                     try:
                         pdf_lx = _lieux_libres_pdf_bytes(
-                            jours_list, horaires_list, cellules_lx, titre_lx,
+                            jours_list_lx, horaires_list_lx, cellules_lx, titre_lx,
                             f"{etab_lx} | Semestre 01 — 2026-2027 | Date : {date_lx}",
                             salle=salle_lx)
                         bx2_lx.download_button(
