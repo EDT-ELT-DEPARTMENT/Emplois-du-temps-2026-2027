@@ -1872,10 +1872,14 @@ def _lieux_parse_intervalle(txt):
 
 
 def _lieux_norm_creneau(txt):
-    """Normalisation d'un créneau pour comparaison exacte."""
+    """Normalisation IDENTIQUE a normalize() des grilles EDT de l'app :
+    une seance occupe une case si son libelle normalise correspond
+    EXACTEMENT au libelle normalise du creneau/jour (h_norm / j_norm)."""
+    if not txt or txt == "Non défini":
+        return "vide"
     s = str(txt).strip().lower()
-    s = s.replace(" ", "").replace("–", "").replace("—", "")
-    s = s.replace("-", "").replace("h00", "h")
+    s = s.replace(" ", "").replace("-", "").replace("–", "")
+    s = s.replace(":00", "").replace("h00", "h")
     return s
 
 
@@ -1899,13 +1903,15 @@ def _lieux_eclater(valeur):
 
 
 def _lieux_occups(df, horaires_list, jours_list):
-    """Ensemble des (jour, créneau_affiché, lieu) occupés.
-    Un créneau standard est marqué occupé si l'intervalle de la séance
-    le recouvre (chevauchement en minutes) ; à défaut, si le libellé
-    normalisé correspond exactement."""
-    bornes = {h: _lieux_parse_intervalle(h) for h in horaires_list}
-    normes = {h: _lieux_norm_creneau(h) for h in horaires_list}
-    map_j = {str(j).strip().lower(): j for j in jours_list}
+    """Ensemble des (jour, creneau_affiche, lieu) occupes — EXACTEMENT
+    selon les grilles EDT de l'application : une seance occupe la case
+    (jour, creneau) uniquement si ses libelles « Jours » et « Horaire »
+    normalises correspondent EXACTEMENT (h_norm / j_norm) a ceux du jour
+    et du creneau affiches. Un libelle non reconnu (ex. multi-jours,
+    horaire hors liste) n'occupe aucune case — comme dans les grilles EDT.
+    Les lieux composites (« A08/G1 ») restent eclates salle par salle."""
+    normes_j = {_lieux_norm_creneau(j): j for j in jours_list}
+    normes_h = {_lieux_norm_creneau(h): h for h in horaires_list}
     occupe = set()
     if df is None or not hasattr(df, "columns"):
         return occupe
@@ -1916,28 +1922,14 @@ def _lieux_occups(df, horaires_list, jours_list):
         lieux = _lieux_eclater(r.get("Lieu"))
         if not lieux:
             continue
-        jours_vals = _lieux_eclater(r.get("Jours"))
-        jours_std = []
-        for jv in jours_vals:
-            jc = map_j.get(str(jv).strip().lower())
-            if jc and jc not in jours_std:
-                jours_std.append(jc)
-        if not jours_std:
+        j_aff = normes_j.get(_lieux_norm_creneau(r.get("Jours")))
+        if j_aff is None:
             continue
-        debut, fin = _lieux_parse_intervalle(r.get("Horaire"))
-        h_norm = _lieux_norm_creneau(r.get("Horaire"))
-        for h_aff in horaires_list:
-            d_s, f_s = bornes[h_aff]
-            pris = False
-            if debut is not None and d_s is not None:
-                if debut < f_s and d_s < fin:
-                    pris = True
-            elif h_norm == normes[h_aff]:
-                pris = True
-            if pris:
-                for j in jours_std:
-                    for l in lieux:
-                        occupe.add((j, h_aff, l))
+        h_aff = normes_h.get(_lieux_norm_creneau(r.get("Horaire")))
+        if h_aff is None:
+            continue
+        for l in lieux:
+            occupe.add((j_aff, h_aff, l))
     return occupe
 
 
