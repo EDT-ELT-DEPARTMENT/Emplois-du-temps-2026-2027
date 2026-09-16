@@ -41,6 +41,7 @@ import io
 import time
 import re
 import os
+import json
 import hashlib
 import zipfile
 import math
@@ -318,11 +319,75 @@ def generer_excel_toutes_demandes_edt(demandes):
         return None
 
 
+def _charger_demandes_locales_fichier():
+    """Charge les demandes EDT enregistrées en secours (échec Supabase)
+    depuis le fichier JSON partagé sur le serveur (FICHIER_DEMANDES_LOCAL).
+
+    CORRECTIF : contrairement à st.session_state.demandes_edt_local (qui
+    n'existe que dans la session du navigateur de la personne qui a fait
+    la demande), ce fichier est partagé par TOUTES les sessions de
+    l'application — l'administrateur peut donc voir les demandes
+    déposées par n'importe quel enseignant, même si l'enregistrement
+    Supabase a échoué pour cette demande précise.
+    """
+    try:
+        if os.path.exists(FICHIER_DEMANDES_LOCAL):
+            with open(FICHIER_DEMANDES_LOCAL, "r", encoding="utf-8") as f:
+                contenu = json.load(f)
+            if isinstance(contenu, list):
+                return contenu
+    except Exception:
+        pass
+    return []
+
+
+def _sauvegarder_demandes_locales_fichier(liste_demandes):
+    """Enregistre la liste complète des demandes EDT de secours dans le
+    fichier JSON partagé (voir _charger_demandes_locales_fichier)."""
+    try:
+        with open(FICHIER_DEMANDES_LOCAL, "w", encoding="utf-8") as f:
+            json.dump(liste_demandes, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def _ajouter_demande_locale_fichier(enregistrement):
+    """Ajoute une demande au fichier JSON partagé de secours et lui
+    attribue un identifiant unique (préfixé « local- » pour la distinguer
+    sans ambiguïté d'un identifiant Supabase lors des actions Approuver /
+    Rejeter / Supprimer)."""
+    demandes_existantes = _charger_demandes_locales_fichier()
+    identifiant_unique = f"local-{int(time.time() * 1000)}-{len(demandes_existantes) + 1}"
+    enregistrement = dict(enregistrement)
+    enregistrement["id"] = identifiant_unique
+    enregistrement["_source"] = "fichier_local"
+    demandes_existantes.append(enregistrement)
+    _sauvegarder_demandes_locales_fichier(demandes_existantes)
+    return enregistrement
+
+
 def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_client):
 
     """
     Sauvegarde une demande EDT. Si Supabase échoue, bascule en local.
     Garantit l'ordre des colonnes : Enseignements, Code, Enseignants, Horaire, Jours, Lieu, Promotion
+
+    ------------------------------------------------------------------
+    CORRECTIF — visibilité des demandes de secours :
+    ------------------------------------------------------------------
+    Auparavant, une demande dont l'enregistrement Supabase échouait était
+    uniquement placée dans st.session_state.demandes_edt_local, une
+    mémoire PROPRE à la session du navigateur de l'enseignant qui a
+    déposé la demande. Résultat : l'administrateur (qui a sa propre
+    session, sur son propre navigateur) ne pouvait JAMAIS la voir sur la
+    plateforme, alors que l'email de notification, lui, partait bien
+    (il ne dépend pas de Supabase). C'est exactement le symptôme
+    rapporté : des demandes reçues « uniquement par email ».
+
+    Cette demande de secours est désormais également enregistrée dans un
+    fichier JSON partagé sur le serveur (FICHIER_DEMANDES_LOCAL), visible
+    par TOUTES les sessions — y compris celle de l'administrateur.
     """
     try:
         # Utilise la fonction pro pour garantir l'ordre exact des colonnes
@@ -357,16 +422,17 @@ def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_clien
                 print(f"[SUPABASE] Erreur : {e}")
 
         if not supabase_ok:
-            if "demandes_edt_local" not in st.session_state:
-                st.session_state.demandes_edt_local = []
-            st.session_state.demandes_edt_local.append({
-                "id": len(st.session_state.demandes_edt_local) + 1,
+            # --- Fichier JSON partagé (visible par toutes les sessions,
+            #     y compris celle de l'administrateur) : SOURCE DE VÉRITÉ
+            #     UNIQUE pour les demandes de secours (on ne duplique plus
+            #     en st.session_state, afin d'éviter tout doublon d'affichage
+            #     si jamais la même session consultait aussi la page admin). ---
+            _ajouter_demande_locale_fichier({
                 "enseignant_email": email_prof,
                 "enseignant_nom": nom_prof,
                 "fichier_data": fichier_data,
                 "statut": "En attente",
                 "date_demande": date_now.strftime("%d/%m/%Y %H:%M"),
-                "excel_bytes": fichier_bytes
             })
 
         demande_info = {
@@ -380,7 +446,7 @@ def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_clien
         if supabase_ok:
             msg = "✅ Demande enregistrée en ligne."
         else:
-            msg = "✅ Demande enregistrée (mode local)."
+            msg = "✅ Demande enregistrée (mode local — fichier partagé)."
 
         if email_envoye:
             msg += " 📧 Admin notifié."
@@ -497,6 +563,21 @@ FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
 FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
+
+# ============================================================
+# FICHIER PARTAGÉ DE SECOURS POUR LES DEMANDES EDT
+# ------------------------------------------------------------
+# Utilisé UNIQUEMENT lorsque l'enregistrement Supabase échoue.
+# CORRECTIF : ce fichier remplace st.session_state.demandes_edt_local
+# comme mécanisme de secours principal. st.session_state est propre à
+# CHAQUE session de navigateur : une demande qui y était stockée en
+# secours n'était donc JAMAIS visible par l'administrateur (qui a sa
+# propre session), même si un email de notification partait bien —
+# d'où les demandes reçues « uniquement par email » et absentes de la
+# plateforme. Un fichier JSON sur le serveur est, lui, partagé par
+# TOUTES les sessions qui tournent sur la même instance de l'appli.
+# ============================================================
+FICHIER_DEMANDES_LOCAL = str(_BASE_DIR / "demandes_edt_locales.json")
 
 HORAIRES_LIST = [
     "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
@@ -11620,22 +11701,42 @@ def render_download_hub(df_global, user_data, is_admin):
 
     
     # ─── RÉCUPÉRATION DES DEMANDES ───
+    # CORRECTIF : on FUSIONNE désormais TOUJOURS les demandes Supabase
+    # avec celles du fichier partagé de secours (FICHIER_DEMANDES_LOCAL),
+    # au lieu de n'utiliser ce dernier que si Supabase ne renvoie AUCUNE
+    # demande. Avant ce correctif, dès qu'UNE SEULE demande avait réussi
+    # sur Supabase, TOUTES les demandes de secours (celles dont
+    # l'enregistrement Supabase avait échoué pour d'autres enseignants)
+    # étaient purement et simplement ignorées sur cette page — bien que
+    # leur email de notification soit bien parti.
     demandes = []
-    
+
     # 1. Depuis Supabase
     if supabase:
         try:
             res = supabase.table("edt_update_requests").select("*")\
                 .order("date_demande", desc=True).execute()
             if res.data:
-                demandes = res.data
+                demandes = list(res.data)
         except Exception as e:
             st.warning(f"⚠️ Connexion Supabase : {e}")
-    
-    # 2. Fallback : demandes locales (mode hors-ligne)
-    if not demandes and "demandes_edt_local" in st.session_state:
-        demandes = st.session_state.demandes_edt_local
-    
+
+    # 2. Fichier partagé de secours (toujours fusionné, pas seulement en
+    #    cas d'absence totale de résultat Supabase — voir correctif ci-dessus)
+    demandes_ids_deja_presents = {d.get("id") for d in demandes}
+    for demande_locale in _charger_demandes_locales_fichier():
+        if demande_locale.get("id") not in demandes_ids_deja_presents:
+            demandes.append(demande_locale)
+            demandes_ids_deja_presents.add(demande_locale.get("id"))
+
+    # 3. Ancien fallback en mémoire de session (compatibilité ; ne
+    #    contient que les demandes de CETTE session, mais on les fusionne
+    #    aussi par sécurité si elles ne sont pas déjà dans le fichier).
+    for demande_session in st.session_state.get("demandes_edt_local", []):
+        if demande_session.get("id") not in demandes_ids_deja_presents:
+            demandes.append(demande_session)
+            demandes_ids_deja_presents.add(demande_session.get("id"))
+
     # ─── FILTRES ───
     col_f1, col_f2, col_f3 = st.columns(3)
     with col_f1:
@@ -11733,9 +11834,30 @@ def render_download_hub(df_global, user_data, is_admin):
                     # Suppression de la demande
                     if st.button("🗑️ Supprimer la demande", use_container_width=True, key=f"sup_{demande.get('id', hash(nom_ens))}"):
                         demande_id = demande.get("id")
+                        # CORRECTIF : on détermine l'origine RÉELLE de CETTE
+                        # demande précise (Supabase ou fichier local de
+                        # secours), au lieu de se baser uniquement sur la
+                        # présence GLOBALE d'un client Supabase configuré —
+                        # sinon, une demande de secours (id "local-...")
+                        # n'était jamais réellement supprimée dès lors que
+                        # Supabase était disponible par ailleurs.
+                        demande_est_locale = (
+                            demande.get("_source") == "fichier_local"
+                            or str(demande_id).startswith("local-")
+                        )
                         suppression_ok = False
 
-                        if supabase and demande_id is not None:
+                        if demande_est_locale:
+                            demandes_fichier = _charger_demandes_locales_fichier()
+                            avant = len(demandes_fichier)
+                            demandes_fichier = [
+                                d for d in demandes_fichier if d.get("id") != demande_id
+                            ]
+                            suppression_ok = (
+                                len(demandes_fichier) < avant
+                                and _sauvegarder_demandes_locales_fichier(demandes_fichier)
+                            )
+                        elif supabase and demande_id is not None:
                             try:
                                 supabase.table("edt_update_requests").delete().eq("id", demande_id).execute()
                                 suppression_ok = True
@@ -11755,26 +11877,42 @@ def render_download_hub(df_global, user_data, is_admin):
 
                     # Boutons de décision
                     if statut == "En attente":
+                        demande_est_locale = (
+                            demande.get("_source") == "fichier_local"
+                            or str(demande.get("id")).startswith("local-")
+                        )
                         if st.button("✅ Approuver", use_container_width=True, key=f"app_{demande.get('id', 0)}"):
-                            if supabase:
+                            if demande_est_locale:
+                                demandes_fichier = _charger_demandes_locales_fichier()
+                                for d in demandes_fichier:
+                                    if d.get('id') == demande.get('id'):
+                                        d['statut'] = "Approuvée"
+                                _sauvegarder_demandes_locales_fichier(demandes_fichier)
+                            elif supabase:
                                 supabase.table("edt_update_requests").update({
                                     "statut": "Approuvée"
                                 }).eq("id", demande.get('id')).execute()
                             else:
-                                # Mise à jour locale
-                                for d in st.session_state.demandes_edt_local:
+                                # Mise à jour locale (compatibilité)
+                                for d in st.session_state.get("demandes_edt_local", []):
                                     if d.get('id') == demande.get('id'):
                                         d['statut'] = "Approuvée"
                             st.success("Demande approuvée")
                             st.rerun()
                         
                         if st.button("❌ Rejeter", use_container_width=True, key=f"rej_{demande.get('id', 0)}"):
-                            if supabase:
+                            if demande_est_locale:
+                                demandes_fichier = _charger_demandes_locales_fichier()
+                                for d in demandes_fichier:
+                                    if d.get('id') == demande.get('id'):
+                                        d['statut'] = "Rejetée"
+                                _sauvegarder_demandes_locales_fichier(demandes_fichier)
+                            elif supabase:
                                 supabase.table("edt_update_requests").update({
                                     "statut": "Rejetée"
                                 }).eq("id", demande.get('id')).execute()
                             else:
-                                for d in st.session_state.demandes_edt_local:
+                                for d in st.session_state.get("demandes_edt_local", []):
                                     if d.get('id') == demande.get('id'):
                                         d['statut'] = "Rejetée"
                             st.error("Demande rejetée")
@@ -15642,18 +15780,28 @@ if df is not None:
             </div>
         """, unsafe_allow_html=True)
         
+        # CORRECTIF : fusion systématique Supabase + fichier partagé de
+        # secours (voir explication détaillée dans la vue admin
+        # principale « RÉCUPÉRATION DES DEMANDES »).
         demandes = []
         if supabase:
             try:
                 res = supabase.table("edt_update_requests").select("*")\
                     .order("date_demande", desc=True).execute()
                 if res.data:
-                    demandes = res.data
+                    demandes = list(res.data)
             except Exception as e:
                 st.warning(f"⚠️ Connexion Supabase : {e}")
-        
-        if not demandes and "demandes_edt_local" in st.session_state:
-            demandes = st.session_state.demandes_edt_local
+
+        demandes_ids_deja_presents = {d.get("id") for d in demandes}
+        for demande_locale in _charger_demandes_locales_fichier():
+            if demande_locale.get("id") not in demandes_ids_deja_presents:
+                demandes.append(demande_locale)
+                demandes_ids_deja_presents.add(demande_locale.get("id"))
+        for demande_session in st.session_state.get("demandes_edt_local", []):
+            if demande_session.get("id") not in demandes_ids_deja_presents:
+                demandes.append(demande_session)
+                demandes_ids_deja_presents.add(demande_session.get("id"))
         
         if not demandes:
             st.info("📭 Aucune demande reçue pour le moment.")
@@ -15694,8 +15842,25 @@ if df is not None:
                                 )
                         
                         if statut == "En attente":
+                            # CORRECTIF : agir selon l'origine RÉELLE de
+                            # cette demande (Supabase ou fichier local),
+                            # et non plus seulement selon la présence
+                            # globale d'un client Supabase configuré.
+                            demande_est_locale = (
+                                demande.get("_source") == "fichier_local"
+                                or str(demande.get("id")).startswith("local-")
+                            )
                             if st.button("✅ Approuver", use_container_width=True, key=f"app_{demande.get('id', 0)}"):
-                                if supabase:
+                                if demande_est_locale:
+                                    demandes_fichier = _charger_demandes_locales_fichier()
+                                    for d in demandes_fichier:
+                                        if d.get('id') == demande.get('id'):
+                                            d['statut'] = "Approuvée"
+                                    if _sauvegarder_demandes_locales_fichier(demandes_fichier):
+                                        st.success("✅ Demande approuvée!")
+                                    else:
+                                        st.error("Erreur lors de l'enregistrement du fichier local.")
+                                elif supabase:
                                     try:
                                         supabase.table("edt_update_requests").update({"statut": "Approuvée"}).eq("id", demande.get('id')).execute()
                                         st.success("✅ Demande approuvée!")
@@ -15703,7 +15868,16 @@ if df is not None:
                                         st.error(f"Erreur: {e}")
                                 st.rerun()
                             if st.button("❌ Rejeter", use_container_width=True, key=f"rej_{demande.get('id', 0)}"):
-                                if supabase:
+                                if demande_est_locale:
+                                    demandes_fichier = _charger_demandes_locales_fichier()
+                                    for d in demandes_fichier:
+                                        if d.get('id') == demande.get('id'):
+                                            d['statut'] = "Rejetée"
+                                    if _sauvegarder_demandes_locales_fichier(demandes_fichier):
+                                        st.error("❌ Demande rejetée!")
+                                    else:
+                                        st.error("Erreur lors de l'enregistrement du fichier local.")
+                                elif supabase:
                                     try:
                                         supabase.table("edt_update_requests").update({"statut": "Rejetée"}).eq("id", demande.get('id')).execute()
                                         st.error("❌ Demande rejetée!")
