@@ -5838,80 +5838,61 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             """
             if mode_edition_edt_promo:
                 # ========================================================
-                # GRILLE EDT INTERACTIVE (MODE ÉDITION) — CELLULES ACTIVES
-                # ------------------------------------------------------------
-                # Fonctionnement demandé :
-                #   🔘 Activer : rend UNE cellule modifiable ; toutes les
-                #                autres cellules restent inactives (lecture
-                #                seule, aucun champ ni bouton).
-                #   Important (limite technique de Streamlit) : une
-                #   application Streamlit s'exécute côté serveur et ne peut
-                #   pas détecter un simple survol de la souris (":hover")
-                #   pour déclencher une action — seul un CLIC provoque une
-                #   nouvelle exécution du script. La case à cocher
-                #   « 🔘 Activer » est donc l'équivalent pratique le plus
-                #   proche de « pointer le curseur sur la cellule » : un
-                #   clic dessus active la cellule, un second clic la
-                #   désactive.
-                #   Plusieurs cellules peuvent être activées EN MÊME TEMPS
-                #   (cocher plusieurs cases « Activer ») : chacune affiche
-                #   alors son propre formulaire (enseignement, enseignant,
-                #   lieu, type, jour, horaire — le changement de jour/horaire
-                #   permettant de « glisser » la cellule ailleurs).
-                #   Un SEUL bouton « ✅ Valider et enregistrer » en bas de la
-                #   grille applique EN UNE FOIS toutes les modifications de
-                #   TOUTES les cellules actives (édition, déplacement,
-                #   suppression), puis sauvegarde le fichier source.
-                # La structure de l'application n'est pas modifiée : lorsque
-                # le mode édition est désactivé, l'EDT s'affiche exactement
-                # comme avant (tableau stylisé + exports Excel / HTML / PDF).
+                # GRILLE EDT INTERACTIVE (MODE ÉDITION)
+                # ========================================================
+                # Fonctions disponibles directement dans les cellules :
+                #   ✏️  Éditer     : modifier l'enseignement, l'enseignant,
+                #                   le lieu, le type, le jour et l'horaire
+                #   ✥   Saisir    : prendre un enseignement pour le glisser
+                #   📍  Déposer ici : déposer l'enseignement saisi dans la
+                #                   cellule visée (glisser-déposer en 2 clics)
+                #   🗑️  Supprimer : supprimer l'enseignement de la cellule
+                # Toutes les modifications sont enregistrées dans le
+                # fichier source (NOM_FICHIER_FIXE) via le même mécanisme
+                # que l'éditeur de données existant.
                 # ========================================================
                 st.markdown(iso_header_html_p, unsafe_allow_html=True)
 
-                st.info(
-                    "🔘 Cochez **Activer** sur une ou plusieurs cellules pour "
-                    "les rendre modifiables — les cellules non cochées "
-                    "restent inactives. Modifiez-les (y compris le jour et "
-                    "l'horaire pour les déplacer), puis cliquez **une seule "
-                    "fois** sur **✅ Valider et enregistrer** en bas de la "
-                    "grille pour appliquer toutes les modifications à la "
-                    "fois."
-                )
+                # --- Clés d'état pour les actions en cours ---
+                cle_edition = "edt_promo_idx_edition"
+                cle_glisser = "edt_promo_idx_glisser"
+                cle_suppression = "edt_promo_idx_suppression"
 
-                # --- État : ensembles des lignes activées / marquées pour suppression ---
-                cle_actives = "edt_promo_lignes_actives"
-                cle_suppr_marquees = "edt_promo_lignes_a_supprimer"
-                if cle_actives not in st.session_state:
-                    st.session_state[cle_actives] = set()
-                if cle_suppr_marquees not in st.session_state:
-                    st.session_state[cle_suppr_marquees] = set()
+                if cle_edition not in st.session_state:
+                    st.session_state[cle_edition] = None
+                if cle_glisser not in st.session_state:
+                    st.session_state[cle_glisser] = None
+                if cle_suppression not in st.session_state:
+                    st.session_state[cle_suppression] = None
 
-                # Garde de robustesse : si un indice mémorisé n'existe plus
-                # dans le DataFrame (changement de filtre, de promotion,
-                # suppression déjà effectuée, etc.), il est retiré des états.
-                st.session_state[cle_actives] = {
-                    i for i in st.session_state[cle_actives] if i in df.index
-                }
-                st.session_state[cle_suppr_marquees] = {
-                    i for i in st.session_state[cle_suppr_marquees] if i in df.index
-                }
+                # Garde de robustesse : si un index m\u00e9moris\u00e9 n'existe plus
+                # dans le DataFrame (changement de filtre, de promotion, etc.),
+                # l'action en cours est r\u00e9initialis\u00e9e automatiquement.
+                for cle_verif in [cle_edition, cle_glisser, cle_suppression]:
+                    idx_verif = st.session_state[cle_verif]
+                    if idx_verif is not None:
+                        try:
+                            if int(idx_verif) not in df.index:
+                                st.session_state[cle_verif] = None
+                        except Exception:
+                            st.session_state[cle_verif] = None
 
                 # --- Listes de référence pour les formulaires ---
                 liste_enseignants_edt = sorted([
                     e for e in df["Enseignants"].dropna().unique()
-                    if str(e).strip() and str(e).strip() != "Non défini"
+                    if str(e).strip() and str(e).strip() != "Non d\u00e9fini"
                 ])
                 liste_lieux_edt = sorted([
                     l for l in df["Lieu"].dropna().unique()
-                    if str(l).strip() and str(l).strip() != "Non défini"
+                    if str(l).strip() and str(l).strip() != "Non d\u00e9fini"
                 ])
                 liste_enseignements_edt = sorted([
                     m for m in df["Enseignements"].dropna().unique()
-                    if str(m).strip() and str(m).strip() != "Non défini"
+                    if str(m).strip() and str(m).strip() != "Non d\u00e9fini"
                 ])
 
                 def _sauvegarder_fichier_edt_source():
-                    """Enregistre le DataFrame maître dans le fichier Excel source."""
+                    """Enregistre le DataFrame ma\u00eetre dans le fichier Excel source."""
                     df_sauvegarde = df.copy()
                     for colonne_technique in ["h_norm", "j_norm", "_type_affichage_admin"]:
                         if colonne_technique in df_sauvegarde.columns:
@@ -5919,22 +5900,248 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     df_sauvegarde.to_excel(NOM_FICHIER_FIXE, index=False)
 
                 def _info_ligne_edt(idx_ligne):
-                    """Retourne une description courte de la ligne (pour les messages)."""
+                    """Retourne une description courte de la ligne (pour les confirmations)."""
                     try:
                         r = df.loc[idx_ligne]
                         return (
-                            f"{r['Enseignements']} — {r['Enseignants']} "
+                            f"{r['Enseignements']} \u2014 {r['Enseignants']} "
                             f"({r['Jours']} / {r['Horaire']} / {r['Lieu']})"
                         )
                     except Exception:
                         return "ligne inconnue"
 
                 # ========================================================
-                # AFFICHAGE DE LA GRILLE INTERACTIVE
+                # 1) FORMULAIRE D'\u00c9DITION D'UNE CELLULE
                 # ========================================================
-                st.markdown("##### 🖼️ Grille EDT interactive")
+                if st.session_state[cle_edition] is not None:
+                    idx_edition = st.session_state[cle_edition]
+                    try:
+                        ligne_edition = df.loc[idx_edition]
+                    except Exception:
+                        ligne_edition = None
 
-                # Construction de la grille : même logique que grid_p mais
+                    if ligne_edition is None:
+                        st.session_state[cle_edition] = None
+                    else:
+                        st.markdown("#### \u270f\ufe0f \u00c9dition de la cellule s\u00e9lectionn\u00e9e")
+                        st.caption(
+                            f"Cellule : **{ligne_edition['Jours']}** \u2022 "
+                            f"**{ligne_edition['Horaire']}** \u2014 Promotion : "
+                            f"{ligne_edition['Promotion']}"
+                        )
+
+                        val_type_courant = str(ligne_edition["Code"]).upper()
+                        if "COURS" in val_type_courant:
+                            type_courant = "COURS"
+                        elif "TD" in val_type_courant:
+                            type_courant = "TD"
+                        elif "TP" in val_type_courant:
+                            type_courant = "TP"
+                        else:
+                            type_courant = "COURS"
+
+                        f1, f2 = st.columns(2)
+                        with f1:
+                            nouveau_enseignement = st.text_input(
+                                "\U0001F4D8 Enseignement (contenu) :",
+                                value=str(ligne_edition["Enseignements"]),
+                                key=f"edit_enseignement_{idx_edition}"
+                            )
+                            options_enseignants = liste_enseignants_edt + [
+                                "Non d\u00e9fini",
+                                "\u2795 Saisie libre (voir champ suivant)"
+                            ]
+                            val_defaut_ens = str(ligne_edition["Enseignants"])
+                            if val_defaut_ens in options_enseignants:
+                                index_defaut_ens = options_enseignants.index(val_defaut_ens)
+                            else:
+                                index_defaut_ens = len(options_enseignants) - 1
+                            choix_enseignant = st.selectbox(
+                                "\U0001F464 Enseignant :",
+                                options_enseignants,
+                                index=index_defaut_ens,
+                                key=f"edit_enseignant_{idx_edition}"
+                            )
+                            nouveau_enseignant_libre = st.text_input(
+                                "Enseignant en saisie libre "
+                                "(si absent de la liste) :",
+                                value="",
+                                key=f"edit_enseignant_libre_{idx_edition}",
+                                help="Utilis\u00e9 uniquement si \u00ab Saisie libre \u00bb "
+                                     "est choisi dans la liste ci-dessus."
+                            )
+                        with f2:
+                            options_lieux = liste_lieux_edt + [
+                                "Non d\u00e9fini",
+                                "\u2795 Saisie libre (voir champ suivant)"
+                            ]
+                            val_defaut_lieu = str(ligne_edition["Lieu"])
+                            if val_defaut_lieu in options_lieux:
+                                index_defaut_lieu = options_lieux.index(val_defaut_lieu)
+                            else:
+                                index_defaut_lieu = len(options_lieux) - 1
+                            choix_lieu = st.selectbox(
+                                "\U0001F4CD Lieu :",
+                                options_lieux,
+                                index=index_defaut_lieu,
+                                key=f"edit_lieu_{idx_edition}"
+                            )
+                            nouveau_lieu_libre = st.text_input(
+                                "Lieu en saisie libre (si absent de la liste) :",
+                                value="",
+                                key=f"edit_lieu_libre_{idx_edition}",
+                                help="Utilis\u00e9 uniquement si \u00ab Saisie libre \u00bb "
+                                     "est choisi dans la liste ci-dessus."
+                            )
+                            nouveau_type = st.radio(
+                                "Type d'enseignement :",
+                                ["COURS", "TD", "TP"],
+                                index=(["COURS", "TD", "TP"].index(type_courant) if type_courant in ["COURS", "TD", "TP"] else 0),
+                                horizontal=True,
+                                key=f"edit_type_{idx_edition}"
+                            )
+
+                        f3, f4 = st.columns(2)
+                        with f3:
+                            nouveau_jour = st.selectbox(
+                                "\U0001F4C5 Jour :",
+                                jours_list,
+                                index=jours_list.index(str(ligne_edition["Jours"]))
+                                if str(ligne_edition["Jours"]) in jours_list else 0,
+                                key=f"edit_jour_{idx_edition}"
+                            )
+                        with f4:
+                            nouvelle_horaire = st.selectbox(
+                                "\u23F0 Horaire :",
+                                horaires_list,
+                                index=horaires_list.index(str(ligne_edition["Horaire"]))
+                                if str(ligne_edition["Horaire"]) in horaires_list else 0,
+                                key=f"edit_horaire_{idx_edition}"
+                            )
+
+                        if choix_enseignant == "\u2795 Saisie libre (voir champ suivant)":
+                            enseignant_final = nouveau_enseignant_libre.strip()
+                        else:
+                            enseignant_final = str(choix_enseignant).strip()
+                        if choix_lieu == "\u2795 Saisie libre (voir champ suivant)":
+                            lieu_final = nouveau_lieu_libre.strip()
+                        else:
+                            lieu_final = str(choix_lieu).strip()
+
+                        b_valider, b_annuler = st.columns(2)
+                        if b_valider.button(
+                            "\u2705 Valider les modifications",
+                            use_container_width=True,
+                            key=f"btn_valider_edit_{idx_edition}"
+                        ):
+                            if not str(nouveau_enseignement).strip():
+                                st.error("\u26a0\ufe0f Le champ Enseignement ne peut pas \u00eatre vide.")
+                            elif not enseignant_final:
+                                st.error("\u26a0\ufe0f Veuillez pr\u00e9ciser l'enseignant.")
+                            else:
+                                df.loc[idx_edition, "Enseignements"] = str(nouveau_enseignement).strip()
+                                df.loc[idx_edition, "Enseignants"] = enseignant_final
+                                df.loc[idx_edition, "Lieu"] = lieu_final if lieu_final else "Non d\u00e9fini"
+                                df.loc[idx_edition, "Code"] = nouveau_type
+                                df.loc[idx_edition, "Jours"] = nouveau_jour
+                                df.loc[idx_edition, "Horaire"] = nouvelle_horaire
+                                df.loc[idx_edition, "h_norm"] = normalize(nouvelle_horaire)
+                                df.loc[idx_edition, "j_norm"] = normalize(nouveau_jour)
+                                try:
+                                    _sauvegarder_fichier_edt_source()
+                                    st.success(
+                                        f"\u2705 Cellule modifi\u00e9e : "
+                                        f"{nouveau_enseignement} \u2014 {enseignant_final}"
+                                    )
+                                    try:
+                                        for cle_widget in list(st.session_state.keys()):
+                                            if str(cle_widget).startswith("edit_"):
+                                                st.session_state.pop(cle_widget, None)
+                                    except Exception:
+                                        pass
+                                    st.session_state[cle_edition] = None
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erreur de sauvegarde : {e}")
+                        if b_annuler.button(
+                            "\u274C Annuler l'\u00e9dition",
+                            use_container_width=True,
+                            key=f"btn_annuler_edit_{idx_edition}"
+                        ):
+                            try:
+                                for cle_widget in list(st.session_state.keys()):
+                                    if str(cle_widget).startswith("edit_"):
+                                        st.session_state.pop(cle_widget, None)
+                            except Exception:
+                                pass
+                            st.session_state[cle_edition] = None
+                            st.rerun()
+
+                        st.divider()
+
+                # ========================================================
+                # 2) CONFIRMATION DE SUPPRESSION D'UNE CELLULE
+                # ========================================================
+                if st.session_state[cle_suppression] is not None:
+                    idx_suppression = st.session_state[cle_suppression]
+                    with st.container(border=True):
+                        st.warning(
+                            f"\U0001F5D1\ufe0f Confirmer la suppression de : "
+                            f"**{_info_ligne_edt(idx_suppression)}**"
+                        )
+                        b_sup_oui, b_sup_non = st.columns(2)
+                        if b_sup_oui.button(
+                            "\U0001F5D1\ufe0f Oui, supprimer",
+                            use_container_width=True,
+                            key=f"btn_confirmer_sup_{idx_suppression}"
+                        ):
+                            try:
+                                df.drop(index=idx_suppression, inplace=True)
+                                df.reset_index(drop=True, inplace=True)
+                                _sauvegarder_fichier_edt_source()
+                                st.success("\u2705 Enseignement supprim\u00e9 et fichier sauvegard\u00e9.")
+                                # Les indices changent apr\u00e8s suppression : on
+                                # r\u00e9initialise toutes les actions en cours.
+                                st.session_state[cle_suppression] = None
+                                st.session_state[cle_edition] = None
+                                st.session_state[cle_glisser] = None
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erreur de suppression : {e}")
+                        if b_sup_non.button(
+                            "\u274C Non, conserver",
+                            use_container_width=True,
+                            key=f"btn_annuler_sup_{idx_suppression}"
+                        ):
+                            st.session_state[cle_suppression] = None
+                            st.rerun()
+
+                # ========================================================
+                # 3) BANDEAU D'\u00c9TAT DU GLISSER-D\u00c9POSER
+                # ========================================================
+                if st.session_state[cle_glisser] is not None:
+                    idx_glisse = st.session_state[cle_glisser]
+                    with st.container(border=True):
+                        st.info(
+                            "\u270b\ufe0f Cellule saisie : "
+                            f"**{_info_ligne_edt(idx_glisse)}**\n\n"
+                            "Cliquez sur **\U0001F4CD D\u00e9poser ici** dans la cellule "
+                            "de destination pour effectuer le d\u00e9placement."
+                        )
+                        if st.button(
+                            "\u274C Rel\u00e2cher sans d\u00e9poser (annuler le glisser)",
+                            use_container_width=True,
+                            key="btn_annuler_glisser_edt"
+                        ):
+                            st.session_state[cle_glisser] = None
+                            st.rerun()
+
+                # ========================================================
+                # 4) AFFICHAGE DE LA GRILLE INTERACTIVE
+                # ========================================================
+                st.markdown("##### \U0001F5BC\ufe0f Grille EDT interactive")
+
+                # Construction de la grille : m\u00eame logique que grid_p mais
                 # en conservant les indices des lignes pour les actions.
                 df_edt_interactif = df_p.copy()
                 if "_type_affichage_admin" not in df_edt_interactif.columns:
@@ -5953,9 +6160,17 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if not horaires_affiches:
                     horaires_affiches = horaires_list
 
+                en_glissement = st.session_state[cle_glisser] is not None
+
+                # Pendant un glissement, on affiche TOUS les créneaux horaires
+                # afin de pouvoir déposer l'enseignement dans n'importe quelle
+                # cellule, y compris une cellule encore vide.
+                if en_glissement:
+                    horaires_affiches = horaires_list
+
                 entetes = st.columns([1.1] + [1] * len(jours_list))
                 with entetes[0]:
-                    st.markdown("**⏰ Horaire**")
+                    st.markdown("**\u23F0 Horaire**")
                 for num_jour, jour in enumerate(jours_list, start=1):
                     with entetes[num_jour]:
                         st.markdown(f"**{jour}**")
@@ -5974,307 +6189,114 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             cle_creneau = (normalize(horaire), normalize(jour))
                             indices_creneau = enseignements_par_creneau.get(cle_creneau, [])
 
-                            # Conteneur représentant la cellule de l'EDT :
-                            # seule une cellule ACTIVE (case "🔘 Activer"
-                            # cochée) affiche des champs modifiables ; les
-                            # autres restent en lecture seule.
+                            # Conteneur repr\u00e9sentant la cellule de l'EDT :
+                            # les widgets (boutons \u00e9diter / glisser / supprimer /
+                            # d\u00e9poser) sont plac\u00e9s \u00e0 l'int\u00e9rieur.
                             cellule = st.container(border=True)
 
                             with cellule:
-                                if not indices_creneau:
+                                for idx_creneau in indices_creneau:
+                                    r = df_edt_interactif.loc[idx_creneau]
+                                    code_up = str(r["Code"]).upper()
+                                    couleur = "#1e40af" if "COURS" in code_up else (
+                                        "#166534" if "TD" in code_up else "#991b1b")
+                                    nature = "\U0001F4D8" if "COURS" in code_up else (
+                                        "\U0001F4D7" if "TD" in code_up else "\U0001F534")
+
+                                    est_saisi = (
+                                        st.session_state[cle_glisser] == idx_creneau
+                                    )
+                                    fond_carte = "#fde68a" if est_saisi else "#f8fafc"
+                                    st.markdown(
+                                        f"<div style='border-left:3px solid {couleur};"
+                                        f"padding:4px;margin:2px 0;background:{fond_carte};"
+                                        f"border-radius:4px;'>"
+                                        f"<b>{nature} {r['Enseignements']}</b><br>"
+                                        f"<small>\U0001F464 {r['Enseignants']} | "
+                                        f"\U0001F4CD {r['Lieu']}</small>"
+                                        f"</div>",
+                                        unsafe_allow_html=True
+                                    )
+
+                                    c_b1, c_b2, c_b3 = st.columns(3)
+                                    if c_b1.button(
+                                        "\u270f\ufe0f",
+                                        key=f"btn_cell_edit_{idx_creneau}",
+                                        help="\u00c9diter cette cellule"
+                                    ):
+                                        # Purge des anciennes saisies du formulaire
+                                        # d'\u00e9dition afin que les valeurs actuelles
+                                        # de la cellule soient bien affich\u00e9es.
+                                        try:
+                                            for cle_widget in list(st.session_state.keys()):
+                                                if str(cle_widget).startswith("edit_"):
+                                                    st.session_state.pop(cle_widget, None)
+                                        except Exception:
+                                            pass
+                                        st.session_state[cle_edition] = idx_creneau
+                                        st.session_state[cle_glisser] = None
+                                        st.session_state[cle_suppression] = None
+                                        st.rerun()
+                                    if c_b2.button(
+                                        "\u270b\ufe0f",
+                                        key=f"btn_cell_drag_{idx_creneau}",
+                                        help="Saisir pour glisser vers une autre cellule "
+                                             "(cliquer \u00e0 nouveau pour changer d'\u00e9l\u00e9ment)"
+                                    ):
+                                        st.session_state[cle_glisser] = idx_creneau
+                                        st.rerun()
+                                    if c_b3.button(
+                                        "\U0001F5D1\ufe0f",
+                                        key=f"btn_cell_del_{idx_creneau}",
+                                        help="Supprimer cet enseignement"
+                                    ):
+                                        st.session_state[cle_suppression] = idx_creneau
+                                        st.rerun()
+
+                                if en_glissement:
+                                    # Bouton de d\u00e9p\u00f4t disponible dans chaque
+                                    # cellule (y compris les cellules occup\u00e9es :
+                                    # deux enseignements peuvent coexister dans
+                                    # un m\u00eame cr\u00e9neau), sauf dans la cellule
+                                    # d'origine du glissement (d\u00e9p\u00f4t inutile).
+                                    cellule_est_origine = any(
+                                        st.session_state[cle_glisser] == idx_origine
+                                        for idx_origine in indices_creneau
+                                    )
+                                    if not cellule_est_origine and st.button(
+                                        "\U0001F4CD D\u00e9poser ici",
+                                        key=f"btn_drop_{normalize(horaire)}_{normalize(jour)}",
+                                        use_container_width=True,
+                                        type="primary"
+                                    ):
+                                        idx_deplace = st.session_state[cle_glisser]
+                                        try:
+                                            df.loc[idx_deplace, "Jours"] = jour
+                                            df.loc[idx_deplace, "Horaire"] = horaire
+                                            df.loc[idx_deplace, "j_norm"] = normalize(jour)
+                                            df.loc[idx_deplace, "h_norm"] = normalize(horaire)
+                                            _sauvegarder_fichier_edt_source()
+                                            st.success(
+                                                f"\u2705 D\u00e9plac\u00e9 vers "
+                                                f"{jour} \u2014 {horaire}"
+                                            )
+                                            st.session_state[cle_glisser] = None
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erreur de d\u00e9placement : {e}")
+                                elif not indices_creneau:
                                     st.markdown(
                                         "<div style='color:#94a3b8;font-size:12px;"
                                         "text-align:center;'>&mdash;</div>",
                                         unsafe_allow_html=True
                                     )
 
-                                for idx_creneau in indices_creneau:
-                                    r = df_edt_interactif.loc[idx_creneau]
-                                    code_up = str(r["Code"]).upper()
-                                    couleur = "#1e40af" if "COURS" in code_up else (
-                                        "#166534" if "TD" in code_up else "#991b1b")
-                                    nature = "📘" if "COURS" in code_up else (
-                                        "📗" if "TD" in code_up else "🔴")
-
-                                    est_active = idx_creneau in st.session_state[cle_actives]
-                                    est_marquee_suppr = idx_creneau in st.session_state[cle_suppr_marquees]
-                                    if est_marquee_suppr:
-                                        fond_carte = "#fecaca"
-                                    elif est_active:
-                                        fond_carte = "#fde68a"
-                                    else:
-                                        fond_carte = "#f8fafc"
-
-                                    st.markdown(
-                                        f"<div style='border-left:3px solid {couleur};"
-                                        f"padding:4px;margin:2px 0;background:{fond_carte};"
-                                        f"border-radius:4px;'>"
-                                        f"<b>{nature} {r['Enseignements']}</b><br>"
-                                        f"<small>👤 {r['Enseignants']} | "
-                                        f"📍 {r['Lieu']}</small>"
-                                        f"</div>",
-                                        unsafe_allow_html=True
-                                    )
-
-                                    # --- Case "🔘 Activer" : seule cette cellule
-                                    #     devient modifiable, le reste reste inactif ---
-                                    actif_coche = st.checkbox(
-                                        "🔘 Activer",
-                                        value=est_active,
-                                        key=f"chk_activer_{idx_creneau}",
-                                        help="Rend cette cellule modifiable "
-                                             "(édition, déplacement, suppression). "
-                                             "Les autres cellules restent inactives."
-                                    )
-                                    if actif_coche and not est_active:
-                                        st.session_state[cle_actives].add(idx_creneau)
-                                        st.rerun()
-                                    elif not actif_coche and est_active:
-                                        st.session_state[cle_actives].discard(idx_creneau)
-                                        st.session_state[cle_suppr_marquees].discard(idx_creneau)
-                                        st.rerun()
-
-                                    if actif_coche:
-                                        # ================================
-                                        # FORMULAIRE INLINE DE LA CELLULE ACTIVE
-                                        # ================================
-                                        with st.container(border=True):
-                                            st.caption("✏️ Édition de cette cellule")
-
-                                            st.text_input(
-                                                "📘 Enseignement :",
-                                                value=str(r["Enseignements"]),
-                                                key=f"edit_ens_{idx_creneau}"
-                                            )
-
-                                            options_enseignants = liste_enseignants_edt + [
-                                                "Non défini", "➕ Saisie libre"
-                                            ]
-                                            val_defaut_ens = str(r["Enseignants"])
-                                            index_defaut_ens = (
-                                                options_enseignants.index(val_defaut_ens)
-                                                if val_defaut_ens in options_enseignants
-                                                else len(options_enseignants) - 1
-                                            )
-                                            st.selectbox(
-                                                "👤 Enseignant :",
-                                                options_enseignants,
-                                                index=index_defaut_ens,
-                                                key=f"edit_enseignant_sel_{idx_creneau}"
-                                            )
-                                            st.text_input(
-                                                "Enseignant (saisie libre, si absent "
-                                                "de la liste ci-dessus) :",
-                                                value="",
-                                                key=f"edit_enseignant_libre_{idx_creneau}"
-                                            )
-
-                                            options_lieux = liste_lieux_edt + [
-                                                "Non défini", "➕ Saisie libre"
-                                            ]
-                                            val_defaut_lieu = str(r["Lieu"])
-                                            index_defaut_lieu = (
-                                                options_lieux.index(val_defaut_lieu)
-                                                if val_defaut_lieu in options_lieux
-                                                else len(options_lieux) - 1
-                                            )
-                                            st.selectbox(
-                                                "📍 Lieu :",
-                                                options_lieux,
-                                                index=index_defaut_lieu,
-                                                key=f"edit_lieu_sel_{idx_creneau}"
-                                            )
-                                            st.text_input(
-                                                "Lieu (saisie libre, si absent de "
-                                                "la liste ci-dessus) :",
-                                                value="",
-                                                key=f"edit_lieu_libre_{idx_creneau}"
-                                            )
-
-                                            val_type_courant = str(r["Code"]).upper()
-                                            if "COURS" in val_type_courant:
-                                                type_courant = "COURS"
-                                            elif "TD" in val_type_courant:
-                                                type_courant = "TD"
-                                            elif "TP" in val_type_courant:
-                                                type_courant = "TP"
-                                            else:
-                                                type_courant = "COURS"
-                                            st.radio(
-                                                "Type d'enseignement :",
-                                                ["COURS", "TD", "TP"],
-                                                index=["COURS", "TD", "TP"].index(type_courant),
-                                                horizontal=True,
-                                                key=f"edit_type_{idx_creneau}"
-                                            )
-
-                                            st.selectbox(
-                                                "📅 Jour (glisser vers un autre "
-                                                "jour) :",
-                                                jours_list,
-                                                index=jours_list.index(str(r["Jours"]))
-                                                if str(r["Jours"]) in jours_list else 0,
-                                                key=f"edit_jour_{idx_creneau}"
-                                            )
-                                            st.selectbox(
-                                                "⏰ Horaire (glisser vers un autre "
-                                                "créneau) :",
-                                                horaires_list,
-                                                index=horaires_list.index(str(r["Horaire"]))
-                                                if str(r["Horaire"]) in horaires_list else 0,
-                                                key=f"edit_horaire_{idx_creneau}"
-                                            )
-
-                                            marquer_suppr = st.checkbox(
-                                                "🗑️ Supprimer cette cellule "
-                                                "(effectif à la validation)",
-                                                value=est_marquee_suppr,
-                                                key=f"chk_suppr_{idx_creneau}"
-                                            )
-                                            if marquer_suppr:
-                                                st.session_state[cle_suppr_marquees].add(idx_creneau)
-                                            else:
-                                                st.session_state[cle_suppr_marquees].discard(idx_creneau)
-
-                # ========================================================
-                # VALIDATION GLOBALE : UN SEUL CLIC POUR TOUTES LES
-                # CELLULES ACTIVES (édition, déplacement et suppression
-                # appliqués et enregistrés en une seule fois).
-                # ========================================================
-                st.markdown("---")
-                nb_actives = len(st.session_state[cle_actives])
-                if nb_actives == 0:
-                    st.caption(
-                        "Aucune cellule active pour le moment. Cochez "
-                        "« 🔘 Activer » dans une ou plusieurs cellules "
-                        "ci-dessus pour commencer."
-                    )
-                else:
-                    st.markdown(
-                        f"**{nb_actives} cellule(s) active(s)** — "
-                        f"{len(st.session_state[cle_suppr_marquees])} "
-                        f"marquée(s) pour suppression."
-                    )
-                    if st.button(
-                        "✅ Valider et enregistrer toutes les modifications",
-                        type="primary",
-                        use_container_width=True,
-                        key="btn_valider_tout_edt_promo"
-                    ):
-                        erreurs = []
-                        a_supprimer = []
-                        modifications_appliquees = 0
-
-                        for idx_actif in list(st.session_state[cle_actives]):
-                            if idx_actif not in df.index:
-                                continue
-
-                            if idx_actif in st.session_state[cle_suppr_marquees]:
-                                a_supprimer.append(idx_actif)
-                                continue
-
-                            nouveau_enseignement = st.session_state.get(
-                                f"edit_ens_{idx_actif}", ""
-                            )
-                            choix_enseignant = st.session_state.get(
-                                f"edit_enseignant_sel_{idx_actif}", "Non défini"
-                            )
-                            enseignant_libre = st.session_state.get(
-                                f"edit_enseignant_libre_{idx_actif}", ""
-                            )
-                            choix_lieu = st.session_state.get(
-                                f"edit_lieu_sel_{idx_actif}", "Non défini"
-                            )
-                            lieu_libre = st.session_state.get(
-                                f"edit_lieu_libre_{idx_actif}", ""
-                            )
-                            nouveau_type = st.session_state.get(
-                                f"edit_type_{idx_actif}", "COURS"
-                            )
-                            nouveau_jour = st.session_state.get(
-                                f"edit_jour_{idx_actif}",
-                                jours_list[0] if jours_list else ""
-                            )
-                            nouvelle_horaire = st.session_state.get(
-                                f"edit_horaire_{idx_actif}",
-                                horaires_list[0] if horaires_list else ""
-                            )
-
-                            if choix_enseignant == "➕ Saisie libre":
-                                enseignant_final = str(enseignant_libre).strip()
-                            else:
-                                enseignant_final = str(choix_enseignant).strip()
-                            if choix_lieu == "➕ Saisie libre":
-                                lieu_final = str(lieu_libre).strip()
-                            else:
-                                lieu_final = str(choix_lieu).strip()
-
-                            if not str(nouveau_enseignement).strip():
-                                erreurs.append(
-                                    f"« {_info_ligne_edt(idx_actif)} » : "
-                                    "le champ Enseignement ne peut pas être vide."
-                                )
-                                continue
-                            if not enseignant_final:
-                                erreurs.append(
-                                    f"« {_info_ligne_edt(idx_actif)} » : "
-                                    "veuillez préciser l'enseignant."
-                                )
-                                continue
-
-                            df.loc[idx_actif, "Enseignements"] = str(nouveau_enseignement).strip()
-                            df.loc[idx_actif, "Enseignants"] = enseignant_final
-                            df.loc[idx_actif, "Lieu"] = lieu_final if lieu_final else "Non défini"
-                            df.loc[idx_actif, "Code"] = nouveau_type
-                            df.loc[idx_actif, "Jours"] = nouveau_jour
-                            df.loc[idx_actif, "Horaire"] = nouvelle_horaire
-                            df.loc[idx_actif, "h_norm"] = normalize(nouvelle_horaire)
-                            df.loc[idx_actif, "j_norm"] = normalize(nouveau_jour)
-                            modifications_appliquees += 1
-
-                        if erreurs:
-                            for message_erreur in erreurs:
-                                st.error(f"⚠️ {message_erreur}")
-                        else:
-                            try:
-                                if a_supprimer:
-                                    df.drop(index=a_supprimer, inplace=True)
-                                    df.reset_index(drop=True, inplace=True)
-                                _sauvegarder_fichier_edt_source()
-
-                                message_final = []
-                                if modifications_appliquees:
-                                    message_final.append(
-                                        f"{modifications_appliquees} cellule(s) modifiée(s)"
-                                    )
-                                if a_supprimer:
-                                    message_final.append(
-                                        f"{len(a_supprimer)} cellule(s) supprimée(s)"
-                                    )
-                                st.success(
-                                    "✅ " + " et ".join(message_final)
-                                    + " — fichier enregistré."
-                                )
-
-                                for cle_widget in list(st.session_state.keys()):
-                                    if str(cle_widget).startswith((
-                                        "edit_", "chk_activer_", "chk_suppr_"
-                                    )):
-                                        st.session_state.pop(cle_widget, None)
-                                st.session_state[cle_actives] = set()
-                                st.session_state[cle_suppr_marquees] = set()
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Erreur de sauvegarde : {e}")
-
                 st.caption(
-                    "🔘 Activer • ✏️ Éditer (enseignement, enseignant, lieu, "
-                    "type, jour, horaire) • 🗑️ Marquer pour suppression • "
-                    "✅ Valider et enregistrer — une seule sauvegarde pour "
-                    "toutes les cellules actives, dans le fichier "
+                    "\u270f\ufe0f \u00c9diter \u2022 \u270b\ufe0f Saisir/Glisser \u2022 "
+                    "\U0001F4CD D\u00e9poser ici \u2022 \U0001F5D1\ufe0f Supprimer \u2014 "
+                    "Les modifications sont enregistr\u00e9es dans le fichier "
                     f"`{os.path.basename(NOM_FICHIER_FIXE)}`."
                 )
-
 
                 # Ajout d'un nouvel enseignement dans une cellule vide
                 st.markdown("##### \u2795 Ajouter un enseignement \u00e0 l'EDT")
