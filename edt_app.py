@@ -367,6 +367,62 @@ def _ajouter_demande_locale_fichier(enregistrement):
     return enregistrement
 
 
+# ============================================================
+# CORRECTIF — COMPTAGE DE LA CHARGE HORAIRE (Cours / TD / TP)
+# ------------------------------------------------------------
+# Règle demandée : dans une même cellule (même Jour + même Horaire)
+# pour un enseignant donné :
+#   - si CETTE cellule contient PLUSIEURS NATURES DIFFÉRENTES
+#     (par exemple un Cours ET un TD au même horaire), CHACUNE
+#     de ces natures doit être comptabilisée ;
+#   - si CETTE cellule contient PLUSIEURS SÉANCES DE LA MÊME NATURE
+#     (par exemple TP-G1 et TP-G2 au même horaire — même séance,
+#     seulement dédoublée par sous-groupe), cette nature n'est
+#     comptabilisée QU'UNE SEULE FOIS.
+#
+# Auparavant, le code appelait `drop_duplicates(subset=[...jour,
+# horaire...])` : cela ne conservait qu'UNE SEULE ligne par cellule
+# (la première rencontrée), quelle que soit sa nature — si une même
+# cellule contenait réellement deux natures différentes, l'une des
+# deux était purement et simplement perdue et jamais comptée. La
+# fonction ci-dessous corrige ce point en comptant, pour chaque
+# cellule, l'ENSEMBLE des natures distinctes qui s'y trouvent.
+# ============================================================
+def _compter_natures_par_cellule(df_type, colonnes_cellule):
+    """Compte le nombre de séances de Cours / TD / TP pour un enseignant,
+    en comptant chaque NATURE une seule fois par cellule (colonnes
+    identifiant le jour + l'horaire), même si plusieurs lignes se
+    partagent cette cellule (ex. TP-G1 et TP-G2 au même horaire :
+    c'est la MÊME séance, seulement dédoublée par sous-groupe -> comptée
+    UNE fois). En revanche, si une même cellule regroupe plusieurs
+    natures VRAIMENT différentes (ex. Cours ET TD au même horaire),
+    CHACUNE est comptée.
+
+    'df_type' doit contenir une colonne 'Type' (valeurs 'COURS', 'TD' ou
+    'TP') ainsi que les colonnes indiquées dans 'colonnes_cellule'
+    (typiquement ['Jours', 'Horaire'] ou ['j_norm', 'h_norm']).
+    Retourne (nb_cours, nb_td, nb_tp)."""
+    if df_type is None or df_type.empty:
+        return 0, 0, 0
+    if 'Type' not in df_type.columns or any(
+        c not in df_type.columns for c in colonnes_cellule
+    ):
+        return 0, 0, 0
+
+    nb_cours = 0
+    nb_td = 0
+    nb_tp = 0
+    for _, groupe_cellule in df_type.groupby(colonnes_cellule):
+        natures_presentes = set(groupe_cellule['Type'].dropna().unique())
+        if "COURS" in natures_presentes:
+            nb_cours += 1
+        if "TD" in natures_presentes:
+            nb_td += 1
+        if "TP" in natures_presentes:
+            nb_tp += 1
+    return nb_cours, nb_td, nb_tp
+
+
 def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_client):
 
     """
@@ -4854,11 +4910,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
             df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
             df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
-            df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
-
-            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-            nb_td = len(df_u[df_u['Type'] == 'TD'])
-            nb_tp = len(df_u[df_u['Type'] == 'TP'])
+            nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
             seuil = 3.0 if poste_sup else 6.0
             charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
             delta = charge_eq - seuil
@@ -7611,11 +7663,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             return
 
         df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
-        df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
-        
-        nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-        nb_td = len(df_u[df_u['Type'] == 'TD'])
-        nb_tp = len(df_u[df_u['Type'] == 'TP'])
+        nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
         seuil = 3.0 if poste_sup else 6.0
         charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
         delta = charge_eq - seuil
@@ -11507,11 +11555,10 @@ def render_download_hub(df_global, user_data, is_admin):
             df_filtre_p['Type'] = df_filtre_p['Code'].apply(
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
-            # Déduplication sur Horaire + Jours pour compter les séances uniques
-            df_u = df_filtre_p.drop_duplicates(subset=['Horaire', 'Jours'])
-            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-            nb_td    = len(df_u[df_u['Type'] == 'TD'])
-            nb_tp    = len(df_u[df_u['Type'] == 'TP'])
+            # Comptage : chaque nature comptée une seule fois par cellule
+            # (jour + horaire), toutes les natures différentes comptées
+            # si plusieurs coexistent dans la même cellule.
+            nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_filtre_p, ['Horaire', 'Jours'])
 
             # Calcul de la charge équivalente
             # 1h Cours = 1.5 eq/h  |  1h TD/TP = 1.0 eq/h
@@ -12897,15 +12944,14 @@ if is_admin:
                 if df_ens.empty:
                     continue
 
-                # Typage et déduplication (séances uniques uniquement)
+                # Typage, puis comptage par cellule (jour + horaire) :
+                # chaque nature comptée une seule fois par cellule, mais
+                # toutes les natures différentes comptées si plusieurs
+                # coexistent dans la même cellule.
                 df_ens['Type'] = df_ens['Code'].apply(
                     lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
                 )
-                df_u = df_ens.drop_duplicates(subset=['Horaire', 'Jours'])
-
-                nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-                nb_td = len(df_u[df_u['Type'] == 'TD'])
-                nb_tp = len(df_u[df_u['Type'] == 'TP'])
+                nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_ens, ['Horaire', 'Jours'])
 
                 charge_eq = round((nb_cours * 1.5) + (nb_td * 1.0) + (nb_tp * 1.0), 2)
                 delta_eq = round(charge_eq - seuil, 2)
@@ -13492,13 +13538,14 @@ if df is not None:
             # Définition des types pour le calcul (COURS, TD ou TP)
             df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
             
-            # Suppression des doublons basés sur le jour et l'heure pour éviter les erreurs de calcul
-            df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
+            # Comptage par cellule (jour + horaire) : chaque nature
+            # comptée une seule fois par cellule, mais toutes les
+            # natures différentes comptées si plusieurs coexistent dans
+            # la même cellule (corrige la perte d'une nature en cas de
+            # cellule à natures multiples).
             
             # --- 1. CALCUL DES COMPTEURS (LOGIQUE BILAN DIRECT) ---
-            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-            nb_td    = len(df_u[df_u['Type'] == 'TD'])
-            nb_tp    = len(df_u[df_u['Type'] == 'TP'])
+            nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
 
             # Le seuil réglementaire (3.0 si poste sup, sinon 6.0)
             seuil_obligatoire = 3.0 if poste_sup else 6.0
@@ -15242,12 +15289,11 @@ if df is not None:
             df_f['Type'] = df_f['Code'].apply(
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
-            df_u = df_f.drop_duplicates(subset=['j_norm', 'h_norm'])
-        
-            # Calculs de charge
-            nb_cours = len(df_u[df_u['Type'] == 'COURS'])
-            nb_td = len(df_u[df_u['Type'] == 'TD'])
-            nb_tp = len(df_u[df_u['Type'] == 'TP'])
+            # Comptage par cellule (jour + horaire) : chaque nature
+            # comptée une seule fois par cellule, mais toutes les
+            # natures différentes comptées si plusieurs coexistent dans
+            # la même cellule.
+            nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
         
             seuil_obligatoire = 3.0 if poste_sup else 6.0
             charge_totale_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
