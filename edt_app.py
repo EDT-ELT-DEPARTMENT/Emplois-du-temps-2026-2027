@@ -7694,10 +7694,47 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         col_ex2.download_button("🌐 HTML", df_f.to_html(index=False), f"Mon_EDT_{cible}.html", "text/html")
         # =============================================================================
-        # 📥 EXPORT GRILLE EDT — Jours ↓ | Horaires →
+        # 🎨 GRILLE EDT INDIVIDUELLE — VUE COLORÉE, FILTRABLE PAR PROMOTION ET PAR TYPE
         # =============================================================================
         st.divider()
-        st.markdown("### 📥 Exporter mon EDT (Grille complète)")
+        st.markdown("### 🎨 Vue Grille de mon EDT (par promotion et par type)")
+        st.caption(
+            "Choisissez une promotion et/ou un type d'enseignement pour afficher "
+            "une grille claire et colorée de votre emploi du temps, avec export "
+            "Excel et PDF de la sélection."
+        )
+
+        # --- Options de filtrage ---
+        promotions_dispo_ens = sorted([
+            p for p in df_f["Promotion"].dropna().unique()
+            if str(p).strip() and str(p).strip() != "Non défini"
+        ])
+
+        col_filtre1, col_filtre2 = st.columns(2)
+        with col_filtre1:
+            promotion_choisie_ens = st.selectbox(
+                "🎓 Choisir Promotion :",
+                ["Toutes les promotions"] + promotions_dispo_ens,
+                key="promo_choisie_ens_indiv"
+            )
+        with col_filtre2:
+            type_choisi_ens = st.selectbox(
+                "📚 Type d'enseignement à afficher :",
+                ["Tous les types", "📘 Cours uniquement", "📗 TD uniquement", "🔴 TP uniquement"],
+                key="type_choisi_ens_indiv"
+            )
+
+        # --- Application des filtres ---
+        df_f_filtre_ens = df_f.copy()
+        if promotion_choisie_ens != "Toutes les promotions":
+            df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Promotion"] == promotion_choisie_ens]
+
+        if type_choisi_ens == "📘 Cours uniquement":
+            df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "COURS"]
+        elif type_choisi_ens == "📗 TD uniquement":
+            df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "TD"]
+        elif type_choisi_ens == "🔴 TP uniquement":
+            df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "TP"]
 
         # --- Constantes locales ---
         _HORAIRES = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"]
@@ -7745,8 +7782,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 out.append(f"{em} {r.get('Enseignements','')}\nPromo: {r.get('Promotion','')}\nSalle: {r.get('Lieu','')}")
             return "\n\n".join(out)
 
-        # Construction des grilles
-        df_g = df_f.copy()
+        # Construction des grilles (à partir des données FILTRÉES)
+        df_g = df_f_filtre_ens.copy()
         df_g["h_norm"] = df_g["Horaire"].apply(_norm_h)
         df_g["j_norm"] = df_g["Jours"].apply(_norm_j)
 
@@ -7768,8 +7805,52 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 grille_html = g_html.reindex(index=jours_ok, columns=h_ok).fillna("")
                 grille_text = g_text.reindex(index=jours_ok, columns=h_ok).fillna("")
 
-        # --- BOUTONS D'EXPORT ---
+        # --- Construction du fragment HTML de la grille (réutilisé pour
+        #     l'affichage à l'écran ET pour l'export HTML ci-dessous) ---
+        thead = ""
+        tbody = ""
+        if not grille_html.empty:
+            thead = "<tr><th style='background:#1E3A8A;color:white;padding:10px;width:100px;'>JOUR</th>" + "".join([f"<th style='background:#1E3A8A;color:white;padding:10px;font-size:12px;'>{h}</th>" for h in grille_html.columns]) + "</tr>"
+            for jour, row in grille_html.iterrows():
+                tbody += f"<tr><td style='background:#f1f5f9;font-weight:bold;text-align:center;padding:10px;'>{jour}</td>"
+                for val in row:
+                    tbody += f"<td style='border:1px solid #e2e8f0;padding:6px;vertical-align:top;'>{val}</td>"
+                tbody += "</tr>"
+
+        # --- AFFICHAGE À L'ÉCRAN : GRILLE BIEN VISIBLE ET COLORÉE ---
+        sous_titre_grille_ens = f"{cible}"
+        if promotion_choisie_ens != "Toutes les promotions":
+            sous_titre_grille_ens += f" — 🎓 {promotion_choisie_ens}"
+        if type_choisi_ens != "Tous les types":
+            sous_titre_grille_ens += f" — {type_choisi_ens}"
+
+        if not grille_html.empty:
+            st.markdown(
+                f"<div style='background:linear-gradient(135deg,#1E3A8A,#3B82F6);"
+                f"color:white;padding:12px 16px;border-radius:8px 8px 0 0;"
+                f"margin-top:10px;text-align:center;'>"
+                f"<b>📅 Grille EDT — {sous_titre_grille_ens}</b></div>"
+                f"<div style='overflow-x:auto;border:1px solid #e2e8f0;"
+                f"border-radius:0 0 8px 8px;'>"
+                f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;'>"
+                f"<thead>{thead}</thead><tbody>{tbody}</tbody></table></div>",
+                unsafe_allow_html=True
+            )
+        else:
+            st.info(
+                "ℹ️ Aucun enseignement à afficher pour cette combinaison "
+                "Promotion / Type d'enseignement."
+            )
+
+        # --- BOUTONS D'EXPORT (reflètent la sélection Promotion / Type) ---
+        st.markdown("#### 📥 Exporter cette grille")
         c1, c2, c3 = st.columns(3)
+
+        suffixe_fichier_ens = cible.replace(' ', '_')
+        if promotion_choisie_ens != "Toutes les promotions":
+            suffixe_fichier_ens += f"_{promotion_choisie_ens.replace(' ', '_')}"
+        if type_choisi_ens != "Tous les types":
+            suffixe_fichier_ens += f"_{type_choisi_ens.split()[1].replace(' ', '_')}"
 
         # 1️⃣ EXCEL (xlsxwriter)
         if not grille_text.empty:
@@ -7781,7 +7862,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 
                 # Titre
                 title_fmt = wb.add_format({'bold': True, 'font_size': 14, 'font_color': '#1E3A8A', 'align': 'center', 'valign': 'vcenter'})
-                ws.merge_range(0, 0, 0, len(grille_text.columns), f"EDT Individuel — {cible}", title_fmt)
+                ws.merge_range(0, 0, 0, len(grille_text.columns), f"EDT Individuel — {sous_titre_grille_ens}", title_fmt)
                 ws.merge_range(1, 0, 1, len(grille_text.columns), f"Semestre 01 — 2026-2027 | Généré le {datetime.now().strftime('%d/%m/%Y')}", 
                                wb.add_format({'italic': True, 'align': 'center', 'font_size': 10, 'font_color': '#64748b'}))
                 
@@ -7813,7 +7894,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
             c1.download_button(
                 "📊 Excel (Grille)", buf_xl.getvalue(),
-                f"EDT_Grille_{cible.replace(' ','_')}.xlsx",
+                f"EDT_Grille_{suffixe_fichier_ens}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True, key="dl_grille_xl_ens"
             )
@@ -7822,14 +7903,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
         # 2️⃣ HTML
         if not grille_html.empty:
-            thead = "<tr><th style='background:#1E3A8A;color:white;padding:10px;width:100px;'>JOUR</th>" + "".join([f"<th style='background:#1E3A8A;color:white;padding:10px;font-size:12px;'>{h}</th>" for h in grille_html.columns]) + "</tr>"
-            tbody = ""
-            for jour, row in grille_html.iterrows():
-                tbody += f"<tr><td style='background:#f1f5f9;font-weight:bold;text-align:center;padding:10px;'>{jour}</td>"
-                for val in row:
-                    tbody += f"<td style='border:1px solid #e2e8f0;padding:6px;vertical-align:top;'>{val}</td>"
-                tbody += "</tr>"
-            
             html_doc = f"""<!DOCTYPE html>
 <html lang='fr'><head><meta charset='UTF-8'><title>EDT {cible}</title>
 <style>
@@ -7845,14 +7918,14 @@ td{{word-wrap:break-word;}}
 @media print{{body{{background:white;padding:0;}} .container{{box-shadow:none;border-radius:0;}}}}
 </style></head><body>
 <div class='container'>
-<div class='header'><h1>📅 EDT Individuel — {cible}</h1><p>Semestre 01 — 2026-2027 | département d'Électrotechnique — FGE/UDL-SBA</p></div>
+<div class='header'><h1>📅 EDT Individuel — {sous_titre_grille_ens}</h1><p>Semestre 01 — 2026-2027 | département d'Électrotechnique — FGE/UDL-SBA</p></div>
 <div class='content'><table><thead>{thead}</thead><tbody>{tbody}</tbody></table></div>
 <div class='footer'>Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</div>
 </div></body></html>"""
             
             c2.download_button(
                 "🌐 HTML (Grille)", html_doc,
-                f"EDT_Grille_{cible.replace(' ','_')}.html",
+                f"EDT_Grille_{suffixe_fichier_ens}.html",
                 "text/html", use_container_width=True, key="dl_grille_html_ens"
             )
         else:
@@ -7889,7 +7962,7 @@ td{{word-wrap:break-word;}}
                 pdf.set_auto_page_break(auto=True,margin=15)
                 pdf.add_page()
                 pdf.set_font('Arial','B',13); pdf.set_text_color(30,58,138)
-                pdf.cell(0,8,_san(f"EDT Individuel — {cible}"),0,1,'C')
+                pdf.cell(0,8,_san(f"EDT Individuel — {sous_titre_grille_ens}"),0,1,'C')
                 pdf.set_font('Arial','I',9); pdf.set_text_color(100,100,100)
                 pdf.cell(0,5,_san("Semestre 01 — 2026-2027"),0,1,'C'); pdf.ln(3)
 
@@ -7946,7 +8019,7 @@ td{{word-wrap:break-word;}}
                 
                 c3.download_button(
                     "📄 PDF (Grille)", bytes(pdf.output()),
-                    f"EDT_Grille_{cible.replace(' ','_')}.pdf",
+                    f"EDT_Grille_{suffixe_fichier_ens}.pdf",
                     "application/pdf", use_container_width=True, key="dl_grille_pdf_ens"
                 )
             except Exception as e:
@@ -7954,9 +8027,7 @@ td{{word-wrap:break-word;}}
         else:
             c3.button("📄 PDF (Grille)", disabled=True, use_container_width=True)
 
-        if grille_text.empty:
-            st.info("ℹ️ Aucun cours sur les créneaux standards (08h00-17h00) pour cette sélection.")
-
+        
         
         # SECTION: Demande de Mise à Jour EDT (Enseignant)
         # ═══════════════════════════════════════════════════════════════════════════
