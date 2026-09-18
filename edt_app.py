@@ -4865,7 +4865,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             "🟢 Lieux Non Occupés", 
             "🚩 Vérificateur de conflits",
             "🔴 Chevauchements par Enseignant",
-            "🏢 Chevauchements par Lieu"
+            "🏢 Chevauchements par Lieu",
+            "🛠️ Résolution des Chevauchements",
+            "👥 EDT par Groupe (TD/TP)"
         ], horizontal=True)
     
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
@@ -8886,6 +8888,919 @@ td{{word-wrap:break-word;}}
                     use_container_width=True,
                     key="dl_rapport_global_lieu_chev"
                 )
+
+        elif mode_view == "🛠️ Résolution des Chevauchements":
+            # ============================================================
+            # 🛠️ RÉSOLUTION DES CHEVAUCHEMENTS (ENSEIGNANTS & LIEUX)
+            # ------------------------------------------------------------
+            # Génère des PROPOSITIONS de déplacement pour résoudre les
+            # chevauchements réels détectés, à la fois du point de vue des
+            # enseignants (un enseignant affecté à deux enseignements
+            # différents en même temps) et des lieux (une salle occupée
+            # par deux enseignements différents en même temps).
+            #
+            # Les enseignants sélectionnés en EXCEPTION conservent leur
+            # emploi du temps ACTUEL sans aucune modification : si un
+            # chevauchement implique un enseignant excepté, seule(s) la
+            # ou les autres séances impliquées seront proposées au
+            # déplacement (jamais celles de l'enseignant excepté).
+            #
+            # Chaque proposition cherche un nouveau (jour, horaire) où
+            # l'ENSEIGNANT concerné ET le LIEU concerné sont tous les deux
+            # libres, afin de ne pas créer un nouveau chevauchement à la
+            # place de l'ancien.
+            # ============================================================
+            st.subheader("🛠️ Résolution des Chevauchements (Enseignants & Lieux)")
+            st.caption(
+                "Génère des propositions de déplacement pour résoudre les "
+                "chevauchements réels détectés (enseignants ET lieux). Les "
+                "enseignants placés en exception ci-dessous conservent "
+                "leur emploi du temps actuel, sans aucune modification."
+            )
+
+            liste_tous_enseignants_reso = sorted([
+                e for e in df["Enseignants"].dropna().unique()
+                if str(e).strip() and str(e).strip() != "Non défini"
+            ])
+
+            enseignants_exceptes_reso = st.multiselect(
+                "🚫 Enseignants à exclure de la résolution (garder leur EDT tel quel) :",
+                liste_tous_enseignants_reso,
+                key="enseignants_exceptes_reso"
+            )
+
+            if st.button(
+                "🔍 Analyser et proposer des solutions",
+                type="primary", use_container_width=True, key="btn_analyser_reso"
+            ):
+                def _nature_reso(code):
+                    c = str(code).upper()
+                    if "COURS" in c:
+                        return "COURS"
+                    if "TD" in c:
+                        return "TD"
+                    if "TP" in c:
+                        return "TP"
+                    return "AUTRE"
+
+                df_travail_reso = df.copy()
+                df_travail_reso['h_norm'] = df_travail_reso['Horaire'].apply(normalize)
+                df_travail_reso['j_norm'] = df_travail_reso['Jours'].apply(normalize)
+
+                # --- Occupation actuelle : (enseignant, jour, horaire) et
+                #     (lieu, jour, horaire) -> liste d'index de lignes ---
+                occ_enseignant_reso = {}
+                occ_lieu_reso = {}
+                for idx_r, r in df_travail_reso.iterrows():
+                    j_aff_r = map_j.get(r['j_norm'])
+                    h_aff_r = map_h.get(r['h_norm'])
+                    if j_aff_r is None or h_aff_r is None:
+                        continue
+                    ens_r = str(r.get('Enseignants', '')).strip()
+                    lieu_r = str(r.get('Lieu', '')).strip()
+                    occ_enseignant_reso.setdefault((ens_r, j_aff_r, h_aff_r), []).append(idx_r)
+                    occ_lieu_reso.setdefault((lieu_r, j_aff_r, h_aff_r), []).append(idx_r)
+
+                def _groupes_distincts_reso(indices):
+                    """Regroupe les lignes par (nature, intitulé exact) ;
+                    plusieurs groupes distincts = chevauchement réel."""
+                    groupes = {}
+                    for i in indices:
+                        if i not in df_travail_reso.index:
+                            continue
+                        r = df_travail_reso.loc[i]
+                        cle_g = (_nature_reso(r.get('Code', '')), str(r.get('Enseignements', '')).strip().upper())
+                        groupes.setdefault(cle_g, []).append(i)
+                    return groupes
+
+                # --- Liste des créneaux en conflit réel (enseignant + lieu) ---
+                conflits_a_traiter_reso = []
+                for (ens_c, j_c, h_c), indices_c in occ_enseignant_reso.items():
+                    if len(indices_c) >= 2 and len(_groupes_distincts_reso(indices_c)) > 1:
+                        conflits_a_traiter_reso.append({
+                            'type': 'enseignant', 'valeur': ens_c,
+                            'jour': j_c, 'horaire': h_c, 'indices': indices_c
+                        })
+                for (lieu_c, j_c, h_c), indices_c in occ_lieu_reso.items():
+                    if len(indices_c) >= 2 and len(_groupes_distincts_reso(indices_c)) > 1:
+                        conflits_a_traiter_reso.append({
+                            'type': 'lieu', 'valeur': lieu_c,
+                            'jour': j_c, 'horaire': h_c, 'indices': indices_c
+                        })
+
+                propositions_reso = []
+                non_resolus_reso = []
+
+                occ_enseignant_travail = {k: list(v) for k, v in occ_enseignant_reso.items()}
+                occ_lieu_travail = {k: list(v) for k, v in occ_lieu_reso.items()}
+
+                deja_traites_reso = set()
+
+                for conflit_r in conflits_a_traiter_reso:
+                    cle_conflit_r = (conflit_r['type'], conflit_r['valeur'], conflit_r['jour'], conflit_r['horaire'])
+                    if cle_conflit_r in deja_traites_reso:
+                        continue
+                    deja_traites_reso.add(cle_conflit_r)
+
+                    indices_r = [i for i in conflit_r['indices'] if i in df_travail_reso.index]
+                    groupes_distincts_r = _groupes_distincts_reso(indices_r)
+                    if len(groupes_distincts_r) <= 1:
+                        continue
+
+                    # Le premier groupe distinct reste en place ; on essaie
+                    # de déplacer les AUTRES groupes.
+                    groupes_a_deplacer_r = list(groupes_distincts_r.items())[1:]
+
+                    for (_, indices_g_r) in groupes_a_deplacer_r:
+                        for idx_ligne_r in indices_g_r:
+                            if idx_ligne_r not in df_travail_reso.index:
+                                continue
+                            ligne_r = df_travail_reso.loc[idx_ligne_r]
+                            enseignant_ligne_r = str(ligne_r.get('Enseignants', '')).strip()
+                            lieu_ligne_r = str(ligne_r.get('Lieu', '')).strip()
+
+                            if enseignant_ligne_r in enseignants_exceptes_reso:
+                                non_resolus_reso.append({
+                                    "Enseignant": enseignant_ligne_r,
+                                    "Enseignement": ligne_r.get('Enseignements', ''),
+                                    "Lieu": lieu_ligne_r,
+                                    "Jour": conflit_r['jour'],
+                                    "Horaire": conflit_r['horaire'],
+                                    "Motif": "Enseignant protégé (exception) — EDT conservé tel quel",
+                                })
+                                continue
+
+                            nouveau_slot_r = None
+                            for j_cand in jours_list:
+                                for h_cand in horaires_list:
+                                    if (j_cand, h_cand) == (conflit_r['jour'], conflit_r['horaire']):
+                                        continue
+                                    if occ_enseignant_travail.get((enseignant_ligne_r, j_cand, h_cand)):
+                                        continue
+                                    if occ_lieu_travail.get((lieu_ligne_r, j_cand, h_cand)):
+                                        continue
+                                    nouveau_slot_r = (j_cand, h_cand)
+                                    break
+                                if nouveau_slot_r:
+                                    break
+
+                            if nouveau_slot_r:
+                                j_nouv_r, h_nouv_r = nouveau_slot_r
+                                propositions_reso.append({
+                                    "Enseignant": enseignant_ligne_r,
+                                    "Enseignement": ligne_r.get('Enseignements', ''),
+                                    "Type": _nature_reso(ligne_r.get('Code', '')),
+                                    "Lieu": lieu_ligne_r,
+                                    "Promotion": ligne_r.get('Promotion', ''),
+                                    "Ancien Jour": conflit_r['jour'],
+                                    "Ancien Horaire": conflit_r['horaire'],
+                                    "Nouveau Jour": j_nouv_r,
+                                    "Nouveau Horaire": h_nouv_r,
+                                    "Motif du conflit": f"Chevauchement {conflit_r['type']} : {conflit_r['valeur']}",
+                                    "_idx": idx_ligne_r,
+                                })
+                                occ_enseignant_travail.setdefault((enseignant_ligne_r, j_nouv_r, h_nouv_r), []).append(idx_ligne_r)
+                                occ_lieu_travail.setdefault((lieu_ligne_r, j_nouv_r, h_nouv_r), []).append(idx_ligne_r)
+                                occ_enseignant_travail[(enseignant_ligne_r, conflit_r['jour'], conflit_r['horaire'])] = [
+                                    i for i in occ_enseignant_travail.get((enseignant_ligne_r, conflit_r['jour'], conflit_r['horaire']), [])
+                                    if i != idx_ligne_r
+                                ]
+                                occ_lieu_travail[(lieu_ligne_r, conflit_r['jour'], conflit_r['horaire'])] = [
+                                    i for i in occ_lieu_travail.get((lieu_ligne_r, conflit_r['jour'], conflit_r['horaire']), [])
+                                    if i != idx_ligne_r
+                                ]
+                            else:
+                                non_resolus_reso.append({
+                                    "Enseignant": enseignant_ligne_r,
+                                    "Enseignement": ligne_r.get('Enseignements', ''),
+                                    "Lieu": lieu_ligne_r,
+                                    "Jour": conflit_r['jour'],
+                                    "Horaire": conflit_r['horaire'],
+                                    "Motif": "Aucun créneau libre disponible pour l'enseignant ET le lieu",
+                                })
+
+                st.session_state['propositions_resolution'] = propositions_reso
+                st.session_state['non_resolus_resolution'] = non_resolus_reso
+                st.session_state['df_travail_resolution_index'] = df_travail_reso.index
+
+            # ================================================================
+            # AFFICHAGE DES RÉSULTATS (persistés en session_state)
+            # ================================================================
+            propositions_aff = st.session_state.get('propositions_resolution')
+            non_resolus_aff = st.session_state.get('non_resolus_resolution')
+
+            if propositions_aff is not None:
+                mres1, mres2 = st.columns(2)
+                mres1.metric("✅ Propositions de déplacement", len(propositions_aff))
+                mres2.metric("⚠️ Chevauchements non résolus", len(non_resolus_aff))
+
+                if propositions_aff:
+                    st.markdown("#### ✅ Propositions de déplacement")
+                    st.dataframe(
+                        pd.DataFrame(propositions_aff).drop(columns=["_idx"]),
+                        use_container_width=True, hide_index=True
+                    )
+                else:
+                    st.success("✅ Aucune proposition nécessaire : aucun chevauchement réel détecté (hors exceptions).")
+
+                if non_resolus_aff:
+                    st.markdown("#### ⚠️ Chevauchements non résolus")
+                    st.dataframe(pd.DataFrame(non_resolus_aff), use_container_width=True, hide_index=True)
+
+                # ============================================================
+                # GRILLES EDT DES ENSEIGNANTS CONCERNÉS (PROPOSITION)
+                # Orientation demandée : HORAIRE HORIZONTAL, JOURS VERTICAL
+                # ============================================================
+                enseignants_concernes_reso = sorted(set(
+                    [p["Enseignant"] for p in propositions_aff] +
+                    [n["Enseignant"] for n in non_resolus_aff]
+                ))
+
+                if enseignants_concernes_reso:
+                    st.markdown("#### 📅 Grilles EDT proposées (par enseignant concerné)")
+                    st.caption(
+                        "🟢 Case verte = séance déplacée par la proposition ci-dessus. "
+                        "Les autres séances restent inchangées."
+                    )
+
+                    deplacements_par_idx = {p["_idx"]: p for p in propositions_aff}
+
+                    def _type_couleur_reso(code):
+                        c = str(code).upper()
+                        if "COURS" in c:
+                            return "📘", "#1e40af"
+                        if "TD" in c:
+                            return "📗", "#166534"
+                        if "TP" in c:
+                            return "🔴", "#991b1b"
+                        return "⚪", "#374151"
+
+                    grilles_html_par_enseignant = {}
+
+                    for enseignant_aff in enseignants_concernes_reso:
+                        df_ens_aff = df[df["Enseignants"] == enseignant_aff].copy()
+                        df_ens_aff['h_norm'] = df_ens_aff['Horaire'].apply(normalize)
+                        df_ens_aff['j_norm'] = df_ens_aff['Jours'].apply(normalize)
+
+                        cellules_finales = {}
+                        for idx_l, r_l in df_ens_aff.iterrows():
+                            j_aff_l = map_j.get(r_l['j_norm'])
+                            h_aff_l = map_h.get(r_l['h_norm'])
+                            if j_aff_l is None or h_aff_l is None:
+                                continue
+                            deplace = deplacements_par_idx.get(idx_l)
+                            if deplace is not None:
+                                j_final, h_final = deplace["Nouveau Jour"], deplace["Nouveau Horaire"]
+                                est_deplace = True
+                                origine = f"{deplace['Ancien Jour']} / {deplace['Ancien Horaire']}"
+                            else:
+                                j_final, h_final = j_aff_l, h_aff_l
+                                est_deplace = False
+                                origine = None
+                            cellules_finales.setdefault((j_final, h_final), []).append((r_l, est_deplace, origine))
+
+                        thead_r = "<tr><th style='background:#1E3A8A;color:white;padding:8px;width:100px;'>JOUR</th>"
+                        for h in horaires_list:
+                            thead_r += f"<th style='background:#1E3A8A;color:white;padding:8px;font-size:11px;'>{h}</th>"
+                        thead_r += "</tr>"
+
+                        tbody_r = ""
+                        for j in jours_list:
+                            tbody_r += f"<tr><td style='background:#f1f5f9;font-weight:bold;text-align:center;padding:8px;'>{j}</td>"
+                            for h in horaires_list:
+                                contenu_cel = cellules_finales.get((j, h))
+                                if not contenu_cel:
+                                    tbody_r += "<td style='border:1px solid #e2e8f0;padding:6px;'></td>"
+                                else:
+                                    morceaux = []
+                                    fond_cel = "#ffffff"
+                                    for (r_l, est_deplace, origine) in contenu_cel:
+                                        em, coul = _type_couleur_reso(r_l.get('Code', ''))
+                                        if est_deplace:
+                                            fond_cel = "#bbf7d0"
+                                            etiquette = (
+                                                f"<div style='color:#166534;font-weight:bold;font-size:9px;'>"
+                                                f"➡️ DÉPLACÉ (était: {origine})</div>"
+                                            )
+                                        else:
+                                            etiquette = ""
+                                        morceaux.append(
+                                            f"<div style='border-left:3px solid {coul};padding:3px;margin:2px 0;"
+                                            f"background:rgba(255,255,255,0.6);border-radius:3px;'>"
+                                            f"{etiquette}"
+                                            f"<b>{em} {r_l.get('Enseignements', '')}</b><br>"
+                                            f"<small>🎓 {r_l.get('Promotion', '')} | 📍 {r_l.get('Lieu', '')}</small>"
+                                            f"</div>"
+                                        )
+                                    tbody_r += (
+                                        f"<td style='background:{fond_cel};border:1px solid #e2e8f0;"
+                                        f"padding:6px;vertical-align:top;'>{''.join(morceaux)}</td>"
+                                    )
+                            tbody_r += "</tr>"
+
+                        grilles_html_par_enseignant[enseignant_aff] = (thead_r, tbody_r)
+
+                        with st.expander(f"👤 {enseignant_aff}", expanded=False):
+                            st.markdown(
+                                f"<div style='overflow-x:auto;border:1px solid #cbd5e1;border-radius:8px;'>"
+                                f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;'>"
+                                f"<thead>{thead_r}</thead><tbody>{tbody_r}</tbody></table></div>",
+                                unsafe_allow_html=True
+                            )
+
+                    # ========================================================
+                    # EXPORTS — EXCEL (1 feuille/enseignant), HTML, PDF
+                    # ========================================================
+                    st.markdown("#### 📥 Télécharger les grilles proposées")
+                    cexp1, cexp2, cexp3 = st.columns(3)
+
+                    # ---- EXCEL ----
+                    buf_xl_reso = io.BytesIO()
+                    with pd.ExcelWriter(buf_xl_reso, engine='xlsxwriter') as writer:
+                        wb_r = writer.book
+                        fmt_titre_r = wb_r.add_format({
+                            'bold': True, 'font_size': 13, 'font_color': 'white',
+                            'align': 'center', 'valign': 'vcenter', 'bg_color': '#0F766E'
+                        })
+                        fmt_entete_r = wb_r.add_format({
+                            'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
+                            'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True
+                        })
+                        fmt_jour_r = wb_r.add_format({
+                            'bold': True, 'bg_color': '#f1f5f9', 'border': 1,
+                            'align': 'center', 'valign': 'vcenter'
+                        })
+                        fmt_cell_r = wb_r.add_format({
+                            'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10
+                        })
+                        fmt_cell_deplace_r = wb_r.add_format({
+                            'border': 2, 'border_color': '#166534', 'valign': 'top',
+                            'text_wrap': True, 'font_size': 10, 'bg_color': '#BBF7D0', 'bold': True
+                        })
+
+                        # Feuille récapitulative
+                        colonnes_prop = ["Enseignant", "Enseignement", "Type", "Lieu", "Promotion",
+                                          "Ancien Jour", "Ancien Horaire", "Nouveau Jour", "Nouveau Horaire",
+                                          "Motif du conflit"]
+                        df_prop_export = pd.DataFrame(propositions_aff)
+                        if not df_prop_export.empty:
+                            df_prop_export = df_prop_export[colonnes_prop]
+                        else:
+                            df_prop_export = pd.DataFrame(columns=colonnes_prop)
+                        df_prop_export.to_excel(writer, sheet_name='Propositions', index=False, startrow=1)
+                        ws_prop = writer.sheets['Propositions']
+                        ws_prop.merge_range(0, 0, 0, len(colonnes_prop) - 1, "✅ Propositions de déplacement", fmt_titre_r)
+                        for col_num, nom_col in enumerate(colonnes_prop):
+                            ws_prop.write(1, col_num, nom_col, fmt_entete_r)
+                        ws_prop.set_column(0, len(colonnes_prop) - 1, 20)
+                        ws_prop.freeze_panes(2, 0)
+
+                        if non_resolus_aff:
+                            df_nr_export = pd.DataFrame(non_resolus_aff)
+                            df_nr_export.to_excel(writer, sheet_name='Non_resolus', index=False, startrow=1)
+                            ws_nr = writer.sheets['Non_resolus']
+                            ws_nr.merge_range(0, 0, 0, len(df_nr_export.columns) - 1, "⚠️ Chevauchements non résolus", fmt_titre_r)
+                            for col_num, nom_col in enumerate(df_nr_export.columns):
+                                ws_nr.write(1, col_num, nom_col, fmt_entete_r)
+                            ws_nr.set_column(0, len(df_nr_export.columns) - 1, 20)
+
+                        # 1 feuille par enseignant concerné (grille jours x horaires)
+                        for enseignant_aff, (thead_r, tbody_r) in grilles_html_par_enseignant.items():
+                            nom_feuille_r = re.sub(r'[\\/*?:\[\]]', '', enseignant_aff)[:31] or "Enseignant"
+                            ws_e = wb_r.add_worksheet(nom_feuille_r)
+                            ws_e.merge_range(0, 0, 0, len(horaires_list), f"📅 EDT proposé — {enseignant_aff}", fmt_titre_r)
+                            ws_e.write(1, 0, "JOUR", fmt_entete_r)
+                            for col_num, h in enumerate(horaires_list, start=1):
+                                ws_e.write(1, col_num, h, fmt_entete_r)
+                            ws_e.set_column(0, 0, 14)
+                            ws_e.set_column(1, len(horaires_list), 26)
+
+                            df_ens_aff2 = df[df["Enseignants"] == enseignant_aff].copy()
+                            df_ens_aff2['h_norm'] = df_ens_aff2['Horaire'].apply(normalize)
+                            df_ens_aff2['j_norm'] = df_ens_aff2['Jours'].apply(normalize)
+                            cellules_finales2 = {}
+                            for idx_l2, r_l2 in df_ens_aff2.iterrows():
+                                j_aff_l2 = map_j.get(r_l2['j_norm'])
+                                h_aff_l2 = map_h.get(r_l2['h_norm'])
+                                if j_aff_l2 is None or h_aff_l2 is None:
+                                    continue
+                                deplace2 = deplacements_par_idx.get(idx_l2)
+                                if deplace2 is not None:
+                                    j_f2, h_f2 = deplace2["Nouveau Jour"], deplace2["Nouveau Horaire"]
+                                    origine2 = f"{deplace2['Ancien Jour']} / {deplace2['Ancien Horaire']}"
+                                else:
+                                    j_f2, h_f2 = j_aff_l2, h_aff_l2
+                                    origine2 = None
+                                cellules_finales2.setdefault((j_f2, h_f2), []).append((r_l2, origine2))
+
+                            for row_num, j in enumerate(jours_list, start=2):
+                                ws_e.write(row_num, 0, j, fmt_jour_r)
+                                for col_num, h in enumerate(horaires_list, start=1):
+                                    contenu2 = cellules_finales2.get((j, h))
+                                    if not contenu2:
+                                        ws_e.write(row_num, col_num, "", fmt_cell_r)
+                                        continue
+                                    morceaux2 = []
+                                    deplace_ici = False
+                                    for (r_l2, origine2) in contenu2:
+                                        prefixe2 = f"➡️ DÉPLACÉ (était {origine2})\n" if origine2 else ""
+                                        if origine2:
+                                            deplace_ici = True
+                                        morceaux2.append(
+                                            f"{prefixe2}{r_l2.get('Enseignements', '')}\n"
+                                            f"🎓{r_l2.get('Promotion', '')} | 📍{r_l2.get('Lieu', '')}"
+                                        )
+                                    ws_e.write(
+                                        row_num, col_num, "\n\n".join(morceaux2),
+                                        fmt_cell_deplace_r if deplace_ici else fmt_cell_r
+                                    )
+                                ws_e.set_row(row_num, 60)
+
+                    cexp1.download_button(
+                        "📊 Excel (Propositions + grilles)", buf_xl_reso.getvalue(),
+                        f"Resolution_Chevauchements_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True, key="dl_reso_xl"
+                    )
+
+                    # ---- HTML ----
+                    blocs_html_ens = ""
+                    for enseignant_aff, (thead_r, tbody_r) in grilles_html_par_enseignant.items():
+                        blocs_html_ens += (
+                            f"<h3>👤 {enseignant_aff}</h3>"
+                            f"<table><thead>{thead_r}</thead><tbody>{tbody_r}</tbody></table><br>"
+                        )
+                    lignes_prop_html = "".join(
+                        f"<tr><td>{p['Enseignant']}</td><td>{p['Enseignement']}</td><td>{p['Type']}</td>"
+                        f"<td>{p['Lieu']}</td><td>{p['Promotion']}</td>"
+                        f"<td>{p['Ancien Jour']} {p['Ancien Horaire']}</td>"
+                        f"<td>{p['Nouveau Jour']} {p['Nouveau Horaire']}</td>"
+                        f"<td>{p['Motif du conflit']}</td></tr>"
+                        for p in propositions_aff
+                    )
+                    html_doc_reso = f"""<!DOCTYPE html>
+<html lang='fr'><head><meta charset='UTF-8'><title>Résolution des chevauchements</title>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;margin:0;color:#1e293b;}}
+.container{{max-width:1400px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;padding:20px;}}
+.header{{background:linear-gradient(135deg,#0F766E,#14B8A6);color:white;padding:20px;text-align:center;border-radius:8px;margin:-20px -20px 20px -20px;}}
+table{{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:20px;}}
+th,td{{border:1px solid #cbd5e1;padding:6px;font-size:12px;word-wrap:break-word;}}
+th{{background:#1E3A8A;color:white;}}
+</style></head><body>
+<div class='container'>
+<div class='header'><h1>🛠️ Résolution des Chevauchements</h1><p>Semestre 01 — 2026-2027 | département d'Électrotechnique — FGE/UDL-SBA</p></div>
+<h2>✅ Propositions de déplacement</h2>
+<table><thead><tr><th>Enseignant</th><th>Enseignement</th><th>Type</th><th>Lieu</th><th>Promotion</th>
+<th>Ancien créneau</th><th>Nouveau créneau</th><th>Motif</th></tr></thead>
+<tbody>{lignes_prop_html}</tbody></table>
+<h2>📅 Grilles EDT proposées</h2>
+{blocs_html_ens}
+</div></body></html>"""
+                    cexp2.download_button(
+                        "🌐 HTML", html_doc_reso,
+                        f"Resolution_Chevauchements_{datetime.now().strftime('%Y%m%d')}.html",
+                        "text/html", use_container_width=True, key="dl_reso_html"
+                    )
+
+                    # ---- PDF ----
+                    try:
+                        from reportlab.lib import colors as rl_colors
+                        from reportlab.lib.pagesizes import landscape, A4
+                        from reportlab.platypus import (
+                            SimpleDocTemplate, Table, TableStyle, Paragraph,
+                            Spacer, KeepInFrame, PageBreak
+                        )
+                        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                        from reportlab.lib.units import mm
+
+                        buf_pdf_reso = io.BytesIO()
+                        doc_reso = SimpleDocTemplate(
+                            buf_pdf_reso, pagesize=landscape(A4),
+                            topMargin=15 * mm, bottomMargin=12 * mm,
+                            leftMargin=10 * mm, rightMargin=10 * mm
+                        )
+                        styles_reso = getSampleStyleSheet()
+                        titre_style_reso = ParagraphStyle(
+                            'TitreReso', parent=styles_reso['Heading1'], fontSize=14,
+                            textColor=rl_colors.HexColor('#0F766E'), alignment=1
+                        )
+                        soustitre_style_reso = ParagraphStyle(
+                            'SousTitreReso', parent=styles_reso['Normal'], fontSize=9,
+                            textColor=rl_colors.HexColor('#64748b'), alignment=1
+                        )
+                        cell_style_reso = ParagraphStyle(
+                            'CellReso', parent=styles_reso['Normal'], fontSize=7, leading=9
+                        )
+
+                        elements_reso = [
+                            Paragraph("🛠️ Résolution des Chevauchements", titre_style_reso),
+                            Paragraph(
+                                f"Semestre 01 — 2026-2027 | Généré le {datetime.now().strftime('%d/%m/%Y')}",
+                                soustitre_style_reso
+                            ),
+                            Spacer(1, 8),
+                        ]
+
+                        if propositions_aff:
+                            data_prop_pdf = [["Enseignant", "Enseignement", "Type", "Lieu", "Ancien", "Nouveau"]]
+                            for p in propositions_aff:
+                                data_prop_pdf.append([
+                                    p['Enseignant'], p['Enseignement'], p['Type'], p['Lieu'],
+                                    f"{p['Ancien Jour']} {p['Ancien Horaire']}",
+                                    f"{p['Nouveau Jour']} {p['Nouveau Horaire']}"
+                                ])
+                            table_prop_pdf = Table(data_prop_pdf, repeatRows=1)
+                            table_prop_pdf.setStyle(TableStyle([
+                                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1E3A8A')),
+                                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+                                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#cbd5e1')),
+                                ('FONTSIZE', (0, 0), (-1, -1), 7),
+                            ]))
+                            elements_reso.append(table_prop_pdf)
+                            elements_reso.append(PageBreak())
+
+                        HAUTEUR_MAX_CELLULE_RESO = 380
+
+                        def _cellule_pdf_reso(texte, largeur):
+                            return KeepInFrame(
+                                max(largeur - 10, 10), HAUTEUR_MAX_CELLULE_RESO,
+                                [Paragraph(texte.replace('\n', '<br/>'), cell_style_reso)],
+                                mode='shrink'
+                            )
+
+                        page_width_reso = landscape(A4)[0] - 20 * mm
+                        col_j_reso = 25 * mm
+                        col_h_reso = (page_width_reso - col_j_reso) / len(horaires_list)
+                        col_widths_reso = [col_j_reso] + [col_h_reso] * len(horaires_list)
+
+                        for num_ens, (enseignant_aff, _) in enumerate(grilles_html_par_enseignant.items()):
+                            elements_reso.append(Paragraph(f"👤 {enseignant_aff}", titre_style_reso))
+                            elements_reso.append(Spacer(1, 4))
+
+                            df_ens_aff3 = df[df["Enseignants"] == enseignant_aff].copy()
+                            df_ens_aff3['h_norm'] = df_ens_aff3['Horaire'].apply(normalize)
+                            df_ens_aff3['j_norm'] = df_ens_aff3['Jours'].apply(normalize)
+                            cellules_finales3 = {}
+                            for idx_l3, r_l3 in df_ens_aff3.iterrows():
+                                j_aff_l3 = map_j.get(r_l3['j_norm'])
+                                h_aff_l3 = map_h.get(r_l3['h_norm'])
+                                if j_aff_l3 is None or h_aff_l3 is None:
+                                    continue
+                                deplace3 = deplacements_par_idx.get(idx_l3)
+                                if deplace3 is not None:
+                                    j_f3, h_f3 = deplace3["Nouveau Jour"], deplace3["Nouveau Horaire"]
+                                    origine3 = f"{deplace3['Ancien Jour']} / {deplace3['Ancien Horaire']}"
+                                else:
+                                    j_f3, h_f3 = j_aff_l3, h_aff_l3
+                                    origine3 = None
+                                cellules_finales3.setdefault((j_f3, h_f3), []).append((r_l3, origine3))
+
+                            data_pdf_grille = [
+                                [Paragraph("<b>JOUR</b>", cell_style_reso)] +
+                                [Paragraph(f"<b>{h}</b>", cell_style_reso) for h in horaires_list]
+                            ]
+                            cellules_deplacees_pdf = []
+                            for num_ligne, j in enumerate(jours_list, start=1):
+                                ligne_pdf3 = [_cellule_pdf_reso(j, col_j_reso)]
+                                for num_col, h in enumerate(horaires_list, start=1):
+                                    contenu3 = cellules_finales3.get((j, h))
+                                    if not contenu3:
+                                        ligne_pdf3.append("")
+                                    else:
+                                        morceaux3 = []
+                                        deplace_ici3 = False
+                                        for (r_l3, origine3) in contenu3:
+                                            prefixe3 = f"➡️ DÉPLACÉ (était {origine3})\n" if origine3 else ""
+                                            if origine3:
+                                                deplace_ici3 = True
+                                            morceaux3.append(
+                                                f"{prefixe3}{r_l3.get('Enseignements', '')}\n"
+                                                f"🎓{r_l3.get('Promotion', '')} | 📍{r_l3.get('Lieu', '')}"
+                                            )
+                                        ligne_pdf3.append(_cellule_pdf_reso("\n\n".join(morceaux3), col_h_reso))
+                                        if deplace_ici3:
+                                            cellules_deplacees_pdf.append((num_col, num_ligne))
+                                data_pdf_grille.append(ligne_pdf3)
+
+                            table_grille_pdf = Table(data_pdf_grille, colWidths=col_widths_reso, repeatRows=1)
+                            style_cmds_grille = [
+                                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1E3A8A')),
+                                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+                                ('BACKGROUND', (0, 1), (0, -1), rl_colors.HexColor('#f1f5f9')),
+                                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#cbd5e1')),
+                                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                                ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+                            ]
+                            for (col, row) in cellules_deplacees_pdf:
+                                style_cmds_grille.append(('BACKGROUND', (col, row), (col, row), rl_colors.HexColor('#BBF7D0')))
+                                style_cmds_grille.append(('BOX', (col, row), (col, row), 1.5, rl_colors.HexColor('#166534')))
+                            table_grille_pdf.setStyle(TableStyle(style_cmds_grille))
+                            elements_reso.append(table_grille_pdf)
+                            if num_ens < len(grilles_html_par_enseignant) - 1:
+                                elements_reso.append(PageBreak())
+
+                        doc_reso.build(elements_reso)
+
+                        cexp3.download_button(
+                            "📄 PDF", buf_pdf_reso.getvalue(),
+                            f"Resolution_Chevauchements_{datetime.now().strftime('%Y%m%d')}.pdf",
+                            "application/pdf", use_container_width=True, key="dl_reso_pdf"
+                        )
+                    except Exception as e:
+                        cexp3.warning(f"PDF indisponible : {e}")
+
+        elif mode_view == "👥 EDT par Groupe (TD/TP)":
+            # ============================================================
+            # 👥 EDT PAR GROUPE (TD/TP)
+            # ------------------------------------------------------------
+            # 1) Choisir une Promotion.
+            # 2) Une liste déroulante affiche par défaut les groupes
+            #    disponibles pour cette promotion (déduits directement des
+            #    séances EDT dont le lieu comporte une indication de
+            #    groupe, ex. « AS10/G1 » -> groupe G1 — même convention
+            #    que celle déjà utilisée par l'application pour l'EDT
+            #    individuel des étudiants).
+            # 3) Après sélection du groupe : grille EDT complète avec
+            #    TOUS les Cours (communs à toute la promotion) + les TD
+            #    et TP qui correspondent UNIQUEMENT au groupe sélectionné.
+            # ============================================================
+            st.subheader("👥 EDT par Groupe (TD/TP)")
+            st.caption(
+                "Affiche l'emploi du temps complet d'une promotion : les "
+                "Cours restent communs à tous les groupes, mais seuls les "
+                "TD et TP du groupe sélectionné sont affichés."
+            )
+
+            def _extraire_groupe_from_lieu_admin(val):
+                """Extrait le groupe à partir du Lieu (ex: 'AS10/G1' -> 'G1'),
+                même convention que pour l'EDT individuel étudiant."""
+                if pd.isna(val):
+                    return None
+                val_str = str(val).upper().strip()
+                m_sg = re.search(r'SG(\d+)', val_str)
+                if m_sg:
+                    return f"SG{m_sg.group(1)}"
+                m_g = re.search(r'G(\d+)', val_str)
+                if m_g:
+                    return f"G{m_g.group(1)}"
+                return None
+
+            liste_promotions_groupe = sorted([
+                p for p in df["Promotion"].dropna().unique()
+                if str(p).strip() and str(p).strip() != "Non défini"
+            ])
+
+            if not liste_promotions_groupe:
+                st.info("ℹ️ Aucune promotion trouvée dans les données.")
+            else:
+                promotion_groupe_admin = st.selectbox(
+                    "🎓 Choisir Promotion :",
+                    liste_promotions_groupe,
+                    key="promotion_groupe_admin"
+                )
+
+                df_promo_groupe = df[df["Promotion"] == promotion_groupe_admin].copy()
+                df_promo_groupe["Groupe_Lieu"] = df_promo_groupe["Lieu"].apply(_extraire_groupe_from_lieu_admin)
+
+                groupes_disponibles_admin = sorted(
+                    df_promo_groupe["Groupe_Lieu"].dropna().unique(),
+                    key=lambda g: (len(g), g)
+                )
+
+                if not groupes_disponibles_admin:
+                    st.warning(
+                        f"⚠️ Aucune information de groupe trouvée dans le lieu des "
+                        f"séances de **{promotion_groupe_admin}** (ex. « AS10/G1 »). "
+                        f"Affichage de l'EDT complet de la promotion, sans filtrage "
+                        f"par groupe."
+                    )
+                    df_final_groupe = df_promo_groupe.copy()
+                    groupe_choisi_admin = None
+                else:
+                    st.info(
+                        f"👥 **{len(groupes_disponibles_admin)} groupe(s)** trouvé(s) "
+                        f"pour **{promotion_groupe_admin}** : "
+                        + ", ".join(groupes_disponibles_admin)
+                    )
+                    groupe_choisi_admin = st.selectbox(
+                        "🔹 Choisir le groupe :",
+                        groupes_disponibles_admin,
+                        key="groupe_choisi_admin"
+                    )
+
+                    # Cours = communs à tous les groupes (toujours affichés).
+                    # TD/TP = uniquement ceux du groupe sélectionné.
+                    masque_cours_groupe = df_promo_groupe["Code"].astype(str).str.contains(
+                        "COURS", case=False, na=False
+                    )
+                    masque_mon_groupe = df_promo_groupe["Groupe_Lieu"] == groupe_choisi_admin
+                    df_final_groupe = df_promo_groupe[masque_cours_groupe | masque_mon_groupe].copy()
+
+                if not df_final_groupe.empty:
+                    nb_cours_grp = len(df_final_groupe[df_final_groupe["Code"].astype(str).str.contains("COURS", case=False, na=False)])
+                    nb_td_grp = len(df_final_groupe[df_final_groupe["Code"].astype(str).str.contains("TD", case=False, na=False)])
+                    nb_tp_grp = len(df_final_groupe[
+                        ~df_final_groupe["Code"].astype(str).str.contains("COURS|TD", case=False, na=False)
+                    ])
+
+                    mg1, mg2, mg3 = st.columns(3)
+                    mg1.metric("📘 Cours", nb_cours_grp)
+                    mg2.metric("📗 TD", nb_td_grp)
+                    mg3.metric("🔴 TP", nb_tp_grp)
+
+                    df_final_groupe['h_norm'] = df_final_groupe['Horaire'].apply(normalize)
+                    df_final_groupe['j_norm'] = df_final_groupe['Jours'].apply(normalize)
+
+                    def _type_couleur_grp(code):
+                        c = str(code).upper()
+                        if "COURS" in c:
+                            return "📘", "#1e40af"
+                        if "TD" in c:
+                            return "📗", "#166534"
+                        if "TP" in c:
+                            return "🔴", "#991b1b"
+                        return "⚪", "#374151"
+
+                    seances_par_cellule_grp = {}
+                    for _, r_g in df_final_groupe.iterrows():
+                        j_aff_g = map_j.get(r_g['j_norm'])
+                        h_aff_g = map_h.get(r_g['h_norm'])
+                        if j_aff_g is None or h_aff_g is None:
+                            continue
+                        seances_par_cellule_grp.setdefault((h_aff_g, j_aff_g), []).append(r_g)
+
+                    # Grille STANDARD de l'application : HORAIRE VERTICAL (lignes),
+                    # JOUR HORIZONTAL (colonnes) — même orientation que la vue Promotion.
+                    thead_grp = "<tr><th style='background:#1E3A8A;color:white;padding:8px;width:100px;'>Horaire</th>"
+                    for j in jours_list:
+                        thead_grp += f"<th style='background:#1E3A8A;color:white;padding:8px;'>{j}</th>"
+                    thead_grp += "</tr>"
+
+                    horaires_utilises_grp = [
+                        h for h in horaires_list
+                        if any((h, j) in seances_par_cellule_grp for j in jours_list)
+                    ] or horaires_list
+
+                    tbody_grp = ""
+                    for h in horaires_utilises_grp:
+                        tbody_grp += f"<tr><td style='background:#f1f5f9;font-weight:bold;text-align:center;padding:8px;'>{h}</td>"
+                        for j in jours_list:
+                            lignes_cel = seances_par_cellule_grp.get((h, j))
+                            if not lignes_cel:
+                                tbody_grp += "<td style='border:1px solid #e2e8f0;padding:6px;'></td>"
+                            else:
+                                morceaux_grp = []
+                                for r_g in lignes_cel:
+                                    em, coul = _type_couleur_grp(r_g.get('Code', ''))
+                                    morceaux_grp.append(
+                                        f"<div style='border-left:3px solid {coul};padding:4px;margin:2px 0;"
+                                        f"background:#f8fafc;border-radius:4px;'>"
+                                        f"<b>{em} {r_g.get('Enseignements', '')}</b><br>"
+                                        f"<small>👤 {r_g.get('Enseignants', '')} | 📍 {r_g.get('Lieu', '')}</small>"
+                                        f"</div>"
+                                    )
+                                tbody_grp += (
+                                    f"<td style='border:1px solid #cbd5e1;padding:6px;vertical-align:top;'>"
+                                    f"{''.join(morceaux_grp)}</td>"
+                                )
+                        tbody_grp += "</tr>"
+
+                    titre_grille_grp = f"{promotion_groupe_admin}"
+                    if groupe_choisi_admin:
+                        titre_grille_grp += f" — Groupe {groupe_choisi_admin}"
+
+                    st.markdown(
+                        f"<div style='background:linear-gradient(135deg,#1E3A8A,#3B82F6);color:white;"
+                        f"padding:12px 16px;border-radius:8px 8px 0 0;text-align:center;'>"
+                        f"<b>📅 {titre_grille_grp}</b></div>"
+                        f"<div style='overflow-x:auto;border:1px solid #cbd5e1;border-radius:0 0 8px 8px;'>"
+                        f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;'>"
+                        f"<thead>{thead_grp}</thead><tbody>{tbody_grp}</tbody></table></div>",
+                        unsafe_allow_html=True
+                    )
+
+                    # ---- Exports ----
+                    st.markdown("#### 📥 Exporter cette grille")
+                    cg1, cg2, cg3 = st.columns(3)
+                    suffixe_grp = promotion_groupe_admin.replace(' ', '_')
+                    if groupe_choisi_admin:
+                        suffixe_grp += f"_{groupe_choisi_admin}"
+
+                    buf_xl_grp = io.BytesIO()
+                    with pd.ExcelWriter(buf_xl_grp, engine='xlsxwriter') as writer:
+                        colonnes_export_grp = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu']
+                        df_final_groupe[colonnes_export_grp].sort_values(['Jours', 'Horaire']).to_excel(
+                            writer, sheet_name='EDT_Groupe', index=False, startrow=2
+                        )
+                        wb_g2 = writer.book
+                        ws_g2 = writer.sheets['EDT_Groupe']
+                        ws_g2.merge_range(0, 0, 0, len(colonnes_export_grp) - 1,
+                                          f"📅 EDT — {titre_grille_grp}",
+                                          wb_g2.add_format({'bold': True, 'font_size': 13, 'font_color': 'white',
+                                                            'bg_color': '#1E3A8A', 'align': 'center'}))
+                        fmt_hdr_g2 = wb_g2.add_format({'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1})
+                        for col_num, nom_col in enumerate(colonnes_export_grp):
+                            ws_g2.write(2, col_num, nom_col, fmt_hdr_g2)
+                        ws_g2.set_column(0, len(colonnes_export_grp) - 1, 22)
+                        ws_g2.freeze_panes(3, 0)
+
+                    cg1.download_button(
+                        "📊 Excel", buf_xl_grp.getvalue(),
+                        f"EDT_Groupe_{suffixe_grp}.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True, key="dl_grp_xl"
+                    )
+
+                    html_doc_grp = f"""<!DOCTYPE html>
+<html lang='fr'><head><meta charset='UTF-8'><title>EDT {titre_grille_grp}</title>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;margin:0;color:#1e293b;}}
+.container{{max-width:1200px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
+.header{{background:linear-gradient(135deg,#1E3A8A,#3B82F6);color:white;padding:20px;text-align:center;}}
+table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
+</style></head><body>
+<div class='container'>
+<div class='header'><h1>📅 {titre_grille_grp}</h1><p>Semestre 01 — 2026-2027 | département d'Électrotechnique — FGE/UDL-SBA</p></div>
+<div style="padding:20px;"><table><thead>{thead_grp}</thead><tbody>{tbody_grp}</tbody></table></div>
+</div></body></html>"""
+                    cg2.download_button(
+                        "🌐 HTML", html_doc_grp,
+                        f"EDT_Groupe_{suffixe_grp}.html",
+                        "text/html", use_container_width=True, key="dl_grp_html"
+                    )
+
+                    try:
+                        from reportlab.lib import colors as rl_colors
+                        from reportlab.lib.pagesizes import landscape, A4
+                        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepInFrame
+                        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                        from reportlab.lib.units import mm
+
+                        buf_pdf_grp = io.BytesIO()
+                        doc_grp = SimpleDocTemplate(
+                            buf_pdf_grp, pagesize=landscape(A4),
+                            topMargin=15 * mm, bottomMargin=12 * mm, leftMargin=10 * mm, rightMargin=10 * mm
+                        )
+                        styles_grp = getSampleStyleSheet()
+                        titre_style_grp = ParagraphStyle('TitreGrp', parent=styles_grp['Heading1'], fontSize=14,
+                                                         textColor=rl_colors.HexColor('#1E3A8A'), alignment=1)
+                        cell_style_grp = ParagraphStyle('CellGrp', parent=styles_grp['Normal'], fontSize=7, leading=9)
+
+                        elements_grp = [
+                            Paragraph(f"📅 {titre_grille_grp}", titre_style_grp),
+                            Spacer(1, 8),
+                        ]
+
+                        page_width_grp = landscape(A4)[0] - 20 * mm
+                        col_h_grp0 = 28 * mm
+                        col_j_grp = (page_width_grp - col_h_grp0) / len(jours_list)
+                        col_widths_grp = [col_h_grp0] + [col_j_grp] * len(jours_list)
+
+                        def _cel_pdf_grp(texte, largeur):
+                            return KeepInFrame(max(largeur - 10, 10), 380,
+                                               [Paragraph(str(texte).replace(chr(10), '<br/>'), cell_style_grp)],
+                                               mode='shrink')
+
+                        data_pdf_grp = [
+                            [Paragraph("<b>Horaire</b>", cell_style_grp)] +
+                            [Paragraph(f"<b>{j}</b>", cell_style_grp) for j in jours_list]
+                        ]
+                        for h in horaires_utilises_grp:
+                            ligne_grp = [_cel_pdf_grp(h, col_h_grp0)]
+                            for j in jours_list:
+                                lignes_cel = seances_par_cellule_grp.get((h, j))
+                                if not lignes_cel:
+                                    ligne_grp.append("")
+                                else:
+                                    texte_cel = "\n\n".join(
+                                        f"{r_g.get('Enseignements', '')}\n{r_g.get('Enseignants', '')} | {r_g.get('Lieu', '')}"
+                                        for r_g in lignes_cel
+                                    )
+                                    ligne_grp.append(_cel_pdf_grp(texte_cel, col_j_grp))
+                            data_pdf_grp.append(ligne_grp)
+
+                        table_grp_pdf = Table(data_pdf_grp, colWidths=col_widths_grp, repeatRows=1)
+                        table_grp_pdf.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1E3A8A')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+                            ('BACKGROUND', (0, 1), (0, -1), rl_colors.HexColor('#f1f5f9')),
+                            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#cbd5e1')),
+                            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ]))
+                        elements_grp.append(table_grp_pdf)
+                        doc_grp.build(elements_grp)
+
+                        cg3.download_button(
+                            "📄 PDF", buf_pdf_grp.getvalue(),
+                            f"EDT_Groupe_{suffixe_grp}.pdf",
+                            "application/pdf", use_container_width=True, key="dl_grp_pdf"
+                        )
+                    except Exception as e:
+                        cg3.warning(f"PDF indisponible : {e}")
+                else:
+                    st.info("ℹ️ Aucune séance à afficher pour cette sélection.")
 
         elif mode_view == "✍️ Éditeur de données":
             st.subheader("✍️ Éditeur de données EDT")
