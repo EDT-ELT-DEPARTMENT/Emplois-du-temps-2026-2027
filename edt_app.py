@@ -7546,21 +7546,84 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         continue
                     cellules_chev[(j_aff, h_aff)] = groupe
 
-                nb_conflits_chev = sum(1 for g in cellules_chev.values() if len(g) >= 2)
+                def _nature_chev(code):
+                    """Nature normalisée d'une séance (COURS / TD / TP / AUTRE)."""
+                    c = str(code).upper()
+                    if "COURS" in c:
+                        return "COURS"
+                    if "TD" in c:
+                        return "TD"
+                    if "TP" in c:
+                        return "TP"
+                    return "AUTRE"
 
-                m_chev1, m_chev2, m_chev3 = st.columns(3)
+                # ========================================================
+                # CORRECTIF — DISTINCTION « ENSEIGNEMENT COMMUN » vs
+                # « CHEVAUCHEMENT RÉEL »
+                # --------------------------------------------------------
+                # Lorsque plusieurs séances d'un enseignant tombent dans la
+                # même cellule (même jour + même horaire), ce n'est PAS
+                # automatiquement un chevauchement : si TOUTES ces séances
+                # sont de la MÊME nature (toutes Cours, ou toutes TD, ou
+                # toutes TP) ET portent EXACTEMENT le même intitulé
+                # (colonne Enseignements), il s'agit du MÊME enseignement
+                # dispensé à plusieurs promotions en même temps — un
+                # enseignement COMMUN, qui est parfaitement normal.
+                # Le chevauchement réel n'existe que si la cellule contient
+                # au moins DEUX enseignements de nature et/ou d'intitulé
+                # DIFFÉRENTS : l'enseignant ne peut alors pas être aux deux
+                # endroits en même temps.
+                # ========================================================
+                def _analyser_cellule_chev(groupe):
+                    """Retourne (est_conflit, est_commun, nature_commune).
+                    est_conflit=True  -> chevauchement réel (à signaler en rouge)
+                    est_commun=True   -> même enseignement à plusieurs
+                                         promotions (à signaler, PAS en conflit)
+                    nature_commune    -> "COURS"/"TD"/"TP" si est_commun,
+                                         sinon None."""
+                    if groupe is None or groupe.empty or len(groupe) < 2:
+                        return False, False, None
+                    combinaisons = set()
+                    for _, r in groupe.iterrows():
+                        nature = _nature_chev(r.get('Code', ''))
+                        titre = str(r.get('Enseignements', '')).strip().upper()
+                        combinaisons.add((nature, titre))
+                    if len(combinaisons) == 1:
+                        nature_commune = next(iter(combinaisons))[0]
+                        return False, True, nature_commune
+                    return True, False, None
+
+                nb_conflits_chev = 0
+                nb_communs_chev = 0
+                for groupe in cellules_chev.values():
+                    est_conflit, est_commun, _ = _analyser_cellule_chev(groupe)
+                    if est_conflit:
+                        nb_conflits_chev += 1
+                    elif est_commun:
+                        nb_communs_chev += 1
+
+                m_chev1, m_chev2, m_chev3, m_chev4 = st.columns(4)
                 m_chev1.metric("📊 Séances totales", len(df_ens_chev))
                 m_chev2.metric("🗓️ Créneaux occupés", len(cellules_chev))
                 m_chev3.metric("🔴 Chevauchements", nb_conflits_chev)
+                m_chev4.metric("🔗 Enseignements communs", nb_communs_chev)
 
                 if nb_conflits_chev > 0:
                     st.error(
                         f"🔴 {nb_conflits_chev} chevauchement(s) détecté(s) "
                         f"pour **{enseignant_chevauchement}** — cet enseignant "
-                        f"est affecté à plusieurs enseignements en même temps."
+                        f"est affecté à plusieurs enseignements DIFFÉRENTS en "
+                        f"même temps."
                     )
                 else:
                     st.success(f"✅ Aucun chevauchement détecté pour **{enseignant_chevauchement}**")
+
+                if nb_communs_chev > 0:
+                    st.info(
+                        f"🔗 {nb_communs_chev} créneau(x) où **{enseignant_chevauchement}** "
+                        f"dispense le MÊME enseignement à plusieurs promotions en "
+                        f"même temps (ce n'est pas un chevauchement)."
+                    )
 
                 def _type_couleur_chev(code):
                     c = str(code).upper()
@@ -7574,6 +7637,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 def _contenu_cellule_html_chev(groupe):
                     morceaux = []
+
                     for _, r in groupe.iterrows():
                         em, coul = _type_couleur_chev(r.get('Code', ''))
                         morceaux.append(
@@ -7627,18 +7691,31 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 "<td style='border:1px solid #e2e8f0;padding:6px;'></td>"
                             )
                         else:
-                            est_conflit = len(groupe) >= 2
-                            fond = "#fecaca" if est_conflit else "#ffffff"
-                            bordure = (
-                                "2px solid #dc2626" if est_conflit
-                                else "1px solid #e2e8f0"
-                            )
+                            est_conflit, est_commun, nature_commune = _analyser_cellule_chev(groupe)
+                            if est_conflit:
+                                fond = "#fecaca"
+                                bordure = "2px solid #dc2626"
+                            elif est_commun:
+                                fond = "#ede9fe"
+                                bordure = "2px solid #7c3aed"
+                            else:
+                                fond = "#ffffff"
+                                bordure = "1px solid #e2e8f0"
                             contenu = _contenu_cellule_html_chev(groupe)
-                            marque_conflit = (
-                                "<div style='color:#dc2626;font-weight:bold;"
-                                "font-size:10px;text-align:center;'>"
-                                "⚠️ CHEVAUCHEMENT</div>" if est_conflit else ""
-                            )
+                            if est_conflit:
+                                marque_conflit = (
+                                    "<div style='color:#dc2626;font-weight:bold;"
+                                    "font-size:10px;text-align:center;'>"
+                                    "⚠️ CHEVAUCHEMENT</div>"
+                                )
+                            elif est_commun:
+                                marque_conflit = (
+                                    "<div style='color:#7c3aed;font-weight:bold;"
+                                    "font-size:10px;text-align:center;'>"
+                                    f"🔗 {nature_commune} COMMUN</div>"
+                                )
+                            else:
+                                marque_conflit = ""
                             tbody_chev += (
                                 f"<td style='background:{fond};border:{bordure};"
                                 f"padding:6px;vertical-align:top;'>"
@@ -7716,6 +7793,11 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         'text_wrap': True, 'font_size': 10, 'bg_color': '#FECACA',
                         'bold': True
                     })
+                    commun_fmt_c = wb_c.add_format({
+                        'border': 2, 'border_color': '#7C3AED', 'valign': 'top',
+                        'text_wrap': True, 'font_size': 10, 'bg_color': '#EDE9FE',
+                        'bold': True
+                    })
 
                     ws_c.set_column(0, 0, 14)
                     ws_c.set_column(1, len(horaires_list), 26)
@@ -7730,8 +7812,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         for col_num, h in enumerate(horaires_list, start=1):
                             groupe = cellules_chev.get((j, h))
                             valeur = _contenu_cellule_texte_chev(groupe)
-                            est_conflit = groupe is not None and len(groupe) >= 2
-                            fmt_utilise = conflit_fmt_c if est_conflit else cell_fmt_c
+                            est_conflit, est_commun, nature_commune = _analyser_cellule_chev(groupe)
+                            if est_conflit:
+                                fmt_utilise = conflit_fmt_c
+                            elif est_commun:
+                                fmt_utilise = commun_fmt_c
+                                valeur = f"🔗 {nature_commune} COMMUN\n\n{valeur}"
+                            else:
+                                fmt_utilise = cell_fmt_c
                             ws_c.write(row_num, col_num, valeur, fmt_utilise)
                             max_lignes = max(max_lignes, valeur.count('\n') + 1)
                         ws_c.set_row(row_num, max(40, max_lignes * 14))
@@ -7835,7 +7923,8 @@ td{{word-wrap:break-word;}}
                         [Paragraph("<b>JOUR</b>", cell_style_chev)] +
                         [Paragraph(f"<b>{h}</b>", cell_style_chev) for h in horaires_list]
                     ]
-                    cellules_conflit_pdf = []  # (colonne, ligne) en conflit
+                    cellules_conflit_pdf = []  # (colonne, ligne) en conflit réel
+                    cellules_commun_pdf = []   # (colonne, ligne) en enseignement commun
 
                     for num_ligne, j in enumerate(jours_list, start=1):
                         ligne_pdf = [_cellule_pdf_chev(j, col_j_chev)]
@@ -7844,10 +7933,15 @@ td{{word-wrap:break-word;}}
                             if groupe is None or groupe.empty:
                                 ligne_pdf.append("")
                             else:
+                                est_conflit, est_commun, nature_commune = _analyser_cellule_chev(groupe)
                                 texte_cellule = _contenu_cellule_texte_chev(groupe)
+                                if est_commun:
+                                    texte_cellule = f"🔗 {nature_commune} COMMUN\n\n{texte_cellule}"
                                 ligne_pdf.append(_cellule_pdf_chev(texte_cellule, col_h_chev))
-                                if len(groupe) >= 2:
+                                if est_conflit:
                                     cellules_conflit_pdf.append((num_col, num_ligne))
+                                elif est_commun:
+                                    cellules_commun_pdf.append((num_col, num_ligne))
                         data_pdf_chev.append(ligne_pdf)
 
                     table_chev = Table(
@@ -7870,6 +7964,15 @@ td{{word-wrap:break-word;}}
                         style_commands_chev.append((
                             'BOX', (col, row), (col, row), 1.5,
                             rl_colors.HexColor('#DC2626')
+                        ))
+                    for (col, row) in cellules_commun_pdf:
+                        style_commands_chev.append((
+                            'BACKGROUND', (col, row), (col, row),
+                            rl_colors.HexColor('#EDE9FE')
+                        ))
+                        style_commands_chev.append((
+                            'BOX', (col, row), (col, row), 1.5,
+                            rl_colors.HexColor('#7C3AED')
                         ))
 
                     table_chev.setStyle(TableStyle(style_commands_chev))
