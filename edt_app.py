@@ -7988,6 +7988,206 @@ td{{word-wrap:break-word;}}
                 except Exception as e:
                     cch3.warning(f"PDF indisponible : {e}")
 
+                # ========================================================
+                # 📋 RAPPORT GLOBAL — TOUS LES ENSEIGNANTS CONCERNÉS
+                # --------------------------------------------------------
+                # Fichier Excel à 2 feuilles :
+                #   1) « Chevauchements » : chaque ligne = un créneau où un
+                #      enseignant est affecté à des enseignements DIFFÉRENTS
+                #      en même temps (conflit réel).
+                #   2) « Enseignements communs » : chaque ligne = un créneau
+                #      où un enseignant dispense le MÊME enseignement à
+                #      plusieurs promotions en même temps (pas un conflit).
+                # Calculé pour TOUS les enseignants, pas seulement celui
+                # sélectionné ci-dessus.
+                # ========================================================
+                st.divider()
+                st.markdown("#### 📋 Rapport global — Tous les enseignants concernés")
+                st.caption(
+                    "Génère un fichier Excel à deux feuilles : la liste "
+                    "complète des enseignants concernés par un chevauchement "
+                    "réel, et celle des enseignants concernés par un "
+                    "enseignement commun (même cours/TD/TP donné à plusieurs "
+                    "promotions en même temps)."
+                )
+
+                lignes_chevauchements_global = []
+                lignes_communs_global = []
+
+                for enseignant_g in liste_enseignants_chevauchement:
+                    df_ens_g = df[df["Enseignants"] == enseignant_g].copy()
+                    df_ens_g['h_norm'] = df_ens_g['Horaire'].apply(normalize)
+                    df_ens_g['j_norm'] = df_ens_g['Jours'].apply(normalize)
+
+                    cellules_g = {}
+                    for (j_n, h_n), groupe_g in df_ens_g.groupby(['j_norm', 'h_norm']):
+                        j_aff_g = map_j.get(j_n)
+                        h_aff_g = map_h.get(h_n)
+                        if j_aff_g is None or h_aff_g is None:
+                            continue
+                        cellules_g[(j_aff_g, h_aff_g)] = groupe_g
+
+                    for (j_g, h_g), groupe_g in cellules_g.items():
+                        est_conflit_g, est_commun_g, nature_commune_g = _analyser_cellule_chev(groupe_g)
+
+                        if est_conflit_g:
+                            detail_g = " | ".join(
+                                f"{_nature_chev(r.get('Code',''))} {r.get('Enseignements','')} "
+                                f"(🎓{r.get('Promotion','')} / 📍{r.get('Lieu','')})"
+                                for _, r in groupe_g.iterrows()
+                            )
+                            lignes_chevauchements_global.append({
+                                "Enseignant": enseignant_g,
+                                "Jour": j_g,
+                                "Horaire": h_g,
+                                "Nombre de séances": len(groupe_g),
+                                "Types concernés": ", ".join(sorted(set(
+                                    _nature_chev(r.get('Code', '')) for _, r in groupe_g.iterrows()
+                                ))),
+                                "Promotions concernées": ", ".join(sorted(set(
+                                    str(r.get('Promotion', '')) for _, r in groupe_g.iterrows()
+                                ))),
+                                "Lieux concernés": ", ".join(sorted(set(
+                                    str(r.get('Lieu', '')) for _, r in groupe_g.iterrows()
+                                ))),
+                                "Détail des enseignements": detail_g,
+                            })
+                        elif est_commun_g:
+                            premiere_ligne_g = groupe_g.iloc[0]
+                            lignes_communs_global.append({
+                                "Enseignant": enseignant_g,
+                                "Jour": j_g,
+                                "Horaire": h_g,
+                                "Type": nature_commune_g,
+                                "Intitulé": premiere_ligne_g.get('Enseignements', ''),
+                                "Nombre de promotions": groupe_g['Promotion'].nunique(),
+                                "Promotions concernées": ", ".join(sorted(set(
+                                    str(r.get('Promotion', '')) for _, r in groupe_g.iterrows()
+                                ))),
+                                "Lieux concernés": ", ".join(sorted(set(
+                                    str(r.get('Lieu', '')) for _, r in groupe_g.iterrows()
+                                ))),
+                            })
+
+                df_rapport_chevauchements = pd.DataFrame(lignes_chevauchements_global)
+                df_rapport_communs = pd.DataFrame(lignes_communs_global)
+
+                mg1, mg2 = st.columns(2)
+                mg1.metric("🔴 Enseignants concernés par un chevauchement",
+                           df_rapport_chevauchements['Enseignant'].nunique() if not df_rapport_chevauchements.empty else 0)
+                mg2.metric("🔗 Enseignants concernés par un enseignement commun",
+                           df_rapport_communs['Enseignant'].nunique() if not df_rapport_communs.empty else 0)
+
+                buf_rapport_global = io.BytesIO()
+                with pd.ExcelWriter(buf_rapport_global, engine='xlsxwriter') as writer:
+                    wb_g = writer.book
+
+                    fmt_titre_g = wb_g.add_format({
+                        'bold': True, 'font_size': 14, 'font_color': 'white',
+                        'align': 'center', 'valign': 'vcenter'
+                    })
+                    fmt_entete_g = wb_g.add_format({
+                        'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
+                        'border': 1, 'align': 'center', 'valign': 'vcenter',
+                        'text_wrap': True
+                    })
+                    fmt_cellule_g = wb_g.add_format({
+                        'border': 1, 'valign': 'top', 'text_wrap': True,
+                        'font_size': 10
+                    })
+                    fmt_cellule_alt_g = wb_g.add_format({
+                        'border': 1, 'valign': 'top', 'text_wrap': True,
+                        'font_size': 10, 'bg_color': '#F8FAFC'
+                    })
+
+                    # ---- Feuille 1 : Chevauchements ----
+                    colonnes_chev_g = [
+                        "Enseignant", "Jour", "Horaire", "Nombre de séances",
+                        "Types concernés", "Promotions concernées",
+                        "Lieux concernés", "Détail des enseignements"
+                    ]
+                    if df_rapport_chevauchements.empty:
+                        df_rapport_chevauchements = pd.DataFrame(columns=colonnes_chev_g)
+                    df_rapport_chevauchements = df_rapport_chevauchements[colonnes_chev_g].sort_values(
+                        ["Enseignant", "Jour", "Horaire"]
+                    )
+                    df_rapport_chevauchements.to_excel(
+                        writer, sheet_name='Chevauchements', index=False, startrow=2
+                    )
+                    ws_chev_g = writer.sheets['Chevauchements']
+                    fmt_titre_rouge_g = wb_g.add_format({
+                        'bold': True, 'font_size': 14, 'font_color': 'white',
+                        'align': 'center', 'valign': 'vcenter', 'bg_color': '#DC2626'
+                    })
+                    ws_chev_g.merge_range(
+                        0, 0, 0, len(colonnes_chev_g) - 1,
+                        "🔴 Chevauchements détectés — Tous enseignants", fmt_titre_rouge_g
+                    )
+                    ws_chev_g.merge_range(
+                        1, 0, 1, len(colonnes_chev_g) - 1,
+                        f"Semestre 01 — 2026-2027 | Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}",
+                        wb_g.add_format({'italic': True, 'align': 'center', 'font_size': 10, 'font_color': '#64748b'})
+                    )
+                    for col_num, nom_col in enumerate(colonnes_chev_g):
+                        ws_chev_g.write(2, col_num, nom_col, fmt_entete_g)
+                    largeurs_chev_g = [22, 12, 14, 16, 18, 24, 20, 50]
+                    for col_num, largeur in enumerate(largeurs_chev_g):
+                        ws_chev_g.set_column(col_num, col_num, largeur)
+                    for row_num, (_, ligne) in enumerate(df_rapport_chevauchements.iterrows(), start=3):
+                        fmt_ligne = fmt_cellule_alt_g if row_num % 2 == 0 else fmt_cellule_g
+                        for col_num, nom_col in enumerate(colonnes_chev_g):
+                            ws_chev_g.write(row_num, col_num, ligne[nom_col], fmt_ligne)
+                    ws_chev_g.freeze_panes(3, 1)
+                    ws_chev_g.autofilter(2, 0, max(2, len(df_rapport_chevauchements) + 2), len(colonnes_chev_g) - 1)
+
+                    # ---- Feuille 2 : Enseignements communs ----
+                    colonnes_communs_g = [
+                        "Enseignant", "Jour", "Horaire", "Type", "Intitulé",
+                        "Nombre de promotions", "Promotions concernées", "Lieux concernés"
+                    ]
+                    if df_rapport_communs.empty:
+                        df_rapport_communs = pd.DataFrame(columns=colonnes_communs_g)
+                    df_rapport_communs = df_rapport_communs[colonnes_communs_g].sort_values(
+                        ["Enseignant", "Jour", "Horaire"]
+                    )
+                    df_rapport_communs.to_excel(
+                        writer, sheet_name='Enseignements_communs', index=False, startrow=2
+                    )
+                    ws_commun_g = writer.sheets['Enseignements_communs']
+                    fmt_titre_violet_g = wb_g.add_format({
+                        'bold': True, 'font_size': 14, 'font_color': 'white',
+                        'align': 'center', 'valign': 'vcenter', 'bg_color': '#7C3AED'
+                    })
+                    ws_commun_g.merge_range(
+                        0, 0, 0, len(colonnes_communs_g) - 1,
+                        "🔗 Enseignements communs détectés — Tous enseignants", fmt_titre_violet_g
+                    )
+                    ws_commun_g.merge_range(
+                        1, 0, 1, len(colonnes_communs_g) - 1,
+                        f"Semestre 01 — 2026-2027 | Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}",
+                        wb_g.add_format({'italic': True, 'align': 'center', 'font_size': 10, 'font_color': '#64748b'})
+                    )
+                    for col_num, nom_col in enumerate(colonnes_communs_g):
+                        ws_commun_g.write(2, col_num, nom_col, fmt_entete_g)
+                    largeurs_communs_g = [22, 12, 14, 10, 30, 18, 24, 20]
+                    for col_num, largeur in enumerate(largeurs_communs_g):
+                        ws_commun_g.set_column(col_num, col_num, largeur)
+                    for row_num, (_, ligne) in enumerate(df_rapport_communs.iterrows(), start=3):
+                        fmt_ligne = fmt_cellule_alt_g if row_num % 2 == 0 else fmt_cellule_g
+                        for col_num, nom_col in enumerate(colonnes_communs_g):
+                            ws_commun_g.write(row_num, col_num, ligne[nom_col], fmt_ligne)
+                    ws_commun_g.freeze_panes(3, 1)
+                    ws_commun_g.autofilter(2, 0, max(2, len(df_rapport_communs) + 2), len(colonnes_communs_g) - 1)
+
+                st.download_button(
+                    "📊 Télécharger le rapport global (Excel, 2 feuilles)",
+                    buf_rapport_global.getvalue(),
+                    f"Rapport_Chevauchements_Communs_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_rapport_global_chev"
+                )
+
         elif mode_view == "✍️ Éditeur de données":
             st.subheader("✍️ Éditeur de données EDT")
             
