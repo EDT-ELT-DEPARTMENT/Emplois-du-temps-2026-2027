@@ -4864,7 +4864,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             "Promotion", "Enseignant", "🏢 Planning Salles", 
             "🟢 Lieux Non Occupés", 
             "🚩 Vérificateur de conflits",
-            "🔴 Chevauchements par Enseignant"
+            "🔴 Chevauchements par Enseignant",
+            "🏢 Chevauchements par Lieu"
         ], horizontal=True)
     
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
@@ -8186,6 +8187,704 @@ td{{word-wrap:break-word;}}
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
                     key="dl_rapport_global_chev"
+                )
+
+        elif mode_view == "🏢 Chevauchements par Lieu":
+            # ============================================================
+            # 🏢 CHEVAUCHEMENTS PAR LIEU
+            # ------------------------------------------------------------
+            # Tableau interactif : JOURS EN VERTICAL (lignes), HORAIRES EN
+            # HORIZONTAL (colonnes). Chaque cellule affiche TOUS les
+            # enseignements qui se déroulent dans le lieu choisi pour ce
+            # jour et cet horaire, tous enseignants et promotions confondus.
+            # Une cellule est mise en ROUGE dès qu'elle contient DEUX
+            # enseignements DIFFÉRENTS ou plus (le lieu ne peut pas
+            # accueillir deux enseignements différents en même temps :
+            # c'est un chevauchement réel — une salle double-réservée).
+            # ============================================================
+            st.subheader("🏢 Chevauchements par Lieu")
+            st.caption(
+                "Sélectionnez un lieu (salle) pour visualiser en un coup "
+                "d'œil les créneaux où il accueille PLUSIEURS "
+                "enseignements en même temps (même jour + même horaire). "
+                "Les cellules en rouge signalent un chevauchement réel "
+                "(salle double-réservée)."
+            )
+
+            liste_lieux_chevauchement = sorted([
+                l for l in df["Lieu"].dropna().unique()
+                if str(l).strip() and str(l).strip() != "Non défini"
+            ])
+
+            if not liste_lieux_chevauchement:
+                st.info("ℹ️ Aucun lieu trouvé dans les données.")
+            else:
+                lieu_chevauchement = st.selectbox(
+                    "🏢 Choisir un lieu :",
+                    liste_lieux_chevauchement,
+                    key="lieu_chevauchement_admin"
+                )
+
+                df_lieu_chev = df[df["Lieu"] == lieu_chevauchement].copy()
+                df_lieu_chev['h_norm'] = df_lieu_chev['Horaire'].apply(normalize)
+                df_lieu_chev['j_norm'] = df_lieu_chev['Jours'].apply(normalize)
+
+                # Regroupement de toutes les séances de ce lieu par
+                # cellule (Jour, Horaire) — tous enseignants et promotions
+                # confondus.
+                cellules_chev = {}
+                for (j_n, h_n), groupe in df_lieu_chev.groupby(['j_norm', 'h_norm']):
+                    j_aff = map_j.get(j_n)
+                    h_aff = map_h.get(h_n)
+                    if j_aff is None or h_aff is None:
+                        continue
+                    cellules_chev[(j_aff, h_aff)] = groupe
+
+                def _nature_chev(code):
+                    """Nature normalisée d'une séance (COURS / TD / TP / AUTRE)."""
+                    c = str(code).upper()
+                    if "COURS" in c:
+                        return "COURS"
+                    if "TD" in c:
+                        return "TD"
+                    if "TP" in c:
+                        return "TP"
+                    return "AUTRE"
+
+                # ========================================================
+                # DISTINCTION « ENSEIGNEMENT COMMUN » vs « CHEVAUCHEMENT
+                # RÉEL » (même logique que pour les enseignants)
+                # --------------------------------------------------------
+                # Lorsque plusieurs séances tombent dans la même cellule
+                # (même jour + même horaire) pour ce lieu, ce n'est PAS
+                # automatiquement un chevauchement : si TOUTES ces séances
+                # sont de la MÊME nature (toutes Cours, ou toutes TD, ou
+                # toutes TP) ET portent EXACTEMENT le même intitulé
+                # (colonne Enseignements), il s'agit du MÊME enseignement
+                # dispensé à plusieurs promotions en même temps DANS CETTE
+                # MÊME SALLE (cours combiné) — un enseignement COMMUN, qui
+                # est parfaitement normal.
+                # Le chevauchement réel n'existe que si la cellule contient
+                # au moins DEUX enseignements de nature et/ou d'intitulé
+                # DIFFÉRENTS : le lieu ne peut alors pas accueillir deux
+                # enseignements différents en même temps.
+                # ========================================================
+                def _analyser_cellule_chev(groupe):
+                    """Retourne (est_conflit, est_commun, nature_commune).
+                    est_conflit=True  -> chevauchement réel (à signaler en rouge)
+                    est_commun=True   -> même enseignement à plusieurs
+                                         promotions dans ce lieu (à signaler,
+                                         PAS en conflit)
+                    nature_commune    -> "COURS"/"TD"/"TP" si est_commun,
+                                         sinon None."""
+                    if groupe is None or groupe.empty or len(groupe) < 2:
+                        return False, False, None
+                    combinaisons = set()
+                    for _, r in groupe.iterrows():
+                        nature = _nature_chev(r.get('Code', ''))
+                        titre = str(r.get('Enseignements', '')).strip().upper()
+                        combinaisons.add((nature, titre))
+                    if len(combinaisons) == 1:
+                        nature_commune = next(iter(combinaisons))[0]
+                        return False, True, nature_commune
+                    return True, False, None
+
+                nb_conflits_chev = 0
+                nb_communs_chev = 0
+                for groupe in cellules_chev.values():
+                    est_conflit, est_commun, _ = _analyser_cellule_chev(groupe)
+                    if est_conflit:
+                        nb_conflits_chev += 1
+                    elif est_commun:
+                        nb_communs_chev += 1
+
+                m_chev1, m_chev2, m_chev3, m_chev4 = st.columns(4)
+                m_chev1.metric("📊 Séances totales", len(df_lieu_chev))
+                m_chev2.metric("🗓️ Créneaux occupés", len(cellules_chev))
+                m_chev3.metric("🔴 Chevauchements", nb_conflits_chev)
+                m_chev4.metric("🔗 Enseignements communs", nb_communs_chev)
+
+                if nb_conflits_chev > 0:
+                    st.error(
+                        f"🔴 {nb_conflits_chev} chevauchement(s) détecté(s) "
+                        f"pour le lieu **{lieu_chevauchement}** — cette salle "
+                        f"accueille plusieurs enseignements DIFFÉRENTS en "
+                        f"même temps (double réservation)."
+                    )
+                else:
+                    st.success(f"✅ Aucun chevauchement détecté pour le lieu **{lieu_chevauchement}**")
+
+                if nb_communs_chev > 0:
+                    st.info(
+                        f"🔗 {nb_communs_chev} créneau(x) où le lieu "
+                        f"**{lieu_chevauchement}** accueille le MÊME "
+                        f"enseignement pour plusieurs promotions en même "
+                        f"temps (cours combiné — ce n'est pas un chevauchement)."
+                    )
+
+                def _type_couleur_chev(code):
+                    c = str(code).upper()
+                    if "COURS" in c:
+                        return "📘", "#1e40af"
+                    if "TD" in c:
+                        return "📗", "#166534"
+                    if "TP" in c:
+                        return "🔴", "#991b1b"
+                    return "⚪", "#374151"
+
+                def _contenu_cellule_html_chev(groupe):
+                    morceaux = []
+
+                    for _, r in groupe.iterrows():
+                        em, coul = _type_couleur_chev(r.get('Code', ''))
+                        morceaux.append(
+                            f"<div style='border-left:3px solid {coul};padding:3px;"
+                            f"margin:2px 0;background:rgba(255,255,255,0.65);"
+                            f"border-radius:3px;text-align:left;'>"
+                            f"<b>{em} {r.get('Enseignements', '')}</b><br>"
+                            f"<small>👤 {r.get('Enseignants', '')} | "
+                            f"🎓 {r.get('Promotion', '')}</small>"
+                            f"</div>"
+                        )
+                    return "".join(morceaux)
+
+                def _contenu_cellule_texte_chev(groupe):
+                    if groupe is None:
+                        return ""
+                    morceaux = []
+                    for _, r in groupe.iterrows():
+                        em, _ = _type_couleur_chev(r.get('Code', ''))
+                        morceaux.append(
+                            f"{em} {r.get('Enseignements', '')}\n"
+                            f"👤 {r.get('Enseignants', '')} | 🎓 {r.get('Promotion', '')}"
+                        )
+                    return "\n\n".join(morceaux)
+
+                # ========================================================
+                # CONSTRUCTION DU TABLEAU HTML — JOURS VERTICAL, HORAIRES
+                # HORIZONTAL (orientation demandée)
+                # ========================================================
+                thead_chev = (
+                    "<tr><th style='background:#1E3A8A;color:white;padding:8px;"
+                    "width:110px;'>JOUR \\ HORAIRE</th>"
+                )
+                for h in horaires_list:
+                    thead_chev += (
+                        f"<th style='background:#1E3A8A;color:white;padding:8px;"
+                        f"font-size:11px;'>{h}</th>"
+                    )
+                thead_chev += "</tr>"
+
+                tbody_chev = ""
+                for j in jours_list:
+                    tbody_chev += (
+                        f"<tr><td style='background:#f1f5f9;font-weight:bold;"
+                        f"text-align:center;padding:8px;'>{j}</td>"
+                    )
+                    for h in horaires_list:
+                        groupe = cellules_chev.get((j, h))
+                        if groupe is None or groupe.empty:
+                            tbody_chev += (
+                                "<td style='border:1px solid #e2e8f0;padding:6px;'></td>"
+                            )
+                        else:
+                            est_conflit, est_commun, nature_commune = _analyser_cellule_chev(groupe)
+                            if est_conflit:
+                                fond = "#fecaca"
+                                bordure = "2px solid #dc2626"
+                            elif est_commun:
+                                fond = "#ede9fe"
+                                bordure = "2px solid #7c3aed"
+                            else:
+                                fond = "#ffffff"
+                                bordure = "1px solid #e2e8f0"
+                            contenu = _contenu_cellule_html_chev(groupe)
+                            if est_conflit:
+                                marque_conflit = (
+                                    "<div style='color:#dc2626;font-weight:bold;"
+                                    "font-size:10px;text-align:center;'>"
+                                    "⚠️ CHEVAUCHEMENT</div>"
+                                )
+                            elif est_commun:
+                                marque_conflit = (
+                                    "<div style='color:#7c3aed;font-weight:bold;"
+                                    "font-size:10px;text-align:center;'>"
+                                    f"🔗 {nature_commune} COMMUN</div>"
+                                )
+                            else:
+                                marque_conflit = ""
+                            tbody_chev += (
+                                f"<td style='background:{fond};border:{bordure};"
+                                f"padding:6px;vertical-align:top;'>"
+                                f"{marque_conflit}{contenu}</td>"
+                            )
+                    tbody_chev += "</tr>"
+
+                st.markdown(
+                    f"<div style='overflow-x:auto;border:1px solid #cbd5e1;"
+                    f"border-radius:8px;'>"
+                    f"<table style='width:100%;border-collapse:collapse;"
+                    f"table-layout:fixed;'>"
+                    f"<thead>{thead_chev}</thead><tbody>{tbody_chev}</tbody>"
+                    f"</table></div>",
+                    unsafe_allow_html=True
+                )
+
+                # ========================================================
+                # EXPORTS — EXCEL, HTML, PDF (très visibles et colorés)
+                # ========================================================
+                st.markdown("#### 📥 Exporter ce tableau")
+                cch1, cch2, cch3 = st.columns(3)
+
+                nom_fichier_lieu_chev = lieu_chevauchement.replace(' ', '_')
+
+                # ---------------- 1) EXCEL ----------------
+                buf_xl_chev = io.BytesIO()
+                with pd.ExcelWriter(buf_xl_chev, engine='xlsxwriter') as writer:
+                    data_excel_chev = []
+                    for j in jours_list:
+                        ligne = {"JOUR": j}
+                        for h in horaires_list:
+                            groupe = cellules_chev.get((j, h))
+                            ligne[h] = _contenu_cellule_texte_chev(groupe)
+                        data_excel_chev.append(ligne)
+                    df_excel_chev = pd.DataFrame(data_excel_chev).set_index("JOUR")
+
+                    df_excel_chev.to_excel(writer, sheet_name='Chevauchements', startrow=2)
+                    wb_c = writer.book
+                    ws_c = writer.sheets['Chevauchements']
+
+                    title_fmt_c = wb_c.add_format({
+                        'bold': True, 'font_size': 14, 'font_color': '#DC2626',
+                        'align': 'center', 'valign': 'vcenter'
+                    })
+                    ws_c.merge_range(
+                        0, 0, 0, len(horaires_list),
+                        f"Chevauchements — {lieu_chevauchement}", title_fmt_c
+                    )
+                    ws_c.merge_range(
+                        1, 0, 1, len(horaires_list),
+                        f"Semestre 01 — 2026-2027 | Généré le "
+                        f"{datetime.now().strftime('%d/%m/%Y')}",
+                        wb_c.add_format({
+                            'italic': True, 'align': 'center', 'font_size': 10,
+                            'font_color': '#64748b'
+                        })
+                    )
+
+                    hdr_fmt_c = wb_c.add_format({
+                        'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
+                        'border': 1, 'align': 'center', 'valign': 'vcenter',
+                        'text_wrap': True
+                    })
+                    idx_fmt_c = wb_c.add_format({
+                        'bold': True, 'bg_color': '#f1f5f9', 'border': 1,
+                        'align': 'center', 'valign': 'vcenter'
+                    })
+                    cell_fmt_c = wb_c.add_format({
+                        'border': 1, 'valign': 'top', 'text_wrap': True,
+                        'font_size': 10
+                    })
+                    conflit_fmt_c = wb_c.add_format({
+                        'border': 2, 'border_color': '#DC2626', 'valign': 'top',
+                        'text_wrap': True, 'font_size': 10, 'bg_color': '#FECACA',
+                        'bold': True
+                    })
+                    commun_fmt_c = wb_c.add_format({
+                        'border': 2, 'border_color': '#7C3AED', 'valign': 'top',
+                        'text_wrap': True, 'font_size': 10, 'bg_color': '#EDE9FE',
+                        'bold': True
+                    })
+
+                    ws_c.set_column(0, 0, 14)
+                    ws_c.set_column(1, len(horaires_list), 26)
+
+                    ws_c.write(2, 0, "JOUR", hdr_fmt_c)
+                    for col_num, h in enumerate(horaires_list, start=1):
+                        ws_c.write(2, col_num, h, hdr_fmt_c)
+
+                    for row_num, j in enumerate(jours_list, start=3):
+                        ws_c.write(row_num, 0, j, idx_fmt_c)
+                        max_lignes = 1
+                        for col_num, h in enumerate(horaires_list, start=1):
+                            groupe = cellules_chev.get((j, h))
+                            valeur = _contenu_cellule_texte_chev(groupe)
+                            est_conflit, est_commun, nature_commune = _analyser_cellule_chev(groupe)
+                            if est_conflit:
+                                fmt_utilise = conflit_fmt_c
+                            elif est_commun:
+                                fmt_utilise = commun_fmt_c
+                                valeur = f"🔗 {nature_commune} COMMUN\n\n{valeur}"
+                            else:
+                                fmt_utilise = cell_fmt_c
+                            ws_c.write(row_num, col_num, valeur, fmt_utilise)
+                            max_lignes = max(max_lignes, valeur.count('\n') + 1)
+                        ws_c.set_row(row_num, max(40, max_lignes * 14))
+
+                    ws_c.freeze_panes(3, 1)
+
+                cch1.download_button(
+                    "📊 Excel", buf_xl_chev.getvalue(),
+                    f"Chevauchements_{nom_fichier_lieu_chev}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True, key="dl_lieu_chev_xl"
+                )
+
+                # ---------------- 2) HTML ----------------
+                html_doc_chev = f"""<!DOCTYPE html>
+<html lang='fr'><head><meta charset='UTF-8'><title>Chevauchements {lieu_chevauchement}</title>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;margin:0;color:#1e293b;}}
+.container{{max-width:1400px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
+.header{{background:linear-gradient(135deg,#DC2626,#EF4444);color:white;padding:20px;text-align:center;}}
+.header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
+.content{{padding:20px;overflow-x:auto;}}
+table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+td{{word-wrap:break-word;}}
+.footer{{text-align:center;padding:15px;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;}}
+@media print{{body{{background:white;padding:0;}} .container{{box-shadow:none;border-radius:0;}}}}
+</style></head><body>
+<div class='container'>
+<div class='header'><h1>🔴 Chevauchements — {lieu_chevauchement}</h1><p>Semestre 01 — 2026-2027 | département d'Électrotechnique — FGE/UDL-SBA</p></div>
+<div class='content'><table><thead>{thead_chev}</thead><tbody>{tbody_chev}</tbody></table></div>
+<div class='footer'>Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</div>
+</div></body></html>"""
+
+                cch2.download_button(
+                    "🌐 HTML", html_doc_chev,
+                    f"Chevauchements_{nom_fichier_lieu_chev}.html",
+                    "text/html", use_container_width=True, key="dl_lieu_chev_html"
+                )
+
+                # ---------------- 3) PDF ----------------
+                try:
+                    from reportlab.lib import colors as rl_colors
+                    from reportlab.lib.pagesizes import landscape, A4
+                    from reportlab.platypus import (
+                        SimpleDocTemplate, Table, TableStyle, Paragraph,
+                        Spacer, KeepInFrame
+                    )
+                    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                    from reportlab.lib.units import mm
+
+                    buf_pdf_chev = io.BytesIO()
+                    doc_chev = SimpleDocTemplate(
+                        buf_pdf_chev, pagesize=landscape(A4),
+                        topMargin=15 * mm, bottomMargin=12 * mm,
+                        leftMargin=10 * mm, rightMargin=10 * mm
+                    )
+                    styles_chev = getSampleStyleSheet()
+                    titre_style_chev = ParagraphStyle(
+                        'TitreChev', parent=styles_chev['Heading1'], fontSize=14,
+                        textColor=rl_colors.HexColor('#DC2626'), alignment=1
+                    )
+                    soustitre_style_chev = ParagraphStyle(
+                        'SousTitreChev', parent=styles_chev['Normal'], fontSize=9,
+                        textColor=rl_colors.HexColor('#64748b'), alignment=1
+                    )
+                    cell_style_chev = ParagraphStyle(
+                        'CellChev', parent=styles_chev['Normal'], fontSize=7, leading=9
+                    )
+
+                    elements_chev = [
+                        Paragraph(
+                            f"🔴 Chevauchements — {lieu_chevauchement}",
+                            titre_style_chev
+                        ),
+                        Paragraph(
+                            f"Semestre 01 — 2026-2027 | Généré le "
+                            f"{datetime.now().strftime('%d/%m/%Y')}",
+                            soustitre_style_chev
+                        ),
+                        Spacer(1, 8),
+                    ]
+
+                    # Hauteur maximale d'une cellule (évite le LayoutError
+                    # ReportLab en cas de cellule surchargée — voir le
+                    # même correctif appliqué à l'export PDF Promotion).
+                    HAUTEUR_MAX_CELLULE_CHEV = 380
+
+                    def _cellule_pdf_chev(texte, largeur):
+                        return KeepInFrame(
+                            max(largeur - 10, 10), HAUTEUR_MAX_CELLULE_CHEV,
+                            [Paragraph(texte.replace('\n', '<br/>'), cell_style_chev)],
+                            mode='shrink'
+                        )
+
+                    page_width_chev = landscape(A4)[0] - 20 * mm
+                    col_j_chev = 25 * mm
+                    col_h_chev = (page_width_chev - col_j_chev) / len(horaires_list)
+                    col_widths_chev = [col_j_chev] + [col_h_chev] * len(horaires_list)
+
+                    data_pdf_chev = [
+                        [Paragraph("<b>JOUR</b>", cell_style_chev)] +
+                        [Paragraph(f"<b>{h}</b>", cell_style_chev) for h in horaires_list]
+                    ]
+                    cellules_conflit_pdf = []  # (colonne, ligne) en conflit réel
+                    cellules_commun_pdf = []   # (colonne, ligne) en enseignement commun
+
+                    for num_ligne, j in enumerate(jours_list, start=1):
+                        ligne_pdf = [_cellule_pdf_chev(j, col_j_chev)]
+                        for num_col, h in enumerate(horaires_list, start=1):
+                            groupe = cellules_chev.get((j, h))
+                            if groupe is None or groupe.empty:
+                                ligne_pdf.append("")
+                            else:
+                                est_conflit, est_commun, nature_commune = _analyser_cellule_chev(groupe)
+                                texte_cellule = _contenu_cellule_texte_chev(groupe)
+                                if est_commun:
+                                    texte_cellule = f"🔗 {nature_commune} COMMUN\n\n{texte_cellule}"
+                                ligne_pdf.append(_cellule_pdf_chev(texte_cellule, col_h_chev))
+                                if est_conflit:
+                                    cellules_conflit_pdf.append((num_col, num_ligne))
+                                elif est_commun:
+                                    cellules_commun_pdf.append((num_col, num_ligne))
+                        data_pdf_chev.append(ligne_pdf)
+
+                    table_chev = Table(
+                        data_pdf_chev, colWidths=col_widths_chev, repeatRows=1
+                    )
+
+                    style_commands_chev = [
+                        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1E3A8A')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+                        ('BACKGROUND', (0, 1), (0, -1), rl_colors.HexColor('#f1f5f9')),
+                        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#cbd5e1')),
+                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+                    ]
+                    for (col, row) in cellules_conflit_pdf:
+                        style_commands_chev.append((
+                            'BACKGROUND', (col, row), (col, row),
+                            rl_colors.HexColor('#FECACA')
+                        ))
+                        style_commands_chev.append((
+                            'BOX', (col, row), (col, row), 1.5,
+                            rl_colors.HexColor('#DC2626')
+                        ))
+                    for (col, row) in cellules_commun_pdf:
+                        style_commands_chev.append((
+                            'BACKGROUND', (col, row), (col, row),
+                            rl_colors.HexColor('#EDE9FE')
+                        ))
+                        style_commands_chev.append((
+                            'BOX', (col, row), (col, row), 1.5,
+                            rl_colors.HexColor('#7C3AED')
+                        ))
+
+                    table_chev.setStyle(TableStyle(style_commands_chev))
+                    elements_chev.append(table_chev)
+
+                    doc_chev.build(elements_chev)
+
+                    cch3.download_button(
+                        "📄 PDF", buf_pdf_chev.getvalue(),
+                        f"Chevauchements_{nom_fichier_lieu_chev}.pdf",
+                        "application/pdf", use_container_width=True, key="dl_lieu_chev_pdf"
+                    )
+                except Exception as e:
+                    cch3.warning(f"PDF indisponible : {e}")
+
+                # ========================================================
+                # 📋 RAPPORT GLOBAL — TOUS LES LIEUX CONCERNÉS
+                # --------------------------------------------------------
+                # Fichier Excel à 2 feuilles :
+                #   1) « Chevauchements » : chaque ligne = un créneau où un
+                #      lieu accueille des enseignements DIFFÉRENTS en même
+                #      temps (conflit réel — salle double-réservée).
+                #   2) « Enseignements communs » : chaque ligne = un créneau
+                #      où un lieu accueille le MÊME enseignement pour
+                #      plusieurs promotions en même temps (cours combiné,
+                #      pas un conflit).
+                # Calculé pour TOUS les lieux, pas seulement celui
+                # sélectionné ci-dessus.
+                # ========================================================
+                st.divider()
+                st.markdown("#### 📋 Rapport global — Tous les lieux concernés")
+                st.caption(
+                    "Génère un fichier Excel à deux feuilles : la liste "
+                    "complète des lieux concernés par un chevauchement "
+                    "réel (salle double-réservée), et celle des lieux "
+                    "concernés par un enseignement commun (même cours/TD/TP "
+                    "donné à plusieurs promotions en même temps dans la "
+                    "même salle)."
+                )
+
+                lignes_chevauchements_global = []
+                lignes_communs_global = []
+
+                for lieu_g in liste_lieux_chevauchement:
+                    df_lieu_g = df[df["Lieu"] == lieu_g].copy()
+                    df_lieu_g['h_norm'] = df_lieu_g['Horaire'].apply(normalize)
+                    df_lieu_g['j_norm'] = df_lieu_g['Jours'].apply(normalize)
+
+                    cellules_g = {}
+                    for (j_n, h_n), groupe_g in df_lieu_g.groupby(['j_norm', 'h_norm']):
+                        j_aff_g = map_j.get(j_n)
+                        h_aff_g = map_h.get(h_n)
+                        if j_aff_g is None or h_aff_g is None:
+                            continue
+                        cellules_g[(j_aff_g, h_aff_g)] = groupe_g
+
+                    for (j_g, h_g), groupe_g in cellules_g.items():
+                        est_conflit_g, est_commun_g, nature_commune_g = _analyser_cellule_chev(groupe_g)
+
+                        if est_conflit_g:
+                            detail_g = " | ".join(
+                                f"{_nature_chev(r.get('Code',''))} {r.get('Enseignements','')} "
+                                f"(👤{r.get('Enseignants','')} / 🎓{r.get('Promotion','')})"
+                                for _, r in groupe_g.iterrows()
+                            )
+                            lignes_chevauchements_global.append({
+                                "Lieu": lieu_g,
+                                "Jour": j_g,
+                                "Horaire": h_g,
+                                "Nombre de séances": len(groupe_g),
+                                "Types concernés": ", ".join(sorted(set(
+                                    _nature_chev(r.get('Code', '')) for _, r in groupe_g.iterrows()
+                                ))),
+                                "Enseignants concernés": ", ".join(sorted(set(
+                                    str(r.get('Enseignants', '')) for _, r in groupe_g.iterrows()
+                                ))),
+                                "Promotions concernées": ", ".join(sorted(set(
+                                    str(r.get('Promotion', '')) for _, r in groupe_g.iterrows()
+                                ))),
+                                "Détail des enseignements": detail_g,
+                            })
+                        elif est_commun_g:
+                            premiere_ligne_g = groupe_g.iloc[0]
+                            lignes_communs_global.append({
+                                "Lieu": lieu_g,
+                                "Jour": j_g,
+                                "Horaire": h_g,
+                                "Type": nature_commune_g,
+                                "Intitulé": premiere_ligne_g.get('Enseignements', ''),
+                                "Nombre de promotions": groupe_g['Promotion'].nunique(),
+                                "Enseignants concernés": ", ".join(sorted(set(
+                                    str(r.get('Enseignants', '')) for _, r in groupe_g.iterrows()
+                                ))),
+                                "Promotions concernées": ", ".join(sorted(set(
+                                    str(r.get('Promotion', '')) for _, r in groupe_g.iterrows()
+                                ))),
+                            })
+
+                df_rapport_chevauchements = pd.DataFrame(lignes_chevauchements_global)
+                df_rapport_communs = pd.DataFrame(lignes_communs_global)
+
+                mg1, mg2 = st.columns(2)
+                mg1.metric("🔴 Lieux concernés par un chevauchement",
+                           df_rapport_chevauchements['Lieu'].nunique() if not df_rapport_chevauchements.empty else 0)
+                mg2.metric("🔗 Lieux concernés par un enseignement commun",
+                           df_rapport_communs['Lieu'].nunique() if not df_rapport_communs.empty else 0)
+
+                buf_rapport_global = io.BytesIO()
+                with pd.ExcelWriter(buf_rapport_global, engine='xlsxwriter') as writer:
+                    wb_g = writer.book
+
+                    fmt_titre_g = wb_g.add_format({
+                        'bold': True, 'font_size': 14, 'font_color': 'white',
+                        'align': 'center', 'valign': 'vcenter'
+                    })
+                    fmt_entete_g = wb_g.add_format({
+                        'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
+                        'border': 1, 'align': 'center', 'valign': 'vcenter',
+                        'text_wrap': True
+                    })
+                    fmt_cellule_g = wb_g.add_format({
+                        'border': 1, 'valign': 'top', 'text_wrap': True,
+                        'font_size': 10
+                    })
+                    fmt_cellule_alt_g = wb_g.add_format({
+                        'border': 1, 'valign': 'top', 'text_wrap': True,
+                        'font_size': 10, 'bg_color': '#F8FAFC'
+                    })
+
+                    # ---- Feuille 1 : Chevauchements ----
+                    colonnes_chev_g = [
+                        "Lieu", "Jour", "Horaire", "Nombre de séances",
+                        "Types concernés", "Enseignants concernés",
+                        "Promotions concernées", "Détail des enseignements"
+                    ]
+                    if df_rapport_chevauchements.empty:
+                        df_rapport_chevauchements = pd.DataFrame(columns=colonnes_chev_g)
+                    df_rapport_chevauchements = df_rapport_chevauchements[colonnes_chev_g].sort_values(
+                        ["Lieu", "Jour", "Horaire"]
+                    )
+                    df_rapport_chevauchements.to_excel(
+                        writer, sheet_name='Chevauchements', index=False, startrow=2
+                    )
+                    ws_chev_g = writer.sheets['Chevauchements']
+                    fmt_titre_rouge_g = wb_g.add_format({
+                        'bold': True, 'font_size': 14, 'font_color': 'white',
+                        'align': 'center', 'valign': 'vcenter', 'bg_color': '#DC2626'
+                    })
+                    ws_chev_g.merge_range(
+                        0, 0, 0, len(colonnes_chev_g) - 1,
+                        "🔴 Chevauchements détectés — Tous lieux", fmt_titre_rouge_g
+                    )
+                    ws_chev_g.merge_range(
+                        1, 0, 1, len(colonnes_chev_g) - 1,
+                        f"Semestre 01 — 2026-2027 | Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}",
+                        wb_g.add_format({'italic': True, 'align': 'center', 'font_size': 10, 'font_color': '#64748b'})
+                    )
+                    for col_num, nom_col in enumerate(colonnes_chev_g):
+                        ws_chev_g.write(2, col_num, nom_col, fmt_entete_g)
+                    largeurs_chev_g = [22, 12, 14, 16, 18, 24, 20, 50]
+                    for col_num, largeur in enumerate(largeurs_chev_g):
+                        ws_chev_g.set_column(col_num, col_num, largeur)
+                    for row_num, (_, ligne) in enumerate(df_rapport_chevauchements.iterrows(), start=3):
+                        fmt_ligne = fmt_cellule_alt_g if row_num % 2 == 0 else fmt_cellule_g
+                        for col_num, nom_col in enumerate(colonnes_chev_g):
+                            ws_chev_g.write(row_num, col_num, ligne[nom_col], fmt_ligne)
+                    ws_chev_g.freeze_panes(3, 1)
+                    ws_chev_g.autofilter(2, 0, max(2, len(df_rapport_chevauchements) + 2), len(colonnes_chev_g) - 1)
+
+                    # ---- Feuille 2 : Enseignements communs ----
+                    colonnes_communs_g = [
+                        "Lieu", "Jour", "Horaire", "Type", "Intitulé",
+                        "Nombre de promotions", "Enseignants concernés", "Promotions concernées"
+                    ]
+                    if df_rapport_communs.empty:
+                        df_rapport_communs = pd.DataFrame(columns=colonnes_communs_g)
+                    df_rapport_communs = df_rapport_communs[colonnes_communs_g].sort_values(
+                        ["Lieu", "Jour", "Horaire"]
+                    )
+                    df_rapport_communs.to_excel(
+                        writer, sheet_name='Enseignements_communs', index=False, startrow=2
+                    )
+                    ws_commun_g = writer.sheets['Enseignements_communs']
+                    fmt_titre_violet_g = wb_g.add_format({
+                        'bold': True, 'font_size': 14, 'font_color': 'white',
+                        'align': 'center', 'valign': 'vcenter', 'bg_color': '#7C3AED'
+                    })
+                    ws_commun_g.merge_range(
+                        0, 0, 0, len(colonnes_communs_g) - 1,
+                        "🔗 Enseignements communs détectés — Tous lieux", fmt_titre_violet_g
+                    )
+                    ws_commun_g.merge_range(
+                        1, 0, 1, len(colonnes_communs_g) - 1,
+                        f"Semestre 01 — 2026-2027 | Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}",
+                        wb_g.add_format({'italic': True, 'align': 'center', 'font_size': 10, 'font_color': '#64748b'})
+                    )
+                    for col_num, nom_col in enumerate(colonnes_communs_g):
+                        ws_commun_g.write(2, col_num, nom_col, fmt_entete_g)
+                    largeurs_communs_g = [22, 12, 14, 10, 30, 18, 24, 20]
+                    for col_num, largeur in enumerate(largeurs_communs_g):
+                        ws_commun_g.set_column(col_num, col_num, largeur)
+                    for row_num, (_, ligne) in enumerate(df_rapport_communs.iterrows(), start=3):
+                        fmt_ligne = fmt_cellule_alt_g if row_num % 2 == 0 else fmt_cellule_g
+                        for col_num, nom_col in enumerate(colonnes_communs_g):
+                            ws_commun_g.write(row_num, col_num, ligne[nom_col], fmt_ligne)
+                    ws_commun_g.freeze_panes(3, 1)
+                    ws_commun_g.autofilter(2, 0, max(2, len(df_rapport_communs) + 2), len(colonnes_communs_g) - 1)
+
+                st.download_button(
+                    "📊 Télécharger le rapport global (Excel, 2 feuilles)",
+                    buf_rapport_global.getvalue(),
+                    f"Rapport_Chevauchements_Communs_Lieux_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_rapport_global_lieu_chev"
                 )
 
         elif mode_view == "✍️ Éditeur de données":
