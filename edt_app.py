@@ -5047,7 +5047,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             # 3) EXCEL (openpyxl) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
             import io
-            import re
             from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
             buf_xlsx_e = io.BytesIO()
 
@@ -5740,6 +5739,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
             def _compter_groupes_promotion(df_source, promotion):
                 import re
+                import unicodedata
 
                 if df_source is None or df_source.empty:
                     return 0
@@ -5747,21 +5747,11 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 col_promo_etu = _colonne_promotion_etudiants(df_source)
                 col_groupe = _trouver_colonne_groupe_etudiants(df_source)
 
-                if not col_promo_etu:
+                if not col_promo_etu or not col_groupe:
                     return 0
 
-                # ============================================================
-                # CORRECTION DU COMPTEUR DE GROUPES
-                # ============================================================
-                # Le libellé de la promotion sélectionnée dans l'EDT peut
-                # différer du libellé utilisé dans le fichier des étudiants
-                # (exemples : ING4 dans l'EDT / ING4EI dans les étudiants ;
-                # L2MCIL dans l'EDT / MCIL2 dans les étudiants).
-                #
-                # On résout d'abord les libellés réels du fichier des
-                # étudiants correspondant à la promotion choisie, puis on
-                # filtre les lignes avec TOUS ces libellés.
-                # ============================================================
+                # Résolution des libellés réels de la promotion dans le
+                # fichier source des étudiants.
                 libelles_fichier = _resoudre_libelles_promotion_fichier(
                     df_source, promotion
                 )
@@ -5770,10 +5760,16 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 if libelles_fichier:
                     masque = serie_promo.str.casefold().isin(
-                        [str(libelle).strip().casefold() for libelle in libelles_fichier]
+                        [
+                            str(libelle).strip().casefold()
+                            for libelle in libelles_fichier
+                        ]
                     )
                 else:
-                    masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
+                    masque = (
+                        serie_promo.str.casefold()
+                        == str(promotion).strip().casefold()
+                    )
 
                 df_match = df_source.loc[masque].copy()
 
@@ -5781,88 +5777,68 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     return 0
 
                 # ============================================================
-                # COMPTAGE DEFINITIF DES GROUPES
+                # LECTURE STRICTE DE LA COLONNE "Groupe"
                 # ============================================================
-                # Le nombre de groupes est déterminé UNIQUEMENT par les
-                # valeurs distinctes de la colonne "Groupe".
+                # IMPORTANT :
+                # - seule la colonne dont le nom normalisé est exactement
+                #   "groupe" est utilisée ;
+                # - "Groupe sanguin" ne peut donc jamais être utilisée ;
+                # - une valeur n'est comptée que si elle contient un code
+                #   pédagogique G<number> (G1, G2, ..., G9, etc.) ;
+                # - le même groupe répété sur plusieurs étudiants ne compte
+                #   qu'une seule fois.
                 #
-                # Exemple : G1 répété sur plusieurs étudiants = 1 groupe.
-                # Exemple : G1 et G2 présents = 2 groupes.
-                #
-                # Les sous-groupes sont comptés séparément à partir de la
-                # colonne "Sous groupe" (voir _compter_sous_groupes_promotion).
+                # Exemple L1MCIL :
+                # G1, G2, G3, G4, G5, G6, G7, G8, G9
+                # => 9 groupes, jamais 10.
                 # ============================================================
 
-                if not col_groupe:
-                    return 0
+                groupes_uniques = set()
 
-                return len(_valeurs_uniques_valides(df_match, col_groupe))
+                for valeur in df_match[col_groupe].tolist():
+                    if valeur is None or pd.isna(valeur):
+                        continue
+
+                    texte = str(valeur).strip()
+                    if not texte:
+                        continue
+
+                    texte = texte.replace("\u00a0", " ")
+                    texte = unicodedata.normalize("NFKC", texte)
+
+                    # Accepte G1, G 1, g1, g 1.
+                    # N'accepte pas Groupe sanguin, G123abc, etc.
+                    correspondances = re.findall(
+                        r"(?<![A-Za-z0-9])G\s*(\d+)(?![A-Za-z0-9])",
+                        texte,
+                        flags=re.IGNORECASE
+                    )
+
+                    for numero in correspondances:
+                        try:
+                            numero_int = int(numero)
+                        except (TypeError, ValueError):
+                            continue
+
+                        if numero_int <= 0:
+                            continue
+
+                        groupes_uniques.add(f"G{numero_int}")
+
+                return len(groupes_uniques)
 
             def _compter_sous_groupes_promotion(df_source, promotion):
-                import re
-
                 if df_source is None or df_source.empty:
                     return 0
 
-                # ============================================================
-                # LOGIQUE CORRIGÉE DES SOUS-GROUPES
-                # ============================================================
-                # Le nombre de sous-groupes affiché correspond désormais
-                # aux valeurs RÉELLES distinctes de la colonne "Sous groupe"
-                # du fichier des étudiants pour la promotion sélectionnée.
+                # RÈGLE DÉFINITIVE :
+                # chaque groupe pédagogique possède 2 sous-groupes.
+                # Le nombre affiché des sous-groupes est donc toujours :
                 #
-                # Exemples (fichier réel des étudiants 2026-2027) :
-                #   L1MCIL : SG11, SG12, SG21, SG22, ..., SG91, SG92
-                #            -> 9 groupes, 18 sous-groupes réels
-                #   MCIL2  : SG11, SG12, ..., SG51, SG52
-                #            -> 5 groupes, 10 sous-groupes réels
-                #   MCIL3  : SG11, SG12, ..., SG31, SG32
-                #            -> 3 groupes, 6 sous-groupes réels
-                #   L2ELT  : SG11, SG12, SG21, SG22
-                #            -> 2 groupes, 4 sous-groupes réels
+                #       nombre de groupes × 2
                 #
-                # La multiplication par 2 (groupes * 2) n'est conservée
-                # QUE comme repli, uniquement si la colonne "Sous groupe"
-                # est absente ou totalement vide pour la promotion.
-                # ============================================================
-                col_promo_etu = _colonne_promotion_etudiants(df_source)
-                col_sous_groupe = _trouver_colonne_sous_groupe_etudiants(df_source)
-
-                if not col_promo_etu:
-                    return 0
-
-                # Résolution robuste des libellés de promotion (l'EDT peut
-                # utiliser ING4, L2MCIL, MCIL1... alors que le fichier des
-                # étudiants utilise ING4EI, MCIL2, L1MCIL...).
-                libelles_fichier = _resoudre_libelles_promotion_fichier(
-                    df_source, promotion
-                )
-
-                serie_promo = df_source[col_promo_etu].astype(str).str.strip()
-
-                if libelles_fichier:
-                    masque = serie_promo.str.casefold().isin(
-                        [str(libelle).strip().casefold() for libelle in libelles_fichier]
-                    )
-                else:
-                    masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
-
-                df_match = df_source.loc[masque].copy()
-
-                if df_match.empty:
-                    return 0
-
-                # 1) Comptage RÉEL : valeurs distinctes de "Sous groupe"
-                if col_sous_groupe:
-                    valeurs_sous_groupes = _valeurs_uniques_valides(
-                        df_match, col_sous_groupe
-                    )
-
-                    if valeurs_sous_groupes:
-                        return len(valeurs_sous_groupes)
-
-                # 2) Repli : uniquement si la colonne "Sous groupe" est
-                #    absente ou vide pour cette promotion.
+                # Les valeurs de la colonne "Sous groupe" (SG11, SG12, ...)
+                # ne sont pas utilisées pour gonfler ou réduire ce compteur.
                 nombre_groupes = _compter_groupes_promotion(
                     df_source, promotion
                 )
