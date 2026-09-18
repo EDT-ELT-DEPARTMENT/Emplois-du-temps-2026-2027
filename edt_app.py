@@ -4863,7 +4863,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         mode_view = st.radio("Vue Administration :", [
             "Promotion", "Enseignant", "🏢 Planning Salles", 
             "🟢 Lieux Non Occupés", 
-            "🚩 Vérificateur de conflits"
+            "🚩 Vérificateur de conflits",
+            "🔴 Chevauchements par Enseignant"
         ], horizontal=True)
     
         poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
@@ -7497,6 +7498,392 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             else:
                 st.success("✅ Aucun conflit détecté")
                 st.balloons()
+
+        elif mode_view == "🔴 Chevauchements par Enseignant":
+            # ============================================================
+            # 🔴 CHEVAUCHEMENTS PAR ENSEIGNANT
+            # ------------------------------------------------------------
+            # Tableau interactif : JOURS EN VERTICAL (lignes), HORAIRES EN
+            # HORIZONTAL (colonnes). Chaque cellule affiche TOUS les
+            # enseignements de l'enseignant choisi pour ce jour et cet
+            # horaire. Une cellule est mise en ROUGE dès qu'elle contient
+            # DEUX enseignements ou plus (l'enseignant ne peut pas être à
+            # deux endroits en même temps : c'est un chevauchement réel).
+            # ============================================================
+            st.subheader("🔴 Chevauchements par Enseignant")
+            st.caption(
+                "Sélectionnez un enseignant pour visualiser en un coup "
+                "d'œil les créneaux où il est affecté à PLUSIEURS "
+                "enseignements en même temps (même jour + même horaire). "
+                "Les cellules en rouge signalent un chevauchement réel."
+            )
+
+            liste_enseignants_chevauchement = sorted([
+                e for e in df["Enseignants"].dropna().unique()
+                if str(e).strip() and str(e).strip() != "Non défini"
+            ])
+
+            if not liste_enseignants_chevauchement:
+                st.info("ℹ️ Aucun enseignant trouvé dans les données.")
+            else:
+                enseignant_chevauchement = st.selectbox(
+                    "👤 Choisir un enseignant :",
+                    liste_enseignants_chevauchement,
+                    key="ens_chevauchement_admin"
+                )
+
+                df_ens_chev = df[df["Enseignants"] == enseignant_chevauchement].copy()
+                df_ens_chev['h_norm'] = df_ens_chev['Horaire'].apply(normalize)
+                df_ens_chev['j_norm'] = df_ens_chev['Jours'].apply(normalize)
+
+                # Regroupement de toutes les séances de cet enseignant par
+                # cellule (Jour, Horaire) — quelle que soit la promotion.
+                cellules_chev = {}
+                for (j_n, h_n), groupe in df_ens_chev.groupby(['j_norm', 'h_norm']):
+                    j_aff = map_j.get(j_n)
+                    h_aff = map_h.get(h_n)
+                    if j_aff is None or h_aff is None:
+                        continue
+                    cellules_chev[(j_aff, h_aff)] = groupe
+
+                nb_conflits_chev = sum(1 for g in cellules_chev.values() if len(g) >= 2)
+
+                m_chev1, m_chev2, m_chev3 = st.columns(3)
+                m_chev1.metric("📊 Séances totales", len(df_ens_chev))
+                m_chev2.metric("🗓️ Créneaux occupés", len(cellules_chev))
+                m_chev3.metric("🔴 Chevauchements", nb_conflits_chev)
+
+                if nb_conflits_chev > 0:
+                    st.error(
+                        f"🔴 {nb_conflits_chev} chevauchement(s) détecté(s) "
+                        f"pour **{enseignant_chevauchement}** — cet enseignant "
+                        f"est affecté à plusieurs enseignements en même temps."
+                    )
+                else:
+                    st.success(f"✅ Aucun chevauchement détecté pour **{enseignant_chevauchement}**")
+
+                def _type_couleur_chev(code):
+                    c = str(code).upper()
+                    if "COURS" in c:
+                        return "📘", "#1e40af"
+                    if "TD" in c:
+                        return "📗", "#166534"
+                    if "TP" in c:
+                        return "🔴", "#991b1b"
+                    return "⚪", "#374151"
+
+                def _contenu_cellule_html_chev(groupe):
+                    morceaux = []
+                    for _, r in groupe.iterrows():
+                        em, coul = _type_couleur_chev(r.get('Code', ''))
+                        morceaux.append(
+                            f"<div style='border-left:3px solid {coul};padding:3px;"
+                            f"margin:2px 0;background:rgba(255,255,255,0.65);"
+                            f"border-radius:3px;text-align:left;'>"
+                            f"<b>{em} {r.get('Enseignements', '')}</b><br>"
+                            f"<small>🎓 {r.get('Promotion', '')} | "
+                            f"📍 {r.get('Lieu', '')}</small>"
+                            f"</div>"
+                        )
+                    return "".join(morceaux)
+
+                def _contenu_cellule_texte_chev(groupe):
+                    if groupe is None:
+                        return ""
+                    morceaux = []
+                    for _, r in groupe.iterrows():
+                        em, _ = _type_couleur_chev(r.get('Code', ''))
+                        morceaux.append(
+                            f"{em} {r.get('Enseignements', '')}\n"
+                            f"🎓 {r.get('Promotion', '')} | 📍 {r.get('Lieu', '')}"
+                        )
+                    return "\n\n".join(morceaux)
+
+                # ========================================================
+                # CONSTRUCTION DU TABLEAU HTML — JOURS VERTICAL, HORAIRES
+                # HORIZONTAL (orientation demandée)
+                # ========================================================
+                thead_chev = (
+                    "<tr><th style='background:#1E3A8A;color:white;padding:8px;"
+                    "width:110px;'>JOUR \\ HORAIRE</th>"
+                )
+                for h in horaires_list:
+                    thead_chev += (
+                        f"<th style='background:#1E3A8A;color:white;padding:8px;"
+                        f"font-size:11px;'>{h}</th>"
+                    )
+                thead_chev += "</tr>"
+
+                tbody_chev = ""
+                for j in jours_list:
+                    tbody_chev += (
+                        f"<tr><td style='background:#f1f5f9;font-weight:bold;"
+                        f"text-align:center;padding:8px;'>{j}</td>"
+                    )
+                    for h in horaires_list:
+                        groupe = cellules_chev.get((j, h))
+                        if groupe is None or groupe.empty:
+                            tbody_chev += (
+                                "<td style='border:1px solid #e2e8f0;padding:6px;'></td>"
+                            )
+                        else:
+                            est_conflit = len(groupe) >= 2
+                            fond = "#fecaca" if est_conflit else "#ffffff"
+                            bordure = (
+                                "2px solid #dc2626" if est_conflit
+                                else "1px solid #e2e8f0"
+                            )
+                            contenu = _contenu_cellule_html_chev(groupe)
+                            marque_conflit = (
+                                "<div style='color:#dc2626;font-weight:bold;"
+                                "font-size:10px;text-align:center;'>"
+                                "⚠️ CHEVAUCHEMENT</div>" if est_conflit else ""
+                            )
+                            tbody_chev += (
+                                f"<td style='background:{fond};border:{bordure};"
+                                f"padding:6px;vertical-align:top;'>"
+                                f"{marque_conflit}{contenu}</td>"
+                            )
+                    tbody_chev += "</tr>"
+
+                st.markdown(
+                    f"<div style='overflow-x:auto;border:1px solid #cbd5e1;"
+                    f"border-radius:8px;'>"
+                    f"<table style='width:100%;border-collapse:collapse;"
+                    f"table-layout:fixed;'>"
+                    f"<thead>{thead_chev}</thead><tbody>{tbody_chev}</tbody>"
+                    f"</table></div>",
+                    unsafe_allow_html=True
+                )
+
+                # ========================================================
+                # EXPORTS — EXCEL, HTML, PDF (très visibles et colorés)
+                # ========================================================
+                st.markdown("#### 📥 Exporter ce tableau")
+                cch1, cch2, cch3 = st.columns(3)
+
+                nom_fichier_chev = enseignant_chevauchement.replace(' ', '_')
+
+                # ---------------- 1) EXCEL ----------------
+                buf_xl_chev = io.BytesIO()
+                with pd.ExcelWriter(buf_xl_chev, engine='xlsxwriter') as writer:
+                    data_excel_chev = []
+                    for j in jours_list:
+                        ligne = {"JOUR": j}
+                        for h in horaires_list:
+                            groupe = cellules_chev.get((j, h))
+                            ligne[h] = _contenu_cellule_texte_chev(groupe)
+                        data_excel_chev.append(ligne)
+                    df_excel_chev = pd.DataFrame(data_excel_chev).set_index("JOUR")
+
+                    df_excel_chev.to_excel(writer, sheet_name='Chevauchements', startrow=2)
+                    wb_c = writer.book
+                    ws_c = writer.sheets['Chevauchements']
+
+                    title_fmt_c = wb_c.add_format({
+                        'bold': True, 'font_size': 14, 'font_color': '#DC2626',
+                        'align': 'center', 'valign': 'vcenter'
+                    })
+                    ws_c.merge_range(
+                        0, 0, 0, len(horaires_list),
+                        f"Chevauchements — {enseignant_chevauchement}", title_fmt_c
+                    )
+                    ws_c.merge_range(
+                        1, 0, 1, len(horaires_list),
+                        f"Semestre 01 — 2026-2027 | Généré le "
+                        f"{datetime.now().strftime('%d/%m/%Y')}",
+                        wb_c.add_format({
+                            'italic': True, 'align': 'center', 'font_size': 10,
+                            'font_color': '#64748b'
+                        })
+                    )
+
+                    hdr_fmt_c = wb_c.add_format({
+                        'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
+                        'border': 1, 'align': 'center', 'valign': 'vcenter',
+                        'text_wrap': True
+                    })
+                    idx_fmt_c = wb_c.add_format({
+                        'bold': True, 'bg_color': '#f1f5f9', 'border': 1,
+                        'align': 'center', 'valign': 'vcenter'
+                    })
+                    cell_fmt_c = wb_c.add_format({
+                        'border': 1, 'valign': 'top', 'text_wrap': True,
+                        'font_size': 10
+                    })
+                    conflit_fmt_c = wb_c.add_format({
+                        'border': 2, 'border_color': '#DC2626', 'valign': 'top',
+                        'text_wrap': True, 'font_size': 10, 'bg_color': '#FECACA',
+                        'bold': True
+                    })
+
+                    ws_c.set_column(0, 0, 14)
+                    ws_c.set_column(1, len(horaires_list), 26)
+
+                    ws_c.write(2, 0, "JOUR", hdr_fmt_c)
+                    for col_num, h in enumerate(horaires_list, start=1):
+                        ws_c.write(2, col_num, h, hdr_fmt_c)
+
+                    for row_num, j in enumerate(jours_list, start=3):
+                        ws_c.write(row_num, 0, j, idx_fmt_c)
+                        max_lignes = 1
+                        for col_num, h in enumerate(horaires_list, start=1):
+                            groupe = cellules_chev.get((j, h))
+                            valeur = _contenu_cellule_texte_chev(groupe)
+                            est_conflit = groupe is not None and len(groupe) >= 2
+                            fmt_utilise = conflit_fmt_c if est_conflit else cell_fmt_c
+                            ws_c.write(row_num, col_num, valeur, fmt_utilise)
+                            max_lignes = max(max_lignes, valeur.count('\n') + 1)
+                        ws_c.set_row(row_num, max(40, max_lignes * 14))
+
+                    ws_c.freeze_panes(3, 1)
+
+                cch1.download_button(
+                    "📊 Excel", buf_xl_chev.getvalue(),
+                    f"Chevauchements_{nom_fichier_chev}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True, key="dl_chev_xl"
+                )
+
+                # ---------------- 2) HTML ----------------
+                html_doc_chev = f"""<!DOCTYPE html>
+<html lang='fr'><head><meta charset='UTF-8'><title>Chevauchements {enseignant_chevauchement}</title>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;margin:0;color:#1e293b;}}
+.container{{max-width:1400px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
+.header{{background:linear-gradient(135deg,#DC2626,#EF4444);color:white;padding:20px;text-align:center;}}
+.header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
+.content{{padding:20px;overflow-x:auto;}}
+table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+td{{word-wrap:break-word;}}
+.footer{{text-align:center;padding:15px;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;}}
+@media print{{body{{background:white;padding:0;}} .container{{box-shadow:none;border-radius:0;}}}}
+</style></head><body>
+<div class='container'>
+<div class='header'><h1>🔴 Chevauchements — {enseignant_chevauchement}</h1><p>Semestre 01 — 2026-2027 | département d'Électrotechnique — FGE/UDL-SBA</p></div>
+<div class='content'><table><thead>{thead_chev}</thead><tbody>{tbody_chev}</tbody></table></div>
+<div class='footer'>Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</div>
+</div></body></html>"""
+
+                cch2.download_button(
+                    "🌐 HTML", html_doc_chev,
+                    f"Chevauchements_{nom_fichier_chev}.html",
+                    "text/html", use_container_width=True, key="dl_chev_html"
+                )
+
+                # ---------------- 3) PDF ----------------
+                try:
+                    from reportlab.lib import colors as rl_colors
+                    from reportlab.lib.pagesizes import landscape, A4
+                    from reportlab.platypus import (
+                        SimpleDocTemplate, Table, TableStyle, Paragraph,
+                        Spacer, KeepInFrame
+                    )
+                    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                    from reportlab.lib.units import mm
+
+                    buf_pdf_chev = io.BytesIO()
+                    doc_chev = SimpleDocTemplate(
+                        buf_pdf_chev, pagesize=landscape(A4),
+                        topMargin=15 * mm, bottomMargin=12 * mm,
+                        leftMargin=10 * mm, rightMargin=10 * mm
+                    )
+                    styles_chev = getSampleStyleSheet()
+                    titre_style_chev = ParagraphStyle(
+                        'TitreChev', parent=styles_chev['Heading1'], fontSize=14,
+                        textColor=rl_colors.HexColor('#DC2626'), alignment=1
+                    )
+                    soustitre_style_chev = ParagraphStyle(
+                        'SousTitreChev', parent=styles_chev['Normal'], fontSize=9,
+                        textColor=rl_colors.HexColor('#64748b'), alignment=1
+                    )
+                    cell_style_chev = ParagraphStyle(
+                        'CellChev', parent=styles_chev['Normal'], fontSize=7, leading=9
+                    )
+
+                    elements_chev = [
+                        Paragraph(
+                            f"🔴 Chevauchements — {enseignant_chevauchement}",
+                            titre_style_chev
+                        ),
+                        Paragraph(
+                            f"Semestre 01 — 2026-2027 | Généré le "
+                            f"{datetime.now().strftime('%d/%m/%Y')}",
+                            soustitre_style_chev
+                        ),
+                        Spacer(1, 8),
+                    ]
+
+                    # Hauteur maximale d'une cellule (évite le LayoutError
+                    # ReportLab en cas de cellule surchargée — voir le
+                    # même correctif appliqué à l'export PDF Promotion).
+                    HAUTEUR_MAX_CELLULE_CHEV = 380
+
+                    def _cellule_pdf_chev(texte, largeur):
+                        return KeepInFrame(
+                            max(largeur - 10, 10), HAUTEUR_MAX_CELLULE_CHEV,
+                            [Paragraph(texte.replace('\n', '<br/>'), cell_style_chev)],
+                            mode='shrink'
+                        )
+
+                    page_width_chev = landscape(A4)[0] - 20 * mm
+                    col_j_chev = 25 * mm
+                    col_h_chev = (page_width_chev - col_j_chev) / len(horaires_list)
+                    col_widths_chev = [col_j_chev] + [col_h_chev] * len(horaires_list)
+
+                    data_pdf_chev = [
+                        [Paragraph("<b>JOUR</b>", cell_style_chev)] +
+                        [Paragraph(f"<b>{h}</b>", cell_style_chev) for h in horaires_list]
+                    ]
+                    cellules_conflit_pdf = []  # (colonne, ligne) en conflit
+
+                    for num_ligne, j in enumerate(jours_list, start=1):
+                        ligne_pdf = [_cellule_pdf_chev(j, col_j_chev)]
+                        for num_col, h in enumerate(horaires_list, start=1):
+                            groupe = cellules_chev.get((j, h))
+                            if groupe is None or groupe.empty:
+                                ligne_pdf.append("")
+                            else:
+                                texte_cellule = _contenu_cellule_texte_chev(groupe)
+                                ligne_pdf.append(_cellule_pdf_chev(texte_cellule, col_h_chev))
+                                if len(groupe) >= 2:
+                                    cellules_conflit_pdf.append((num_col, num_ligne))
+                        data_pdf_chev.append(ligne_pdf)
+
+                    table_chev = Table(
+                        data_pdf_chev, colWidths=col_widths_chev, repeatRows=1
+                    )
+
+                    style_commands_chev = [
+                        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1E3A8A')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+                        ('BACKGROUND', (0, 1), (0, -1), rl_colors.HexColor('#f1f5f9')),
+                        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#cbd5e1')),
+                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+                    ]
+                    for (col, row) in cellules_conflit_pdf:
+                        style_commands_chev.append((
+                            'BACKGROUND', (col, row), (col, row),
+                            rl_colors.HexColor('#FECACA')
+                        ))
+                        style_commands_chev.append((
+                            'BOX', (col, row), (col, row), 1.5,
+                            rl_colors.HexColor('#DC2626')
+                        ))
+
+                    table_chev.setStyle(TableStyle(style_commands_chev))
+                    elements_chev.append(table_chev)
+
+                    doc_chev.build(elements_chev)
+
+                    cch3.download_button(
+                        "📄 PDF", buf_pdf_chev.getvalue(),
+                        f"Chevauchements_{nom_fichier_chev}.pdf",
+                        "application/pdf", use_container_width=True, key="dl_chev_pdf"
+                    )
+                except Exception as e:
+                    cch3.warning(f"PDF indisponible : {e}")
 
         elif mode_view == "✍️ Éditeur de données":
             st.subheader("✍️ Éditeur de données EDT")
