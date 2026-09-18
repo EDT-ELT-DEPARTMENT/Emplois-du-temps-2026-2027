@@ -8027,6 +8027,332 @@ td{{word-wrap:break-word;}}
         else:
             c3.button("📄 PDF (Grille)", disabled=True, use_container_width=True)
 
+        # =============================================================================
+        # 👥 EDT COMPLET DE LA PROMOTION — TOUS LES ENSEIGNANTS INTERVENANT
+        # =============================================================================
+        # Affiché uniquement lorsqu'une promotion précise est choisie (et non
+        # « Toutes les promotions »), puisqu'il s'agit de voir l'ensemble de
+        # l'EDT de CETTE promotion, avec TOUS les enseignants qui y
+        # interviennent — pas seulement l'enseignant connecté.
+        if promotion_choisie_ens != "Toutes les promotions":
+            st.divider()
+            st.markdown(
+                f"### 👥 EDT complet de la promotion « {promotion_choisie_ens} » "
+                f"(tous les enseignants)"
+            )
+            st.caption(
+                "Vue d'ensemble de l'emploi du temps de cette promotion, avec "
+                "tous les enseignants qui y interviennent. Vos propres séances "
+                "sont mises en évidence par un liseré doré."
+            )
+
+            # --- Données de TOUTE la promotion (tous enseignants confondus) ---
+            df_promo_complet_ens = df[df["Promotion"] == promotion_choisie_ens].copy()
+            df_promo_complet_ens['Type'] = df_promo_complet_ens['Code'].apply(
+                lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
+            )
+
+            # Même filtre de type que la grille personnelle ci-dessus, pour
+            # une lecture cohérente entre les deux grilles.
+            if type_choisi_ens == "📘 Cours uniquement":
+                df_promo_complet_ens = df_promo_complet_ens[df_promo_complet_ens["Type"] == "COURS"]
+            elif type_choisi_ens == "📗 TD uniquement":
+                df_promo_complet_ens = df_promo_complet_ens[df_promo_complet_ens["Type"] == "TD"]
+            elif type_choisi_ens == "🔴 TP uniquement":
+                df_promo_complet_ens = df_promo_complet_ens[df_promo_complet_ens["Type"] == "TP"]
+
+            def _est_moi_ens(nom_enseignant_ligne):
+                """Indique si une ligne de l'EDT correspond à l'enseignant
+                actuellement connecté (comparaison souple, insensible à la
+                casse, sur le nom complet)."""
+                return str(cible).strip().upper() in str(nom_enseignant_ligne).strip().upper()
+
+            def _fmt_html_promo(rows):
+                out = []
+                for _, r in rows.iterrows():
+                    em, bg, col = _type_emoji(r.get("Code", ""))
+                    est_moi = _est_moi_ens(r.get("Enseignants", ""))
+                    bordure = "3px solid #D4AF37" if est_moi else f"3px solid {col}"
+                    lines = [
+                        f"<b style='color:{col};font-size:12px;'>{em} {r.get('Enseignements','')}</b>",
+                        f"<span style='font-size:10px;color:#64748b;'>👤 {r.get('Enseignants','')}"
+                        + (" ⭐" if est_moi else "") + "</span>",
+                        f"<span style='font-size:10px;color:#64748b;'>📍 {r.get('Lieu','')}</span>"
+                    ]
+                    out.append(
+                        f"<div style='background:{bg};border-left:{bordure};"
+                        f"border-radius:4px;padding:4px;margin:2px 0;line-height:1.3;'>"
+                        + "<br>".join(lines) + "</div>"
+                    )
+                return "".join(out)
+
+            def _fmt_text_promo(rows):
+                out = []
+                for _, r in rows.iterrows():
+                    em, _, _ = _type_emoji(r.get("Code", ""))
+                    est_moi = _est_moi_ens(r.get("Enseignants", ""))
+                    marque = " (MOI)" if est_moi else ""
+                    out.append(
+                        f"{em} {r.get('Enseignements','')}\n"
+                        f"Enseignant: {r.get('Enseignants','')}{marque}\n"
+                        f"Salle: {r.get('Lieu','')}"
+                    )
+                return "\n\n".join(out)
+
+            # Construction de la grille complète de la promotion
+            df_g_promo = df_promo_complet_ens.copy()
+            df_g_promo["h_norm"] = df_g_promo["Horaire"].apply(_norm_h)
+            df_g_promo["j_norm"] = df_g_promo["Jours"].apply(_norm_j)
+            df_g_promo = df_g_promo[df_g_promo["h_norm"].isin(_HORAIRES)]
+            df_g_promo = df_g_promo[df_g_promo["j_norm"].isin(_JOURS)]
+
+            grille_html_promo = pd.DataFrame()
+            grille_text_promo = pd.DataFrame()
+
+            if not df_g_promo.empty:
+                g_html_promo = df_g_promo.groupby(["j_norm", "h_norm"]).apply(
+                    _fmt_html_promo, include_groups=False
+                ).unstack(fill_value="")
+                g_text_promo = df_g_promo.groupby(["j_norm", "h_norm"]).apply(
+                    _fmt_text_promo, include_groups=False
+                ).unstack(fill_value="")
+
+                jours_ok_promo = [j for j in _JOURS if j in g_html_promo.index]
+                h_ok_promo = [h for h in _HORAIRES if h in g_html_promo.columns]
+
+                if jours_ok_promo and h_ok_promo:
+                    grille_html_promo = g_html_promo.reindex(
+                        index=jours_ok_promo, columns=h_ok_promo
+                    ).fillna("")
+                    grille_text_promo = g_text_promo.reindex(
+                        index=jours_ok_promo, columns=h_ok_promo
+                    ).fillna("")
+
+            # --- Fragment HTML de la grille complète (affichage + export) ---
+            thead_promo = ""
+            tbody_promo = ""
+            if not grille_html_promo.empty:
+                thead_promo = (
+                    "<tr><th style='background:#7C2D12;color:white;padding:10px;"
+                    "width:100px;'>JOUR</th>"
+                    + "".join([
+                        f"<th style='background:#7C2D12;color:white;padding:10px;"
+                        f"font-size:12px;'>{h}</th>" for h in grille_html_promo.columns
+                    ])
+                    + "</tr>"
+                )
+                for jour, row in grille_html_promo.iterrows():
+                    tbody_promo += (
+                        f"<tr><td style='background:#fff7ed;font-weight:bold;"
+                        f"text-align:center;padding:10px;'>{jour}</td>"
+                    )
+                    for val in row:
+                        tbody_promo += (
+                            f"<td style='border:1px solid #fed7aa;padding:6px;"
+                            f"vertical-align:top;'>{val}</td>"
+                        )
+                    tbody_promo += "</tr>"
+
+            sous_titre_promo_ens = f"Promotion {promotion_choisie_ens}"
+            if type_choisi_ens != "Tous les types":
+                sous_titre_promo_ens += f" — {type_choisi_ens}"
+
+            if not grille_html_promo.empty:
+                st.markdown(
+                    f"<div style='background:linear-gradient(135deg,#7C2D12,#EA580C);"
+                    f"color:white;padding:12px 16px;border-radius:8px 8px 0 0;"
+                    f"margin-top:10px;text-align:center;'>"
+                    f"<b>👥 {sous_titre_promo_ens}</b></div>"
+                    f"<div style='overflow-x:auto;border:1px solid #fed7aa;"
+                    f"border-radius:0 0 8px 8px;'>"
+                    f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;'>"
+                    f"<thead>{thead_promo}</thead><tbody>{tbody_promo}</tbody></table></div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.info(
+                    "ℹ️ Aucun enseignement à afficher pour cette promotion avec "
+                    "le type sélectionné."
+                )
+
+            # --- Export de l'EDT complet de la promotion ---
+            st.markdown("#### 📥 Exporter l'EDT complet de cette promotion")
+            cp1, cp2, cp3 = st.columns(3)
+
+            suffixe_fichier_promo = promotion_choisie_ens.replace(' ', '_')
+            if type_choisi_ens != "Tous les types":
+                suffixe_fichier_promo += f"_{type_choisi_ens.split()[1].replace(' ', '_')}"
+
+            # 1️⃣ EXCEL
+            if not grille_text_promo.empty:
+                buf_xl_promo = io.BytesIO()
+                with pd.ExcelWriter(buf_xl_promo, engine='xlsxwriter') as writer:
+                    grille_text_promo.to_excel(writer, sheet_name='EDT_Promotion', startrow=2)
+                    wb_p = writer.book
+                    ws_p = writer.sheets['EDT_Promotion']
+
+                    title_fmt_p = wb_p.add_format({'bold': True, 'font_size': 14, 'font_color': '#7C2D12', 'align': 'center', 'valign': 'vcenter'})
+                    ws_p.merge_range(0, 0, 0, len(grille_text_promo.columns), f"EDT — {sous_titre_promo_ens}", title_fmt_p)
+                    ws_p.merge_range(1, 0, 1, len(grille_text_promo.columns), f"Semestre 01 — 2026-2027 | Généré le {datetime.now().strftime('%d/%m/%Y')}",
+                                    wb_p.add_format({'italic': True, 'align': 'center', 'font_size': 10, 'font_color': '#64748b'}))
+
+                    hdr_fmt_p = wb_p.add_format({'bold': True, 'bg_color': '#7C2D12', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                    idx_fmt_p = wb_p.add_format({'bold': True, 'bg_color': '#fff7ed', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                    cell_fmt_p = wb_p.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10})
+                    alt_fmt_p = wb_p.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10, 'bg_color': '#FFFBEB'})
+
+                    ws_p.set_column(0, 0, 16)
+                    ws_p.set_column(1, len(grille_text_promo.columns), 30)
+
+                    for col_num, val in enumerate(grille_text_promo.columns, start=1):
+                        ws_p.write(2, col_num, val, hdr_fmt_p)
+                    ws_p.write(2, 0, "JOUR", hdr_fmt_p)
+
+                    for row_num, (jour, row) in enumerate(grille_text_promo.iterrows(), start=3):
+                        fmt_p = alt_fmt_p if row_num % 2 == 0 else cell_fmt_p
+                        ws_p.write(row_num, 0, jour, idx_fmt_p)
+                        for col_num, val in enumerate(row, start=1):
+                            ws_p.write(row_num, col_num, val, fmt_p)
+                        n_lines_p = max([str(v).count('\n') + 1 for v in row] + [1])
+                        ws_p.set_row(row_num, max(40, n_lines_p * 14))
+
+                    ws_p.freeze_panes(3, 1)
+
+                cp1.download_button(
+                    "📊 Excel (Promotion)", buf_xl_promo.getvalue(),
+                    f"EDT_Promotion_{suffixe_fichier_promo}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True, key="dl_grille_xl_promo_ens"
+                )
+            else:
+                cp1.button("📊 Excel (Promotion)", disabled=True, use_container_width=True)
+
+            # 2️⃣ HTML
+            if not grille_html_promo.empty:
+                html_doc_promo = f"""<!DOCTYPE html>
+<html lang='fr'><head><meta charset='UTF-8'><title>EDT {promotion_choisie_ens}</title>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;margin:0;color:#1e293b;}}
+.container{{max-width:1200px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
+.header{{background:linear-gradient(135deg,#7C2D12,#EA580C);color:white;padding:20px;text-align:center;}}
+.header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
+.content{{padding:20px;}}
+table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+th{{position:sticky;top:0;z-index:10;}}
+td{{word-wrap:break-word;}}
+.footer{{text-align:center;padding:15px;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;}}
+@media print{{body{{background:white;padding:0;}} .container{{box-shadow:none;border-radius:0;}}}}
+</style></head><body>
+<div class='container'>
+<div class='header'><h1>👥 {sous_titre_promo_ens}</h1><p>Semestre 01 — 2026-2027 | département d'Électrotechnique — FGE/UDL-SBA</p></div>
+<div class='content'><table><thead>{thead_promo}</thead><tbody>{tbody_promo}</tbody></table></div>
+<div class='footer'>Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</div>
+</div></body></html>"""
+
+                cp2.download_button(
+                    "🌐 HTML (Promotion)", html_doc_promo,
+                    f"EDT_Promotion_{suffixe_fichier_promo}.html",
+                    "text/html", use_container_width=True, key="dl_grille_html_promo_ens"
+                )
+            else:
+                cp2.button("🌐 HTML (Promotion)", disabled=True, use_container_width=True)
+
+            # 3️⃣ PDF
+            if not grille_text_promo.empty:
+                try:
+                    from fpdf import FPDF
+
+                    class EDTPromoPdf(FPDF):
+                        def header(self):
+                            self.set_font('Arial', 'B', 9)
+                            self.set_text_color(124, 45, 18)
+                            t = "Plateforme EDT -- UDL-SBA | Semestre 01 2026-2027".encode('latin-1', 'ignore').decode('latin-1')
+                            self.cell(0, 6, t, 0, 1, 'C')
+                            self.set_draw_color(212, 175, 55); self.line(10, self.get_y(), self.w - 10, self.get_y()); self.ln(3)
+
+                        def footer(self):
+                            self.set_y(-15); self.set_font('Arial', 'I', 8); self.set_text_color(128, 128, 128)
+                            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+                    def _san_promo(text):
+                        if not text: return ""
+                        t = str(text)
+                        repl = {"'":"'","'":"'","–":"-","—":"-","…":"...","«":"\"","»":"\"","œ":"oe","Œ":"OE",
+                                "à":"a","â":"a","ä":"a","á":"a","ã":"a","å":"a","è":"e","é":"e","ê":"e","ë":"e",
+                                "ì":"i","í":"i","î":"i","ï":"i","ò":"o","ó":"o","ô":"o","ö":"o","ù":"u","ú":"u","û":"u","ü":"u",
+                                "ç":"c","ñ":"n","ÿ":"y","ý":"y","À":"A","Â":"A","Ä":"A","Á":"A","Ã":"A","È":"E","É":"E","Ê":"E","Ë":"E",
+                                "Ì":"I","Í":"I","Î":"I","Ï":"I","Ò":"O","Ó":"O","Ô":"O","Ö":"O","Ù":"U","Ú":"U","Û":"U","Ü":"U","Ç":"C","Ñ":"N"}
+                        for o, n in repl.items(): t = t.replace(o, n)
+                        return t.encode('latin-1', 'ignore').decode('latin-1')
+
+                    pdf_promo = EDTPromoPdf(orientation='L', unit='mm', format='A4')
+                    pdf_promo.set_auto_page_break(auto=True, margin=15)
+                    pdf_promo.add_page()
+                    pdf_promo.set_font('Arial', 'B', 13); pdf_promo.set_text_color(124, 45, 18)
+                    pdf_promo.cell(0, 8, _san_promo(f"EDT -- {sous_titre_promo_ens}"), 0, 1, 'C')
+                    pdf_promo.set_font('Arial', 'I', 9); pdf_promo.set_text_color(100, 100, 100)
+                    pdf_promo.cell(0, 5, _san_promo("Semestre 01 -- 2026-2027"), 0, 1, 'C'); pdf_promo.ln(3)
+
+                    n_cols_promo = len(grille_text_promo.columns)
+                    page_w_promo = pdf_promo.w - 20
+                    col_j_promo = 25
+                    col_h_promo = (page_w_promo - col_j_promo) / n_cols_promo if n_cols_promo > 0 else page_w_promo
+
+                    pdf_promo.set_font('Arial', 'B', 8); pdf_promo.set_fill_color(124, 45, 18); pdf_promo.set_text_color(255, 255, 255)
+                    pdf_promo.cell(col_j_promo, 9, _san_promo("JOUR"), 1, 0, 'C', True)
+                    for h in grille_text_promo.columns:
+                        pdf_promo.cell(col_h_promo, 9, _san_promo(h), 1, 0, 'C', True)
+                    pdf_promo.ln()
+
+                    pdf_promo.set_text_color(0, 0, 0); pdf_promo.set_font('Arial', '', 7.5); pdf_promo.set_draw_color(180, 180, 180)
+
+                    for idx, (jour, row) in enumerate(grille_text_promo.iterrows()):
+                        max_h_promo = 12
+                        for val in row:
+                            if val:
+                                n_lines = str(val).count('\n') + max(1, int(len(str(val)) / 30))
+                                h_needed = n_lines * 3.8 + 4
+                                if h_needed > max_h_promo: max_h_promo = h_needed
+
+                        if pdf_promo.get_y() + max_h_promo > pdf_promo.h - 15:
+                            pdf_promo.add_page()
+                            pdf_promo.set_font('Arial', 'B', 8); pdf_promo.set_fill_color(124, 45, 18); pdf_promo.set_text_color(255, 255, 255)
+                            pdf_promo.cell(col_j_promo, 9, _san_promo("JOUR"), 1, 0, 'C', True)
+                            for h in grille_text_promo.columns:
+                                pdf_promo.cell(col_h_promo, 9, _san_promo(h), 1, 0, 'C', True)
+                            pdf_promo.ln(); pdf_promo.set_text_color(0, 0, 0); pdf_promo.set_font('Arial', '', 7.5)
+
+                        bg_promo = (255, 247, 237) if idx % 2 == 0 else (255, 255, 255)
+                        pdf_promo.set_fill_color(*bg_promo)
+                        pdf_promo.set_font('Arial', 'B', 7.5)
+                        pdf_promo.cell(col_j_promo, max_h_promo, _san_promo(jour), 1, 0, 'C', True)
+                        pdf_promo.set_font('Arial', '', 7.5)
+
+                        for val in row:
+                            x, y = pdf_promo.get_x(), pdf_promo.get_y()
+                            raw = str(val).upper()
+                            if "(MOI)" in raw: pdf_promo.set_fill_color(254, 243, 199)
+                            elif "COURS" in raw: pdf_promo.set_fill_color(219, 234, 254)
+                            elif "TD" in raw: pdf_promo.set_fill_color(220, 252, 231)
+                            elif "TP" in raw: pdf_promo.set_fill_color(254, 226, 226)
+                            else: pdf_promo.set_fill_color(*bg_promo)
+                            pdf_promo.rect(x, y, col_h_promo, max_h_promo, 'FD')
+                            if val:
+                                pdf_promo.set_xy(x + 1.5, y + 1.5)
+                                pdf_promo.multi_cell(col_h_promo - 3, 3.5, _san_promo(val), 0, 'L')
+                            pdf_promo.set_xy(x + col_h_promo, y)
+                        pdf_promo.ln(max_h_promo)
+
+                    cp3.download_button(
+                        "📄 PDF (Promotion)", bytes(pdf_promo.output()),
+                        f"EDT_Promotion_{suffixe_fichier_promo}.pdf",
+                        "application/pdf", use_container_width=True, key="dl_grille_pdf_promo_ens"
+                    )
+                except Exception as e:
+                    cp3.warning(f"PDF indisponible : {e}")
+            else:
+                cp3.button("📄 PDF (Promotion)", disabled=True, use_container_width=True)
+
         
         
         # SECTION: Demande de Mise à Jour EDT (Enseignant)
