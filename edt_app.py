@@ -5047,6 +5047,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             # 3) EXCEL (openpyxl) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
             import io
+            import re
             from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
             buf_xlsx_e = io.BytesIO()
 
@@ -5739,7 +5740,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
             def _compter_groupes_promotion(df_source, promotion):
                 import re
-                import unicodedata
 
                 if df_source is None or df_source.empty:
                     return 0
@@ -5747,12 +5747,25 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 col_promo_etu = _colonne_promotion_etudiants(df_source)
                 col_groupe = _trouver_colonne_groupe_etudiants(df_source)
 
-                if not col_promo_etu or not col_groupe:
+                if not col_promo_etu:
                     return 0
 
+                # ============================================================
+                # CORRECTION DU COMPTEUR DE GROUPES
+                # ============================================================
+                # Le libellé de la promotion sélectionnée dans l'EDT peut
+                # différer du libellé utilisé dans le fichier des étudiants
+                # (exemples : ING4 dans l'EDT / ING4EI dans les étudiants ;
+                # L2MCIL dans l'EDT / MCIL2 dans les étudiants).
+                #
+                # On résout d'abord les libellés réels du fichier des
+                # étudiants correspondant à la promotion choisie, puis on
+                # filtre les lignes avec TOUS ces libellés.
+                # ============================================================
                 libelles_fichier = _resoudre_libelles_promotion_fichier(
                     df_source, promotion
                 )
+
                 serie_promo = df_source[col_promo_etu].astype(str).str.strip()
 
                 if libelles_fichier:
@@ -5763,41 +5776,98 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
 
                 df_match = df_source.loc[masque].copy()
+
                 if df_match.empty:
                     return 0
 
-                # COMPTAGE STRICT : uniquement la colonne exactement nommée
-                # « Groupe » après normalisation. « Groupe sanguin » est exclue.
-                # Seuls les codes pédagogiques G1, G2, G3, ... sont comptés.
-                groupes_uniques = set()
-                for valeur in df_match[col_groupe].tolist():
-                    if valeur is None or pd.isna(valeur):
-                        continue
-                    texte = unicodedata.normalize("NFKC", str(valeur)).strip()
-                    if not texte:
-                        continue
-                    texte = texte.replace("\u00a0", " ")
-                    for numero in re.findall(
-                        r"(?<![A-Za-z0-9])G\s*(\d+)(?![A-Za-z0-9])",
-                        texte,
-                        flags=re.IGNORECASE,
-                    ):
-                        try:
-                            n = int(numero)
-                        except (TypeError, ValueError):
-                            continue
-                        if n > 0:
-                            groupes_uniques.add(f"G{n}")
+                # ============================================================
+                # COMPTAGE DEFINITIF DES GROUPES
+                # ============================================================
+                # Le nombre de groupes est déterminé UNIQUEMENT par les
+                # valeurs distinctes de la colonne "Groupe".
+                #
+                # Exemple : G1 répété sur plusieurs étudiants = 1 groupe.
+                # Exemple : G1 et G2 présents = 2 groupes.
+                #
+                # Les sous-groupes sont comptés séparément à partir de la
+                # colonne "Sous groupe" (voir _compter_sous_groupes_promotion).
+                # ============================================================
 
-                return len(groupes_uniques)
+                if not col_groupe:
+                    return 0
+
+                return len(_valeurs_uniques_valides(df_match, col_groupe))
 
             def _compter_sous_groupes_promotion(df_source, promotion):
+                import re
+
                 if df_source is None or df_source.empty:
                     return 0
 
-                # RÈGLE DÉFINITIVE : 2 sous-groupes par groupe.
-                # La colonne « Sous groupe » ne modifie jamais ce compteur.
-                return _compter_groupes_promotion(df_source, promotion) * 2
+                # ============================================================
+                # LOGIQUE CORRIGÉE DES SOUS-GROUPES
+                # ============================================================
+                # Le nombre de sous-groupes affiché correspond désormais
+                # aux valeurs RÉELLES distinctes de la colonne "Sous groupe"
+                # du fichier des étudiants pour la promotion sélectionnée.
+                #
+                # Exemples (fichier réel des étudiants 2026-2027) :
+                #   L1MCIL : SG11, SG12, SG21, SG22, ..., SG91, SG92
+                #            -> 9 groupes, 18 sous-groupes réels
+                #   MCIL2  : SG11, SG12, ..., SG51, SG52
+                #            -> 5 groupes, 10 sous-groupes réels
+                #   MCIL3  : SG11, SG12, ..., SG31, SG32
+                #            -> 3 groupes, 6 sous-groupes réels
+                #   L2ELT  : SG11, SG12, SG21, SG22
+                #            -> 2 groupes, 4 sous-groupes réels
+                #
+                # La multiplication par 2 (groupes * 2) n'est conservée
+                # QUE comme repli, uniquement si la colonne "Sous groupe"
+                # est absente ou totalement vide pour la promotion.
+                # ============================================================
+                col_promo_etu = _colonne_promotion_etudiants(df_source)
+                col_sous_groupe = _trouver_colonne_sous_groupe_etudiants(df_source)
+
+                if not col_promo_etu:
+                    return 0
+
+                # Résolution robuste des libellés de promotion (l'EDT peut
+                # utiliser ING4, L2MCIL, MCIL1... alors que le fichier des
+                # étudiants utilise ING4EI, MCIL2, L1MCIL...).
+                libelles_fichier = _resoudre_libelles_promotion_fichier(
+                    df_source, promotion
+                )
+
+                serie_promo = df_source[col_promo_etu].astype(str).str.strip()
+
+                if libelles_fichier:
+                    masque = serie_promo.str.casefold().isin(
+                        [str(libelle).strip().casefold() for libelle in libelles_fichier]
+                    )
+                else:
+                    masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
+
+                df_match = df_source.loc[masque].copy()
+
+                if df_match.empty:
+                    return 0
+
+                # 1) Comptage RÉEL : valeurs distinctes de "Sous groupe"
+                if col_sous_groupe:
+                    valeurs_sous_groupes = _valeurs_uniques_valides(
+                        df_match, col_sous_groupe
+                    )
+
+                    if valeurs_sous_groupes:
+                        return len(valeurs_sous_groupes)
+
+                # 2) Repli : uniquement si la colonne "Sous groupe" est
+                #    absente ou vide pour cette promotion.
+                nombre_groupes = _compter_groupes_promotion(
+                    df_source, promotion
+                )
+
+                return nombre_groupes * 2
 
             def fmt_p(rows):
                 items = []
@@ -8825,9 +8895,11 @@ td{{word-wrap:break-word;}}
             # ------------------------------------------------------------
             # Génère des PROPOSITIONS de déplacement pour résoudre les
             # chevauchements réels détectés, à la fois du point de vue des
-            # enseignants (un enseignant affecté à deux enseignements
-            # différents en même temps) et des lieux (une salle occupée
-            # par deux enseignements différents en même temps).
+            # enseignants et des lieux. Le seul cas autorisé simultanément
+            # est le JUMELAGE DE PROMOTIONS : même matière, même créneau,
+            # mais promotions différentes. Toute coexistence dans une même
+            # promotion est considérée comme un chevauchement, y compris
+            # Cours + TD/TP et TD/TP entre groupes ou sous-groupes.
             #
             # Les enseignants sélectionnés en EXCEPTION conservent leur
             # emploi du temps ACTUEL sans aucune modification : si un
@@ -8891,28 +8963,140 @@ td{{word-wrap:break-word;}}
                     occ_enseignant_reso.setdefault((ens_r, j_aff_r, h_aff_r), []).append(idx_r)
                     occ_lieu_reso.setdefault((lieu_r, j_aff_r, h_aff_r), []).append(idx_r)
 
-                def _groupes_distincts_reso(indices):
-                    """Regroupe les lignes par (nature, intitulé exact) ;
-                    plusieurs groupes distincts = chevauchement réel."""
-                    groupes = {}
-                    for i in indices:
-                        if i not in df_travail_reso.index:
-                            continue
-                        r = df_travail_reso.loc[i]
-                        cle_g = (_nature_reso(r.get('Code', '')), str(r.get('Enseignements', '')).strip().upper())
-                        groupes.setdefault(cle_g, []).append(i)
-                    return groupes
+                def _intitule_commun_reso(valeur):
+                    """Retourne l'intitulé de matière sans le type ni le groupe.
+
+                    Exemples :
+                    Cours-Analyse 3   -> analyse 3
+                    TD-Analyse 3-G1   -> analyse 3
+                    TP-Analyse 3-SG11 -> analyse 3
+                    """
+                    import re as _re_commun
+                    import unicodedata as _ud_commun
+
+                    s = "" if valeur is None or pd.isna(valeur) else str(valeur).strip()
+                    if not s:
+                        return ""
+
+                    s = _ud_commun.normalize("NFKC", s)
+                    s = s.replace("–", "-").replace("—", "-").replace("−", "-")
+                    s = _re_commun.sub(
+                        r"^\s*(?:COURS|COUR|TD|TP)\s*[-:–—]?\s*",
+                        "", s, flags=_re_commun.IGNORECASE
+                    )
+                    s = _re_commun.sub(
+                        r"\s*[-:–—]?\s*SG\s*\d+\s*$",
+                        "", s, flags=_re_commun.IGNORECASE
+                    )
+                    s = _re_commun.sub(
+                        r"\s*[-:–—]?\s*G\s*\d+\s*$",
+                        "", s, flags=_re_commun.IGNORECASE
+                    )
+                    s = _re_commun.sub(r"\s+", " ", s).strip()
+                    return s.casefold()
+
+                def _promotion_reso(ligne):
+                    """Normalise la promotion d'une ligne d'EDT."""
+                    valeur = ligne.get('Promotion', '') if hasattr(ligne, 'get') else ''
+                    if valeur is None or pd.isna(valeur):
+                        return ""
+                    return str(valeur).strip().casefold()
+
+                def _paire_jumelage_reso(idx_a, idx_b):
+                    """
+                    Deux séances peuvent être simultanées sans constituer un
+                    chevauchement UNIQUEMENT lorsqu'elles correspondent à la
+                    même matière et à deux promotions différentes.
+
+                    Cette exception correspond au jumelage de promotions.
+
+                    IMPORTANT :
+                    - même promotion => conflit ;
+                    - Cours + TD/TP dans la même promotion => conflit ;
+                    - TD/TP de groupes différents dans la même promotion => conflit ;
+                    - TD/TP d'un groupe et TP/TD de ses sous-groupes => conflit ;
+                    - matière différente => conflit.
+                    """
+                    if idx_a not in df_travail_reso.index or idx_b not in df_travail_reso.index:
+                        return False
+                    a = df_travail_reso.loc[idx_a]
+                    b = df_travail_reso.loc[idx_b]
+
+                    mat_a = _intitule_commun_reso(a.get('Enseignements', ''))
+                    mat_b = _intitule_commun_reso(b.get('Enseignements', ''))
+                    if not mat_a or not mat_b or mat_a != mat_b:
+                        return False
+
+                    promo_a = _promotion_reso(a)
+                    promo_b = _promotion_reso(b)
+
+                    # Une promotion vide n'est jamais considérée comme une
+                    # promotion différente : on bloque par sécurité.
+                    if not promo_a or not promo_b:
+                        return False
+
+                    return promo_a != promo_b
+
+                def _groupe_occ_reso(indices):
+                    """
+                    Analyse une occupation simultanée.
+
+                    Le seul cas sans chevauchement est le jumelage : même
+                    matière + promotions différentes. Dès qu'une même
+                    promotion apparaît dans l'occupation, il y a conflit.
+                    """
+                    indices = [i for i in indices if i in df_travail_reso.index]
+                    if len(indices) < 2:
+                        return False, False
+
+                    for pos_a in range(len(indices)):
+                        for pos_b in range(pos_a + 1, len(indices)):
+                            if not _paire_jumelage_reso(indices[pos_a], indices[pos_b]):
+                                return True, False
+
+                    return False, True
+
+                def _occupation_compatible_reso(idx_ligne, indices_occ):
+                    """
+                    Vérifie si une séance peut rejoindre un créneau déjà
+                    occupé par le même enseignant ou le même lieu.
+
+                    Elle n'est compatible avec les occupations existantes que
+                    dans le cas précis du jumelage de promotions : même matière
+                    et promotion différente pour chaque séance existante.
+                    """
+                    indices_occ = [i for i in indices_occ if i in df_travail_reso.index and i != idx_ligne]
+                    if not indices_occ:
+                        return True
+
+                    for idx_occ in indices_occ:
+                        if not _paire_jumelage_reso(idx_ligne, idx_occ):
+                            return False
+
+                    # Une même promotion ne doit jamais être présente deux fois
+                    # dans le même créneau, même si les intitulés sont identiques.
+                    promos = []
+                    for idx_occ in indices_occ:
+                        promos.append(_promotion_reso(df_travail_reso.loc[idx_occ]))
+                    promo_ligne = _promotion_reso(df_travail_reso.loc[idx_ligne])
+                    if not promo_ligne or promo_ligne in promos:
+                        return False
+
+                    return True
 
                 # --- Liste des créneaux en conflit réel (enseignant + lieu) ---
                 conflits_a_traiter_reso = []
                 for (ens_c, j_c, h_c), indices_c in occ_enseignant_reso.items():
-                    if len(indices_c) >= 2 and len(_groupes_distincts_reso(indices_c)) > 1:
+                    est_conflit_c, est_jumelage_c = _groupe_occ_reso(indices_c)
+                    if est_conflit_c:
                         conflits_a_traiter_reso.append({
                             'type': 'enseignant', 'valeur': ens_c,
                             'jour': j_c, 'horaire': h_c, 'indices': indices_c
                         })
+
                 for (lieu_c, j_c, h_c), indices_c in occ_lieu_reso.items():
-                    if len(indices_c) >= 2 and len(_groupes_distincts_reso(indices_c)) > 1:
+                    est_conflit_c, est_jumelage_c = _groupe_occ_reso(indices_c)
+                    if est_conflit_c:
                         conflits_a_traiter_reso.append({
                             'type': 'lieu', 'valeur': lieu_c,
                             'jour': j_c, 'horaire': h_c, 'indices': indices_c
@@ -8933,16 +9117,17 @@ td{{word-wrap:break-word;}}
                     deja_traites_reso.add(cle_conflit_r)
 
                     indices_r = [i for i in conflit_r['indices'] if i in df_travail_reso.index]
-                    groupes_distincts_r = _groupes_distincts_reso(indices_r)
-                    if len(groupes_distincts_r) <= 1:
+                    est_conflit_r, est_jumelage_r = _groupe_occ_reso(indices_r)
+                    if not est_conflit_r:
                         continue
 
-                    # Le premier groupe distinct reste en place ; on essaie
-                    # de déplacer les AUTRES groupes.
-                    groupes_a_deplacer_r = list(groupes_distincts_r.items())[1:]
+                    # Pour un vrai conflit, on conserve la première séance
+                    # comme ancrage et on propose le déplacement des autres.
+                    # Le choix ne se fait PLUS par "matière commune" : deux
+                    # groupes d'une même promotion restent bien en conflit.
+                    indices_a_deplacer_r = indices_r[1:]
 
-                    for (_, indices_g_r) in groupes_a_deplacer_r:
-                        for idx_ligne_r in indices_g_r:
+                    for idx_ligne_r in indices_a_deplacer_r:
                             if idx_ligne_r not in df_travail_reso.index:
                                 continue
                             ligne_r = df_travail_reso.loc[idx_ligne_r]
@@ -8960,47 +9145,41 @@ td{{word-wrap:break-word;}}
                                 })
                                 continue
 
-                            # ============================================================
-                            # RÈGLE STRICTE DU VOLUME HORAIRE
-                            # ============================================================
-                            # Une correction ne peut jamais changer la durée de la séance.
-                            # Ex. 1h30 -> uniquement un créneau de 1h30.
-                            # Ex. 1h -> uniquement un créneau de 1h.
-                            # Les créneaux 14h-15h et 15h-16h (1h) ne sont donc
-                            # jamais proposés pour remplacer une séance de 1h30,
-                            # et inversement.
-                            # ============================================================
-                            def _duree_minutes_reso(libelle_horaire):
-                                import re as _re_duree
-                                texte_h = str(libelle_horaire or "").strip().lower()
-                                m = _re_duree.search(
-                                    r"(\d{1,2})h(?:\s*(\d{1,2}))?\s*-\s*(\d{1,2})h(?:\s*(\d{1,2}))?",
-                                    texte_h,
-                                )
-                                if not m:
-                                    return None
-                                h1 = int(m.group(1))
-                                mn1 = int(m.group(2) or 0)
-                                h2 = int(m.group(3))
-                                mn2 = int(m.group(4) or 0)
-                                total = (h2 * 60 + mn2) - (h1 * 60 + mn1)
-                                return total if total > 0 else None
-
-                            duree_origine_reso = _duree_minutes_reso(conflit_r['horaire'])
                             nouveau_slot_r = None
                             for j_cand in jours_list:
                                 for h_cand in horaires_list:
-                                    # Refuser toute proposition dont la durée
-                                    # diffère de celle du créneau d'origine.
-                                    if duree_origine_reso is None:
-                                        continue
-                                    if _duree_minutes_reso(h_cand) != duree_origine_reso:
-                                        continue
                                     if (j_cand, h_cand) == (conflit_r['jour'], conflit_r['horaire']):
                                         continue
-                                    if occ_enseignant_travail.get((enseignant_ligne_r, j_cand, h_cand)):
+
+                                    # La correction doit conserver EXACTEMENT la durée
+                                    # de la séance originale. Un créneau de 1h30 ne
+                                    # peut jamais être déplacé vers un créneau de 1h,
+                                    # 2h, etc.
+                                    def _duree_minutes_reso_local(horaire):
+                                        import re as _re_duree_local
+                                        m = _re_duree_local.findall(r"(\d{1,2})(?:h|:)(\d{2})?", str(horaire).lower())
+                                        if len(m) < 2:
+                                            return None
+                                        vals = []
+                                        for hh, mm in m[:2]:
+                                            vals.append(int(hh) * 60 + (int(mm) if mm else 0))
+                                        d = vals[1] - vals[0]
+                                        return d if d > 0 else None
+
+                                    duree_origine = _duree_minutes_reso_local(ligne_r.get('Horaire', ''))
+                                    duree_candidat = _duree_minutes_reso_local(h_cand)
+                                    if duree_origine is not None and duree_candidat is not None and duree_origine != duree_candidat:
                                         continue
-                                    if occ_lieu_travail.get((lieu_ligne_r, j_cand, h_cand)):
+                                    occ_ens_cand_r = occ_enseignant_travail.get(
+                                        (enseignant_ligne_r, j_cand, h_cand), []
+                                    )
+                                    if not _occupation_compatible_reso(idx_ligne_r, occ_ens_cand_r):
+                                        continue
+
+                                    occ_lieu_cand_r = occ_lieu_travail.get(
+                                        (lieu_ligne_r, j_cand, h_cand), []
+                                    )
+                                    if not _occupation_compatible_reso(idx_ligne_r, occ_lieu_cand_r):
                                         continue
                                     nouveau_slot_r = (j_cand, h_cand)
                                     break
@@ -9017,7 +9196,6 @@ td{{word-wrap:break-word;}}
                                     "Promotion": ligne_r.get('Promotion', ''),
                                     "Ancien Jour": conflit_r['jour'],
                                     "Ancien Horaire": conflit_r['horaire'],
-                                    "Durée": f"{duree_origine_reso // 60}h{duree_origine_reso % 60:02d}" if duree_origine_reso is not None else "Inconnue",
                                     "Nouveau Jour": j_nouv_r,
                                     "Nouveau Horaire": h_nouv_r,
                                     "Motif du conflit": f"Chevauchement {conflit_r['type']} : {conflit_r['valeur']}",
@@ -9229,24 +9407,22 @@ td{{word-wrap:break-word;}}
                             ws_nr.set_column(0, len(df_nr_export.columns) - 1, 20)
 
                         # 1 feuille par enseignant concerné (grille jours x horaires)
-                        # CORRECTIF : les noms de feuilles Excel sont limités à 31
-                        # caractères et doivent être UNIQUES (en ignorant la casse).
-                        # Une simple troncature à 31 caractères pouvait donc faire
-                        # collisionner deux enseignants différents (même début de
-                        # nom, ou casse différente) -> DuplicateWorksheetName.
-                        # On garantit ici l'unicité en ajoutant un suffixe numérique
-                        # en cas de collision.
-                        noms_feuilles_utilisees_r = {"propositions", "non_resolus"}
+                        # Noms déjà créés dans ce classeur : XlsxWriter compare les noms
+                        # sans tenir compte de la casse.
+                        noms_feuilles_existants_r = {"propositions", "non_resolus" if non_resolus_aff else ""}
                         for enseignant_aff, (thead_r, tbody_r) in grilles_html_par_enseignant.items():
-                            nom_base_r = re.sub(r'[\\/*?:\[\]]', '', enseignant_aff).strip() or "Enseignant"
-                            nom_feuille_r = nom_base_r[:31]
-                            compteur_r = 1
-                            while nom_feuille_r.lower() in noms_feuilles_utilisees_r:
-                                suffixe_r = f"_{compteur_r}"
-                                nom_feuille_r = nom_base_r[:31 - len(suffixe_r)] + suffixe_r
-                                compteur_r += 1
-                            noms_feuilles_utilisees_r.add(nom_feuille_r.lower())
+                            nom_feuille_r = re.sub(r'[\/*?:\[\]]', '', str(enseignant_aff)).strip() or "Enseignant"
+                            # Excel/XlsxWriter interdit les noms de feuilles dupliqués
+                            # (comparaison insensible à la casse) et limite le nom à 31 caractères.
+                            nom_feuille_base_r = nom_feuille_r[:31] or "Enseignant"
+                            nom_feuille_r = nom_feuille_base_r
+                            compteur_feuille_r = 2
+                            while nom_feuille_r.casefold() in {n.casefold() for n in noms_feuilles_existants_r}:
+                                suffixe_r = f"_{compteur_feuille_r}"
+                                nom_feuille_r = f"{nom_feuille_base_r[:31-len(suffixe_r)]}{suffixe_r}"
+                                compteur_feuille_r += 1
                             ws_e = wb_r.add_worksheet(nom_feuille_r)
+                            noms_feuilles_existants_r.add(nom_feuille_r)
                             ws_e.merge_range(0, 0, 0, len(horaires_list), f"📅 EDT proposé — {enseignant_aff}", fmt_titre_r)
                             ws_e.write(1, 0, "JOUR", fmt_entete_r)
                             for col_num, h in enumerate(horaires_list, start=1):
@@ -9511,38 +9687,28 @@ th{{background:#1E3A8A;color:white;}}
                 "TD et TP du groupe sélectionné sont affichés."
             )
 
-            def _extraire_groupe_td_admin(val):
-                """Extrait le GROUPE (pour un TD), sous la forme G<numéro>,
-                où qu'il se trouve en fin d'intitulé (colonne
-                « Enseignements »), ex : 'TD-Analyse 3-G4' -> 'G4'.
-                Tolère un tiret ou un espace supplémentaire entre le 'G'
-                et le numéro (ex. 'TD-Analyse 3-G-4' ou 'TD-Analyse 3-G 4').
-                Ne matche PAS un sous-groupe TP ('SGxx'). Retourne None si
-                absent (TD commun, sans distinction de groupe — s'applique
-                à toute la promotion)."""
-                if pd.isna(val):
-                    return None
-                val_str = str(val).strip().upper()
-                m = re.search(r'(?<![A-Z])G[\s\-]?(\d+)\s*$', val_str)
-                if not m:
-                    return None
-                return f"G{m.group(1)}"
+            def _extraire_groupe_depuis_enseignement_admin(val):
+                """Extrait le groupe depuis le TITRE de l'enseignement.
 
-            def _extraire_sousgroupe_tp_admin(val):
-                """Extrait le SOUS-GROUPE (pour un TP), sous la forme
-                SG<numéro>, où qu'il se trouve en fin d'intitulé (colonne
-                « Enseignements »), ex : 'TP-Structure des ordinateurs-SG22'
-                -> 'SG22'. Tolère un tiret ou un espace supplémentaire
-                entre 'SG' et le numéro (ex. '...-SG-81' ou '...-SG 81').
-                Retourne None si absent (TP commun — s'applique à toute la
-                promotion, sans distinction de sous-groupe)."""
+                Règle source : TD/TP-<matière>-Gx. Le groupe est la partie
+                située après le dernier tiret, par exemple
+                ``TD-Analyse 3-G4`` -> ``G4``.
+                """
                 if pd.isna(val):
                     return None
-                val_str = str(val).strip().upper()
-                m = re.search(r'SG[\s\-]?(\d+)\s*$', val_str)
-                if not m:
-                    return None
-                return f"SG{m.group(1)}"
+                texte = str(val).strip().upper().replace("\u00a0", " ")
+                m = re.search(r'-\s*(SG\d+|G\d+)\s*$', texte, flags=re.IGNORECASE)
+                if m:
+                    return m.group(1).upper()
+                return None
+
+            def _est_td_tp_admin(val_code, val_enseignement=""):
+                code = str(val_code).upper().strip()
+                enseignement = str(val_enseignement).upper().strip()
+                return (
+                    ("TD" in code) or ("TP" in code)
+                    or bool(re.match(r"^(TD|TP)\s*-", enseignement, flags=re.IGNORECASE))
+                )
 
             liste_promotions_groupe = sorted([
                 p for p in df["Promotion"].dropna().unique()
@@ -9558,108 +9724,60 @@ th{{background:#1E3A8A;color:white;}}
                     key="promotion_groupe_admin"
                 )
 
-                df_promo_groupe = df[df["Promotion"] == promotion_groupe_admin].copy()
-
-                masque_cours_groupe = df_promo_groupe["Code"].astype(str).str.contains(
-                    "COURS", case=False, na=False
-                )
-                masque_td_groupe = df_promo_groupe["Code"].astype(str).str.contains(
-                    "TD", case=False, na=False
-                ) & ~masque_cours_groupe
-                masque_tp_groupe = ~masque_cours_groupe & ~masque_td_groupe
-
-                # Groupe (TD) et sous-groupe (TP) détectés indépendamment
-                # l'un de l'autre, depuis le dernier segment de l'intitulé.
-                # Une ligne SANS tag détecté est considérée COMMUNE à toute
-                # la promotion (aucun filtrage ne doit jamais la masquer).
-                df_promo_groupe.loc[masque_td_groupe, "Groupe_TD"] = df_promo_groupe.loc[
-                    masque_td_groupe, "Enseignements"
-                ].apply(_extraire_groupe_td_admin)
-                df_promo_groupe.loc[masque_tp_groupe, "SousGroupe_TP"] = df_promo_groupe.loc[
-                    masque_tp_groupe, "Enseignements"
-                ].apply(_extraire_sousgroupe_tp_admin)
-
-                groupes_td_disponibles = sorted(
-                    df_promo_groupe.get("Groupe_TD", pd.Series(dtype=object)).dropna().unique(),
-                    key=lambda g: int(re.sub(r'\D', '', g) or 0)
-                )
-                sousgroupes_tp_disponibles = sorted(
-                    df_promo_groupe.get("SousGroupe_TP", pd.Series(dtype=object)).dropna().unique(),
-                    key=lambda g: int(re.sub(r'\D', '', g) or 0)
-                )
-
-                # ------------------------------------------------------
-                # Sélecteurs INDÉPENDANTS : le groupe (TD) et le
-                # sous-groupe (TP) n'ont pas forcément de lien entre eux
-                # (ex. TD commun à toute la promotion, sans groupe, alors
-                # que le TP correspondant est bien scindé en SG11/SG12).
-                # Chaque sélecteur n'apparaît que s'il existe au moins un
-                # tag détecté pour la nature concernée.
-                # ------------------------------------------------------
-                col_sel_g, col_sel_sg = st.columns(2)
-                groupe_choisi_admin = None
-                sousgroupe_choisi_admin = None
-
-                with col_sel_g:
-                    if groupes_td_disponibles:
-                        groupe_choisi_admin = st.selectbox(
-                            "🔹 Choisir le groupe (TD) :",
-                            groupes_td_disponibles,
-                            key="groupe_choisi_admin"
-                        )
-                    else:
-                        st.caption("ℹ️ Aucun TD par groupe détecté — TD commun à toute la promotion.")
-
-                with col_sel_sg:
-                    if sousgroupes_tp_disponibles:
-                        sousgroupe_choisi_admin = st.selectbox(
-                            "🔸 Choisir le sous-groupe (TP) :",
-                            sousgroupes_tp_disponibles,
-                            key="sousgroupe_choisi_admin"
-                        )
-                    else:
-                        st.caption("ℹ️ Aucun TP par sous-groupe détecté — TP commun à toute la promotion.")
-                        exemples_tp_bruts = df_promo_groupe.loc[
-                            masque_tp_groupe, "Enseignements"
-                        ].dropna().unique()[:8]
-                        if len(exemples_tp_bruts) > 0:
-                            with st.expander("🔍 Voir les intitulés TP bruts (diagnostic)"):
-                                st.caption(
-                                    "Si un sous-groupe (ex. SG81, SG82) est visible "
-                                    "ci-dessous mais n'a pas été détecté, son format "
-                                    "diffère de la convention attendue — merci de me "
-                                    "signaler l'exemple exact."
-                                )
-                                for exemple_tp in exemples_tp_bruts:
-                                    st.code(exemple_tp)
-
-                # Cours = toujours affichés (communs).
-                # TD sans tag = toujours affiché (commun à toute la
-                # promotion) ; TD avec tag = affiché seulement si son
-                # groupe correspond au groupe choisi.
-                # TP sans tag = toujours affiché (commun) ; TP avec tag =
-                # affiché seulement si son sous-groupe correspond au
-                # sous-groupe choisi.
-                masque_td_commun = df_promo_groupe.get(
-                    "Groupe_TD", pd.Series(index=df_promo_groupe.index, dtype=object)
-                ).isna() & masque_td_groupe
-                masque_td_choisi = (
-                    (df_promo_groupe.get("Groupe_TD") == groupe_choisi_admin)
-                    if groupe_choisi_admin else pd.Series(False, index=df_promo_groupe.index)
-                )
-                masque_tp_commun = df_promo_groupe.get(
-                    "SousGroupe_TP", pd.Series(index=df_promo_groupe.index, dtype=object)
-                ).isna() & masque_tp_groupe
-                masque_tp_choisi = (
-                    (df_promo_groupe.get("SousGroupe_TP") == sousgroupe_choisi_admin)
-                    if sousgroupe_choisi_admin else pd.Series(False, index=df_promo_groupe.index)
-                )
-
-                df_final_groupe = df_promo_groupe[
-                    masque_cours_groupe
-                    | masque_td_commun | masque_td_choisi
-                    | masque_tp_commun | masque_tp_choisi
+                # IMPORTANT : les groupes ne sont PAS déduits du Lieu.
+                # Ils sont recherchés dans la colonne Enseignements du fichier EDT source,
+                # puis associés à la promotion de la même ligne.
+                df_promo_groupe = df[
+                    df["Promotion"].astype(str).str.strip().str.casefold()
+                    == str(promotion_groupe_admin).strip().casefold()
                 ].copy()
+                df_promo_groupe["Groupe_Enseignement"] = df_promo_groupe["Enseignements"].apply(
+                    _extraire_groupe_depuis_enseignement_admin
+                )
+
+                masque_td_tp_source = df_promo_groupe.apply(
+                    lambda r: _est_td_tp_admin(r.get("Code", ""), r.get("Enseignements", "")),
+                    axis=1
+                )
+                df_td_tp_groupe = df_promo_groupe[masque_td_tp_source].copy()
+
+                groupes_disponibles_admin = sorted(
+                    df_td_tp_groupe["Groupe_Enseignement"].dropna().unique(),
+                    key=lambda g: (int(re.search(r"\d+", str(g)).group()) if re.search(r"\d+", str(g)) else 9999, str(g))
+                )
+
+                if not groupes_disponibles_admin:
+                    st.warning(
+                        f"⚠️ Aucun groupe n'a été trouvé dans la colonne **Enseignements** "
+                        f"pour la promotion **{promotion_groupe_admin}**. "
+                        f"Format attendu pour un TD/TP : **TD-Matière-G4** ou **TP-Matière-G4**."
+                    )
+                    df_final_groupe = df_promo_groupe[
+                        df_promo_groupe["Code"].astype(str).str.contains("COURS", case=False, na=False)
+                    ].copy()
+                    groupe_choisi_admin = None
+                else:
+                    st.info(
+                        f"👥 **{len(groupes_disponibles_admin)} groupe(s)** trouvé(s) dans **Enseignements** "
+                        f"pour **{promotion_groupe_admin}** : "
+                        + ", ".join(groupes_disponibles_admin)
+                    )
+                    groupe_choisi_admin = st.selectbox(
+                        "🔹 Choisir le groupe :",
+                        groupes_disponibles_admin,
+                        key="groupe_choisi_admin"
+                    )
+
+                    # Cours = communs à toute la promotion.
+                    # TD/TP = uniquement ceux dont le suffixe d'Enseignements correspond au groupe choisi.
+                    masque_cours_groupe = df_promo_groupe["Code"].astype(str).str.contains(
+                        "COURS", case=False, na=False
+                    )
+                    masque_mon_groupe = (
+                        masque_td_tp_source
+                        & (df_promo_groupe["Groupe_Enseignement"] == groupe_choisi_admin)
+                    )
+                    df_final_groupe = df_promo_groupe[masque_cours_groupe | masque_mon_groupe].copy()
 
                 if not df_final_groupe.empty:
                     nb_cours_grp = len(df_final_groupe[df_final_groupe["Code"].astype(str).str.contains("COURS", case=False, na=False)])
@@ -11242,6 +11360,7 @@ td{{word-wrap:break-word;}}
                 # ================================================================
                 try:
                     import unicodedata
+                    import re
 
                     def _normaliser_nom_colonne_statut(valeur):
                         texte = '' if pd.isna(valeur) else str(valeur)
