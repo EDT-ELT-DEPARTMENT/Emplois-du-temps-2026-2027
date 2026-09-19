@@ -5750,80 +5750,44 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if not col_promo_etu or not col_groupe:
                     return 0
 
-                # Résolution des libellés réels de la promotion dans le
-                # fichier source des étudiants.
                 libelles_fichier = _resoudre_libelles_promotion_fichier(
                     df_source, promotion
                 )
-
                 serie_promo = df_source[col_promo_etu].astype(str).str.strip()
 
                 if libelles_fichier:
                     masque = serie_promo.str.casefold().isin(
-                        [
-                            str(libelle).strip().casefold()
-                            for libelle in libelles_fichier
-                        ]
+                        [str(libelle).strip().casefold() for libelle in libelles_fichier]
                     )
                 else:
-                    masque = (
-                        serie_promo.str.casefold()
-                        == str(promotion).strip().casefold()
-                    )
+                    masque = serie_promo.str.casefold() == str(promotion).strip().casefold()
 
                 df_match = df_source.loc[masque].copy()
-
                 if df_match.empty:
                     return 0
 
-                # ============================================================
-                # LECTURE STRICTE DE LA COLONNE "Groupe"
-                # ============================================================
-                # IMPORTANT :
-                # - seule la colonne dont le nom normalisé est exactement
-                #   "groupe" est utilisée ;
-                # - "Groupe sanguin" ne peut donc jamais être utilisée ;
-                # - une valeur n'est comptée que si elle contient un code
-                #   pédagogique G<number> (G1, G2, ..., G9, etc.) ;
-                # - le même groupe répété sur plusieurs étudiants ne compte
-                #   qu'une seule fois.
-                #
-                # Exemple L1MCIL :
-                # G1, G2, G3, G4, G5, G6, G7, G8, G9
-                # => 9 groupes, jamais 10.
-                # ============================================================
-
+                # COMPTAGE STRICT : uniquement la colonne exactement nommée
+                # « Groupe » après normalisation. « Groupe sanguin » est exclue.
+                # Seuls les codes pédagogiques G1, G2, G3, ... sont comptés.
                 groupes_uniques = set()
-
                 for valeur in df_match[col_groupe].tolist():
                     if valeur is None or pd.isna(valeur):
                         continue
-
-                    texte = str(valeur).strip()
+                    texte = unicodedata.normalize("NFKC", str(valeur)).strip()
                     if not texte:
                         continue
-
                     texte = texte.replace("\u00a0", " ")
-                    texte = unicodedata.normalize("NFKC", texte)
-
-                    # Accepte G1, G 1, g1, g 1.
-                    # N'accepte pas Groupe sanguin, G123abc, etc.
-                    correspondances = re.findall(
+                    for numero in re.findall(
                         r"(?<![A-Za-z0-9])G\s*(\d+)(?![A-Za-z0-9])",
                         texte,
-                        flags=re.IGNORECASE
-                    )
-
-                    for numero in correspondances:
+                        flags=re.IGNORECASE,
+                    ):
                         try:
-                            numero_int = int(numero)
+                            n = int(numero)
                         except (TypeError, ValueError):
                             continue
-
-                        if numero_int <= 0:
-                            continue
-
-                        groupes_uniques.add(f"G{numero_int}")
+                        if n > 0:
+                            groupes_uniques.add(f"G{n}")
 
                 return len(groupes_uniques)
 
@@ -5831,19 +5795,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if df_source is None or df_source.empty:
                     return 0
 
-                # RÈGLE DÉFINITIVE :
-                # chaque groupe pédagogique possède 2 sous-groupes.
-                # Le nombre affiché des sous-groupes est donc toujours :
-                #
-                #       nombre de groupes × 2
-                #
-                # Les valeurs de la colonne "Sous groupe" (SG11, SG12, ...)
-                # ne sont pas utilisées pour gonfler ou réduire ce compteur.
-                nombre_groupes = _compter_groupes_promotion(
-                    df_source, promotion
-                )
-
-                return nombre_groupes * 2
+                # RÈGLE DÉFINITIVE : 2 sous-groupes par groupe.
+                # La colonne « Sous groupe » ne modifie jamais ce compteur.
+                return _compter_groupes_promotion(df_source, promotion) * 2
 
             def fmt_p(rows):
                 items = []
@@ -9006,9 +8960,42 @@ td{{word-wrap:break-word;}}
                                 })
                                 continue
 
+                            # ============================================================
+                            # RÈGLE STRICTE DU VOLUME HORAIRE
+                            # ============================================================
+                            # Une correction ne peut jamais changer la durée de la séance.
+                            # Ex. 1h30 -> uniquement un créneau de 1h30.
+                            # Ex. 1h -> uniquement un créneau de 1h.
+                            # Les créneaux 14h-15h et 15h-16h (1h) ne sont donc
+                            # jamais proposés pour remplacer une séance de 1h30,
+                            # et inversement.
+                            # ============================================================
+                            def _duree_minutes_reso(libelle_horaire):
+                                import re as _re_duree
+                                texte_h = str(libelle_horaire or "").strip().lower()
+                                m = _re_duree.search(
+                                    r"(\d{1,2})h(?:\s*(\d{1,2}))?\s*-\s*(\d{1,2})h(?:\s*(\d{1,2}))?",
+                                    texte_h,
+                                )
+                                if not m:
+                                    return None
+                                h1 = int(m.group(1))
+                                mn1 = int(m.group(2) or 0)
+                                h2 = int(m.group(3))
+                                mn2 = int(m.group(4) or 0)
+                                total = (h2 * 60 + mn2) - (h1 * 60 + mn1)
+                                return total if total > 0 else None
+
+                            duree_origine_reso = _duree_minutes_reso(conflit_r['horaire'])
                             nouveau_slot_r = None
                             for j_cand in jours_list:
                                 for h_cand in horaires_list:
+                                    # Refuser toute proposition dont la durée
+                                    # diffère de celle du créneau d'origine.
+                                    if duree_origine_reso is None:
+                                        continue
+                                    if _duree_minutes_reso(h_cand) != duree_origine_reso:
+                                        continue
                                     if (j_cand, h_cand) == (conflit_r['jour'], conflit_r['horaire']):
                                         continue
                                     if occ_enseignant_travail.get((enseignant_ligne_r, j_cand, h_cand)):
@@ -9030,6 +9017,7 @@ td{{word-wrap:break-word;}}
                                     "Promotion": ligne_r.get('Promotion', ''),
                                     "Ancien Jour": conflit_r['jour'],
                                     "Ancien Horaire": conflit_r['horaire'],
+                                    "Durée": f"{duree_origine_reso // 60}h{duree_origine_reso % 60:02d}" if duree_origine_reso is not None else "Inconnue",
                                     "Nouveau Jour": j_nouv_r,
                                     "Nouveau Horaire": h_nouv_r,
                                     "Motif du conflit": f"Chevauchement {conflit_r['type']} : {conflit_r['valeur']}",
