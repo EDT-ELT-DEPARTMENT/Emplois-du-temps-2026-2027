@@ -11142,7 +11142,6 @@ td{{word-wrap:break-word;}}
                 # ================================================================
                 try:
                     import unicodedata
-                    import re
 
                     def _normaliser_nom_colonne_statut(valeur):
                         texte = '' if pd.isna(valeur) else str(valeur)
