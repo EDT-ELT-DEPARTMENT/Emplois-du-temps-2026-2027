@@ -9746,10 +9746,11 @@ th{{background:#1E3A8A;color:white;}}
                     st.warning(
                         f"⚠️ Aucun groupe n'a été trouvé dans la colonne **Enseignements** "
                         f"pour la promotion **{promotion_groupe_admin}**. "
-                        f"Format attendu pour un TD/TP : **TD-Matière-G4** ou **TP-Matière-G4**."
+                        f"Format attendu pour un TD/TP : **TD-Matière-G4**, **TD-Matière** "
+                        f"ou **TP-Matière-SG11**."
                     )
                     df_final_groupe = df_promo_groupe[
-                        df_promo_groupe["Code"].astype(str).str.contains("COURS", case=False, na=False)
+                        df_promo_groupe["Code"].astype(str).str.contains("COURS|TD", case=False, na=False)
                     ].copy()
                     groupe_choisi_admin = None
                 else:
@@ -9764,16 +9765,77 @@ th{{background:#1E3A8A;color:white;}}
                         key="groupe_choisi_admin"
                     )
 
-                    # Cours = communs à toute la promotion.
-                    # TD/TP = uniquement ceux dont le suffixe d'Enseignements correspond au groupe choisi.
+                    # --------------------------------------------------------
+                    # LOGIQUE D'AFFICHAGE PAR GROUPE / SOUS-GROUPE
+                    # --------------------------------------------------------
+                    # Cours : toujours communs à toute la promotion.
+                    #
+                    # TD :
+                    #   - TD sans groupe dans Enseignements (ex. TD-Analyse 3)
+                    #     = TD de toute la promotion -> afficher pour TOUS les
+                    #       groupes/sous-groupes sélectionnés.
+                    #   - TD avec Gx (ex. TD-Analyse 3-G1)
+                    #     = afficher uniquement au groupe concerné.
+                    #     Pour SG11/SG12, le groupe parent est G1.
+                    #
+                    # TP :
+                    #   - reste strictement lié au groupe/sous-groupe indiqué
+                    #     dans Enseignements (ex. TP-Matière-SG11).
+                    #   - un TP-G1 n'est donc pas automatiquement affiché à
+                    #     SG11/SG12 : la source doit explicitement le prévoir.
+                    # --------------------------------------------------------
                     masque_cours_groupe = df_promo_groupe["Code"].astype(str).str.contains(
                         "COURS", case=False, na=False
                     )
-                    masque_mon_groupe = (
-                        masque_td_tp_source
-                        & (df_promo_groupe["Groupe_Enseignement"] == groupe_choisi_admin)
+
+                    codes_groupe_admin = df_promo_groupe["Groupe_Enseignement"].astype("string")
+                    codes_enseignement_admin = df_promo_groupe["Enseignements"].astype("string")
+                    codes_upper_admin = codes_enseignement_admin.fillna("").str.upper().str.strip()
+
+                    masque_td_admin = df_promo_groupe["Code"].astype(str).str.contains(
+                        "TD", case=False, na=False
                     )
-                    df_final_groupe = df_promo_groupe[masque_cours_groupe | masque_mon_groupe].copy()
+                    masque_tp_admin = df_promo_groupe["Code"].astype(str).str.contains(
+                        "TP", case=False, na=False
+                    )
+
+                    # TD sans suffixe Gx/SGxx = TD commun à toute la promotion.
+                    masque_td_sans_groupe_admin = (
+                        masque_td_admin
+                        & codes_groupe_admin.isna()
+                    )
+
+                    # Groupe parent du choix :
+                    # G1 -> G1 ; SG11/SG12 -> G1.
+                    groupe_parent_choisi_admin = None
+                    m_parent = re.search(r"G(\d+)", str(groupe_choisi_admin).upper())
+                    if m_parent:
+                        groupe_parent_choisi_admin = f"G{int(m_parent.group(1))}"
+
+                    # TD associé à un groupe Gx : il est affiché pour Gx et
+                    # également pour ses sous-groupes SGx1/SGx2.
+                    masque_td_associe_admin = pd.Series(False, index=df_promo_groupe.index)
+                    if groupe_parent_choisi_admin:
+                        masque_td_associe_admin = (
+                            masque_td_admin
+                            & (codes_groupe_admin == groupe_parent_choisi_admin)
+                        )
+
+                    # TP : uniquement le suffixe exact sélectionné.
+                    masque_tp_selection_admin = (
+                        masque_tp_admin
+                        & (codes_groupe_admin == str(groupe_choisi_admin))
+                    )
+
+                    masque_mon_groupe = (
+                        masque_td_sans_groupe_admin
+                        | masque_td_associe_admin
+                        | masque_tp_selection_admin
+                    )
+
+                    df_final_groupe = df_promo_groupe[
+                        masque_cours_groupe | masque_mon_groupe
+                    ].copy()
 
                 if not df_final_groupe.empty:
                     nb_cours_grp = len(df_final_groupe[df_final_groupe["Code"].astype(str).str.contains("COURS", case=False, na=False)])
