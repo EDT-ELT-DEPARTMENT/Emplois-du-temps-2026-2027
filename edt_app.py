@@ -9737,9 +9737,29 @@ th{{background:#1E3A8A;color:white;}}
                 )
                 df_td_tp_groupe = df_promo_groupe[masque_td_tp_source].copy()
 
+                # Les groupes affichés dans la liste sont toujours les groupes
+                # pédagogiques G1, G2, G3, ... .
+                # Si l'EDT contient directement des TP-SG11 / TP-SG12, ils
+                # servent à déterminer automatiquement le groupe parent G1,
+                # mais les sous-groupes ne doivent PAS apparaître comme choix
+                # principaux ici.
+                groupes_parents_admin = set()
+                for valeur_groupe in df_td_tp_groupe["Groupe_Enseignement"].dropna().tolist():
+                    texte_groupe = str(valeur_groupe).strip().upper()
+                    m_g = re.search(r"^G(\d+)$", texte_groupe)
+                    m_sg = re.search(r"^SG(\d+)(?:1|2)$", texte_groupe)
+                    if m_g:
+                        groupes_parents_admin.add(f"G{int(m_g.group(1))}")
+                    elif m_sg:
+                        groupes_parents_admin.add(f"G{int(m_sg.group(1))}")
+
                 groupes_disponibles_admin = sorted(
-                    df_td_tp_groupe["Groupe_Enseignement"].dropna().unique(),
-                    key=lambda g: (int(re.search(r"\d+", str(g)).group()) if re.search(r"\d+", str(g)) else 9999, str(g))
+                    groupes_parents_admin,
+                    key=lambda g: (
+                        int(re.search(r"\d+", str(g)).group())
+                        if re.search(r"\d+", str(g)) else 9999,
+                        str(g)
+                    )
                 )
 
                 if not groupes_disponibles_admin:
@@ -9821,11 +9841,38 @@ th{{background:#1E3A8A;color:white;}}
                             & (codes_groupe_admin == groupe_parent_choisi_admin)
                         )
 
-                    # TP : uniquement le suffixe exact sélectionné.
-                    masque_tp_selection_admin = (
-                        masque_tp_admin
-                        & (codes_groupe_admin == str(groupe_choisi_admin))
+                    # TP : association automatique avec les sous-groupes
+                    # du groupe sélectionné.
+                    #
+                    # G1 -> SG11 + SG12
+                    # G2 -> SG21 + SG22
+                    # G3 -> SG31 + SG32
+                    # ...
+                    #
+                    # Ainsi, dès que des groupes G1, G2, ... sont détectés
+                    # dans les TD/TP de la promotion, les TP portant SG11/SG12,
+                    # SG21/SG22, etc. sont automatiquement rattachés au
+                    # groupe parent correspondant.
+                    masque_tp_selection_admin = pd.Series(
+                        False, index=df_promo_groupe.index
                     )
+
+                    if groupe_parent_choisi_admin:
+                        m_num_parent_tp = re.search(
+                            r"G(\d+)$", groupe_parent_choisi_admin
+                        )
+                        if m_num_parent_tp:
+                            numero_parent_tp = int(m_num_parent_tp.group(1))
+                            sous_groupes_parent_admin = {
+                                f"SG{numero_parent_tp}1",
+                                f"SG{numero_parent_tp}2",
+                            }
+                            masque_tp_selection_admin = (
+                                masque_tp_admin
+                                & codes_groupe_admin.isin(
+                                    sous_groupes_parent_admin
+                                )
+                            )
 
                     masque_mon_groupe = (
                         masque_td_sans_groupe_admin
