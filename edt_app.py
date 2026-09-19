@@ -5047,7 +5047,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             # 3) EXCEL (openpyxl) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
             import io
-            import re
             from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
             buf_xlsx_e = io.BytesIO()
 
@@ -5674,7 +5673,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 return None
 
             def _valeurs_uniques_valides(df_source, colonne):
-                import re
 
                 if df_source is None or df_source.empty or not colonne:
                     return []
@@ -5739,7 +5737,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 )
 
             def _compter_groupes_promotion(df_source, promotion):
-                import re
 
                 if df_source is None or df_source.empty:
                     return 0
@@ -5799,7 +5796,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 return len(_valeurs_uniques_valides(df_match, col_groupe))
 
             def _compter_sous_groupes_promotion(df_source, promotion):
-                import re
 
                 if df_source is None or df_source.empty:
                     return 0
@@ -11360,7 +11356,6 @@ td{{word-wrap:break-word;}}
                 # ================================================================
                 try:
                     import unicodedata
-                    import re
 
                     def _normaliser_nom_colonne_statut(valeur):
                         texte = '' if pd.isna(valeur) else str(valeur)
