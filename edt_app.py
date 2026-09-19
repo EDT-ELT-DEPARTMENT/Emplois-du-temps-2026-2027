@@ -9512,35 +9512,34 @@ th{{background:#1E3A8A;color:white;}}
             )
 
             def _extraire_groupe_td_admin(val):
-                """Extrait le GROUPE (pour un TD) à partir du dernier
-                segment de l'intitulé (colonne « Enseignements »), ex :
-                'TD-Analyse 3-G4' -> 'G4'. Ne matche PAS un sous-groupe
-                TP ('SGxx'). Retourne None si absent (TD commun, sans
-                distinction de groupe — s'applique à toute la promotion)."""
+                """Extrait le GROUPE (pour un TD), sous la forme G<numéro>,
+                où qu'il se trouve en fin d'intitulé (colonne
+                « Enseignements »), ex : 'TD-Analyse 3-G4' -> 'G4'.
+                Tolère un tiret ou un espace supplémentaire entre le 'G'
+                et le numéro (ex. 'TD-Analyse 3-G-4' ou 'TD-Analyse 3-G 4').
+                Ne matche PAS un sous-groupe TP ('SGxx'). Retourne None si
+                absent (TD commun, sans distinction de groupe — s'applique
+                à toute la promotion)."""
                 if pd.isna(val):
                     return None
-                val_str = str(val).strip()
-                if '-' not in val_str:
-                    return None
-                dernier_segment = val_str.split('-')[-1].strip().upper()
-                m = re.fullmatch(r'G\s*(\d+)', dernier_segment)
+                val_str = str(val).strip().upper()
+                m = re.search(r'(?<![A-Z])G[\s\-]?(\d+)\s*$', val_str)
                 if not m:
                     return None
                 return f"G{m.group(1)}"
 
             def _extraire_sousgroupe_tp_admin(val):
-                """Extrait le SOUS-GROUPE (pour un TP) à partir du dernier
-                segment de l'intitulé (colonne « Enseignements »), ex :
-                'TP-Structure des ordinateurs-SG22' -> 'SG22'. Retourne
-                None si absent (TP commun — s'applique à toute la
+                """Extrait le SOUS-GROUPE (pour un TP), sous la forme
+                SG<numéro>, où qu'il se trouve en fin d'intitulé (colonne
+                « Enseignements »), ex : 'TP-Structure des ordinateurs-SG22'
+                -> 'SG22'. Tolère un tiret ou un espace supplémentaire
+                entre 'SG' et le numéro (ex. '...-SG-81' ou '...-SG 81').
+                Retourne None si absent (TP commun — s'applique à toute la
                 promotion, sans distinction de sous-groupe)."""
                 if pd.isna(val):
                     return None
-                val_str = str(val).strip()
-                if '-' not in val_str:
-                    return None
-                dernier_segment = val_str.split('-')[-1].strip().upper()
-                m = re.fullmatch(r'SG\s*(\d+)', dernier_segment)
+                val_str = str(val).strip().upper()
+                m = re.search(r'SG[\s\-]?(\d+)\s*$', val_str)
                 if not m:
                     return None
                 return f"SG{m.group(1)}"
@@ -9620,6 +9619,19 @@ th{{background:#1E3A8A;color:white;}}
                         )
                     else:
                         st.caption("ℹ️ Aucun TP par sous-groupe détecté — TP commun à toute la promotion.")
+                        exemples_tp_bruts = df_promo_groupe.loc[
+                            masque_tp_groupe, "Enseignements"
+                        ].dropna().unique()[:8]
+                        if len(exemples_tp_bruts) > 0:
+                            with st.expander("🔍 Voir les intitulés TP bruts (diagnostic)"):
+                                st.caption(
+                                    "Si un sous-groupe (ex. SG81, SG82) est visible "
+                                    "ci-dessous mais n'a pas été détecté, son format "
+                                    "diffère de la convention attendue — merci de me "
+                                    "signaler l'exemple exact."
+                                )
+                                for exemple_tp in exemples_tp_bruts:
+                                    st.code(exemple_tp)
 
                 # Cours = toujours affichés (communs).
                 # TD sans tag = toujours affiché (commun à toute la
