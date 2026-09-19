@@ -9229,8 +9229,23 @@ td{{word-wrap:break-word;}}
                             ws_nr.set_column(0, len(df_nr_export.columns) - 1, 20)
 
                         # 1 feuille par enseignant concerné (grille jours x horaires)
+                        # CORRECTIF : les noms de feuilles Excel sont limités à 31
+                        # caractères et doivent être UNIQUES (en ignorant la casse).
+                        # Une simple troncature à 31 caractères pouvait donc faire
+                        # collisionner deux enseignants différents (même début de
+                        # nom, ou casse différente) -> DuplicateWorksheetName.
+                        # On garantit ici l'unicité en ajoutant un suffixe numérique
+                        # en cas de collision.
+                        noms_feuilles_utilisees_r = {"propositions", "non_resolus"}
                         for enseignant_aff, (thead_r, tbody_r) in grilles_html_par_enseignant.items():
-                            nom_feuille_r = re.sub(r'[\\/*?:\[\]]', '', enseignant_aff)[:31] or "Enseignant"
+                            nom_base_r = re.sub(r'[\\/*?:\[\]]', '', enseignant_aff).strip() or "Enseignant"
+                            nom_feuille_r = nom_base_r[:31]
+                            compteur_r = 1
+                            while nom_feuille_r.lower() in noms_feuilles_utilisees_r:
+                                suffixe_r = f"_{compteur_r}"
+                                nom_feuille_r = nom_base_r[:31 - len(suffixe_r)] + suffixe_r
+                                compteur_r += 1
+                            noms_feuilles_utilisees_r.add(nom_feuille_r.lower())
                             ws_e = wb_r.add_worksheet(nom_feuille_r)
                             ws_e.merge_range(0, 0, 0, len(horaires_list), f"📅 EDT proposé — {enseignant_aff}", fmt_titre_r)
                             ws_e.write(1, 0, "JOUR", fmt_entete_r)
@@ -9496,19 +9511,24 @@ th{{background:#1E3A8A;color:white;}}
                 "TD et TP du groupe sélectionné sont affichés."
             )
 
-            def _extraire_groupe_from_lieu_admin(val):
-                """Extrait le groupe à partir du Lieu (ex: 'AS10/G1' -> 'G1'),
-                même convention que pour l'EDT individuel étudiant."""
+            def _extraire_groupe_from_enseignement_admin(val):
+                """Extrait le groupe à partir de l'intitulé de la matière
+                (colonne « Enseignements » du fichier source), ex :
+                'TD-Analyse 3-G4' -> 'G4' (le groupe est le DERNIER
+                segment après un tiret '-'). Retourne None si ce dernier
+                segment ne correspond pas à un motif de groupe valide
+                (G<numéro> ou SG<numéro>) — par exemple pour un Cours
+                sans indication de groupe."""
                 if pd.isna(val):
                     return None
-                val_str = str(val).upper().strip()
-                m_sg = re.search(r'SG(\d+)', val_str)
-                if m_sg:
-                    return f"SG{m_sg.group(1)}"
-                m_g = re.search(r'G(\d+)', val_str)
-                if m_g:
-                    return f"G{m_g.group(1)}"
-                return None
+                val_str = str(val).strip()
+                if '-' not in val_str:
+                    return None
+                dernier_segment = val_str.split('-')[-1].strip().upper()
+                m = re.fullmatch(r'S?G\s*\d+', dernier_segment)
+                if not m:
+                    return None
+                return re.sub(r'\s+', '', dernier_segment)
 
             liste_promotions_groupe = sorted([
                 p for p in df["Promotion"].dropna().unique()
@@ -9525,19 +9545,22 @@ th{{background:#1E3A8A;color:white;}}
                 )
 
                 df_promo_groupe = df[df["Promotion"] == promotion_groupe_admin].copy()
-                df_promo_groupe["Groupe_Lieu"] = df_promo_groupe["Lieu"].apply(_extraire_groupe_from_lieu_admin)
+                df_promo_groupe["Groupe_Ens"] = df_promo_groupe["Enseignements"].apply(
+                    _extraire_groupe_from_enseignement_admin
+                )
 
                 groupes_disponibles_admin = sorted(
-                    df_promo_groupe["Groupe_Lieu"].dropna().unique(),
+                    df_promo_groupe["Groupe_Ens"].dropna().unique(),
                     key=lambda g: (len(g), g)
                 )
 
                 if not groupes_disponibles_admin:
                     st.warning(
-                        f"⚠️ Aucune information de groupe trouvée dans le lieu des "
-                        f"séances de **{promotion_groupe_admin}** (ex. « AS10/G1 »). "
-                        f"Affichage de l'EDT complet de la promotion, sans filtrage "
-                        f"par groupe."
+                        f"⚠️ Aucune information de groupe trouvée dans l'intitulé "
+                        f"des enseignements (colonne « Enseignements ») des "
+                        f"séances de **{promotion_groupe_admin}** (ex. "
+                        f"« TD-Analyse 3-G4 »). Affichage de l'EDT complet de "
+                        f"la promotion, sans filtrage par groupe."
                     )
                     df_final_groupe = df_promo_groupe.copy()
                     groupe_choisi_admin = None
@@ -9554,11 +9577,12 @@ th{{background:#1E3A8A;color:white;}}
                     )
 
                     # Cours = communs à tous les groupes (toujours affichés).
-                    # TD/TP = uniquement ceux du groupe sélectionné.
+                    # TD/TP = uniquement ceux du groupe sélectionné (détecté
+                    # depuis le dernier segment de l'intitulé Enseignements).
                     masque_cours_groupe = df_promo_groupe["Code"].astype(str).str.contains(
                         "COURS", case=False, na=False
                     )
-                    masque_mon_groupe = df_promo_groupe["Groupe_Lieu"] == groupe_choisi_admin
+                    masque_mon_groupe = df_promo_groupe["Groupe_Ens"] == groupe_choisi_admin
                     df_final_groupe = df_promo_groupe[masque_cours_groupe | masque_mon_groupe].copy()
 
                 if not df_final_groupe.empty:
