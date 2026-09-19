@@ -9683,20 +9683,32 @@ th{{background:#1E3A8A;color:white;}}
                 "TD et TP du groupe sélectionné sont affichés."
             )
 
-            def _extraire_groupe_depuis_enseignement_admin(val):
-                """Extrait le groupe depuis le TITRE de l'enseignement.
+            def _extraire_groupes_depuis_enseignement_admin(val):
+                """Extrait TOUS les codes Gx et SGxx présents dans Enseignements.
 
-                Règle source : TD/TP-<matière>-Gx. Le groupe est la partie
-                située après le dernier tiret, par exemple
-                ``TD-Analyse 3-G4`` -> ``G4``.
+                Important : un TP peut être écrit sous la forme :
+                    TP-Structure de la matière-SG11/SG12
+                    TP-Structure de la matière-SG11 / SG12
+                    TP-Structure de la matière-SG11,SG12
+
+                Il faut donc rechercher tous les sous-groupes et non pas
+                uniquement le dernier code situé après le dernier tiret.
                 """
                 if pd.isna(val):
-                    return None
+                    return []
                 texte = str(val).strip().upper().replace("\u00a0", " ")
-                m = re.search(r'-\s*(SG\d+|G\d+)\s*$', texte, flags=re.IGNORECASE)
-                if m:
-                    return m.group(1).upper()
-                return None
+                codes = re.findall(r"(?<![A-Z0-9])(?:SG\s*\d+|G\s*\d+)(?![A-Z0-9])", texte, flags=re.IGNORECASE)
+                resultat = []
+                for code in codes:
+                    code = re.sub(r"\s+", "", code.upper())
+                    if code not in resultat:
+                        resultat.append(code)
+                return resultat
+
+            def _extraire_groupe_depuis_enseignement_admin(val):
+                """Compatibilité : retourne le premier code trouvé."""
+                codes = _extraire_groupes_depuis_enseignement_admin(val)
+                return codes[0] if codes else None
 
             def _est_td_tp_admin(val_code, val_enseignement=""):
                 code = str(val_code).upper().strip()
@@ -9727,8 +9739,16 @@ th{{background:#1E3A8A;color:white;}}
                     df["Promotion"].astype(str).str.strip().str.casefold()
                     == str(promotion_groupe_admin).strip().casefold()
                 ].copy()
-                df_promo_groupe["Groupe_Enseignement"] = df_promo_groupe["Enseignements"].apply(
-                    _extraire_groupe_depuis_enseignement_admin
+                # Conserver TOUS les codes présents dans Enseignements.
+                # Exemple : TP-Structure de la matière-SG11/SG12
+                #           -> [SG11, SG12]
+                df_promo_groupe["Groupes_Enseignement"] = df_promo_groupe["Enseignements"].apply(
+                    _extraire_groupes_depuis_enseignement_admin
+                )
+                # Colonne scalaire conservée pour compatibilité avec le reste
+                # de la logique (premier code trouvé).
+                df_promo_groupe["Groupe_Enseignement"] = df_promo_groupe["Groupes_Enseignement"].apply(
+                    lambda x: x[0] if isinstance(x, list) and x else None
                 )
 
                 masque_td_tp_source = df_promo_groupe.apply(
@@ -9744,14 +9764,22 @@ th{{background:#1E3A8A;color:white;}}
                 # mais les sous-groupes ne doivent PAS apparaître comme choix
                 # principaux ici.
                 groupes_parents_admin = set()
-                for valeur_groupe in df_td_tp_groupe["Groupe_Enseignement"].dropna().tolist():
-                    texte_groupe = str(valeur_groupe).strip().upper()
-                    m_g = re.search(r"^G(\d+)$", texte_groupe)
-                    m_sg = re.search(r"^SG(\d+)(?:1|2)$", texte_groupe)
-                    if m_g:
-                        groupes_parents_admin.add(f"G{int(m_g.group(1))}")
-                    elif m_sg:
-                        groupes_parents_admin.add(f"G{int(m_sg.group(1))}")
+                sous_groupes_disponibles_admin = set()
+
+                for liste_codes in df_td_tp_groupe["Groupes_Enseignement"].tolist():
+                    if not isinstance(liste_codes, list):
+                        continue
+                    for code_groupe in liste_codes:
+                        texte_groupe = str(code_groupe).strip().upper()
+                        m_g = re.fullmatch(r"G(\d+)", texte_groupe)
+                        m_sg = re.fullmatch(r"SG(\d+)([12])", texte_groupe)
+                        if m_g:
+                            groupes_parents_admin.add(f"G{int(m_g.group(1))}")
+                        elif m_sg:
+                            numero_parent = int(m_sg.group(1))
+                            rang_sg = int(m_sg.group(2))
+                            groupes_parents_admin.add(f"G{numero_parent}")
+                            sous_groupes_disponibles_admin.add(f"SG{numero_parent}{rang_sg}")
 
                 groupes_disponibles_admin = sorted(
                     groupes_parents_admin,
@@ -9841,38 +9869,60 @@ th{{background:#1E3A8A;color:white;}}
                             & (codes_groupe_admin == groupe_parent_choisi_admin)
                         )
 
-                    # TP : association automatique avec les sous-groupes
-                    # du groupe sélectionné.
+                    # --------------------------------------------------------
+                    # SOUS-GROUPE TP : sélection explicite et détection dans
+                    # toute la chaîne Enseignements.
                     #
-                    # G1 -> SG11 + SG12
-                    # G2 -> SG21 + SG22
-                    # G3 -> SG31 + SG32
-                    # ...
+                    # Exemple source :
+                    #   TP-Structure de la matière-SG11/SG12
                     #
-                    # Ainsi, dès que des groupes G1, G2, ... sont détectés
-                    # dans les TD/TP de la promotion, les TP portant SG11/SG12,
-                    # SG21/SG22, etc. sont automatiquement rattachés au
-                    # groupe parent correspondant.
+                    # Le TP doit être visible lorsque l'utilisateur sélectionne
+                    # SG11 OU SG12. On ne doit donc jamais comparer la chaîne
+                    # complète à un seul code SG.
+                    # --------------------------------------------------------
+                    sous_groupes_tries_admin = sorted(
+                        sous_groupes_disponibles_admin,
+                        key=lambda sg: (
+                            int(re.search(r"\d+", sg).group()) if re.search(r"\d+", sg) else 9999,
+                            sg
+                        )
+                    )
+
+                    # La liste des sous-groupes est globale à la promotion.
+                    # Elle contient par exemple SG11, SG12, SG21, SG22, ...
+                    # indépendamment du fait que l'enseignement TP soit écrit
+                    # SG11/SG12 sur une seule ligne.
+                    if sous_groupes_tries_admin:
+                        sous_groupe_tp_choisi_admin = st.selectbox(
+                            "🔸 Choisir le sous-groupe TP :",
+                            sous_groupes_tries_admin,
+                            key="sous_groupe_tp_choisi_admin"
+                        )
+                    else:
+                        sous_groupe_tp_choisi_admin = None
+
                     masque_tp_selection_admin = pd.Series(
                         False, index=df_promo_groupe.index
                     )
 
-                    if groupe_parent_choisi_admin:
-                        m_num_parent_tp = re.search(
-                            r"G(\d+)$", groupe_parent_choisi_admin
-                        )
-                        if m_num_parent_tp:
-                            numero_parent_tp = int(m_num_parent_tp.group(1))
-                            sous_groupes_parent_admin = {
-                                f"SG{numero_parent_tp}1",
-                                f"SG{numero_parent_tp}2",
-                            }
-                            masque_tp_selection_admin = (
-                                masque_tp_admin
-                                & codes_groupe_admin.isin(
-                                    sous_groupes_parent_admin
-                                )
+                    if sous_groupe_tp_choisi_admin:
+                        # Une ligne TP peut contenir plusieurs sous-groupes :
+                        # SG11/SG12. La ligne est retenue si le sous-groupe
+                        # choisi apparaît parmi les codes extraits.
+                        masque_tp_selection_admin = (
+                            masque_tp_admin
+                            & df_promo_groupe["Groupes_Enseignement"].apply(
+                                lambda codes: sous_groupe_tp_choisi_admin in codes
+                                if isinstance(codes, list) else False
                             )
+                        )
+                    elif groupe_parent_choisi_admin:
+                        # Sécurité pour les EDT où aucun TP-SG n'est présent
+                        # mais où des TP-Gx existent. Dans ce cas, on ne force
+                        # pas artificiellement un TP dans l'affichage.
+                        masque_tp_selection_admin = pd.Series(
+                            False, index=df_promo_groupe.index
+                        )
 
                     masque_mon_groupe = (
                         masque_td_sans_groupe_admin
