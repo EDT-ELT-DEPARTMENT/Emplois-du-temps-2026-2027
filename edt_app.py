@@ -9511,24 +9511,54 @@ th{{background:#1E3A8A;color:white;}}
                 "TD et TP du groupe sélectionné sont affichés."
             )
 
-            def _extraire_groupe_from_enseignement_admin(val):
-                """Extrait le groupe à partir de l'intitulé de la matière
-                (colonne « Enseignements » du fichier source), ex :
-                'TD-Analyse 3-G4' -> 'G4' (le groupe est le DERNIER
-                segment après un tiret '-'). Retourne None si ce dernier
-                segment ne correspond pas à un motif de groupe valide
-                (G<numéro> ou SG<numéro>) — par exemple pour un Cours
-                sans indication de groupe."""
+            def _extraire_groupe_td_admin(val):
+                """Extrait le GROUPE (pour un TD) à partir du dernier
+                segment de l'intitulé (colonne « Enseignements »), ex :
+                'TD-Analyse 3-G4' -> 'G4'. Ne matche PAS un sous-groupe
+                TP ('SGxx'). Retourne None si absent."""
                 if pd.isna(val):
                     return None
                 val_str = str(val).strip()
                 if '-' not in val_str:
                     return None
                 dernier_segment = val_str.split('-')[-1].strip().upper()
-                m = re.fullmatch(r'S?G\s*\d+', dernier_segment)
+                m = re.fullmatch(r'G\s*(\d+)', dernier_segment)
                 if not m:
                     return None
-                return re.sub(r'\s+', '', dernier_segment)
+                return f"G{m.group(1)}"
+
+            def _extraire_sousgroupe_tp_admin(val):
+                """Extrait le SOUS-GROUPE (pour un TP) à partir du dernier
+                segment de l'intitulé (colonne « Enseignements »), ex :
+                'TP-Structure des ordinateurs-SG22' -> 'SG22'. Retourne
+                None si absent."""
+                if pd.isna(val):
+                    return None
+                val_str = str(val).strip()
+                if '-' not in val_str:
+                    return None
+                dernier_segment = val_str.split('-')[-1].strip().upper()
+                m = re.fullmatch(r'SG\s*(\d+)', dernier_segment)
+                if not m:
+                    return None
+                return f"SG{m.group(1)}"
+
+            def _groupe_parent_du_sousgroupe_admin(sous_groupe):
+                """Détermine le GROUPE parent d'un sous-groupe TP, ex :
+                'SG22' -> 'G2', 'SG11' -> 'G1', 'SG12' -> 'G1',
+                'SG31' -> 'G3'. Convention : le(s) premier(s) chiffre(s)
+                du numéro (tous sauf le dernier) désignent le groupe, le
+                dernier chiffre désigne le rang du sous-groupe DANS ce
+                groupe (SG<groupe><rang>)."""
+                if not sous_groupe:
+                    return None
+                m = re.fullmatch(r'SG(\d+)', sous_groupe)
+                if not m:
+                    return None
+                chiffres = m.group(1)
+                if len(chiffres) < 2:
+                    return None
+                return f"G{chiffres[:-1]}"
 
             liste_promotions_groupe = sorted([
                 p for p in df["Promotion"].dropna().unique()
@@ -9545,26 +9575,56 @@ th{{background:#1E3A8A;color:white;}}
                 )
 
                 df_promo_groupe = df[df["Promotion"] == promotion_groupe_admin].copy()
-                df_promo_groupe["Groupe_Ens"] = df_promo_groupe["Enseignements"].apply(
-                    _extraire_groupe_from_enseignement_admin
-                )
 
-                groupes_disponibles_admin = sorted(
-                    df_promo_groupe["Groupe_Ens"].dropna().unique(),
-                    key=lambda g: (len(g), g)
+                masque_cours_groupe = df_promo_groupe["Code"].astype(str).str.contains(
+                    "COURS", case=False, na=False
                 )
+                masque_td_groupe = df_promo_groupe["Code"].astype(str).str.contains(
+                    "TD", case=False, na=False
+                ) & ~masque_cours_groupe
+                masque_tp_groupe = ~masque_cours_groupe & ~masque_td_groupe
 
-                if not groupes_disponibles_admin:
+                # Groupe (TD) détecté depuis le dernier segment de
+                # l'intitulé ; sous-groupe (TP) détecté de même, puis
+                # ramené à son groupe parent (SG22 -> G2, etc.).
+                df_promo_groupe.loc[masque_td_groupe, "Groupe_TD"] = df_promo_groupe.loc[
+                    masque_td_groupe, "Enseignements"
+                ].apply(_extraire_groupe_td_admin)
+                df_promo_groupe.loc[masque_tp_groupe, "SousGroupe_TP"] = df_promo_groupe.loc[
+                    masque_tp_groupe, "Enseignements"
+                ].apply(_extraire_sousgroupe_tp_admin)
+                df_promo_groupe.loc[masque_tp_groupe, "Groupe_TP_Parent"] = df_promo_groupe.loc[
+                    masque_tp_groupe, "SousGroupe_TP"
+                ].apply(_groupe_parent_du_sousgroupe_admin)
+
+                groupes_td_trouves = df_promo_groupe.get(
+                    "Groupe_TD", pd.Series(dtype=object)
+                ).dropna().unique()
+                sousgroupes_tp_trouves = df_promo_groupe.get(
+                    "SousGroupe_TP", pd.Series(dtype=object)
+                ).dropna().unique()
+
+                # ------------------------------------------------------
+                # REPLI : si AUCUN groupe n'a pu être détecté pour les TD,
+                # OU AUCUN sous-groupe n'a pu être détecté pour les TP,
+                # alors on affiche TOUS les TD et TOUS les TP de la
+                # promotion, sans filtrage (comme demandé).
+                # ------------------------------------------------------
+                if len(groupes_td_trouves) == 0 or len(sousgroupes_tp_trouves) == 0:
                     st.warning(
-                        f"⚠️ Aucune information de groupe trouvée dans l'intitulé "
-                        f"des enseignements (colonne « Enseignements ») des "
-                        f"séances de **{promotion_groupe_admin}** (ex. "
-                        f"« TD-Analyse 3-G4 »). Affichage de l'EDT complet de "
-                        f"la promotion, sans filtrage par groupe."
+                        f"⚠️ Groupe(s)/sous-groupe(s) non détectés pour "
+                        f"**{promotion_groupe_admin}** (TD sans « -G<n> » "
+                        f"et/ou TP sans « -SG<n> » dans la colonne "
+                        f"Enseignements). Affichage de TOUS les TD et TOUS "
+                        f"les TP de cette promotion, sans filtrage."
                     )
                     df_final_groupe = df_promo_groupe.copy()
                     groupe_choisi_admin = None
                 else:
+                    groupes_disponibles_admin = sorted(
+                        groupes_td_trouves,
+                        key=lambda g: int(re.sub(r'\D', '', g) or 0)
+                    )
                     st.info(
                         f"👥 **{len(groupes_disponibles_admin)} groupe(s)** trouvé(s) "
                         f"pour **{promotion_groupe_admin}** : "
@@ -9577,13 +9637,14 @@ th{{background:#1E3A8A;color:white;}}
                     )
 
                     # Cours = communs à tous les groupes (toujours affichés).
-                    # TD/TP = uniquement ceux du groupe sélectionné (détecté
-                    # depuis le dernier segment de l'intitulé Enseignements).
-                    masque_cours_groupe = df_promo_groupe["Code"].astype(str).str.contains(
-                        "COURS", case=False, na=False
-                    )
-                    masque_mon_groupe = df_promo_groupe["Groupe_Ens"] == groupe_choisi_admin
-                    df_final_groupe = df_promo_groupe[masque_cours_groupe | masque_mon_groupe].copy()
+                    # TD = uniquement ceux du groupe sélectionné (ex. G2).
+                    # TP = uniquement les sous-groupes rattachés à ce
+                    # groupe (ex. G2 -> SG21, SG22, ...).
+                    masque_td_ok = df_promo_groupe["Groupe_TD"] == groupe_choisi_admin
+                    masque_tp_ok = df_promo_groupe["Groupe_TP_Parent"] == groupe_choisi_admin
+                    df_final_groupe = df_promo_groupe[
+                        masque_cours_groupe | masque_td_ok | masque_tp_ok
+                    ].copy()
 
                 if not df_final_groupe.empty:
                     nb_cours_grp = len(df_final_groupe[df_final_groupe["Code"].astype(str).str.contains("COURS", case=False, na=False)])
