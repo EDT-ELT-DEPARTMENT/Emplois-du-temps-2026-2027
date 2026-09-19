@@ -21621,42 +21621,92 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                     ].copy()
 
                 if not df_edt_etu_filtre.empty:
-                    # 2. Chercher le groupe dans la colonne Lieu de l'EDT
-                    def extraire_groupe_from_lieu(val):
-                        """Extrait le groupe du Lieu au format: A09/G1, Salle G1/G2, etc."""
+                    # ════════════════════════════════════════════════════
+                    # 2. DÉTECTION DU GROUPE (TD) ET DU SOUS-GROUPE (TP)
+                    # ------------------------------------------------------
+                    # Même logique que la vue admin « 👥 EDT par Groupe
+                    # (TD/TP) » : le groupe/sous-groupe est extrait du
+                    # DERNIER segment de l'intitulé de la matière (colonne
+                    # « Enseignements »), et non plus du Lieu :
+                    #   - TD : 'TD-Analyse 3-G4' -> groupe 'G4'
+                    #   - TP : 'TP-Structure des ordinateurs-SG82' ->
+                    #          sous-groupe 'SG82'
+                    # Une ligne SANS tag détecté est commune à toute la
+                    # promotion et reste TOUJOURS affichée, que l'étudiant
+                    # ait un groupe/sous-groupe renseigné ou non.
+                    # ════════════════════════════════════════════════════
+                    def _extraire_groupe_td_etu(val):
+                        """Extrait le GROUPE (TD), tolère tiret/espace
+                        entre 'G' et le numéro ('G4', 'G-4', 'G 4')."""
                         if pd.isna(val):
                             return None
-                        val_str = str(val).upper().strip()
-                        
-                        # Chercher SG (sous-groupe)
-                        m_sg = re.search(r'SG(\d+)', val_str)
-                        if m_sg:
-                            return f"SG{m_sg.group(1)}"
-                        
-                        # Chercher G (groupe)
-                        m_g = re.search(r'G(\d+)', val_str)
-                        if m_g:
-                            return f"G{m_g.group(1)}"
-                        
-                        return None
+                        val_str = str(val).strip().upper()
+                        m = re.search(r'(?<![A-Z])G[\s\-]?(\d+)\s*$', val_str)
+                        if not m:
+                            return None
+                        return f"G{m.group(1)}"
 
-                    df_edt_etu_filtre["Groupe_Lieu"] = df_edt_etu_filtre["Lieu"].apply(extraire_groupe_from_lieu)
-                    
-                    # 3. Déterminer si l'EDT contient des informations de groupe
-                    groupes_dans_edt = df_edt_etu_filtre["Groupe_Lieu"].dropna().unique()
-                    a_des_groupes = len(groupes_dans_edt) > 0
-                    
-                    # 4. Filtrer selon le groupe de l'étudiant (du fichier étudiants)
-                    if groupe_etu and a_des_groupes:
-                        # L'EDT contient des groupes: filtrer
-                        mask_cours = df_edt_etu_filtre["Code"].astype(str).str.contains("COURS", case=False, na=False)
-                        mask_mon_groupe = df_edt_etu_filtre["Groupe_Lieu"] == groupe_etu
-                        df_edt_final = df_edt_etu_filtre[mask_cours | mask_mon_groupe].copy()
-                    else:
-                        # L'EDT ne contient pas de groupes: afficher tous les cours
-                        if groupe_etu and not a_des_groupes:
-                            st.info(f"ℹ️ Les données EDT pour **{promo_sel_indiv}** ne contiennent pas d'information de groupe. Affichage de tous les cours.")
-                        df_edt_final = df_edt_etu_filtre.copy()
+                    def _extraire_sousgroupe_tp_etu(val):
+                        """Extrait le SOUS-GROUPE (TP), tolère tiret/espace
+                        entre 'SG' et le numéro ('SG82', 'SG-82', 'SG 82')."""
+                        if pd.isna(val):
+                            return None
+                        val_str = str(val).strip().upper()
+                        m = re.search(r'SG[\s\-]?(\d+)\s*$', val_str)
+                        if not m:
+                            return None
+                        return f"SG{m.group(1)}"
+
+                    mask_cours_etu_filtre = df_edt_etu_filtre["Code"].astype(str).str.contains(
+                        "COURS", case=False, na=False
+                    )
+                    mask_td_etu_filtre = df_edt_etu_filtre["Code"].astype(str).str.contains(
+                        "TD", case=False, na=False
+                    ) & ~mask_cours_etu_filtre
+                    mask_tp_etu_filtre = ~mask_cours_etu_filtre & ~mask_td_etu_filtre
+
+                    df_edt_etu_filtre.loc[mask_td_etu_filtre, "Groupe_TD"] = df_edt_etu_filtre.loc[
+                        mask_td_etu_filtre, "Enseignements"
+                    ].apply(_extraire_groupe_td_etu)
+                    df_edt_etu_filtre.loc[mask_tp_etu_filtre, "SousGroupe_TP"] = df_edt_etu_filtre.loc[
+                        mask_tp_etu_filtre, "Enseignements"
+                    ].apply(_extraire_sousgroupe_tp_etu)
+
+                    # 3. Cours = toujours affichés (communs à tous les groupes).
+                    #    TD sans tag = toujours affiché (commun) ; TD avec
+                    #    tag = affiché seulement s'il correspond au groupe
+                    #    de l'étudiant (fichier étudiants source).
+                    #    TP sans tag = toujours affiché (commun) ; TP avec
+                    #    tag = affiché seulement s'il correspond au
+                    #    sous-groupe de l'étudiant.
+                    mask_td_commun_etu = df_edt_etu_filtre.get(
+                        "Groupe_TD", pd.Series(index=df_edt_etu_filtre.index, dtype=object)
+                    ).isna() & mask_td_etu_filtre
+                    mask_td_choisi_etu = (
+                        (df_edt_etu_filtre.get("Groupe_TD") == groupe_etu)
+                        if groupe_etu else pd.Series(False, index=df_edt_etu_filtre.index)
+                    )
+                    mask_tp_commun_etu = df_edt_etu_filtre.get(
+                        "SousGroupe_TP", pd.Series(index=df_edt_etu_filtre.index, dtype=object)
+                    ).isna() & mask_tp_etu_filtre
+                    mask_tp_choisi_etu = (
+                        (df_edt_etu_filtre.get("SousGroupe_TP") == sous_groupe_etu)
+                        if sous_groupe_etu else pd.Series(False, index=df_edt_etu_filtre.index)
+                    )
+
+                    df_edt_final = df_edt_etu_filtre[
+                        mask_cours_etu_filtre
+                        | mask_td_commun_etu | mask_td_choisi_etu
+                        | mask_tp_commun_etu | mask_tp_choisi_etu
+                    ].copy()
+
+                    if not groupe_etu and not sous_groupe_etu:
+                        st.info(
+                            "ℹ️ Aucun groupe/sous-groupe renseigné pour cet "
+                            "étudiant dans le fichier source : seuls les "
+                            "Cours et les TD/TP communs (sans groupe "
+                            "spécifique) sont affichés."
+                        )
 
                     if not df_edt_final.empty:
                         # ── Afficheurs numériques ──
