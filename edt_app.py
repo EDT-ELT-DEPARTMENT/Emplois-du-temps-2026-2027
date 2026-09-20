@@ -4909,12 +4909,63 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # ============================================================
     if portail == "📖 Emploi du Temps" and is_admin:
         if mode_view == "Enseignant":
-            cible = st.selectbox("Sélectionner l'Enseignant :",
-                                sorted([e for e in df["Enseignants"].unique() if e and e != "Non défini"]))
+            # ============================================================
+            # CHOIX DU / DES ENSEIGNANTS
+            # ============================================================
+            liste_enseignants_admin_dispo = sorted([
+                e for e in df["Enseignants"].unique() if e and e != "Non défini"
+            ])
 
-            df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
-            df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
-            nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
+            mode_selection_enseignants = st.radio(
+                "Mode d'affichage des enseignants :",
+                ["Un enseignant", "Plusieurs enseignants"],
+                horizontal=True,
+                key="mode_selection_enseignants_admin"
+            )
+
+            if mode_selection_enseignants == "Un enseignant":
+                e_sel = st.selectbox(
+                    "Sélectionner l'Enseignant :",
+                    liste_enseignants_admin_dispo,
+                    key="enseignant_admin_unique"
+                )
+                enseignants_selectionnes = [e_sel]
+            else:
+                enseignants_selectionnes = st.multiselect(
+                    "Choisir les enseignants (sélection progressive) :",
+                    liste_enseignants_admin_dispo,
+                    default=liste_enseignants_admin_dispo[:1],
+                    key="enseignants_admin_multiples",
+                    help="Sélectionnez d'abord un enseignant, puis ajoutez-en "
+                         "progressivement d'autres pour les afficher dans le "
+                         "même EDT."
+                )
+                if not enseignants_selectionnes:
+                    st.warning("⚠️ Sélectionnez au moins un enseignant pour afficher l'EDT.")
+                    st.stop()
+
+            cible = ", ".join(enseignants_selectionnes)
+
+            filtre_type_enseignant_admin = st.selectbox(
+                "Type d'enseignement à afficher :",
+                ["Tous les enseignements", "Cours seulement", "TD seulement", "TP seulement"],
+                key="filtre_type_enseignant_admin"
+            )
+
+            # Motif de correspondance : une ligne est retenue si sa colonne
+            # « Enseignants » contient AU MOINS UN des enseignants choisis.
+            motif_enseignants_admin = "|".join(re.escape(e) for e in enseignants_selectionnes)
+            df_f_complet = df[df["Enseignants"].str.contains(
+                motif_enseignants_admin, case=False, na=False, regex=True
+            )].copy()
+            df_f_complet['Type'] = df_f_complet['Code'].apply(
+                lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
+            )
+
+            # La charge horaire porte TOUJOURS sur l'ensemble des
+            # enseignements (Cours+TD+TP) des enseignants sélectionnés,
+            # indépendamment du filtre d'affichage choisi ci-dessus.
+            nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f_complet, ['j_norm', 'h_norm'])
             seuil = 3.0 if poste_sup else 6.0
             charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
             delta = charge_eq - seuil
@@ -4934,6 +4985,19 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             else:
                 st.info("⚖️ Seuil exact")
 
+            # Application du filtre de type CHOISI, pour l'affichage de la
+            # grille et les exports (Excel/HTML/PDF) uniquement.
+            if filtre_type_enseignant_admin == "Cours seulement":
+                df_f = df_f_complet[df_f_complet['Type'] == "COURS"].copy()
+            elif filtre_type_enseignant_admin == "TD seulement":
+                df_f = df_f_complet[df_f_complet['Type'] == "TD"].copy()
+            elif filtre_type_enseignant_admin == "TP seulement":
+                df_f = df_f_complet[df_f_complet['Type'] == "TP"].copy()
+            else:
+                df_f = df_f_complet.copy()
+
+            plusieurs_enseignants_admin = len(enseignants_selectionnes) > 1
+
             # ═══════════════════════════════════════════════════════
             # 1) AFFICHAGE HTML (Streamlit) avec EN-TÊTE ISO
             # ═══════════════════════════════════════════════════════
@@ -4943,9 +5007,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     code_up = str(r['Code']).upper()
                     color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
                     nat = '📘' if 'COURS' in code_up else ('📗' if 'TD' in code_up else '🔴')
+                    ligne_enseignant = (
+                        f"<br><small>👤 {r['Enseignants']}</small>" if plusieurs_enseignants_admin else ""
+                    )
                     items.append(
                         f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;border-radius:4px;'>"
-                        f"<b>{nat} {r['Enseignements']}</b><br>"
+                        f"<b>{nat} {r['Enseignements']}</b>{ligne_enseignant}<br>"
                         f"<small>📍 {r['Lieu']} | 🎓 {r['Promotion']}</small>"
                         f"</div>"
                     )
@@ -4994,7 +5061,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
             iso_header_html = f"""
             <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:15px;border-radius:8px 8px 0 0;margin-bottom:0;text-align:center;">
-                <h2 style="margin:0;font-size:18px;">📊 EMPLOI DU TEMPS — ENSEIGNANT</h2>
+                <h2 style="margin:0;font-size:18px;">📊 EMPLOI DU TEMPS — ENSEIGNANT{"S" if plusieurs_enseignants_admin else ""}</h2>
                 <p style="margin:5px 0 0 0;opacity:0.9;font-size:13px;">{cible} | Semestre 01 — 2026-2027</p>
                 <div style="display:flex;justify-content:center;gap:20px;margin-top:10px;font-size:11px;opacity:0.85;">
                     <span>📋 Code : PPER.03</span>
@@ -5031,7 +5098,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         entete_enseignement = nom_ens_txt
                     else:
                         entete_enseignement = f"{nat} – {nom_ens_txt}"
-                    items.append(f"{entete_enseignement}\n📍 {r['Lieu']} | 🎓 {r['Promotion']}")
+                    ligne_enseignant_txt = f" | 👤 {r['Enseignants']}" if plusieurs_enseignants_admin else ""
+                    items.append(f"{entete_enseignement}\n📍 {r['Lieu']} | 🎓 {r['Promotion']}{ligne_enseignant_txt}")
                 return "\n────────\n".join(items)
 
             grid_text_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e_text, include_groups=False).unstack('j_norm')
@@ -5067,7 +5135,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 # EN-TÊTE ISO (lignes fusionnées)
                 ws.merge_cells('A1:F1')
-                ws['A1'] = f"EMPLOI DU TEMPS — ENSEIGNANT : {cible}"
+                ws['A1'] = f"EMPLOI DU TEMPS — ENSEIGNANT{'S' if plusieurs_enseignants_admin else ''} : {cible}"
                 ws['A1'].font = font_iso
                 ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
                 ws.row_dimensions[1].height = 25
@@ -5226,7 +5294,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 table_e.setStyle(TableStyle([('MINROWHEIGHT', (0, i), (-1, i), 55)]))
 
             elements_e = []
-            elements_e.append(Paragraph(f"📊 EMPLOI DU TEMPS — ENSEIGNANT", title_style_e))
+            elements_e.append(Paragraph(f"📊 EMPLOI DU TEMPS — ENSEIGNANT{'S' if plusieurs_enseignants_admin else ''}", title_style_e))
             elements_e.append(Paragraph(f"<b>{cible}</b> | Semestre 01 — 2026-2027", iso_style_e))
             elements_e.append(Paragraph(f"📋 Code : PPER.03 &nbsp;&nbsp;|&nbsp;&nbsp; 🔄 Révision : 00 &nbsp;&nbsp;|&nbsp;&nbsp; 📅 Date : {datetime.now().strftime('%d/%m/%Y')}", iso_style_e))
             elements_e.append(Spacer(1, 8*mm))
@@ -5254,12 +5322,16 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             # ═══════════════════════════════════════════════════════
             # 5) BOUTONS DE TÉLÉCHARGEMENT
             # ═══════════════════════════════════════════════════════
+            noms_fichiers_enseignants_admin = "_".join(
+                e.replace(' ', '_') for e in enseignants_selectionnes
+            )[:80]  # évite un nom de fichier trop long si plusieurs enseignants
+
             ce1, ce2, ce3 = st.columns(3)
 
             ce1.download_button(
                 "📥 Excel",
                 buf_xlsx_e.getvalue(),
-                f"EDT_Ens_{cible.replace(' ', '_')}.xlsx",
+                f"EDT_Ens_{noms_fichiers_enseignants_admin}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             ce2.download_button(
@@ -5270,16 +5342,381 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     nb_creneaux=max(1, grid_e.shape[0]),
                     titre=f"EDT Enseignant — {cible}"
                 ) if html_une_page_enseignant else (iso_header_html + html_table_e),
-                f"EDT_Ens_{cible.replace(' ', '_')}" + ("_1page" if html_une_page_enseignant else "") + ".html",
+                f"EDT_Ens_{noms_fichiers_enseignants_admin}" + ("_1page" if html_une_page_enseignant else "") + ".html",
                 "text/html"
             )
             ce3.download_button(
                 "📄 PDF",
                 buf_pdf_e.getvalue(),
-                f"EDT_Ens_{cible.replace(' ', '_')}.pdf",
+                f"EDT_Ens_{noms_fichiers_enseignants_admin}.pdf",
                 "application/pdf"
             )
-            
+
+            # ═══════════════════════════════════════════════════════
+            # ✏️ MODE ÉDITION DE L'EDT (cellules actives, multi-sélection,
+            # validation groupée) — même principe que pour la vue
+            # Promotion : seule une cellule "🔘 Activée" devient
+            # modifiable ; plusieurs cellules peuvent être activées en
+            # même temps ; un seul bouton "Valider et enregistrer"
+            # applique toutes les modifications à la fois.
+            # ═══════════════════════════════════════════════════════
+            st.markdown("---")
+            mode_edition_edt_enseignant = st.checkbox(
+                "✏️ Mode édition de l'EDT (éditer, déplacer, supprimer les cellules)",
+                value=False,
+                key="mode_edition_edt_enseignant_admin"
+            )
+
+            if mode_edition_edt_enseignant:
+                st.info(
+                    "🔘 Cochez **Activer** sur une ou plusieurs cellules pour "
+                    "les rendre modifiables — les cellules non cochées "
+                    "restent inactives. Modifiez-les (y compris le jour et "
+                    "l'horaire pour les déplacer), puis cliquez **une seule "
+                    "fois** sur **✅ Valider et enregistrer** en bas de la "
+                    "grille pour appliquer toutes les modifications à la "
+                    "fois."
+                )
+
+                cle_actives_ens = "edt_ens_lignes_actives"
+                cle_suppr_ens = "edt_ens_lignes_a_supprimer"
+                if cle_actives_ens not in st.session_state:
+                    st.session_state[cle_actives_ens] = set()
+                if cle_suppr_ens not in st.session_state:
+                    st.session_state[cle_suppr_ens] = set()
+
+                st.session_state[cle_actives_ens] = {
+                    i for i in st.session_state[cle_actives_ens] if i in df.index
+                }
+                st.session_state[cle_suppr_ens] = {
+                    i for i in st.session_state[cle_suppr_ens] if i in df.index
+                }
+
+                liste_enseignants_edit_ens = sorted([
+                    e for e in df["Enseignants"].dropna().unique()
+                    if str(e).strip() and str(e).strip() != "Non défini"
+                ])
+                liste_lieux_edit_ens = sorted([
+                    l for l in df["Lieu"].dropna().unique()
+                    if str(l).strip() and str(l).strip() != "Non défini"
+                ])
+
+                def _sauvegarder_fichier_edt_source_ens():
+                    df_sauvegarde = df.copy()
+                    for colonne_technique in ["h_norm", "j_norm", "Type"]:
+                        if colonne_technique in df_sauvegarde.columns:
+                            df_sauvegarde = df_sauvegarde.drop(columns=[colonne_technique])
+                    df_sauvegarde.to_excel(NOM_FICHIER_FIXE, index=False)
+
+                # Grille interactive : uniquement les créneaux occupés par
+                # les enseignants sélectionnés (df_f_complet, non filtré
+                # par le type d'affichage, pour pouvoir tout éditer).
+                df_edit_ens = df_f_complet.copy()
+                enseignements_par_creneau_ens = {}
+                for idx_l, r_l in df_edit_ens.iterrows():
+                    j_aff_l = map_j.get(r_l['j_norm'])
+                    h_aff_l = map_h.get(r_l['h_norm'])
+                    if j_aff_l is None or h_aff_l is None:
+                        continue
+                    enseignements_par_creneau_ens.setdefault((h_aff_l, j_aff_l), []).append(idx_l)
+
+                horaires_affiches_ens = [
+                    h for h in horaires_list
+                    if any((h, j) in enseignements_par_creneau_ens for j in jours_list)
+                ] or horaires_list
+
+                entetes_ens = st.columns([1.1] + [1] * len(jours_list))
+                with entetes_ens[0]:
+                    st.markdown("**⏰ Horaire**")
+                for num_jour, jour in enumerate(jours_list, start=1):
+                    with entetes_ens[num_jour]:
+                        st.markdown(f"**{jour}**")
+
+                for horaire in horaires_affiches_ens:
+                    colonnes_ens = st.columns([1.1] + [1] * len(jours_list))
+                    with colonnes_ens[0]:
+                        st.markdown(
+                            f"<div style='background:#f1f5f9;border:1px solid #94a3b8;"
+                            f"border-radius:6px;padding:8px;text-align:center;"
+                            f"font-weight:600;color:#1e293b;'>{horaire}</div>",
+                            unsafe_allow_html=True
+                        )
+                    for num_jour, jour in enumerate(jours_list, start=1):
+                        with colonnes_ens[num_jour]:
+                            indices_creneau_ens = enseignements_par_creneau_ens.get((horaire, jour), [])
+                            cellule_ens = st.container(border=True)
+                            with cellule_ens:
+                                if not indices_creneau_ens:
+                                    st.markdown(
+                                        "<div style='color:#94a3b8;font-size:12px;"
+                                        "text-align:center;'>&mdash;</div>",
+                                        unsafe_allow_html=True
+                                    )
+                                for idx_creneau_ens in indices_creneau_ens:
+                                    r_ens = df.loc[idx_creneau_ens]
+                                    code_up_ens = str(r_ens["Code"]).upper()
+                                    couleur_ens = "#1e40af" if "COURS" in code_up_ens else (
+                                        "#166534" if "TD" in code_up_ens else "#991b1b")
+                                    nature_ens = "📘" if "COURS" in code_up_ens else (
+                                        "📗" if "TD" in code_up_ens else "🔴")
+
+                                    est_active_ens = idx_creneau_ens in st.session_state[cle_actives_ens]
+                                    est_marquee_suppr_ens = idx_creneau_ens in st.session_state[cle_suppr_ens]
+                                    if est_marquee_suppr_ens:
+                                        fond_ens = "#fecaca"
+                                    elif est_active_ens:
+                                        fond_ens = "#fde68a"
+                                    else:
+                                        fond_ens = "#f8fafc"
+
+                                    st.markdown(
+                                        f"<div style='border-left:3px solid {couleur_ens};"
+                                        f"padding:4px;margin:2px 0;background:{fond_ens};"
+                                        f"border-radius:4px;'>"
+                                        f"<b>{nature_ens} {r_ens['Enseignements']}</b><br>"
+                                        f"<small>👤 {r_ens['Enseignants']} | "
+                                        f"📍 {r_ens['Lieu']}</small>"
+                                        f"</div>",
+                                        unsafe_allow_html=True
+                                    )
+
+                                    actif_coche_ens = st.checkbox(
+                                        "🔘 Activer",
+                                        value=est_active_ens,
+                                        key=f"chk_activer_ens_{idx_creneau_ens}",
+                                        help="Rend cette cellule modifiable. "
+                                             "Les autres cellules restent inactives."
+                                    )
+                                    if actif_coche_ens and not est_active_ens:
+                                        st.session_state[cle_actives_ens].add(idx_creneau_ens)
+                                        st.rerun()
+                                    elif not actif_coche_ens and est_active_ens:
+                                        st.session_state[cle_actives_ens].discard(idx_creneau_ens)
+                                        st.session_state[cle_suppr_ens].discard(idx_creneau_ens)
+                                        st.rerun()
+
+                                    if actif_coche_ens:
+                                        with st.container(border=True):
+                                            st.caption("✏️ Édition de cette cellule")
+
+                                            st.text_input(
+                                                "📘 Enseignement :",
+                                                value=str(r_ens["Enseignements"]),
+                                                key=f"edit_ens2_{idx_creneau_ens}"
+                                            )
+
+                                            options_enseignants_ens = liste_enseignants_edit_ens + [
+                                                "Non défini", "➕ Saisie libre"
+                                            ]
+                                            val_defaut_ens2 = str(r_ens["Enseignants"])
+                                            index_defaut_ens2 = (
+                                                options_enseignants_ens.index(val_defaut_ens2)
+                                                if val_defaut_ens2 in options_enseignants_ens
+                                                else len(options_enseignants_ens) - 1
+                                            )
+                                            st.selectbox(
+                                                "👤 Enseignant :",
+                                                options_enseignants_ens,
+                                                index=index_defaut_ens2,
+                                                key=f"edit_enseignant_sel_ens_{idx_creneau_ens}"
+                                            )
+                                            st.text_input(
+                                                "Enseignant (saisie libre) :",
+                                                value="",
+                                                key=f"edit_enseignant_libre_ens_{idx_creneau_ens}"
+                                            )
+
+                                            options_lieux_ens = liste_lieux_edit_ens + [
+                                                "Non défini", "➕ Saisie libre"
+                                            ]
+                                            val_defaut_lieu_ens = str(r_ens["Lieu"])
+                                            index_defaut_lieu_ens = (
+                                                options_lieux_ens.index(val_defaut_lieu_ens)
+                                                if val_defaut_lieu_ens in options_lieux_ens
+                                                else len(options_lieux_ens) - 1
+                                            )
+                                            st.selectbox(
+                                                "📍 Lieu :",
+                                                options_lieux_ens,
+                                                index=index_defaut_lieu_ens,
+                                                key=f"edit_lieu_sel_ens_{idx_creneau_ens}"
+                                            )
+                                            st.text_input(
+                                                "Lieu (saisie libre) :",
+                                                value="",
+                                                key=f"edit_lieu_libre_ens_{idx_creneau_ens}"
+                                            )
+
+                                            val_type_courant_ens = str(r_ens["Code"]).upper()
+                                            if "COURS" in val_type_courant_ens:
+                                                type_courant_ens = "COURS"
+                                            elif "TD" in val_type_courant_ens:
+                                                type_courant_ens = "TD"
+                                            elif "TP" in val_type_courant_ens:
+                                                type_courant_ens = "TP"
+                                            else:
+                                                type_courant_ens = "COURS"
+                                            st.radio(
+                                                "Type d'enseignement :",
+                                                ["COURS", "TD", "TP"],
+                                                index=["COURS", "TD", "TP"].index(type_courant_ens),
+                                                horizontal=True,
+                                                key=f"edit_type_ens_{idx_creneau_ens}"
+                                            )
+
+                                            st.selectbox(
+                                                "📅 Jour :",
+                                                jours_list,
+                                                index=jours_list.index(str(r_ens["Jours"]))
+                                                if str(r_ens["Jours"]) in jours_list else 0,
+                                                key=f"edit_jour_ens_{idx_creneau_ens}"
+                                            )
+                                            st.selectbox(
+                                                "⏰ Horaire :",
+                                                horaires_list,
+                                                index=horaires_list.index(str(r_ens["Horaire"]))
+                                                if str(r_ens["Horaire"]) in horaires_list else 0,
+                                                key=f"edit_horaire_ens_{idx_creneau_ens}"
+                                            )
+
+                                            marquer_suppr_ens = st.checkbox(
+                                                "🗑️ Supprimer cette cellule (effectif à la validation)",
+                                                value=est_marquee_suppr_ens,
+                                                key=f"chk_suppr_ens_{idx_creneau_ens}"
+                                            )
+                                            if marquer_suppr_ens:
+                                                st.session_state[cle_suppr_ens].add(idx_creneau_ens)
+                                            else:
+                                                st.session_state[cle_suppr_ens].discard(idx_creneau_ens)
+
+                st.markdown("---")
+                nb_actives_ens = len(st.session_state[cle_actives_ens])
+                if nb_actives_ens == 0:
+                    st.caption(
+                        "Aucune cellule active pour le moment. Cochez "
+                        "« 🔘 Activer » dans une ou plusieurs cellules "
+                        "ci-dessus pour commencer."
+                    )
+                else:
+                    st.markdown(
+                        f"**{nb_actives_ens} cellule(s) active(s)** — "
+                        f"{len(st.session_state[cle_suppr_ens])} "
+                        f"marquée(s) pour suppression."
+                    )
+                    if st.button(
+                        "✅ Valider et enregistrer toutes les modifications",
+                        type="primary",
+                        use_container_width=True,
+                        key="btn_valider_tout_edt_enseignant"
+                    ):
+                        erreurs_ens = []
+                        a_supprimer_ens = []
+                        modifications_appliquees_ens = 0
+
+                        for idx_actif_ens in list(st.session_state[cle_actives_ens]):
+                            if idx_actif_ens not in df.index:
+                                continue
+
+                            if idx_actif_ens in st.session_state[cle_suppr_ens]:
+                                a_supprimer_ens.append(idx_actif_ens)
+                                continue
+
+                            nouveau_enseignement_ens = st.session_state.get(
+                                f"edit_ens2_{idx_actif_ens}", ""
+                            )
+                            choix_enseignant_ens = st.session_state.get(
+                                f"edit_enseignant_sel_ens_{idx_actif_ens}", "Non défini"
+                            )
+                            enseignant_libre_ens = st.session_state.get(
+                                f"edit_enseignant_libre_ens_{idx_actif_ens}", ""
+                            )
+                            choix_lieu_ens = st.session_state.get(
+                                f"edit_lieu_sel_ens_{idx_actif_ens}", "Non défini"
+                            )
+                            lieu_libre_ens = st.session_state.get(
+                                f"edit_lieu_libre_ens_{idx_actif_ens}", ""
+                            )
+                            nouveau_type_ens = st.session_state.get(
+                                f"edit_type_ens_{idx_actif_ens}", "COURS"
+                            )
+                            nouveau_jour_ens = st.session_state.get(
+                                f"edit_jour_ens_{idx_actif_ens}",
+                                jours_list[0] if jours_list else ""
+                            )
+                            nouvelle_horaire_ens = st.session_state.get(
+                                f"edit_horaire_ens_{idx_actif_ens}",
+                                horaires_list[0] if horaires_list else ""
+                            )
+
+                            if choix_enseignant_ens == "➕ Saisie libre":
+                                enseignant_final_ens = str(enseignant_libre_ens).strip()
+                            else:
+                                enseignant_final_ens = str(choix_enseignant_ens).strip()
+                            if choix_lieu_ens == "➕ Saisie libre":
+                                lieu_final_ens = str(lieu_libre_ens).strip()
+                            else:
+                                lieu_final_ens = str(choix_lieu_ens).strip()
+
+                            if not str(nouveau_enseignement_ens).strip():
+                                erreurs_ens.append(
+                                    f"Ligne {idx_actif_ens} : l'enseignement ne peut pas être vide."
+                                )
+                                continue
+                            if not enseignant_final_ens:
+                                erreurs_ens.append(
+                                    f"Ligne {idx_actif_ens} : veuillez préciser l'enseignant."
+                                )
+                                continue
+
+                            df.loc[idx_actif_ens, "Enseignements"] = str(nouveau_enseignement_ens).strip()
+                            df.loc[idx_actif_ens, "Enseignants"] = enseignant_final_ens
+                            df.loc[idx_actif_ens, "Lieu"] = lieu_final_ens if lieu_final_ens else "Non défini"
+                            df.loc[idx_actif_ens, "Code"] = nouveau_type_ens
+                            df.loc[idx_actif_ens, "Jours"] = nouveau_jour_ens
+                            df.loc[idx_actif_ens, "Horaire"] = nouvelle_horaire_ens
+                            df.loc[idx_actif_ens, "h_norm"] = normalize(nouvelle_horaire_ens)
+                            df.loc[idx_actif_ens, "j_norm"] = normalize(nouveau_jour_ens)
+                            modifications_appliquees_ens += 1
+
+                        if erreurs_ens:
+                            for message_erreur_ens in erreurs_ens:
+                                st.error(f"⚠️ {message_erreur_ens}")
+                        else:
+                            try:
+                                if a_supprimer_ens:
+                                    df.drop(index=a_supprimer_ens, inplace=True)
+                                    df.reset_index(drop=True, inplace=True)
+                                _sauvegarder_fichier_edt_source_ens()
+
+                                message_final_ens = []
+                                if modifications_appliquees_ens:
+                                    message_final_ens.append(
+                                        f"{modifications_appliquees_ens} cellule(s) modifiée(s)"
+                                    )
+                                if a_supprimer_ens:
+                                    message_final_ens.append(
+                                        f"{len(a_supprimer_ens)} cellule(s) supprimée(s)"
+                                    )
+                                st.success(
+                                    "✅ " + " et ".join(message_final_ens)
+                                    + " — fichier enregistré."
+                                )
+
+                                for cle_widget_ens in list(st.session_state.keys()):
+                                    if str(cle_widget_ens).startswith((
+                                        "edit_ens2_", "edit_enseignant_sel_ens_",
+                                        "edit_enseignant_libre_ens_", "edit_lieu_sel_ens_",
+                                        "edit_lieu_libre_ens_", "edit_type_ens_",
+                                        "edit_jour_ens_", "edit_horaire_ens_",
+                                        "chk_activer_ens_", "chk_suppr_ens_"
+                                    )):
+                                        st.session_state.pop(cle_widget_ens, None)
+                                st.session_state[cle_actives_ens] = set()
+                                st.session_state[cle_suppr_ens] = set()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erreur de sauvegarde : {e}")
+
         elif mode_view == "Promotion":
             import io
             from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
