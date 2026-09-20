@@ -21766,9 +21766,36 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                         st.markdown("<br>", unsafe_allow_html=True)
 
                         # ═══════════════════════════════════════════════════════
-                        # GRILLE EDT (Jours × Horaires)
+                        # 🔎 FILTRE PAR TYPE D'ENSEIGNEMENT
                         # ═══════════════════════════════════════════════════════
                         st.markdown("### 📋 Emploi du Temps Individuel")
+
+                        type_affiche_etu = st.selectbox(
+                            "📚 Type d'enseignement à afficher :",
+                            [
+                                "Tous les enseignements",
+                                "📘 Cours uniquement",
+                                "📗 TD uniquement",
+                                "🔴 TP uniquement",
+                            ],
+                            key="type_affiche_etu_indiv"
+                        )
+
+                        if type_affiche_etu == "📘 Cours uniquement":
+                            df_edt_final_type = df_edt_final[
+                                df_edt_final["Code"].astype(str).str.contains("COURS", case=False, na=False)
+                            ].copy()
+                        elif type_affiche_etu == "📗 TD uniquement":
+                            df_edt_final_type = df_edt_final[
+                                df_edt_final["Code"].astype(str).str.contains("TD", case=False, na=False)
+                                & ~df_edt_final["Code"].astype(str).str.contains("COURS", case=False, na=False)
+                            ].copy()
+                        elif type_affiche_etu == "🔴 TP uniquement":
+                            df_edt_final_type = df_edt_final[
+                                ~df_edt_final["Code"].astype(str).str.contains("COURS|TD", case=False, na=False)
+                            ].copy()
+                        else:
+                            df_edt_final_type = df_edt_final.copy()
 
                         def _norm_edt(x):
                             """Normalise les horaires et jours - PRÉSERVER LE TIRET!"""
@@ -21803,8 +21830,8 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                             "mercredi": "Mercredi", "jeudi": "Jeudi"
                         }
 
-                        df_edt_final["h_norm"] = df_edt_final["Horaire"].apply(_norm_edt)
-                        df_edt_final["j_norm"] = df_edt_final["Jours"].apply(_norm_edt)
+                        df_edt_final_type["h_norm"] = df_edt_final_type["Horaire"].apply(_norm_edt)
+                        df_edt_final_type["j_norm"] = df_edt_final_type["Jours"].apply(_norm_edt)
 
                         def _fmt_cell_indiv(rows):
                             items = []
@@ -21835,24 +21862,49 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                                 )
                             return "".join(items)
 
-                        grouped_indiv = df_edt_final.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv, include_groups=False)
-                        grid_indiv = grouped_indiv.unstack("j_norm") if not grouped_indiv.empty else pd.DataFrame()
+                        def _fmt_cell_indiv_texte(rows):
+                            items = []
+                            for _, r in rows.iterrows():
+                                code_up = str(r["Code"]).upper()
+                                nat = "📘" if "COURS" in code_up else ("📗" if "TD" in code_up else "🔴")
+                                items.append(
+                                    f"{nat} {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}"
+                                )
+                            return "\n\n".join(items)
 
-                        jours_present_indiv = [j for j in jours_ref_indiv if j in grid_indiv.columns]
-                        h_present_indiv = [h for h in horaires_ref_indiv if h in grid_indiv.index]
+                        if not df_edt_final_type.empty:
+                            grouped_indiv = df_edt_final_type.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv, include_groups=False)
+                            grouped_indiv_texte = df_edt_final_type.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv_texte, include_groups=False)
+                        else:
+                            grouped_indiv = pd.Series(dtype=object)
+                            grouped_indiv_texte = pd.Series(dtype=object)
+
+                        # ═══════════════════════════════════════════════════════
+                        # GRILLE — JOURS EN VERTICAL (lignes), HORAIRES EN
+                        # HORIZONTAL (colonnes), comme demandé.
+                        # ═══════════════════════════════════════════════════════
+                        grid_indiv = grouped_indiv.unstack("h_norm") if not grouped_indiv.empty else pd.DataFrame()
+                        grid_indiv_texte = grouped_indiv_texte.unstack("h_norm") if not grouped_indiv_texte.empty else pd.DataFrame()
+
+                        jours_present_indiv = [j for j in jours_ref_indiv if j in grid_indiv.index]
+                        h_present_indiv = [h for h in horaires_ref_indiv if h in grid_indiv.columns]
 
                         if jours_present_indiv and h_present_indiv:
-                            grid_indiv = grid_indiv.reindex(index=h_present_indiv, columns=jours_present_indiv).fillna("")
-                            grid_indiv.index = [map_h_labels_indiv.get(i, i) for i in grid_indiv.index]
-                            grid_indiv.columns = [map_j_labels_indiv.get(c, c) for c in grid_indiv.columns]
+                            grid_indiv = grid_indiv.reindex(index=jours_present_indiv, columns=h_present_indiv).fillna("")
+                            grid_indiv.index = [map_j_labels_indiv.get(i, i) for i in grid_indiv.index]
+                            grid_indiv.columns = [map_h_labels_indiv.get(c, c) for c in grid_indiv.columns]
+
+                            grid_indiv_texte = grid_indiv_texte.reindex(index=jours_present_indiv, columns=h_present_indiv).fillna("")
+                            grid_indiv_texte.index = [map_j_labels_indiv.get(i, i) for i in grid_indiv_texte.index]
+                            grid_indiv_texte.columns = [map_h_labels_indiv.get(c, c) for c in grid_indiv_texte.columns]
 
                             st.write(grid_indiv.to_html(escape=False), unsafe_allow_html=True)
 
-                            # ── Liste des enseignements ──
+                            # ── Liste des enseignements (filtrée selon le type choisi) ──
                             st.markdown("<br>", unsafe_allow_html=True)
                             st.markdown("#### 📚 Liste des Enseignements")
 
-                            enseignements_uniques = df_edt_final.drop_duplicates(subset=["Enseignements", "Code"]).copy()
+                            enseignements_uniques = df_edt_final_type.drop_duplicates(subset=["Enseignements", "Code"]).copy()
                             for _, row_m in enseignements_uniques.iterrows():
                                 code_up = str(row_m["Code"]).upper()
                                 if "COURS" in code_up:
@@ -21871,9 +21923,90 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                                     </div>
                                 """, unsafe_allow_html=True)
 
-                            # ── Export HTML ──
+                            # ═══════════════════════════════════════════════════
+                            # 📥 TÉLÉCHARGEMENTS — EXCEL, HTML, PDF
+                            # ═══════════════════════════════════════════════════
                             st.markdown("<br>", unsafe_allow_html=True)
+                            st.markdown("#### 📥 Télécharger mon EDT individuel")
+
                             groupe_suffix = f"_{groupe_etu}" if groupe_etu else ""
+                            sousgroupe_suffix = f"_{sous_groupe_etu}" if sous_groupe_etu else ""
+                            type_suffix = (
+                                "_Cours" if type_affiche_etu == "📘 Cours uniquement" else
+                                "_TD" if type_affiche_etu == "📗 TD uniquement" else
+                                "_TP" if type_affiche_etu == "🔴 TP uniquement" else ""
+                            )
+                            nom_base_fichier_etu = (
+                                f"EDT_{etudiant_sel.replace(' ', '_')}_{promo_sel_indiv}"
+                                f"{groupe_suffix}{sousgroupe_suffix}{type_suffix}"
+                            )
+                            sous_titre_etu = f"Promotion {promo_sel_indiv}"
+                            if groupe_etu:
+                                sous_titre_etu += f" | Groupe {groupe_etu}"
+                            if sous_groupe_etu:
+                                sous_titre_etu += f" | Sous-groupe {sous_groupe_etu}"
+                            if type_affiche_etu != "Tous les enseignements":
+                                sous_titre_etu += f" | {type_affiche_etu}"
+
+                            dl_etu1, dl_etu2, dl_etu3 = st.columns(3)
+
+                            # ---------------- 1) EXCEL ----------------
+                            buf_xl_etu = io.BytesIO()
+                            with pd.ExcelWriter(buf_xl_etu, engine='xlsxwriter') as writer:
+                                grid_indiv_texte.to_excel(writer, sheet_name='Mon_EDT', startrow=2)
+                                wb_etu = writer.book
+                                ws_etu = writer.sheets['Mon_EDT']
+
+                                fmt_titre_etu = wb_etu.add_format({
+                                    'bold': True, 'font_size': 13, 'font_color': 'white',
+                                    'bg_color': '#1E3A8A', 'align': 'center', 'valign': 'vcenter'
+                                })
+                                ws_etu.merge_range(
+                                    0, 0, 0, len(grid_indiv_texte.columns),
+                                    f"📅 EDT Individuel — {etudiant_sel}", fmt_titre_etu
+                                )
+                                ws_etu.merge_range(
+                                    1, 0, 1, len(grid_indiv_texte.columns),
+                                    f"{sous_titre_etu} | Généré le {datetime.now().strftime('%d/%m/%Y')}",
+                                    wb_etu.add_format({'italic': True, 'align': 'center', 'font_size': 9, 'font_color': '#64748b'})
+                                )
+
+                                fmt_hdr_etu = wb_etu.add_format({
+                                    'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
+                                    'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True
+                                })
+                                fmt_jour_etu = wb_etu.add_format({
+                                    'bold': True, 'bg_color': '#f1f5f9', 'border': 1,
+                                    'align': 'center', 'valign': 'vcenter'
+                                })
+                                fmt_cell_etu = wb_etu.add_format({
+                                    'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10
+                                })
+
+                                ws_etu.write(2, 0, "JOUR", fmt_hdr_etu)
+                                for col_num, h in enumerate(grid_indiv_texte.columns, start=1):
+                                    ws_etu.write(2, col_num, h, fmt_hdr_etu)
+                                ws_etu.set_column(0, 0, 14)
+                                ws_etu.set_column(1, len(grid_indiv_texte.columns), 26)
+
+                                for row_num, (jour, ligne) in enumerate(grid_indiv_texte.iterrows(), start=3):
+                                    ws_etu.write(row_num, 0, jour, fmt_jour_etu)
+                                    max_lignes_etu = 1
+                                    for col_num, val in enumerate(ligne, start=1):
+                                        ws_etu.write(row_num, col_num, val, fmt_cell_etu)
+                                        max_lignes_etu = max(max_lignes_etu, str(val).count('\n') + 1)
+                                    ws_etu.set_row(row_num, max(40, max_lignes_etu * 14))
+
+                                ws_etu.freeze_panes(3, 1)
+
+                            dl_etu1.download_button(
+                                "📊 Excel", buf_xl_etu.getvalue(),
+                                f"{nom_base_fichier_etu}.xlsx",
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True, key="dl_edt_indiv_etu_xlsx"
+                            )
+
+                            # ---------------- 2) HTML ----------------
                             html_edt_indiv = f"""<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -21886,9 +22019,9 @@ body{{font-family:'Inter','Segoe UI',Arial,sans-serif;background:linear-gradient
 .header{{background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:30px;text-align:center;}}
 .header h1{{margin:0;font-size:22px;}}.header p{{margin:8px 0 0 0;opacity:0.9;font-size:14px;}}
 .badge{{display:inline-block;background:#D4AF37;color:#1E3A8A;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px;}}
-.content{{padding:30px;}}table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+.content{{padding:30px;overflow-x:auto;}}table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
 th{{background-color:#0f172a;color:white;padding:14px;text-align:center;font-size:13px;border:1px solid #e2e8f0;position:sticky;top:0;}}
-td{{padding:14px;border:1px solid #e2e8f0;vertical-align:top;font-size:12px;}}
+td{{padding:14px;border:1px solid #e2e8f0;vertical-align:top;font-size:12px;word-wrap:break-word;}}
 tr:nth-child(even){{background-color:#f8fafc;}}
 .footer{{text-align:center;padding:20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;}}
 @media print{{body{{background:white;padding:0;}}.container{{box-shadow:none;border-radius:0;}}}}
@@ -21897,7 +22030,7 @@ tr:nth-child(even){{background-color:#f8fafc;}}
 <body>
 <div class='container'>
 <div class='header'><h1>📅 EDT Individuel — {etudiant_sel}</h1>
-<p>Promotion {promo_sel_indiv}{f' | Groupe {groupe_etu}' if groupe_etu else ''}{f' | Sous-groupe {sous_groupe_etu}' if sous_groupe_etu else ''}</p>
+<p>{sous_titre_etu}</p>
 <span class='badge'>Semestre 01 — 2026-2027</span></div>
 <div class='content'>
 <p style='color:#64748b;font-size:13px;'>Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
@@ -21906,14 +22039,95 @@ tr:nth-child(even){{background-color:#f8fafc;}}
 <div class='footer'>département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA</div>
 </div></body></html>"""
 
-                            st.download_button(
-                                label="🌐 Télécharger l'EDT individuel (HTML)",
+                            dl_etu2.download_button(
+                                label="🌐 HTML",
                                 data=html_edt_indiv,
-                                file_name=f"EDT_{etudiant_sel.replace(' ', '_')}_{promo_sel_indiv}{groupe_suffix}.html",
+                                file_name=f"{nom_base_fichier_etu}.html",
                                 mime="text/html",
                                 use_container_width=True,
                                 key="dl_edt_indiv_etu_repertoire"
                             )
+
+                            # ---------------- 3) PDF ----------------
+                            try:
+                                from reportlab.lib import colors as rl_colors_etu
+                                from reportlab.lib.pagesizes import landscape, A4
+                                from reportlab.platypus import (
+                                    SimpleDocTemplate, Table, TableStyle, Paragraph,
+                                    Spacer, KeepInFrame
+                                )
+                                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                                from reportlab.lib.units import mm
+
+                                buf_pdf_etu = io.BytesIO()
+                                doc_etu = SimpleDocTemplate(
+                                    buf_pdf_etu, pagesize=landscape(A4),
+                                    topMargin=15 * mm, bottomMargin=12 * mm,
+                                    leftMargin=10 * mm, rightMargin=10 * mm
+                                )
+                                styles_etu = getSampleStyleSheet()
+                                titre_style_etu = ParagraphStyle(
+                                    'TitreEtu', parent=styles_etu['Heading1'], fontSize=14,
+                                    textColor=rl_colors_etu.HexColor('#1E3A8A'), alignment=1
+                                )
+                                soustitre_style_etu = ParagraphStyle(
+                                    'SousTitreEtu', parent=styles_etu['Normal'], fontSize=9,
+                                    textColor=rl_colors_etu.HexColor('#64748b'), alignment=1
+                                )
+                                cell_style_etu = ParagraphStyle(
+                                    'CellEtu', parent=styles_etu['Normal'], fontSize=7, leading=9
+                                )
+
+                                elements_etu = [
+                                    Paragraph(f"📅 EDT Individuel — {etudiant_sel}", titre_style_etu),
+                                    Paragraph(
+                                        f"{sous_titre_etu} | Généré le {datetime.now().strftime('%d/%m/%Y')}",
+                                        soustitre_style_etu
+                                    ),
+                                    Spacer(1, 8),
+                                ]
+
+                                page_width_etu = landscape(A4)[0] - 20 * mm
+                                col_j_etu = 26 * mm
+                                col_h_etu = (page_width_etu - col_j_etu) / len(grid_indiv_texte.columns)
+                                col_widths_etu = [col_j_etu] + [col_h_etu] * len(grid_indiv_texte.columns)
+
+                                def _cel_pdf_etu(texte, largeur):
+                                    return KeepInFrame(
+                                        max(largeur - 10, 10), 380,
+                                        [Paragraph(str(texte).replace(chr(10), '<br/>'), cell_style_etu)],
+                                        mode='shrink'
+                                    )
+
+                                data_pdf_etu = [
+                                    [Paragraph("<b>JOUR</b>", cell_style_etu)] +
+                                    [Paragraph(f"<b>{h}</b>", cell_style_etu) for h in grid_indiv_texte.columns]
+                                ]
+                                for jour, ligne in grid_indiv_texte.iterrows():
+                                    ligne_pdf_etu = [_cel_pdf_etu(jour, col_j_etu)]
+                                    for val in ligne:
+                                        ligne_pdf_etu.append(_cel_pdf_etu(val, col_h_etu) if val else "")
+                                    data_pdf_etu.append(ligne_pdf_etu)
+
+                                table_etu = Table(data_pdf_etu, colWidths=col_widths_etu, repeatRows=1)
+                                table_etu.setStyle(TableStyle([
+                                    ('BACKGROUND', (0, 0), (-1, 0), rl_colors_etu.HexColor('#1E3A8A')),
+                                    ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors_etu.white),
+                                    ('BACKGROUND', (0, 1), (0, -1), rl_colors_etu.HexColor('#f1f5f9')),
+                                    ('GRID', (0, 0), (-1, -1), 0.5, rl_colors_etu.HexColor('#cbd5e1')),
+                                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                                    ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+                                ]))
+                                elements_etu.append(table_etu)
+                                doc_etu.build(elements_etu)
+
+                                dl_etu3.download_button(
+                                    "📄 PDF", buf_pdf_etu.getvalue(),
+                                    f"{nom_base_fichier_etu}.pdf",
+                                    "application/pdf", use_container_width=True, key="dl_edt_indiv_etu_pdf"
+                                )
+                            except Exception as e:
+                                dl_etu3.warning(f"PDF indisponible : {e}")
                         else:
                             st.warning("⚠️ Impossible de construire la grille (données horaires incomplètes).")
                             with st.expander("🔍 DEBUG - Informations détaillées"):
