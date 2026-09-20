@@ -9683,57 +9683,30 @@ th{{background:#1E3A8A;color:white;}}
                 "TD et TP du groupe sélectionné sont affichés."
             )
 
-            def _normaliser_code_groupe_edt(valeur):
-                """Normalise G1, g 1, SG11, sg 11, etc."""
-                if valeur is None:
-                    return ""
-                try:
-                    if pd.isna(valeur):
-                        return ""
-                except Exception:
-                    pass
-                texte = str(valeur).strip().upper().replace("\u00a0", " ")
-                return re.sub(r"\s+", "", texte)
-
             def _extraire_groupes_depuis_enseignement_admin(val):
-                """Extrait tous les Gx et SGxx d'une ligne Enseignements.
+                """Extrait TOUS les codes Gx et SGxx présents dans Enseignements.
 
-                Exemples :
-                    TP-Matiere-SG11/SG12 -> ['SG11', 'SG12']
-                    Cours-Matiere-Section A (G1, G2) -> ['G1', 'G2']
+                Important : un TP peut être écrit sous la forme :
+                    TP-Structure de la matière-SG11/SG12
+                    TP-Structure de la matière-SG11 / SG12
+                    TP-Structure de la matière-SG11,SG12
+
+                Il faut donc rechercher tous les sous-groupes et non pas
+                uniquement le dernier code situé après le dernier tiret.
                 """
-                if val is None:
+                if pd.isna(val):
                     return []
-                try:
-                    if pd.isna(val):
-                        return []
-                except Exception:
-                    pass
                 texte = str(val).strip().upper().replace("\u00a0", " ")
-                codes = re.findall(
-                    r"(?<![A-Z0-9])(?:SG\s*\d+|G\s*\d+)(?![A-Z0-9])",
-                    texte,
-                    flags=re.IGNORECASE
-                )
+                codes = re.findall(r"(?<![A-Z0-9])(?:SG\s*\d+|G\s*\d+)(?![A-Z0-9])", texte, flags=re.IGNORECASE)
                 resultat = []
                 for code in codes:
-                    code = _normaliser_code_groupe_edt(code)
-                    if code and code not in resultat:
+                    code = re.sub(r"\s+", "", code.upper())
+                    if code not in resultat:
                         resultat.append(code)
                 return resultat
 
-            def _groupe_parent_depuis_code_edt(code):
-                """G1 -> G1, SG11 -> G1, SG82 -> G8."""
-                code = _normaliser_code_groupe_edt(code)
-                m_g = re.fullmatch(r"G(\d+)", code)
-                if m_g:
-                    return f"G{int(m_g.group(1))}"
-                m_sg = re.fullmatch(r"SG(\d+)", code)
-                if m_sg and len(m_sg.group(1)) >= 2:
-                    return f"G{int(m_sg.group(1)[:-1])}"
-                return ""
-
             def _extraire_groupe_depuis_enseignement_admin(val):
+                """Compatibilité : retourne le premier code trouvé."""
                 codes = _extraire_groupes_depuis_enseignement_admin(val)
                 return codes[0] if codes else None
 
@@ -9741,8 +9714,8 @@ th{{background:#1E3A8A;color:white;}}
                 code = str(val_code).upper().strip()
                 enseignement = str(val_enseignement).upper().strip()
                 return (
-                    "TD" in code or "TP" in code
-                    or bool(re.match(r"^(TD|TP)\s*[- ]", enseignement, flags=re.IGNORECASE))
+                    ("TD" in code) or ("TP" in code)
+                    or bool(re.match(r"^(TD|TP)\s*-", enseignement, flags=re.IGNORECASE))
                 )
 
             liste_promotions_groupe = sorted([
@@ -9759,178 +9732,222 @@ th{{background:#1E3A8A;color:white;}}
                     key="promotion_groupe_admin"
                 )
 
+                # IMPORTANT : les groupes ne sont PAS déduits du Lieu.
+                # Ils sont recherchés dans la colonne Enseignements du fichier EDT source,
+                # puis associés à la promotion de la même ligne.
                 df_promo_groupe = df[
                     df["Promotion"].astype(str).str.strip().str.casefold()
                     == str(promotion_groupe_admin).strip().casefold()
                 ].copy()
-
-                df_promo_groupe["Groupes_Enseignement"] = df_promo_groupe[
-                    "Enseignements"
-                ].apply(_extraire_groupes_depuis_enseignement_admin)
-
-                df_promo_groupe["Groupe_Enseignement"] = df_promo_groupe[
-                    "Groupes_Enseignement"
-                ].apply(lambda x: x[0] if isinstance(x, list) and x else None)
+                # Conserver TOUS les codes présents dans Enseignements.
+                # Exemple : TP-Structure de la matière-SG11/SG12
+                #           -> [SG11, SG12]
+                df_promo_groupe["Groupes_Enseignement"] = df_promo_groupe["Enseignements"].apply(
+                    _extraire_groupes_depuis_enseignement_admin
+                )
+                # Colonne scalaire conservée pour compatibilité avec le reste
+                # de la logique (premier code trouvé).
+                df_promo_groupe["Groupe_Enseignement"] = df_promo_groupe["Groupes_Enseignement"].apply(
+                    lambda x: x[0] if isinstance(x, list) and x else None
+                )
 
                 masque_td_tp_source = df_promo_groupe.apply(
-                    lambda r: _est_td_tp_admin(
-                        r.get("Code", ""),
-                        r.get("Enseignements", "")
-                    ),
+                    lambda r: _est_td_tp_admin(r.get("Code", ""), r.get("Enseignements", "")),
                     axis=1
                 )
                 df_td_tp_groupe = df_promo_groupe[masque_td_tp_source].copy()
 
+                # Les groupes affichés dans la liste sont toujours les groupes
+                # pédagogiques G1, G2, G3, ... .
+                # Si l'EDT contient directement des TP-SG11 / TP-SG12, ils
+                # servent à déterminer automatiquement le groupe parent G1,
+                # mais les sous-groupes ne doivent PAS apparaître comme choix
+                # principaux ici.
                 groupes_parents_admin = set()
                 sous_groupes_disponibles_admin = set()
 
-                for liste_codes in df_td_tp_groupe[
-                    "Groupes_Enseignement"
-                ].tolist():
+                for liste_codes in df_td_tp_groupe["Groupes_Enseignement"].tolist():
                     if not isinstance(liste_codes, list):
                         continue
                     for code_groupe in liste_codes:
-                        code_groupe = _normaliser_code_groupe_edt(code_groupe)
-                        if re.fullmatch(r"G\d+", code_groupe):
-                            groupes_parents_admin.add(code_groupe)
-                        elif re.fullmatch(r"SG\d+", code_groupe):
-                            parent = _groupe_parent_depuis_code_edt(code_groupe)
-                            if parent:
-                                groupes_parents_admin.add(parent)
-                            sous_groupes_disponibles_admin.add(code_groupe)
+                        texte_groupe = str(code_groupe).strip().upper()
+                        m_g = re.fullmatch(r"G(\d+)", texte_groupe)
+                        m_sg = re.fullmatch(r"SG(\d+)([12])", texte_groupe)
+                        if m_g:
+                            groupes_parents_admin.add(f"G{int(m_g.group(1))}")
+                        elif m_sg:
+                            numero_parent = int(m_sg.group(1))
+                            rang_sg = int(m_sg.group(2))
+                            groupes_parents_admin.add(f"G{numero_parent}")
+                            sous_groupes_disponibles_admin.add(f"SG{numero_parent}{rang_sg}")
 
                 groupes_disponibles_admin = sorted(
                     groupes_parents_admin,
-                    key=lambda g: int(re.search(r"\d+", g).group())
+                    key=lambda g: (
+                        int(re.search(r"\d+", str(g)).group())
+                        if re.search(r"\d+", str(g)) else 9999,
+                        str(g)
+                    )
                 )
 
                 if not groupes_disponibles_admin:
                     st.warning(
-                        f"⚠️ Aucun groupe trouvé dans Enseignements pour "
-                        f"{promotion_groupe_admin}."
+                        f"⚠️ Aucun groupe n'a été trouvé dans la colonne **Enseignements** "
+                        f"pour la promotion **{promotion_groupe_admin}**. "
+                        f"Format attendu pour un TD/TP : **TD-Matière-G4**, **TD-Matière** "
+                        f"ou **TP-Matière-SG11**."
                     )
                     df_final_groupe = df_promo_groupe[
-                        df_promo_groupe["Code"].astype(str).str.contains(
-                            "COURS|TD|TP", case=False, na=False
-                        )
+                        df_promo_groupe["Code"].astype(str).str.contains("COURS|TD", case=False, na=False)
                     ].copy()
                     groupe_choisi_admin = None
-                    sous_groupe_tp_choisi_admin = None
                 else:
                     st.info(
-                        f"👥 Groupes trouvés : "
+                        f"👥 **{len(groupes_disponibles_admin)} groupe(s)** trouvé(s) dans **Enseignements** "
+                        f"pour **{promotion_groupe_admin}** : "
                         + ", ".join(groupes_disponibles_admin)
                     )
-
                     groupe_choisi_admin = st.selectbox(
                         "🔹 Choisir le groupe :",
                         groupes_disponibles_admin,
                         key="groupe_choisi_admin"
                     )
 
-                    sous_groupes_tries_admin = sorted(
-                        [
-                            sg for sg in sous_groupes_disponibles_admin
-                            if _groupe_parent_depuis_code_edt(sg)
-                            == groupe_choisi_admin
-                        ],
-                        key=lambda sg: int(re.search(r"\d+", sg).group())
+                    # --------------------------------------------------------
+                    # LOGIQUE D'AFFICHAGE PAR GROUPE / SOUS-GROUPE
+                    # --------------------------------------------------------
+                    # Cours : toujours communs à toute la promotion.
+                    #
+                    # TD :
+                    #   - TD sans groupe dans Enseignements (ex. TD-Analyse 3)
+                    #     = TD de toute la promotion -> afficher pour TOUS les
+                    #       groupes/sous-groupes sélectionnés.
+                    #   - TD avec Gx (ex. TD-Analyse 3-G1)
+                    #     = afficher uniquement au groupe concerné.
+                    #     Pour SG11/SG12, le groupe parent est G1.
+                    #
+                    # TP :
+                    #   - reste strictement lié au groupe/sous-groupe indiqué
+                    #     dans Enseignements (ex. TP-Matière-SG11).
+                    #   - un TP-G1 n'est donc pas automatiquement affiché à
+                    #     SG11/SG12 : la source doit explicitement le prévoir.
+                    # --------------------------------------------------------
+                    masque_cours_groupe = df_promo_groupe["Code"].astype(str).str.contains(
+                        "COURS", case=False, na=False
                     )
 
+                    codes_groupe_admin = df_promo_groupe["Groupe_Enseignement"].astype("string")
+                    codes_enseignement_admin = df_promo_groupe["Enseignements"].astype("string")
+                    codes_upper_admin = codes_enseignement_admin.fillna("").str.upper().str.strip()
+
+                    masque_td_admin = df_promo_groupe["Code"].astype(str).str.contains(
+                        "TD", case=False, na=False
+                    )
+                    masque_tp_admin = df_promo_groupe["Code"].astype(str).str.contains(
+                        "TP", case=False, na=False
+                    )
+
+                    # TD sans suffixe Gx/SGxx = TD commun à toute la promotion.
+                    masque_td_sans_groupe_admin = (
+                        masque_td_admin
+                        & codes_groupe_admin.isna()
+                    )
+
+                    # Groupe parent du choix :
+                    # G1 -> G1 ; SG11/SG12 -> G1.
+                    groupe_parent_choisi_admin = None
+                    m_parent = re.search(r"G(\d+)", str(groupe_choisi_admin).upper())
+                    if m_parent:
+                        groupe_parent_choisi_admin = f"G{int(m_parent.group(1))}"
+
+                    # TD associé à un groupe Gx : il est affiché pour Gx et
+                    # également pour ses sous-groupes SGx1/SGx2.
+                    masque_td_associe_admin = pd.Series(False, index=df_promo_groupe.index)
+                    if groupe_parent_choisi_admin:
+                        masque_td_associe_admin = (
+                            masque_td_admin
+                            & (codes_groupe_admin == groupe_parent_choisi_admin)
+                        )
+
+                    # --------------------------------------------------------
+                    # SOUS-GROUPE TP : sélection explicite et détection dans
+                    # toute la chaîne Enseignements.
+                    #
+                    # Exemple source :
+                    #   TP-Structure de la matière-SG11/SG12
+                    #
+                    # Le TP doit être visible lorsque l'utilisateur sélectionne
+                    # SG11 OU SG12. On ne doit donc jamais comparer la chaîne
+                    # complète à un seul code SG.
+                    # --------------------------------------------------------
+                    sous_groupes_tries_admin = sorted(
+                        sous_groupes_disponibles_admin,
+                        key=lambda sg: (
+                            int(re.search(r"\d+", sg).group()) if re.search(r"\d+", sg) else 9999,
+                            sg
+                        )
+                    )
+
+                    # La liste des sous-groupes est globale à la promotion.
+                    # Elle contient par exemple SG11, SG12, SG21, SG22, ...
+                    # indépendamment du fait que l'enseignement TP soit écrit
+                    # SG11/SG12 sur une seule ligne.
                     if sous_groupes_tries_admin:
                         sous_groupe_tp_choisi_admin = st.selectbox(
                             "🔸 Choisir le sous-groupe TP :",
-                            ["Tous les sous-groupes"] + sous_groupes_tries_admin,
+                            sous_groupes_tries_admin,
                             key="sous_groupe_tp_choisi_admin"
                         )
                     else:
-                        sous_groupe_tp_choisi_admin = "Tous les sous-groupes"
+                        sous_groupe_tp_choisi_admin = None
 
-                    codes_groupe_admin = df_promo_groupe[
-                        "Groupes_Enseignement"
-                    ]
+                    masque_tp_selection_admin = pd.Series(
+                        False, index=df_promo_groupe.index
+                    )
 
-                    masque_final = []
-
-                    for _, ligne in df_promo_groupe.iterrows():
-                        enseignement = str(
-                            ligne.get("Enseignements", "")
+                    if sous_groupe_tp_choisi_admin:
+                        # Une ligne TP peut contenir plusieurs sous-groupes :
+                        # SG11/SG12. La ligne est retenue si le sous-groupe
+                        # choisi apparaît parmi les codes extraits.
+                        masque_tp_selection_admin = (
+                            masque_tp_admin
+                            & df_promo_groupe["Groupes_Enseignement"].apply(
+                                lambda codes: sous_groupe_tp_choisi_admin in codes
+                                if isinstance(codes, list) else False
+                            )
                         )
-                        code = str(ligne.get("Code", ""))
-                        codes_ligne = _extraire_groupes_depuis_enseignement_admin(
-                            enseignement
+                    elif groupe_parent_choisi_admin:
+                        # Sécurité pour les EDT où aucun TP-SG n'est présent
+                        # mais où des TP-Gx existent. Dans ce cas, on ne force
+                        # pas artificiellement un TP dans l'affichage.
+                        masque_tp_selection_admin = pd.Series(
+                            False, index=df_promo_groupe.index
                         )
 
-                        # Cours sans groupe : commun à toute la promotion.
-                        if not codes_ligne:
-                            masque_final.append(True)
-                            continue
+                    masque_mon_groupe = (
+                        masque_td_sans_groupe_admin
+                        | masque_td_associe_admin
+                        | masque_tp_selection_admin
+                    )
 
-                        # Cours avec Section A (G1, G2, ...), ou cours
-                        # contenant directement G1 : le groupe parent suffit.
-                        ligne_visible = False
-
-                        for code_ligne in codes_ligne:
-                            code_ligne = _normaliser_code_groupe_edt(code_ligne)
-
-                            if code_ligne == groupe_choisi_admin:
-                                ligne_visible = True
-                                break
-
-                            if _groupe_parent_depuis_code_edt(code_ligne) == groupe_choisi_admin:
-                                if code_ligne.startswith("SG"):
-                                    if (
-                                        sous_groupe_tp_choisi_admin
-                                        == "Tous les sous-groupes"
-                                        or code_ligne
-                                        == sous_groupe_tp_choisi_admin
-                                    ):
-                                        ligne_visible = True
-                                        break
-                                else:
-                                    ligne_visible = True
-                                    break
-
-                        masque_final.append(ligne_visible)
-
-                    df_final_groupe = df_promo_groupe.loc[
-                        df_promo_groupe.index[masque_final]
+                    df_final_groupe = df_promo_groupe[
+                        masque_cours_groupe | masque_mon_groupe
                     ].copy()
 
                 if not df_final_groupe.empty:
-                    nb_cours_grp = len(
-                        df_final_groupe[
-                            df_final_groupe["Code"].astype(str).str.contains(
-                                "COURS", case=False, na=False
-                            )
-                        ]
-                    )
-                    nb_td_grp = len(
-                        df_final_groupe[
-                            df_final_groupe["Code"].astype(str).str.contains(
-                                "TD", case=False, na=False
-                            )
-                        ]
-                    )
-                    nb_tp_grp = len(
-                        df_final_groupe[
-                            df_final_groupe["Code"].astype(str).str.contains(
-                                "TP", case=False, na=False
-                            )
-                        ]
-                    )
+                    nb_cours_grp = len(df_final_groupe[df_final_groupe["Code"].astype(str).str.contains("COURS", case=False, na=False)])
+                    nb_td_grp = len(df_final_groupe[df_final_groupe["Code"].astype(str).str.contains("TD", case=False, na=False)])
+                    nb_tp_grp = len(df_final_groupe[
+                        ~df_final_groupe["Code"].astype(str).str.contains("COURS|TD", case=False, na=False)
+                    ])
 
                     mg1, mg2, mg3 = st.columns(3)
                     mg1.metric("📘 Cours", nb_cours_grp)
                     mg2.metric("📗 TD", nb_td_grp)
                     mg3.metric("🔴 TP", nb_tp_grp)
 
-                    df_final_groupe["h_norm"] = df_final_groupe[
-                        "Horaire"
-                    ].apply(normalize)
-                    df_final_groupe["j_norm"] = df_final_groupe[
-                        "Jours"
-                    ].apply(normalize)
+                    df_final_groupe['h_norm'] = df_final_groupe['Horaire'].apply(normalize)
+                    df_final_groupe['j_norm'] = df_final_groupe['Jours'].apply(normalize)
 
                     def _type_couleur_grp(code):
                         c = str(code).upper()
@@ -9943,115 +9960,60 @@ th{{background:#1E3A8A;color:white;}}
                         return "⚪", "#374151"
 
                     seances_par_cellule_grp = {}
-
                     for _, r_g in df_final_groupe.iterrows():
-                        j_aff_g = map_j.get(r_g["j_norm"])
-                        h_aff_g = map_h.get(r_g["h_norm"])
-
+                        j_aff_g = map_j.get(r_g['j_norm'])
+                        h_aff_g = map_h.get(r_g['h_norm'])
                         if j_aff_g is None or h_aff_g is None:
                             continue
+                        seances_par_cellule_grp.setdefault((h_aff_g, j_aff_g), []).append(r_g)
 
-                        seances_par_cellule_grp.setdefault(
-                            (h_aff_g, j_aff_g),
-                            []
-                        ).append(r_g)
-
-                    thead_grp = (
-                        "<tr>"
-                        "<th style='background:#1E3A8A;color:white;"
-                        "padding:8px;width:100px;'>Horaire</th>"
-                    )
-
+                    # Grille STANDARD de l'application : HORAIRE VERTICAL (lignes),
+                    # JOUR HORIZONTAL (colonnes) — même orientation que la vue Promotion.
+                    thead_grp = "<tr><th style='background:#1E3A8A;color:white;padding:8px;width:100px;'>Horaire</th>"
                     for j in jours_list:
-                        thead_grp += (
-                            f"<th style='background:#1E3A8A;color:white;"
-                            f"padding:8px;'>{j}</th>"
-                        )
-
+                        thead_grp += f"<th style='background:#1E3A8A;color:white;padding:8px;'>{j}</th>"
                     thead_grp += "</tr>"
 
                     horaires_utilises_grp = [
                         h for h in horaires_list
-                        if any(
-                            (h, j) in seances_par_cellule_grp
-                            for j in jours_list
-                        )
+                        if any((h, j) in seances_par_cellule_grp for j in jours_list)
                     ] or horaires_list
 
                     tbody_grp = ""
-
                     for h in horaires_utilises_grp:
-                        tbody_grp += (
-                            "<tr>"
-                            f"<td style='background:#f1f5f9;"
-                            f"font-weight:bold;text-align:center;"
-                            f"padding:8px;'>{h}</td>"
-                        )
-
+                        tbody_grp += f"<tr><td style='background:#f1f5f9;font-weight:bold;text-align:center;padding:8px;'>{h}</td>"
                         for j in jours_list:
-                            lignes_cel = seances_par_cellule_grp.get(
-                                (h, j)
-                            )
-
+                            lignes_cel = seances_par_cellule_grp.get((h, j))
                             if not lignes_cel:
-                                tbody_grp += (
-                                    "<td style='border:1px solid #e2e8f0;"
-                                    "padding:6px;'></td>"
-                                )
+                                tbody_grp += "<td style='border:1px solid #e2e8f0;padding:6px;'></td>"
                             else:
                                 morceaux_grp = []
-
                                 for r_g in lignes_cel:
-                                    em, coul = _type_couleur_grp(
-                                        r_g.get("Code", "")
-                                    )
-
+                                    em, coul = _type_couleur_grp(r_g.get('Code', ''))
                                     morceaux_grp.append(
-                                        f"<div style='border-left:3px solid "
-                                        f"{coul};padding:4px;margin:2px 0;"
+                                        f"<div style='border-left:3px solid {coul};padding:4px;margin:2px 0;"
                                         f"background:#f8fafc;border-radius:4px;'>"
-                                        f"<b>{em} "
-                                        f"{r_g.get('Enseignements', '')}</b><br>"
-                                        f"<small>👤 "
-                                        f"{r_g.get('Enseignants', '')} | 📍 "
-                                        f"{r_g.get('Lieu', '')}</small>"
+                                        f"<b>{em} {r_g.get('Enseignements', '')}</b><br>"
+                                        f"<small>👤 {r_g.get('Enseignants', '')} | 📍 {r_g.get('Lieu', '')}</small>"
                                         f"</div>"
                                     )
-
                                 tbody_grp += (
-                                    "<td style='border:1px solid #cbd5e1;"
-                                    "padding:6px;vertical-align:top;'>"
-                                    + "".join(morceaux_grp)
-                                    + "</td>"
+                                    f"<td style='border:1px solid #cbd5e1;padding:6px;vertical-align:top;'>"
+                                    f"{''.join(morceaux_grp)}</td>"
                                 )
-
                         tbody_grp += "</tr>"
 
                     titre_grille_grp = f"{promotion_groupe_admin}"
-
                     if groupe_choisi_admin:
-                        titre_grille_grp += (
-                            f" — Groupe {groupe_choisi_admin}"
-                        )
-
-                    if (
-                        sous_groupe_tp_choisi_admin
-                        and sous_groupe_tp_choisi_admin
-                        != "Tous les sous-groupes"
-                    ):
-                        titre_grille_grp += (
-                            f" — {sous_groupe_tp_choisi_admin}"
-                        )
+                        titre_grille_grp += f" — Groupe {groupe_choisi_admin}"
 
                     st.markdown(
-                        f"<div style='background:linear-gradient(135deg,#1E3A8A,#3B82F6);"
-                        f"color:white;padding:12px 16px;border-radius:8px 8px 0 0;"
-                        f"text-align:center;'><b>📅 {titre_grille_grp}</b></div>"
-                        f"<div style='overflow-x:auto;border:1px solid #cbd5e1;"
-                        f"border-radius:0 0 8px 8px;'>"
-                        f"<table style='width:100%;border-collapse:collapse;"
-                        f"table-layout:fixed;'><thead>{thead_grp}</thead>"
-                        f"<tbody>{tbody_grp}</tbody></table></div>",
+                        f"<div style='background:linear-gradient(135deg,#1E3A8A,#3B82F6);color:white;"
+                        f"padding:12px 16px;border-radius:8px 8px 0 0;text-align:center;'>"
+                        f"<b>📅 {titre_grille_grp}</b></div>"
+                        f"<div style='overflow-x:auto;border:1px solid #cbd5e1;border-radius:0 0 8px 8px;'>"
+                        f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;'>"
+                        f"<thead>{thead_grp}</thead><tbody>{tbody_grp}</tbody></table></div>",
                         unsafe_allow_html=True
                     )
 
@@ -21684,16 +21646,46 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                             return None
                         return f"G{m.group(1)}"
 
-                    def _extraire_sousgroupe_tp_etu(val):
-                        """Extrait le SOUS-GROUPE (TP), tolère tiret/espace
-                        entre 'SG' et le numéro ('SG82', 'SG-82', 'SG 82')."""
+                    def _extraire_sousgroupes_tp_etu(val):
+                        """Extrait TOUS les sous-groupes (TP) présents dans
+                        l'intitulé, sous forme d'ensemble.
+
+                        CORRECTIF : un TP peut regrouper DEUX sous-groupes
+                        dans le même intitulé, séparés par '/', ex. :
+                        'TP-Structure de la matière-SG11/SG12'. Rechercher
+                        uniquement un motif ancré en fin de chaîne ne
+                        capturait alors QUE le dernier ('SG12'), ratant le
+                        premier ('SG11') — un étudiant en SG11 ne voyait
+                        donc jamais ce TP. On recherche désormais TOUTES
+                        les occurrences 'SG<numéro>' dans l'intitulé.
+                        Retourne un set() vide si aucun sous-groupe trouvé
+                        (TP commun, affiché à tout le monde)."""
+                        if pd.isna(val):
+                            return set()
+                        val_str = str(val).strip().upper()
+                        trouvailles = re.findall(r'SG[\s\-]?(\d+)', val_str)
+                        return {f"SG{n}" for n in trouvailles}
+
+                    def _extraire_groupes_cours_etu(val):
+                        """Extrait les groupes auxquels un COURS est
+                        restreint, lorsqu'ils sont listés entre parenthèses
+                        en fin d'intitulé, ex. :
+                        'Cours-Structure de la matière-Section A
+                        (G1, G2, G3, G4)' -> {'G1','G2','G3','G4'}.
+                        Retourne None si aucune liste de groupes n'est
+                        présente (Cours commun, affiché à tout le monde,
+                        comportement par défaut)."""
                         if pd.isna(val):
                             return None
                         val_str = str(val).strip().upper()
-                        m = re.search(r'SG[\s\-]?(\d+)\s*$', val_str)
+                        m = re.search(r'\(([^)]*)\)\s*$', val_str)
                         if not m:
                             return None
-                        return f"SG{m.group(1)}"
+                        contenu_parenthese = m.group(1)
+                        trouvailles = re.findall(r'G(\d+)', contenu_parenthese)
+                        if not trouvailles:
+                            return None
+                        return {f"G{n}" for n in trouvailles}
 
                     mask_cours_etu_filtre = df_edt_etu_filtre["Code"].astype(str).str.contains(
                         "COURS", case=False, na=False
@@ -21703,20 +21695,35 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                     ) & ~mask_cours_etu_filtre
                     mask_tp_etu_filtre = ~mask_cours_etu_filtre & ~mask_td_etu_filtre
 
+                    df_edt_etu_filtre.loc[mask_cours_etu_filtre, "Groupes_Cours"] = df_edt_etu_filtre.loc[
+                        mask_cours_etu_filtre, "Enseignements"
+                    ].apply(_extraire_groupes_cours_etu)
                     df_edt_etu_filtre.loc[mask_td_etu_filtre, "Groupe_TD"] = df_edt_etu_filtre.loc[
                         mask_td_etu_filtre, "Enseignements"
                     ].apply(_extraire_groupe_td_etu)
-                    df_edt_etu_filtre.loc[mask_tp_etu_filtre, "SousGroupe_TP"] = df_edt_etu_filtre.loc[
+                    df_edt_etu_filtre.loc[mask_tp_etu_filtre, "SousGroupes_TP"] = df_edt_etu_filtre.loc[
                         mask_tp_etu_filtre, "Enseignements"
-                    ].apply(_extraire_sousgroupe_tp_etu)
+                    ].apply(_extraire_sousgroupes_tp_etu)
 
-                    # 3. Cours = toujours affichés (communs à tous les groupes).
+                    # 3. COURS : affiché par défaut (commun), SAUF s'il
+                    #    précise une liste de groupes entre parenthèses
+                    #    (ex. « Section A (G1, G2, G3, G4) ») — dans ce
+                    #    cas, affiché uniquement si le groupe de
+                    #    l'étudiant figure dans cette liste.
                     #    TD sans tag = toujours affiché (commun) ; TD avec
                     #    tag = affiché seulement s'il correspond au groupe
                     #    de l'étudiant (fichier étudiants source).
-                    #    TP sans tag = toujours affiché (commun) ; TP avec
-                    #    tag = affiché seulement s'il correspond au
-                    #    sous-groupe de l'étudiant.
+                    #    TP sans sous-groupe détecté = toujours affiché
+                    #    (commun) ; TP avec un ou plusieurs sous-groupes
+                    #    (ex. SG11/SG12) = affiché si le sous-groupe de
+                    #    l'étudiant fait partie de cette liste.
+                    mask_cours_commun_etu = mask_cours_etu_filtre & df_edt_etu_filtre["Groupes_Cours"].apply(
+                        lambda g: not g if isinstance(g, set) else pd.isna(g)
+                    )
+                    mask_cours_choisi_etu = mask_cours_etu_filtre & df_edt_etu_filtre["Groupes_Cours"].apply(
+                        lambda g: bool(groupe_etu) and isinstance(g, set) and groupe_etu in g
+                    )
+
                     mask_td_commun_etu = df_edt_etu_filtre.get(
                         "Groupe_TD", pd.Series(index=df_edt_etu_filtre.index, dtype=object)
                     ).isna() & mask_td_etu_filtre
@@ -21724,16 +21731,16 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                         (df_edt_etu_filtre.get("Groupe_TD") == groupe_etu)
                         if groupe_etu else pd.Series(False, index=df_edt_etu_filtre.index)
                     )
-                    mask_tp_commun_etu = df_edt_etu_filtre.get(
-                        "SousGroupe_TP", pd.Series(index=df_edt_etu_filtre.index, dtype=object)
-                    ).isna() & mask_tp_etu_filtre
-                    mask_tp_choisi_etu = (
-                        (df_edt_etu_filtre.get("SousGroupe_TP") == sous_groupe_etu)
-                        if sous_groupe_etu else pd.Series(False, index=df_edt_etu_filtre.index)
+
+                    mask_tp_commun_etu = mask_tp_etu_filtre & df_edt_etu_filtre["SousGroupes_TP"].apply(
+                        lambda s: not s if isinstance(s, set) else True
+                    )
+                    mask_tp_choisi_etu = mask_tp_etu_filtre & df_edt_etu_filtre["SousGroupes_TP"].apply(
+                        lambda s: bool(sous_groupe_etu) and isinstance(s, set) and sous_groupe_etu in s
                     )
 
                     df_edt_final = df_edt_etu_filtre[
-                        mask_cours_etu_filtre
+                        mask_cours_commun_etu | mask_cours_choisi_etu
                         | mask_td_commun_etu | mask_td_choisi_etu
                         | mask_tp_commun_etu | mask_tp_choisi_etu
                     ].copy()
@@ -21742,32 +21749,40 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                         st.info(
                             "ℹ️ Aucun groupe/sous-groupe renseigné pour cet "
                             "étudiant dans le fichier source : seuls les "
-                            "Cours et les TD/TP communs (sans groupe "
+                            "Cours, TD et TP communs (sans groupe "
                             "spécifique) sont affichés."
                         )
 
                     # ────────────────────────────────────────────────────
                     # 🔍 DIAGNOSTIC : détection groupe/sous-groupe
                     # ────────────────────────────────────────────────────
-                    # Un TD/TP dont le groupe n'est PAS détecté (Groupe_TD
-                    # ou SousGroupe_TP = None) est traité comme COMMUN et
-                    # donc TOUJOURS affiché, même s'il porte en réalité un
-                    # tag dans un format non reconnu par l'expression
-                    # régulière (ex. « (G5) », « Groupe 5 », etc.). Ce
-                    # panneau permet de vérifier immédiatement si c'est le
-                    # cas, sans avoir à fouiller le fichier source.
-                    with st.expander("🔍 Diagnostic groupe / sous-groupe (TD/TP)"):
+                    # Une ligne dont le groupe n'est PAS détecté est
+                    # traitée comme COMMUNE et donc TOUJOURS affichée,
+                    # même si elle porte en réalité un tag dans un format
+                    # non reconnu. Ce panneau permet de vérifier
+                    # immédiatement si c'est le cas, sans avoir à fouiller
+                    # le fichier source.
+                    with st.expander("🔍 Diagnostic groupe / sous-groupe (Cours/TD/TP)"):
+                        df_diag_cours = df_edt_etu_filtre[mask_cours_etu_filtre][
+                            ["Enseignements", "Groupes_Cours"]
+                        ].drop_duplicates(subset=["Enseignements"])
                         df_diag_td = df_edt_etu_filtre[mask_td_etu_filtre][
                             ["Enseignements", "Groupe_TD"]
                         ].drop_duplicates()
                         df_diag_tp = df_edt_etu_filtre[mask_tp_etu_filtre][
-                            ["Enseignements", "SousGroupe_TP"]
-                        ].drop_duplicates()
+                            ["Enseignements", "SousGroupes_TP"]
+                        ].drop_duplicates(subset=["Enseignements"])
 
                         st.caption(
                             f"Groupe étudiant détecté : **{groupe_etu or 'aucun'}** | "
                             f"Sous-groupe étudiant détecté : **{sous_groupe_etu or 'aucun'}**"
                         )
+
+                        st.markdown("**Cours de la promotion — groupes restreints détectés (si listés entre parenthèses) :**")
+                        if not df_diag_cours.empty:
+                            st.dataframe(df_diag_cours, use_container_width=True, hide_index=True)
+                        else:
+                            st.caption("Aucun Cours trouvé pour cette promotion.")
 
                         st.markdown("**TD de la promotion — groupe détecté :**")
                         if not df_diag_td.empty:
@@ -21786,10 +21801,12 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                         else:
                             st.caption("Aucun TD trouvé pour cette promotion.")
 
-                        st.markdown("**TP de la promotion — sous-groupe détecté :**")
+                        st.markdown("**TP de la promotion — sous-groupe(s) détecté(s) :**")
                         if not df_diag_tp.empty:
                             st.dataframe(df_diag_tp, use_container_width=True, hide_index=True)
-                            nb_tp_non_detectes = df_diag_tp["SousGroupe_TP"].isna().sum()
+                            nb_tp_non_detectes = df_diag_tp["SousGroupes_TP"].apply(
+                                lambda s: not s if isinstance(s, set) else True
+                            ).sum()
                             if nb_tp_non_detectes > 0:
                                 st.warning(
                                     f"⚠️ {nb_tp_non_detectes} intitulé(s) de TP sans "
