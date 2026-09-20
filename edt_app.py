@@ -21708,6 +21708,68 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                             "spécifique) sont affichés."
                         )
 
+                    # ────────────────────────────────────────────────────
+                    # 🔍 DIAGNOSTIC : détection groupe/sous-groupe
+                    # ────────────────────────────────────────────────────
+                    # Un TD/TP dont le groupe n'est PAS détecté (Groupe_TD
+                    # ou SousGroupe_TP = None) est traité comme COMMUN et
+                    # donc TOUJOURS affiché, même s'il porte en réalité un
+                    # tag dans un format non reconnu par l'expression
+                    # régulière (ex. « (G5) », « Groupe 5 », etc.). Ce
+                    # panneau permet de vérifier immédiatement si c'est le
+                    # cas, sans avoir à fouiller le fichier source.
+                    with st.expander("🔍 Diagnostic groupe / sous-groupe (TD/TP)"):
+                        df_diag_td = df_edt_etu_filtre[mask_td_etu_filtre][
+                            ["Enseignements", "Groupe_TD"]
+                        ].drop_duplicates()
+                        df_diag_tp = df_edt_etu_filtre[mask_tp_etu_filtre][
+                            ["Enseignements", "SousGroupe_TP"]
+                        ].drop_duplicates()
+
+                        st.caption(
+                            f"Groupe étudiant détecté : **{groupe_etu or 'aucun'}** | "
+                            f"Sous-groupe étudiant détecté : **{sous_groupe_etu or 'aucun'}**"
+                        )
+
+                        st.markdown("**TD de la promotion — groupe détecté :**")
+                        if not df_diag_td.empty:
+                            st.dataframe(df_diag_td, use_container_width=True, hide_index=True)
+                            nb_td_non_detectes = df_diag_td["Groupe_TD"].isna().sum()
+                            if nb_td_non_detectes > 0:
+                                st.warning(
+                                    f"⚠️ {nb_td_non_detectes} intitulé(s) de TD sans "
+                                    f"groupe détecté — ils seront affichés pour TOUS "
+                                    f"les étudiants (traités comme communs). Si un "
+                                    f"groupe est pourtant visible dans l'intitulé "
+                                    f"ci-dessus, son format diffère de la convention "
+                                    f"attendue (« ...-G<numéro> ») — merci de me "
+                                    f"signaler l'exemple exact."
+                                )
+                        else:
+                            st.caption("Aucun TD trouvé pour cette promotion.")
+
+                        st.markdown("**TP de la promotion — sous-groupe détecté :**")
+                        if not df_diag_tp.empty:
+                            st.dataframe(df_diag_tp, use_container_width=True, hide_index=True)
+                            nb_tp_non_detectes = df_diag_tp["SousGroupe_TP"].isna().sum()
+                            if nb_tp_non_detectes > 0:
+                                st.warning(
+                                    f"⚠️ {nb_tp_non_detectes} intitulé(s) de TP sans "
+                                    f"sous-groupe détecté — ils seront affichés pour "
+                                    f"TOUS les étudiants (traités comme communs). Si "
+                                    f"un sous-groupe est pourtant visible dans "
+                                    f"l'intitulé ci-dessus, son format diffère de la "
+                                    f"convention attendue (« ...-SG<numéro> ») — "
+                                    f"merci de me signaler l'exemple exact."
+                                )
+                        else:
+                            st.caption(
+                                "Aucun TP trouvé pour cette promotion — c'est la "
+                                "cause si aucun TP n'apparaît dans la grille "
+                                "ci-dessous (il n'y en a simplement pas dans le "
+                                "fichier source pour cette promotion)."
+                            )
+
                     if not df_edt_final.empty:
                         # ── Afficheurs numériques ──
                         nb_seances_etu = len(df_edt_final)
@@ -21798,21 +21860,37 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                             df_edt_final_type = df_edt_final.copy()
 
                         def _norm_edt(x):
-                            """Normalise les horaires et jours - PRÉSERVER LE TIRET!"""
+                            """Normalise un horaire ou un jour pour la
+                            correspondance avec la grille de référence.
+
+                            CORRECTIF : l'ancienne version enchaînait des
+                            substitutions regex (remplacer ':00'->'h00',
+                            puis ajouter 'h00' après tout 'h' non suivi de
+                            '00') qui corrompait les horaires comportant
+                            des minutes non nulles : '8h - 9h30' devenait
+                            '8h00-9h0030' au lieu de '08h00-09h30',
+                            empêchant toute correspondance avec la grille
+                            de référence ('Impossible de construire la
+                            grille'). Cette version reconstruit proprement
+                            l'horaire à partir de ses heures/minutes de
+                            début et de fin (toujours sur 2 chiffres)."""
                             if not x or str(x).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
                                 return ""
-                            
+
                             s = str(x).strip().lower()
-                            
-                            # ✅ Normaliser les espaces AUTOUR du tiret - PRÉSERVER LE TIRET!
-                            s = re.sub(r'\s*[-–à]\s*', '-', s)
-                            s = s.replace(' ', '')  # Supprimer autres espaces
-                            
-                            # Normaliser les formats d'heures
-                            s = re.sub(r'(\d{1,2}):00', r'\1h00', s)   # 8:00 → 8h00
-                            s = re.sub(r'(\d{1,2})h(?!00)', r'\1h00', s)  # 8h → 8h00
-                            
-                            return s
+
+                            m = re.match(
+                                r'^\s*(\d{1,2})[h:](\d{2})?\s*[-–à]\s*(\d{1,2})[h:](\d{2})?\s*$',
+                                s
+                            )
+                            if m:
+                                h1, m1, h2, m2 = m.groups()
+                                m1 = m1 or "00"
+                                m2 = m2 or "00"
+                                return f"{int(h1):02d}h{m1}-{int(h2):02d}h{m2}"
+
+                            # Pas un horaire (ex. un jour) : normalisation simple.
+                            return re.sub(r'\s+', '', s)
 
                         horaires_ref_indiv = [
                             "08h00-09h30", "09h30-11h00", "11h00-12h30",
