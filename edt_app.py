@@ -11124,9 +11124,10 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         with col_filtre1:
             promotion_choisie_ens = st.selectbox(
                 "🎓 Choisir Promotion :",
-                ["Toutes les promotions"] + promotions_dispo_ens,
+                promotions_dispo_ens,
                 key="promo_choisie_ens_indiv"
             )
+        
         with col_filtre2:
             type_choisi_ens = st.selectbox(
                 "📚 Type d'enseignement à afficher :",
