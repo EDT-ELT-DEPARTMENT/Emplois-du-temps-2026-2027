@@ -3787,6 +3787,338 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 if st.button("🚪 Se déconnecter", use_container_width=True):
                     st.session_state.étudiant_auth = None
                     st.rerun()
+
+                # ════════════════════════════════════════════════════════
+                # 📅 MON EMPLOI DU TEMPS INDIVIDUEL
+                # ------------------------------------------------------------
+                # Ajouté ici pour que l'étudiant connecté au système de
+                # gestion des justificatifs retrouve aussi son propre EDT,
+                # sans devoir changer de portail. Même logique de
+                # détection groupe/sous-groupe que dans le Portail Étudiant
+                # (Cours communs, sauf s'ils listent des groupes entre
+                # parenthèses ; TD/TP communs, sauf s'ils portent un tag
+                # -G<n> / -SG<n> ne correspondant pas à l'étudiant).
+                # ════════════════════════════════════════════════════════
+                with st.expander("📅 Mon Emploi du Temps Individuel", expanded=False):
+                    if not os.path.exists(NOM_FICHIER_FIXE):
+                        st.warning("⚠️ Le fichier source de l'EDT est introuvable.")
+                    else:
+                        df_edt_justif = pd.read_excel(NOM_FICHIER_FIXE)
+
+                        promo_justif = étudiant_connecte["promotion"]
+                        df_edt_justif_promo = df_edt_justif[
+                            df_edt_justif["Promotion"] == promo_justif
+                        ].copy()
+
+                        # --- Groupe / Sous-groupe de l'étudiant (fichier étudiants source) ---
+                        cols_etu_map_justif = detecter_colonnes_etudiant(df_etu)
+                        col_groupe_justif = cols_etu_map_justif.get('groupe')
+                        col_sous_groupe_justif = cols_etu_map_justif.get('sous_groupe')
+
+                        groupe_justif = ""
+                        sous_groupe_justif = ""
+                        ligne_etu_justif = df_etu[df_etu["Nom_Complet"] == étudiant_connecte["nom"]]
+                        if not ligne_etu_justif.empty:
+                            if col_groupe_justif and col_groupe_justif in ligne_etu_justif.columns:
+                                val_g_justif = ligne_etu_justif.iloc[0].get(col_groupe_justif)
+                                if pd.notna(val_g_justif):
+                                    groupe_justif = str(val_g_justif).strip().upper()
+                            if col_sous_groupe_justif and col_sous_groupe_justif in ligne_etu_justif.columns:
+                                val_sg_justif = ligne_etu_justif.iloc[0].get(col_sous_groupe_justif)
+                                if pd.notna(val_sg_justif):
+                                    sous_groupe_justif = str(val_sg_justif).strip().upper()
+
+                        st.markdown(
+                            f"<div style='background:#f1f5f9;padding:8px 12px;border-radius:8px;"
+                            f"font-size:13px;margin-bottom:10px;'>"
+                            f"🎓 Promotion : <b>{promo_justif}</b> &nbsp;|&nbsp; "
+                            f"👥 Groupe : <b>{groupe_justif or 'N/A'}</b> &nbsp;|&nbsp; "
+                            f"🔹 Sous-groupe : <b>{sous_groupe_justif or 'N/A'}</b>"
+                            f"</div>", unsafe_allow_html=True
+                        )
+
+                        def _extraire_groupe_td_justif(val):
+                            if pd.isna(val):
+                                return None
+                            val_str = str(val).strip().upper()
+                            m = re.search(r'(?<![A-Z])G[\s\-]?(\d+)\s*$', val_str)
+                            return f"G{m.group(1)}" if m else None
+
+                        def _extraire_sousgroupes_tp_justif(val):
+                            if pd.isna(val):
+                                return set()
+                            val_str = str(val).strip().upper()
+                            return {f"SG{n}" for n in re.findall(r'SG[\s\-]?(\d+)', val_str)}
+
+                        def _extraire_groupes_cours_justif(val):
+                            if pd.isna(val):
+                                return None
+                            val_str = str(val).strip().upper()
+                            m = re.search(r'\(([^)]*)\)\s*$', val_str)
+                            if not m:
+                                return None
+                            trouvailles = re.findall(r'G(\d+)', m.group(1))
+                            return {f"G{n}" for n in trouvailles} if trouvailles else None
+
+                        mask_cours_j = df_edt_justif_promo["Code"].astype(str).str.contains("COURS", case=False, na=False)
+                        mask_td_j = df_edt_justif_promo["Code"].astype(str).str.contains("TD", case=False, na=False) & ~mask_cours_j
+                        mask_tp_j = ~mask_cours_j & ~mask_td_j
+
+                        df_edt_justif_promo.loc[mask_cours_j, "Groupes_Cours"] = df_edt_justif_promo.loc[
+                            mask_cours_j, "Enseignements"
+                        ].apply(_extraire_groupes_cours_justif)
+                        df_edt_justif_promo.loc[mask_td_j, "Groupe_TD"] = df_edt_justif_promo.loc[
+                            mask_td_j, "Enseignements"
+                        ].apply(_extraire_groupe_td_justif)
+                        df_edt_justif_promo.loc[mask_tp_j, "SousGroupes_TP"] = df_edt_justif_promo.loc[
+                            mask_tp_j, "Enseignements"
+                        ].apply(_extraire_sousgroupes_tp_justif)
+
+                        mask_cours_commun_j = mask_cours_j & df_edt_justif_promo["Groupes_Cours"].apply(
+                            lambda g: not g if isinstance(g, set) else pd.isna(g)
+                        )
+                        mask_cours_choisi_j = mask_cours_j & df_edt_justif_promo["Groupes_Cours"].apply(
+                            lambda g: bool(groupe_justif) and isinstance(g, set) and groupe_justif in g
+                        )
+                        mask_td_commun_j = df_edt_justif_promo.get(
+                            "Groupe_TD", pd.Series(index=df_edt_justif_promo.index, dtype=object)
+                        ).isna() & mask_td_j
+                        mask_td_choisi_j = (
+                            (df_edt_justif_promo.get("Groupe_TD") == groupe_justif)
+                            if groupe_justif else pd.Series(False, index=df_edt_justif_promo.index)
+                        )
+                        mask_tp_commun_j = mask_tp_j & df_edt_justif_promo["SousGroupes_TP"].apply(
+                            lambda s: not s if isinstance(s, set) else True
+                        )
+                        mask_tp_choisi_j = mask_tp_j & df_edt_justif_promo["SousGroupes_TP"].apply(
+                            lambda s: bool(sous_groupe_justif) and isinstance(s, set) and sous_groupe_justif in s
+                        )
+
+                        df_edt_indiv_justif = df_edt_justif_promo[
+                            mask_cours_commun_j | mask_cours_choisi_j
+                            | mask_td_commun_j | mask_td_choisi_j
+                            | mask_tp_commun_j | mask_tp_choisi_j
+                        ].copy()
+
+                        type_affiche_justif = st.selectbox(
+                            "📚 Type d'enseignement à afficher :",
+                            ["Tous les enseignements", "📘 Cours uniquement", "📗 TD uniquement", "🔴 TP uniquement"],
+                            key="type_affiche_justif_indiv"
+                        )
+                        if type_affiche_justif == "📘 Cours uniquement":
+                            df_edt_indiv_justif = df_edt_indiv_justif[mask_cours_j.reindex(df_edt_indiv_justif.index, fill_value=False)]
+                        elif type_affiche_justif == "📗 TD uniquement":
+                            df_edt_indiv_justif = df_edt_indiv_justif[mask_td_j.reindex(df_edt_indiv_justif.index, fill_value=False)]
+                        elif type_affiche_justif == "🔴 TP uniquement":
+                            df_edt_indiv_justif = df_edt_indiv_justif[mask_tp_j.reindex(df_edt_indiv_justif.index, fill_value=False)]
+
+                        def _norm_edt_justif(x):
+                            if not x or str(x).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
+                                return ""
+                            s = str(x).strip().lower()
+                            m = re.match(r'^\s*(\d{1,2})[h:](\d{2})?\s*[-–à]\s*(\d{1,2})[h:](\d{2})?\s*$', s)
+                            if m:
+                                h1, m1, h2, m2 = m.groups()
+                                return f"{int(h1):02d}h{m1 or '00'}-{int(h2):02d}h{m2 or '00'}"
+                            return re.sub(r'\s+', '', s)
+
+                        horaires_ref_justif = [
+                            "08h00-09h30", "09h30-11h00", "11h00-12h30",
+                            "12h30-14h00", "14h00-15h30", "15h30-17h00"
+                        ]
+                        jours_ref_justif = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
+                        map_h_labels_justif = {
+                            "08h00-09h30": "8h - 9h30", "09h30-11h00": "9h30 - 11h",
+                            "11h00-12h30": "11h - 12h30", "12h30-14h00": "12h30 - 14h",
+                            "14h00-15h30": "14h - 15h30", "15h30-17h00": "15h30 - 17h"
+                        }
+                        map_j_labels_justif = {
+                            "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
+                            "mercredi": "Mercredi", "jeudi": "Jeudi"
+                        }
+
+                        df_edt_indiv_justif["h_norm"] = df_edt_indiv_justif["Horaire"].apply(_norm_edt_justif)
+                        df_edt_indiv_justif["j_norm"] = df_edt_indiv_justif["Jours"].apply(_norm_edt_justif)
+
+                        def _fmt_cell_justif(rows):
+                            items = []
+                            for _, r in rows.iterrows():
+                                code_up = str(r["Code"]).upper()
+                                if "COURS" in code_up:
+                                    nat, color, bg = "📘", "#1e40af", "#dbeafe"
+                                elif "TD" in code_up:
+                                    nat, color, bg = "📗", "#166534", "#dcfce7"
+                                else:
+                                    nat, color, bg = "🔴", "#991b1b", "#fee2e2"
+                                items.append(
+                                    f"<div style='margin-bottom:5px;padding:6px;border-left:4px solid {color};"
+                                    f"background-color:{bg};border-radius:6px;text-align:left;'>"
+                                    f"<b style='color:{color};font-size:12px;'>{nat} {r['Enseignements']}</b><br>"
+                                    f"<span style='font-size:11px;color:#334155;'>👤 {r['Enseignants']}</span><br>"
+                                    f"<span style='font-size:10px;color:#64748b;'>📍 {r['Lieu']}</span>"
+                                    f"</div>"
+                                )
+                            return "".join(items)
+
+                        def _fmt_cell_justif_texte(rows):
+                            items = []
+                            for _, r in rows.iterrows():
+                                code_up = str(r["Code"]).upper()
+                                nat = "📘" if "COURS" in code_up else ("📗" if "TD" in code_up else "🔴")
+                                items.append(f"{nat} {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}")
+                            return "\n\n".join(items)
+
+                        if not df_edt_indiv_justif.empty:
+                            grouped_justif = df_edt_indiv_justif.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_justif, include_groups=False)
+                            grouped_justif_texte = df_edt_indiv_justif.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_justif_texte, include_groups=False)
+                            grid_justif = grouped_justif.unstack("h_norm")
+                            grid_justif_texte = grouped_justif_texte.unstack("h_norm")
+                        else:
+                            grid_justif = pd.DataFrame()
+                            grid_justif_texte = pd.DataFrame()
+
+                        jours_present_justif = [j for j in jours_ref_justif if j in grid_justif.index]
+                        h_present_justif = [h for h in horaires_ref_justif if h in grid_justif.columns]
+
+                        if jours_present_justif and h_present_justif:
+                            grid_justif = grid_justif.reindex(index=jours_present_justif, columns=h_present_justif).fillna("")
+                            grid_justif.index = [map_j_labels_justif.get(i, i) for i in grid_justif.index]
+                            grid_justif.columns = [map_h_labels_justif.get(c, c) for c in grid_justif.columns]
+
+                            grid_justif_texte = grid_justif_texte.reindex(index=jours_present_justif, columns=h_present_justif).fillna("")
+                            grid_justif_texte.index = [map_j_labels_justif.get(i, i) for i in grid_justif_texte.index]
+                            grid_justif_texte.columns = [map_h_labels_justif.get(c, c) for c in grid_justif_texte.columns]
+
+                            st.write(grid_justif.to_html(escape=False), unsafe_allow_html=True)
+
+                            st.markdown("##### 📥 Télécharger mon EDT")
+                            djl1, djl2, djl3 = st.columns(3)
+
+                            nom_base_justif = f"EDT_{étudiant_connecte['nom'].replace(' ', '_')}_{promo_justif}"
+
+                            # Excel
+                            buf_xl_justif = io.BytesIO()
+                            with pd.ExcelWriter(buf_xl_justif, engine='xlsxwriter') as writer:
+                                grid_justif_texte.to_excel(writer, sheet_name='Mon_EDT', startrow=2)
+                                wb_j = writer.book
+                                ws_j = writer.sheets['Mon_EDT']
+                                fmt_titre_j = wb_j.add_format({'bold': True, 'font_size': 13, 'font_color': 'white', 'bg_color': '#1E3A8A', 'align': 'center', 'valign': 'vcenter'})
+                                ws_j.merge_range(0, 0, 0, len(grid_justif_texte.columns), f"📅 EDT Individuel — {étudiant_connecte['nom']}", fmt_titre_j)
+                                ws_j.merge_range(1, 0, 1, len(grid_justif_texte.columns), f"Promotion {promo_justif} | Groupe {groupe_justif or 'N/A'} | Sous-groupe {sous_groupe_justif or 'N/A'}",
+                                                 wb_j.add_format({'italic': True, 'align': 'center', 'font_size': 9, 'font_color': '#64748b'}))
+                                fmt_hdr_j = wb_j.add_format({'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                                fmt_jour_j = wb_j.add_format({'bold': True, 'bg_color': '#f1f5f9', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                                fmt_cell_j = wb_j.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10})
+                                ws_j.write(2, 0, "JOUR", fmt_hdr_j)
+                                for col_num, h in enumerate(grid_justif_texte.columns, start=1):
+                                    ws_j.write(2, col_num, h, fmt_hdr_j)
+                                ws_j.set_column(0, 0, 14)
+                                ws_j.set_column(1, len(grid_justif_texte.columns), 26)
+                                for row_num, (jour, ligne) in enumerate(grid_justif_texte.iterrows(), start=3):
+                                    ws_j.write(row_num, 0, jour, fmt_jour_j)
+                                    max_lignes_j = 1
+                                    for col_num, val in enumerate(ligne, start=1):
+                                        ws_j.write(row_num, col_num, val, fmt_cell_j)
+                                        max_lignes_j = max(max_lignes_j, str(val).count('\n') + 1)
+                                    ws_j.set_row(row_num, max(40, max_lignes_j * 14))
+                                ws_j.freeze_panes(3, 1)
+
+                            djl1.download_button(
+                                "📊 Excel", buf_xl_justif.getvalue(),
+                                f"{nom_base_justif}.xlsx",
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True, key="dl_edt_justif_xlsx"
+                            )
+
+                            # HTML
+                            html_edt_justif = f"""<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>EDT — {étudiant_connecte['nom']}</title>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;color:#1e293b;}}
+.container{{max-width:1100px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
+.header{{background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:20px;text-align:center;}}
+.header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
+.content{{padding:20px;overflow-x:auto;}}table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+th{{background:#0f172a;color:white;padding:12px;text-align:center;font-size:12px;border:1px solid #e2e8f0;}}
+td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word-wrap:break-word;}}
+</style></head><body><div class='container'>
+<div class='header'><h1>📅 EDT Individuel — {étudiant_connecte['nom']}</h1>
+<p>Promotion {promo_justif} | Groupe {groupe_justif or 'N/A'} | Sous-groupe {sous_groupe_justif or 'N/A'}</p></div>
+<div class='content'>{grid_justif.to_html(escape=False)}</div>
+</div></body></html>"""
+                            djl2.download_button(
+                                "🌐 HTML", html_edt_justif,
+                                f"{nom_base_justif}.html", "text/html",
+                                use_container_width=True, key="dl_edt_justif_html"
+                            )
+
+                            # PDF
+                            try:
+                                from reportlab.lib import colors as rl_colors_justif
+                                from reportlab.lib.pagesizes import landscape, A4
+                                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepInFrame
+                                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                                from reportlab.lib.units import mm
+
+                                buf_pdf_justif = io.BytesIO()
+                                doc_justif = SimpleDocTemplate(
+                                    buf_pdf_justif, pagesize=landscape(A4),
+                                    topMargin=15 * mm, bottomMargin=12 * mm, leftMargin=10 * mm, rightMargin=10 * mm
+                                )
+                                styles_justif = getSampleStyleSheet()
+                                titre_style_justif = ParagraphStyle('TitreJustif', parent=styles_justif['Heading1'], fontSize=14,
+                                                                    textColor=rl_colors_justif.HexColor('#1E3A8A'), alignment=1)
+                                soustitre_style_justif = ParagraphStyle('SousTitreJustif', parent=styles_justif['Normal'], fontSize=9,
+                                                                        textColor=rl_colors_justif.HexColor('#64748b'), alignment=1)
+                                cell_style_justif = ParagraphStyle('CellJustif', parent=styles_justif['Normal'], fontSize=7, leading=9)
+
+                                elements_justif = [
+                                    Paragraph(f"📅 EDT Individuel — {étudiant_connecte['nom']}", titre_style_justif),
+                                    Paragraph(f"Promotion {promo_justif} | Groupe {groupe_justif or 'N/A'} | Sous-groupe {sous_groupe_justif or 'N/A'}", soustitre_style_justif),
+                                    Spacer(1, 8),
+                                ]
+                                page_width_justif = landscape(A4)[0] - 20 * mm
+                                col_j_justif = 26 * mm
+                                col_h_justif = (page_width_justif - col_j_justif) / len(grid_justif_texte.columns)
+                                col_widths_justif = [col_j_justif] + [col_h_justif] * len(grid_justif_texte.columns)
+
+                                def _cel_pdf_justif(texte, largeur):
+                                    return KeepInFrame(max(largeur - 10, 10), 380,
+                                                       [Paragraph(str(texte).replace(chr(10), '<br/>'), cell_style_justif)],
+                                                       mode='shrink')
+
+                                data_pdf_justif = [
+                                    [Paragraph("<b>JOUR</b>", cell_style_justif)] +
+                                    [Paragraph(f"<b>{h}</b>", cell_style_justif) for h in grid_justif_texte.columns]
+                                ]
+                                for jour, ligne in grid_justif_texte.iterrows():
+                                    ligne_pdf_j = [_cel_pdf_justif(jour, col_j_justif)]
+                                    for val in ligne:
+                                        ligne_pdf_j.append(_cel_pdf_justif(val, col_h_justif) if val else "")
+                                    data_pdf_justif.append(ligne_pdf_j)
+
+                                table_justif = Table(data_pdf_justif, colWidths=col_widths_justif, repeatRows=1)
+                                table_justif.setStyle(TableStyle([
+                                    ('BACKGROUND', (0, 0), (-1, 0), rl_colors_justif.HexColor('#1E3A8A')),
+                                    ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors_justif.white),
+                                    ('BACKGROUND', (0, 1), (0, -1), rl_colors_justif.HexColor('#f1f5f9')),
+                                    ('GRID', (0, 0), (-1, -1), 0.5, rl_colors_justif.HexColor('#cbd5e1')),
+                                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                                    ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+                                ]))
+                                elements_justif.append(table_justif)
+                                doc_justif.build(elements_justif)
+
+                                djl3.download_button(
+                                    "📄 PDF", buf_pdf_justif.getvalue(),
+                                    f"{nom_base_justif}.pdf", "application/pdf",
+                                    use_container_width=True, key="dl_edt_justif_pdf"
+                                )
+                            except Exception as e:
+                                djl3.warning(f"PDF indisponible : {e}")
+                        else:
+                            st.info("ℹ️ Aucun enseignement à afficher pour cette sélection.")
+
                 st.divider()
             else:
                 choix_vue = st.radio("Profil :", ["Étudiant (Dépôt)", "Administration (Décision)"], horizontal=True)
@@ -11430,6 +11762,303 @@ td{{word-wrap:break-word;}}
                     cp3.warning(f"PDF indisponible : {e}")
             else:
                 cp3.button("📄 PDF (Promotion)", disabled=True, use_container_width=True)
+
+        # =============================================================================
+        # 🔍 CONSULTER L'EDT DE N'IMPORTE QUELLE PROMOTION (LISTE COMPLÈTE)
+        # =============================================================================
+        # Contrairement au sélecteur "Choisir Promotion" plus haut (limité
+        # aux promotions où CET enseignant intervient), cette liste
+        # déroulante propose TOUTES les promotions de l'établissement,
+        # pour consulter et télécharger l'EDT de n'importe laquelle,
+        # même une promotion où l'enseignant n'a aucune séance.
+        st.divider()
+        st.markdown("### 🔍 Consulter l'EDT de n'importe quelle promotion")
+        st.caption(
+            "Liste complète des promotions de l'établissement — vos "
+            "propres séances (le cas échéant) restent mises en évidence "
+            "par un liseré doré."
+        )
+
+        toutes_les_promotions_etab = sorted([
+            p for p in df["Promotion"].dropna().unique()
+            if str(p).strip() and str(p).strip() != "Non défini"
+        ])
+
+        if not toutes_les_promotions_etab:
+            st.info("ℹ️ Aucune promotion trouvée dans les données.")
+        else:
+            promotion_recherchee_ens = st.selectbox(
+                "🎓 Choisir une promotion (liste complète) :",
+                toutes_les_promotions_etab,
+                key="promotion_recherchee_ens_toutes"
+            )
+            type_recherche_ens = st.selectbox(
+                "📚 Type d'enseignement à afficher :",
+                ["Tous les types", "📘 Cours uniquement", "📗 TD uniquement", "🔴 TP uniquement"],
+                key="type_recherche_ens_toutes"
+            )
+
+            df_promo_recherchee = df[df["Promotion"] == promotion_recherchee_ens].copy()
+            df_promo_recherchee['Type'] = df_promo_recherchee['Code'].apply(
+                lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
+            )
+            if type_recherche_ens == "📘 Cours uniquement":
+                df_promo_recherchee = df_promo_recherchee[df_promo_recherchee["Type"] == "COURS"]
+            elif type_recherche_ens == "📗 TD uniquement":
+                df_promo_recherchee = df_promo_recherchee[df_promo_recherchee["Type"] == "TD"]
+            elif type_recherche_ens == "🔴 TP uniquement":
+                df_promo_recherchee = df_promo_recherchee[df_promo_recherchee["Type"] == "TP"]
+
+            df_g_recherche = df_promo_recherchee.copy()
+            df_g_recherche["h_norm"] = df_g_recherche["Horaire"].apply(_norm_h)
+            df_g_recherche["j_norm"] = df_g_recherche["Jours"].apply(_norm_j)
+            df_g_recherche = df_g_recherche[df_g_recherche["h_norm"].isin(_HORAIRES)]
+            df_g_recherche = df_g_recherche[df_g_recherche["j_norm"].isin(_JOURS)]
+
+            grille_html_recherche = pd.DataFrame()
+            grille_text_recherche = pd.DataFrame()
+
+            if not df_g_recherche.empty:
+                g_html_r = df_g_recherche.groupby(["j_norm", "h_norm"]).apply(
+                    _fmt_html_promo, include_groups=False
+                ).unstack(fill_value="")
+                g_text_r = df_g_recherche.groupby(["j_norm", "h_norm"]).apply(
+                    _fmt_text_promo, include_groups=False
+                ).unstack(fill_value="")
+
+                jours_ok_r = [j for j in _JOURS if j in g_html_r.index]
+                h_ok_r = [h for h in _HORAIRES if h in g_html_r.columns]
+
+                if jours_ok_r and h_ok_r:
+                    grille_html_recherche = g_html_r.reindex(index=jours_ok_r, columns=h_ok_r).fillna("")
+                    grille_text_recherche = g_text_r.reindex(index=jours_ok_r, columns=h_ok_r).fillna("")
+
+            thead_r2 = ""
+            tbody_r2 = ""
+            if not grille_html_recherche.empty:
+                thead_r2 = (
+                    "<tr><th style='background:#0f766e;color:white;padding:10px;"
+                    "width:100px;'>JOUR</th>"
+                    + "".join([
+                        f"<th style='background:#0f766e;color:white;padding:10px;"
+                        f"font-size:12px;'>{h}</th>" for h in grille_html_recherche.columns
+                    ])
+                    + "</tr>"
+                )
+                for jour in grille_html_recherche.index:
+                    tbody_r2 += (
+                        f"<tr><td style='background:#f0fdfa;font-weight:bold;"
+                        f"text-align:center;padding:10px;'>{jour}</td>"
+                    )
+                    for val in grille_html_recherche.loc[jour]:
+                        tbody_r2 += (
+                            f"<td style='border:1px solid #99f6e4;padding:6px;"
+                            f"vertical-align:top;'>{val}</td>"
+                        )
+                    tbody_r2 += "</tr>"
+
+            sous_titre_recherche_ens = f"Promotion {promotion_recherchee_ens}"
+            if type_recherche_ens != "Tous les types":
+                sous_titre_recherche_ens += f" — {type_recherche_ens}"
+
+            if not grille_html_recherche.empty:
+                st.markdown(
+                    f"<div style='background:linear-gradient(135deg,#0f766e,#14b8a6);"
+                    f"color:white;padding:12px 16px;border-radius:8px 8px 0 0;"
+                    f"margin-top:10px;text-align:center;'>"
+                    f"<b>🔍 {sous_titre_recherche_ens}</b></div>"
+                    f"<div style='overflow-x:auto;border:1px solid #99f6e4;"
+                    f"border-radius:0 0 8px 8px;'>"
+                    f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;'>"
+                    f"<thead>{thead_r2}</thead><tbody>{tbody_r2}</tbody></table></div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.info(
+                    "ℹ️ Aucun enseignement à afficher pour cette promotion "
+                    "avec le type sélectionné."
+                )
+
+            st.markdown("#### 📥 Exporter cette promotion")
+            cr1, cr2, cr3 = st.columns(3)
+            suffixe_recherche_ens = promotion_recherchee_ens.replace(' ', '_')
+            if type_recherche_ens != "Tous les types":
+                suffixe_recherche_ens += f"_{type_recherche_ens.split()[1].replace(' ', '_')}"
+
+            # 1️⃣ EXCEL
+            if not grille_text_recherche.empty:
+                buf_xl_r2 = io.BytesIO()
+                with pd.ExcelWriter(buf_xl_r2, engine='xlsxwriter') as writer:
+                    grille_text_recherche.to_excel(writer, sheet_name='EDT_Promotion', startrow=2)
+                    wb_r2 = writer.book
+                    ws_r2 = writer.sheets['EDT_Promotion']
+
+                    title_fmt_r2 = wb_r2.add_format({'bold': True, 'font_size': 14, 'font_color': 'white', 'align': 'center', 'valign': 'vcenter', 'bg_color': '#0f766e'})
+                    ws_r2.merge_range(0, 0, 0, len(grille_text_recherche.columns), f"EDT — {sous_titre_recherche_ens}", title_fmt_r2)
+                    ws_r2.merge_range(1, 0, 1, len(grille_text_recherche.columns), f"Semestre 01 — 2026-2027 | Généré le {datetime.now().strftime('%d/%m/%Y')}",
+                                    wb_r2.add_format({'italic': True, 'align': 'center', 'font_size': 10, 'font_color': '#64748b'}))
+
+                    hdr_fmt_r2 = wb_r2.add_format({'bold': True, 'bg_color': '#0f766e', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                    idx_fmt_r2 = wb_r2.add_format({'bold': True, 'bg_color': '#f0fdfa', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                    cell_fmt_r2 = wb_r2.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10})
+                    alt_fmt_r2 = wb_r2.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10, 'bg_color': '#F0FDFA'})
+
+                    ws_r2.set_column(0, 0, 16)
+                    ws_r2.set_column(1, len(grille_text_recherche.columns), 30)
+
+                    for col_num, val in enumerate(grille_text_recherche.columns, start=1):
+                        ws_r2.write(2, col_num, val, hdr_fmt_r2)
+                    ws_r2.write(2, 0, "JOUR", hdr_fmt_r2)
+
+                    for row_num, (jour, row) in enumerate(grille_text_recherche.iterrows(), start=3):
+                        fmt_r2 = alt_fmt_r2 if row_num % 2 == 0 else cell_fmt_r2
+                        ws_r2.write(row_num, 0, jour, idx_fmt_r2)
+                        for col_num, val in enumerate(row, start=1):
+                            ws_r2.write(row_num, col_num, val, fmt_r2)
+                        n_lines_r2 = max([str(v).count('\n') + 1 for v in row] + [1])
+                        ws_r2.set_row(row_num, max(40, n_lines_r2 * 14))
+
+                    ws_r2.freeze_panes(3, 1)
+
+                cr1.download_button(
+                    "📊 Excel", buf_xl_r2.getvalue(),
+                    f"EDT_{suffixe_recherche_ens}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True, key="dl_recherche_xl_ens"
+                )
+            else:
+                cr1.button("📊 Excel", disabled=True, use_container_width=True, key="dl_recherche_xl_ens_off")
+
+            # 2️⃣ HTML
+            if not grille_html_recherche.empty:
+                html_doc_r2 = f"""<!DOCTYPE html>
+<html lang='fr'><head><meta charset='UTF-8'><title>EDT {promotion_recherchee_ens}</title>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;margin:0;color:#1e293b;}}
+.container{{max-width:1200px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
+.header{{background:linear-gradient(135deg,#0f766e,#14b8a6);color:white;padding:20px;text-align:center;}}
+.header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
+.content{{padding:20px;}}
+table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+td,th{{word-wrap:break-word;}}
+.footer{{text-align:center;padding:15px;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;}}
+</style></head><body>
+<div class='container'>
+<div class='header'><h1>🔍 {sous_titre_recherche_ens}</h1><p>Semestre 01 — 2026-2027 | département d'Électrotechnique — FGE/UDL-SBA</p></div>
+<div class='content'><table><thead>{thead_r2}</thead><tbody>{tbody_r2}</tbody></table></div>
+<div class='footer'>Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</div>
+</div></body></html>"""
+                cr2.download_button(
+                    "🌐 HTML", html_doc_r2,
+                    f"EDT_{suffixe_recherche_ens}.html",
+                    "text/html", use_container_width=True, key="dl_recherche_html_ens"
+                )
+            else:
+                cr2.button("🌐 HTML", disabled=True, use_container_width=True, key="dl_recherche_html_ens_off")
+
+            # 3️⃣ PDF
+            if not grille_text_recherche.empty:
+                try:
+                    from fpdf import FPDF
+
+                    class EDTRecherchePdf(FPDF):
+                        def header(self):
+                            self.set_font('Arial', 'B', 9)
+                            self.set_text_color(15, 118, 110)
+                            t = "Plateforme EDT -- UDL-SBA | Semestre 01 2026-2027".encode('latin-1', 'ignore').decode('latin-1')
+                            self.cell(0, 6, t, 0, 1, 'C')
+                            self.set_draw_color(212, 175, 55); self.line(10, self.get_y(), self.w - 10, self.get_y()); self.ln(3)
+
+                        def footer(self):
+                            self.set_y(-15); self.set_font('Arial', 'I', 8); self.set_text_color(128, 128, 128)
+                            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+                    def _san_r2(text):
+                        if not text:
+                            return ""
+                        t = str(text)
+                        repl = {"'": "'", "'": "'", "–": "-", "—": "-", "…": "...", "«": "\"", "»": "\"", "œ": "oe", "Œ": "OE",
+                                "à": "a", "â": "a", "ä": "a", "á": "a", "ã": "a", "å": "a", "è": "e", "é": "e", "ê": "e", "ë": "e",
+                                "ì": "i", "í": "i", "î": "i", "ï": "i", "ò": "o", "ó": "o", "ô": "o", "ö": "o", "ù": "u", "ú": "u", "û": "u", "ü": "u",
+                                "ç": "c", "ñ": "n", "ÿ": "y", "ý": "y", "À": "A", "Â": "A", "Ä": "A", "Á": "A", "Ã": "A", "È": "E", "É": "E", "Ê": "E", "Ë": "E",
+                                "Ì": "I", "Í": "I", "Î": "I", "Ï": "I", "Ò": "O", "Ó": "O", "Ô": "O", "Ö": "O", "Ù": "U", "Ú": "U", "Û": "U", "Ü": "U", "Ç": "C", "Ñ": "N"}
+                        for o, n in repl.items():
+                            t = t.replace(o, n)
+                        return t.encode('latin-1', 'ignore').decode('latin-1')
+
+                    pdf_r2 = EDTRecherchePdf(orientation='L', unit='mm', format='A4')
+                    pdf_r2.set_auto_page_break(auto=True, margin=15)
+                    pdf_r2.add_page()
+                    pdf_r2.set_font('Arial', 'B', 13); pdf_r2.set_text_color(15, 118, 110)
+                    pdf_r2.cell(0, 8, _san_r2(f"EDT -- {sous_titre_recherche_ens}"), 0, 1, 'C')
+                    pdf_r2.set_font('Arial', 'I', 9); pdf_r2.set_text_color(100, 100, 100)
+                    pdf_r2.cell(0, 5, _san_r2("Semestre 01 -- 2026-2027"), 0, 1, 'C'); pdf_r2.ln(3)
+
+                    n_cols_r2 = len(grille_text_recherche.columns)
+                    page_w_r2 = pdf_r2.w - 20
+                    col_j_r2 = 25
+                    col_h_r2 = (page_w_r2 - col_j_r2) / n_cols_r2 if n_cols_r2 > 0 else page_w_r2
+
+                    pdf_r2.set_font('Arial', 'B', 8); pdf_r2.set_fill_color(15, 118, 110); pdf_r2.set_text_color(255, 255, 255)
+                    pdf_r2.cell(col_j_r2, 9, _san_r2("JOUR"), 1, 0, 'C', True)
+                    for h in grille_text_recherche.columns:
+                        pdf_r2.cell(col_h_r2, 9, _san_r2(h), 1, 0, 'C', True)
+                    pdf_r2.ln()
+
+                    pdf_r2.set_text_color(0, 0, 0); pdf_r2.set_font('Arial', '', 7.5); pdf_r2.set_draw_color(180, 180, 180)
+
+                    for idx, (jour, row) in enumerate(grille_text_recherche.iterrows()):
+                        max_h_r2 = 12
+                        for val in row:
+                            if val:
+                                n_lines = str(val).count('\n') + max(1, int(len(str(val)) / 30))
+                                h_needed = n_lines * 3.8 + 4
+                                if h_needed > max_h_r2:
+                                    max_h_r2 = h_needed
+
+                        if pdf_r2.get_y() + max_h_r2 > pdf_r2.h - 15:
+                            pdf_r2.add_page()
+                            pdf_r2.set_font('Arial', 'B', 8); pdf_r2.set_fill_color(15, 118, 110); pdf_r2.set_text_color(255, 255, 255)
+                            pdf_r2.cell(col_j_r2, 9, _san_r2("JOUR"), 1, 0, 'C', True)
+                            for h in grille_text_recherche.columns:
+                                pdf_r2.cell(col_h_r2, 9, _san_r2(h), 1, 0, 'C', True)
+                            pdf_r2.ln(); pdf_r2.set_text_color(0, 0, 0); pdf_r2.set_font('Arial', '', 7.5)
+
+                        bg_r2 = (240, 253, 250) if idx % 2 == 0 else (255, 255, 255)
+                        pdf_r2.set_fill_color(*bg_r2)
+                        pdf_r2.set_font('Arial', 'B', 7.5)
+                        pdf_r2.cell(col_j_r2, max_h_r2, _san_r2(jour), 1, 0, 'C', True)
+                        pdf_r2.set_font('Arial', '', 7.5)
+
+                        for val in row:
+                            x, y = pdf_r2.get_x(), pdf_r2.get_y()
+                            raw = str(val).upper()
+                            if "(MOI)" in raw:
+                                pdf_r2.set_fill_color(254, 243, 199)
+                            elif "COURS" in raw:
+                                pdf_r2.set_fill_color(219, 234, 254)
+                            elif "TD" in raw:
+                                pdf_r2.set_fill_color(220, 252, 231)
+                            elif "TP" in raw:
+                                pdf_r2.set_fill_color(254, 226, 226)
+                            else:
+                                pdf_r2.set_fill_color(*bg_r2)
+                            pdf_r2.rect(x, y, col_h_r2, max_h_r2, 'FD')
+                            if val:
+                                pdf_r2.set_xy(x + 1.5, y + 1.5)
+                                pdf_r2.multi_cell(col_h_r2 - 3, 3.5, _san_r2(val), 0, 'L')
+                            pdf_r2.set_xy(x + col_h_r2, y)
+                        pdf_r2.ln(max_h_r2)
+
+                    cr3.download_button(
+                        "📄 PDF", bytes(pdf_r2.output()),
+                        f"EDT_{suffixe_recherche_ens}.pdf",
+                        "application/pdf", use_container_width=True, key="dl_recherche_pdf_ens"
+                    )
+                except Exception as e:
+                    cr3.warning(f"PDF indisponible : {e}")
+            else:
+                cr3.button("📄 PDF", disabled=True, use_container_width=True, key="dl_recherche_pdf_ens_off")
 
         
         
