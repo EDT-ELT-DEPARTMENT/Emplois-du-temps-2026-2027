@@ -11437,6 +11437,10 @@ td{{word-wrap:break-word;}}
         else:
             c3.button("📄 PDF (Grille)", disabled=True, use_container_width=True)
 
+        # Valeur sûre pour éviter UnboundLocalError dans les vues de promotion.
+        # Elle est redéfinie dans les branches d'authentification appropriées.
+        cible = str(locals().get("cible", "")).strip()
+
         # =============================================================================
         # 👥 EDT COMPLET DE LA PROMOTION — TOUS LES ENSEIGNANTS INTERVENANT
         # =============================================================================
@@ -11520,11 +11524,11 @@ td{{word-wrap:break-word;}}
             grille_text_promo = pd.DataFrame()
 
             if not df_g_promo.empty:
-                g_html_promo = df_g_promo.groupby(["j_norm", "h_norm"]).apply(
-                    _fmt_html_promo, include_groups=False
+                g_html_promo = df_g_promo.groupby(["j_norm", "h_norm"], group_keys=False).apply(
+                    lambda groupe: _fmt_html_promo(groupe.drop(columns=["j_norm", "h_norm"], errors="ignore"))
                 ).unstack(fill_value="")
-                g_text_promo = df_g_promo.groupby(["j_norm", "h_norm"]).apply(
-                    _fmt_text_promo, include_groups=False
+                g_text_promo = df_g_promo.groupby(["j_norm", "h_norm"], group_keys=False).apply(
+                    lambda groupe: _fmt_text_promo(groupe.drop(columns=["j_norm", "h_norm"], errors="ignore"))
                 ).unstack(fill_value="")
 
                 jours_ok_promo = [j for j in _JOURS if j in g_html_promo.index]
