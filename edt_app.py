@@ -3969,8 +3969,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             return "\n\n".join(items)
 
                         if not df_edt_indiv_justif.empty:
-                            grouped_justif = df_edt_indiv_justif.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_justif, include_groups=False)
-                            grouped_justif_texte = df_edt_indiv_justif.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_justif_texte, include_groups=False)
+                            grouped_justif = df_edt_indiv_justif.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_justif)
+                            grouped_justif_texte = df_edt_indiv_justif.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_justif_texte)
                             grid_justif = grouped_justif.unstack("h_norm")
                             grid_justif_texte = grouped_justif_texte.unstack("h_norm")
                         else:
@@ -5350,7 +5350,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     )
                 return "".join(items)
 
-            grid_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e, include_groups=False).unstack('j_norm')
+            grid_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e).unstack('j_norm')
             grid_e = grid_e.reindex(
                 index=[normalize(h) for h in horaires_list],
                 columns=[normalize(j) for j in jours_list]
@@ -5434,7 +5434,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     items.append(f"{entete_enseignement}\n📍 {r['Lieu']} | 🎓 {r['Promotion']}{ligne_enseignant_txt}")
                 return "\n────────\n".join(items)
 
-            grid_text_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e_text, include_groups=False).unstack('j_norm')
+            grid_text_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e_text).unstack('j_norm')
             grid_text_e = grid_text_e.reindex(
                 index=[normalize(h) for h in horaires_list],
                 columns=[normalize(j) for j in jours_list]
@@ -6648,7 +6648,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     )
                 return "".join(items)
 
-            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p).unstack('j_norm')
             grid_p = grid_p.reindex(
                 index=[normalize(h) for h in horaires_list],
                 columns=[normalize(j) for j in jours_list]
@@ -7826,7 +7826,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     items.append(f"{entete_enseignement}\n👤 {r['Enseignants']} | 📍 {r['Lieu']} | 🎓 {r['Promotion']}")
                 return "\n────────\n".join(items)
 
-            grid_text = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_text, include_groups=False).unstack('j_norm')
+            grid_text = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_text).unstack('j_norm')
             grid_text = grid_text.reindex(
                 index=[normalize(h) for h in horaires_list],
                 columns=[normalize(j) for j in jours_list]
@@ -11205,8 +11205,8 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         grille_text = pd.DataFrame()
 
         if not df_g.empty:
-            g_html = df_g.groupby(["j_norm", "h_norm"]).apply(_fmt_html, include_groups=False).unstack(fill_value="")
-            g_text = df_g.groupby(["j_norm", "h_norm"]).apply(_fmt_text, include_groups=False).unstack(fill_value="")
+            g_html = df_g.groupby(["j_norm", "h_norm"]).apply(_fmt_html).unstack(fill_value="")
+            g_text = df_g.groupby(["j_norm", "h_norm"]).apply(_fmt_text).unstack(fill_value="")
             
             jours_ok = [j for j in _JOURS if j in g_html.index]
             h_ok = [h for h in _HORAIRES if h in g_html.columns]
@@ -11437,11 +11437,11 @@ td{{word-wrap:break-word;}}
         else:
             c3.button("📄 PDF (Grille)", disabled=True, use_container_width=True)
 
-        # Valeur sûre pour éviter UnboundLocalError dans les vues de promotion.
-        # Elle est redéfinie dans les branches d'authentification appropriées.
+        # =============================================================================
+        # Initialisation sûre : évite UnboundLocalError si aucune branche
+        # précédente n'a défini la cible de l'enseignant connecté.
         cible = str(locals().get("cible", "")).strip()
 
-        # =============================================================================
         # 👥 EDT COMPLET DE LA PROMOTION — TOUS LES ENSEIGNANTS INTERVENANT
         # =============================================================================
         # Affiché uniquement lorsqu'une promotion précise est choisie (et non
@@ -11524,10 +11524,10 @@ td{{word-wrap:break-word;}}
             grille_text_promo = pd.DataFrame()
 
             if not df_g_promo.empty:
-                g_html_promo = df_g_promo.groupby(["j_norm", "h_norm"], group_keys=False).apply(
+                g_html_promo = df_g_promo.groupby(["j_norm", "h_norm"]).apply(
                     lambda groupe: _fmt_html_promo(groupe.drop(columns=["j_norm", "h_norm"], errors="ignore"))
                 ).unstack(fill_value="")
-                g_text_promo = df_g_promo.groupby(["j_norm", "h_norm"], group_keys=False).apply(
+                g_text_promo = df_g_promo.groupby(["j_norm", "h_norm"]).apply(
                     lambda groupe: _fmt_text_promo(groupe.drop(columns=["j_norm", "h_norm"], errors="ignore"))
                 ).unstack(fill_value="")
 
@@ -11824,10 +11824,10 @@ td{{word-wrap:break-word;}}
 
             if not df_g_recherche.empty:
                 g_html_r = df_g_recherche.groupby(["j_norm", "h_norm"]).apply(
-                    _fmt_html_promo, include_groups=False
+                    _fmt_html_promo
                 ).unstack(fill_value="")
                 g_text_r = df_g_recherche.groupby(["j_norm", "h_norm"]).apply(
-                    _fmt_text_promo, include_groups=False
+                    _fmt_text_promo
                 ).unstack(fill_value="")
 
                 jours_ok_r = [j for j in _JOURS if j in g_html_r.index]
@@ -14209,7 +14209,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     df['Horaire_Norm'] = df['Horaire'].apply(norm)
     
     # Pivot : Jours en lignes, Horaires en colonnes
-    grouped = df.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+    grouped = df.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell)
     if grouped.empty:
         grid = pd.DataFrame(index=[norm(j) for j in jours_ordre], columns=[norm(h) for h in horaires_ordre]).fillna("")
     else:
@@ -14573,7 +14573,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
 
             pdf.add_page()
 
-            grouped = df_ens.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+            grouped = df_ens.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell)
             grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
 
             jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
@@ -14859,7 +14859,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
             
             pdf.add_page()
             
-            grouped = df_promo.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+            grouped = df_promo.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell)
             grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
             
             jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
@@ -15143,7 +15143,7 @@ def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
             
             pdf.add_page()
             
-            grouped = df_lieu.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+            grouped = df_lieu.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell)
             grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
             
             jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
@@ -15336,7 +15336,7 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
     df['Jours_Norm'] = df['Jours'].apply(norm)
     df['Horaire_Norm'] = df['Horaire'].apply(norm)
     
-    grouped = df.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell, include_groups=False)
+    grouped = df.groupby(['Jours_Norm', 'Horaire_Norm']).apply(format_cell)
     grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
     
     jours_present = [j for j in [norm(j) for j in jours_ordre] if j in grid.index]
@@ -17865,7 +17865,7 @@ if df is not None:
 
             if not df_f.empty:
                 # --- AFFICHAGE À L'ÉCRAN ---
-                grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
+                grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case).unstack('j_norm')
                 grid = grid.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
                 grid.index = [map_h.get(i, i) for i in grid.index]
                 grid.columns = [map_j.get(c, c) for c in grid.columns]
@@ -18070,7 +18070,7 @@ if df is not None:
                     df_f = df_f.sort_values(['Horaire'])
 
                     # Préparation de la grille : on ne garde que les horaires de l'enseignant
-                    charge_group = df_f.groupby(['Horaire', 'Jours'], observed=True).apply(format_case, include_groups=False)
+                    charge_group = df_f.groupby(['Horaire', 'Jours'], observed=True).apply(format_case)
                     grid_charge = charge_group.unstack('Jours').fillna("")
                     
                     # Réordonner les jours présents
@@ -18234,7 +18234,7 @@ if df is not None:
 
             # --- 4. CONSTRUCTION ET FILTRAGE DE LA GRILLE ---
             # Groupement des données par horaire et par jour
-            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p).unstack('j_norm')
             
             # Réindexation sur tous les créneaux et jours définis globalement
             idx_h = [normalize(h) for h in horaires_list]
@@ -18376,7 +18376,7 @@ if df is not None:
                 pdf.cell(0, 8, f"PROMOTION : {p_sel}".encode('latin-1', 'replace').decode('latin-1'), 0, 1, "C")
                 pdf.ln(2)
 
-                grid_pdf = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+                grid_pdf = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p).unstack('j_norm')
                 grid_pdf = grid_pdf.reindex(index=idx_h, columns=cols_j).fillna("")
                 grid_pdf = grid_pdf[grid_pdf.any(axis=1)] 
                 grid_pdf.index = [map_h.get(i, i) for i in grid_pdf.index]
@@ -18576,7 +18576,7 @@ if df is not None:
                 pdf.ln(2)
 
                 # Reconstruction de la grille pour le PDF
-                grid_pdf = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+                grid_pdf = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p).unstack('j_norm')
                 grid_pdf = grid_pdf.reindex(index=idx_h, columns=cols_j).fillna("")
                 grid_pdf = grid_pdf[grid_pdf.any(axis=1)] 
                 grid_pdf.index = [map_h.get(i, i) for i in grid_pdf.index]
@@ -18681,7 +18681,7 @@ if df is not None:
                             df_p = df[df["Promotion"] == p_name].copy()
                             
                             # Reconstruction de la grille
-                            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+                            grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p).unstack('j_norm')
                             grid_p = grid_p.reindex(index=idx_h, columns=cols_j).fillna("")
                             grid_p = grid_p[grid_p.any(axis=1)]
                             
@@ -18765,7 +18765,7 @@ if df is not None:
                         
                         # Préparation des données de la promotion
                         df_p = df[df["Promotion"] == p_name].copy()
-                        grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p, include_groups=False).unstack('j_norm')
+                        grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p).unstack('j_norm')
                         grid_p = grid_p.reindex(index=idx_h, columns=cols_j).fillna("")
                         grid_p = grid_p[grid_p.any(axis=1)] # Ne garde que les créneaux avec des cours
                         
@@ -18884,7 +18884,7 @@ if df is not None:
                 items = [f"<b>{r['Promotion']}</b><br>{r['Enseignements']}<br><i>{r['Enseignants']}</i>" for _, r in rows.iterrows()]
                 return "<div class='separator'></div>".join(items)
                 
-            grid_s = df_s.groupby(['h_norm', 'j_norm']).apply(fmt_s, include_groups=False).unstack('j_norm')
+            grid_s = df_s.groupby(['h_norm', 'j_norm']).apply(fmt_s).unstack('j_norm')
             grid_s = grid_s.reindex(index=[normalize(h) for h in horaires_list], columns=[normalize(j) for j in jours_list]).fillna("")
             grid_s.index = horaires_list
             grid_s.columns = jours_list
@@ -19479,7 +19479,7 @@ if df is not None:
                            f"<b style='font-size:11px;'>🎓 {r['Promotion']}</b></div>")
                     items.append(txt)
                 return "".join(items)   
-            grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case, include_groups=False).unstack('j_norm')
+            grid = df_f.groupby(['h_norm', 'j_norm']).apply(format_case).unstack('j_norm')
             grid = grid.reindex(
                 index=[normalize(h) for h in horaires_list], 
                 columns=[normalize(j) for j in jours_list]
@@ -20172,7 +20172,7 @@ if is_admin:
         df_ens['Jours_Norm'] = df_ens['Jours'].apply(_norm)
         df_ens['Horaire_Norm'] = df_ens['Horaire'].apply(_norm)
     
-        grouped = df_ens.groupby(['Jours_Norm', 'Horaire_Norm']).apply(_format_cell, include_groups=False)
+        grouped = df_ens.groupby(['Jours_Norm', 'Horaire_Norm']).apply(_format_cell)
         grid = grouped.unstack(fill_value="") if not grouped.empty else pd.DataFrame()
     
         jours_present = [j for j in [_norm(j) for j in jours_ordre] if j in grid.index]
@@ -21821,8 +21821,8 @@ def generer_grille(df_filtre, mode="enseignant"):
         return "".join([format_cell_html(r, mode) for _, r in rows.iterrows()])
     def agg_text(rows):
         return "\n\n".join([format_cell_text(r, mode) for _, r in rows.iterrows()])
-    grille_html = df.groupby(["j_norm", "h_norm"]).apply(agg_html, include_groups=False).unstack(fill_value="")
-    grille_text = df.groupby(["j_norm", "h_norm"]).apply(agg_text, include_groups=False).unstack(fill_value="")
+    grille_html = df.groupby(["j_norm", "h_norm"]).apply(agg_html).unstack(fill_value="")
+    grille_text = df.groupby(["j_norm", "h_norm"]).apply(agg_text).unstack(fill_value="")
     jours_present = [j for j in [j.lower() for j in JOURS_STD] if j in grille_html.index]
     h_present = [h for h in [normalize_horaire(h) for h in HORAIRES_STD] if h in grille_html.columns]
     if not jours_present or not h_present:
@@ -23076,8 +23076,8 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                             return "\n\n".join(items)
 
                         if not df_edt_final_type.empty:
-                            grouped_indiv = df_edt_final_type.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv, include_groups=False)
-                            grouped_indiv_texte = df_edt_final_type.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv_texte, include_groups=False)
+                            grouped_indiv = df_edt_final_type.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv)
+                            grouped_indiv_texte = df_edt_final_type.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv_texte)
                         else:
                             grouped_indiv = pd.Series(dtype=object)
                             grouped_indiv_texte = pd.Series(dtype=object)
