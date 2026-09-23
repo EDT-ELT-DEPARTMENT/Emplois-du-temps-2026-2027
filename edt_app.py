@@ -8093,158 +8093,382 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
         elif mode_view == "🟢 Lieux Non Occupés":
             st.subheader("🟢 Lieux Non Occupés — disponibilité par jour et par horaire")
             st.caption(
-                "Pour chaque jour et chaque horaire : liste des salles NON occupées "
-                "(aucune séance n'y est affectée). Exemple : choisir « AS10 » pour "
-                "voir les jours et horaires où cette salle est libre. Les lieux "
-                "composites (ex. « A08/G1 ») sont analysés salle par salle."
+                "Ajoutez progressivement les lieux à analyser dans la liste déroulante. "
+                "Dans la grille, les cellules vertes indiquent un lieu libre et les "
+                "cellules rouges un lieu occupé. Les jours sont affichés verticalement "
+                "et les horaires horizontalement."
             )
+
             if df is None or df.empty:
                 st.error("❌ Les données EDT ne sont pas disponibles.")
             else:
-                # Correspondance FLEXIBLE : les creneaux horaires et
-                # les jours utilises pour l'analyse de disponibilite
-                # sont reconstruits a partir des EDT deja generes
-                # (colonnes «Horaire» et «Jours» du fichier source
-                # Data, toutes promotions confondues), et non plus
-                # d'une liste figee en dur.
                 horaires_list_lx = _lieux_horaires_dynamiques(df, horaires_list)
                 jours_list_lx = _lieux_jours_dynamiques(df, jours_list)
                 occupes_lx, libres_lx, tous_lieux_lx = _lieux_libres(
-                    df, horaires_list_lx, jours_list_lx)
+                    df,
+                    horaires_list_lx,
+                    jours_list_lx
+                )
+
                 if not tous_lieux_lx:
                     st.warning("⚠️ Aucun lieu exploitable dans les données EDT.")
                 else:
-                    cible_lx = st.selectbox(
-                        "Lieu à analyser (ex. AS10) :",
-                        ["📊 Vue globale — tous les lieux"] + tous_lieux_lx,
-                        key="lx1_cible")
-                    salle_lx = None if cible_lx.startswith("📊") else cible_lx
-                    date_lx = datetime.now().strftime("%d/%m/%Y")
-                    etab_lx = ("Département d'Électrotechnique — Faculté de Génie "
-                               "Électrique — UDL-SBA")
-                    if salle_lx:
-                        grille_aff_lx = pd.DataFrame(
-                            [["🟢 Libre" if (j, h, salle_lx) not in occupes_lx
-                              else "🔴 Occupé" for h in horaires_list_lx]
-                             for j in jours_list_lx],
-                            index=jours_list_lx, columns=horaires_list_lx)
-                        nb_libres_lx = sum(
-                            1 for j in jours_list_lx for h in horaires_list_lx
-                            if (j, h, salle_lx) not in occupes_lx)
-                        nb_total_lx = len(jours_list_lx) * len(horaires_list_lx)
-                        m1, m2, m3 = st.columns(3)
-                        m1.metric("🟢 Créneaux libres", nb_libres_lx)
-                        m2.metric("🔴 Créneaux occupés", nb_total_lx - nb_libres_lx)
-                        m3.metric("📈 Disponibilité",
-                                  f"{round(100 * nb_libres_lx / nb_total_lx)} %"
-                                  if nb_total_lx else "—")
-                        st.markdown(
-                            f"#### 🗓 Grille — {salle_lx} "
-                            "(jours en vertical, horaires en horizontal)")
-                        st.dataframe(grille_aff_lx, use_container_width=True)
-                        libres_liste_lx = [
-                            {"Jour": j, "Horaire": h}
-                            for j in jours_list_lx for h in horaires_list_lx
-                            if (j, h, salle_lx) not in occupes_lx]
-                        if libres_liste_lx:
-                            apercu_lx = " ; ".join(
-                                f"{r['Jour']} {r['Horaire']}"
-                                for r in libres_liste_lx[:6])
-                            st.info(
-                                f"🔎 Réponse : la salle **{salle_lx}** est non "
-                                f"occupée (libre) à : {apercu_lx}"
-                                + (" …" if len(libres_liste_lx) > 6 else ""))
-                        st.markdown(
-                            f"##### ✅ {salle_lx} est NON occupée aux "
-                            f"{len(libres_liste_lx)} créneaux suivants :")
-                        st.dataframe(pd.DataFrame(libres_liste_lx),
-                                     use_container_width=True, hide_index=True)
-                    else:
-                        grille_cnt_lx = pd.DataFrame(
-                            [[len(libres_lx[(j, h)]) for h in horaires_list_lx]
-                             for j in jours_list_lx],
-                            index=jours_list_lx, columns=horaires_list_lx)
-                        st.markdown(
-                            "#### 🗓 Nombre de lieux non occupés "
-                            "(jours en vertical, horaires en horizontal)")
-                        st.dataframe(grille_cnt_lx, use_container_width=True)
-                        fj_lx, fh_lx = st.columns(2)
-                        j_sel_lx = fj_lx.selectbox(
-                            "Jour :", ["Tous"] + jours_list_lx, key="lx1_jour")
-                        h_sel_lx = fh_lx.selectbox(
-                            "Horaire :", ["Tous"] + horaires_list_lx,
-                            key="lx1_horaire")
-                        lignes_glob_lx = []
-                        for (j, h), lls in libres_lx.items():
-                            if ((j_sel_lx == "Tous" or j == j_sel_lx)
-                                    and (h_sel_lx == "Tous" or h == h_sel_lx)):
-                                for l in lls:
-                                    lignes_glob_lx.append(
-                                        {"Jour": j, "Horaire": h, "Lieu libre": l})
-                        st.markdown(
-                            f"##### 📋 Lieux non occupés — "
-                            f"{len(lignes_glob_lx)} ligne(s) jour × horaire × lieu")
-                        st.dataframe(pd.DataFrame(lignes_glob_lx),
-                                     use_container_width=True, hide_index=True)
+                    cle_liste_lieux = "lx1_lieux_selectionnes"
+                    lieux_actuels = st.session_state.get(
+                        cle_liste_lieux,
+                        []
+                    )
 
-                    # ---- Préparation des exports (Excel + PDF) ----
-                    if salle_lx:
-                        cellules_lx = {
-                            (j, h): ("Libre" if (j, h, salle_lx) not in occupes_lx
-                                     else "Occupé",
-                                     (j, h, salle_lx) not in occupes_lx)
-                            for j in jours_list_lx for h in horaires_list_lx}
-                        detail_lx = [
-                            (j, h, salle_lx)
-                            for j in jours_list_lx for h in horaires_list_lx
-                            if (j, h, salle_lx) not in occupes_lx]
-                        titre_lx = f"LIEUX NON OCCUPÉS — SALLE {salle_lx}"
-                        nom_f_lx = salle_lx.replace(" ", "_").replace("/", "-")
-                    else:
-                        cellules_lx = {
-                            (j, h): (f"{len(libres_lx[(j, h)])} libres", True)
-                            for j in jours_list_lx for h in horaires_list_lx}
-                        detail_lx = [
-                            (j, h, l)
-                            for (j, h), lls in libres_lx.items() for l in lls]
-                        titre_lx = "LIEUX NON OCCUPÉS — TOUS LES LIEUX"
-                        nom_f_lx = "TOUS_LES_LIEUX"
-                    total_c_lx = len(jours_list_lx) * len(horaires_list_lx)
-                    synthese_lx = []
-                    for l in tous_lieux_lx:
-                        nb_o_lx = sum(1 for (jj, hh, ll) in occupes_lx if ll == l)
-                        synthese_lx.append((l, total_c_lx - nb_o_lx, nb_o_lx))
+                    lieux_actuels = [
+                        lieu for lieu in lieux_actuels
+                        if lieu in tous_lieux_lx
+                    ]
 
-                    st.markdown("---")
-                    bx1_lx, bx2_lx = st.columns(2)
-                    try:
-                        xlsx_lx = _lieux_libres_excel_bytes(
-                            jours_list_lx, horaires_list_lx, cellules_lx, detail_lx,
-                            synthese_lx, titre_lx,
-                            f"{etab_lx} | Semestre 01 — 2026-2027 | Date : {date_lx}")
-                        bx1_lx.download_button(
-                            "📥 Excel — lieux non occupés",
-                            data=xlsx_lx,
-                            file_name=f"Lieux_non_occupes_{nom_f_lx}_2027.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    lieux_selectionnes_lx = st.multiselect(
+                        "🏫 Ajouter progressivement les lieux à afficher :",
+                        options=tous_lieux_lx,
+                        default=lieux_actuels,
+                        key=cle_liste_lieux,
+                        help=(
+                            "Sélectionnez un ou plusieurs lieux. Vous pouvez "
+                            "ajouter ou retirer des lieux à tout moment."
+                        )
+                    )
+
+                    if not lieux_selectionnes_lx:
+                        st.info(
+                            "ℹ️ Sélectionnez au moins un lieu pour afficher la grille."
+                        )
+                    else:
+                        date_lx = datetime.now().strftime("%d/%m/%Y")
+                        etab_lx = (
+                            "Département d'Électrotechnique — Faculté de Génie "
+                            "Électrique — UDL-SBA"
+                        )
+
+                        st.markdown(
+                            "### ✅ Lieux actuellement affichés : "
+                            + ", ".join(lieux_selectionnes_lx)
+                        )
+
+                        for index_lieu_lx, salle_lx in enumerate(
+                            lieux_selectionnes_lx
+                        ):
+                            grille_aff_lx = pd.DataFrame(
+                                [
+                                    [
+                                        (
+                                            "🟢 LIBRE"
+                                            if (
+                                                j,
+                                                h,
+                                                salle_lx
+                                            ) not in occupes_lx
+                                            else "🔴 OCCUPÉ"
+                                        )
+                                        for h in horaires_list_lx
+                                    ]
+                                    for j in jours_list_lx
+                                ],
+                                index=jours_list_lx,
+                                columns=horaires_list_lx
+                            )
+
+                            nombre_creneaux_total_lx = (
+                                len(jours_list_lx)
+                                * len(horaires_list_lx)
+                            )
+
+                            nombre_creneaux_libres_lx = sum(
+                                1
+                                for j in jours_list_lx
+                                for h in horaires_list_lx
+                                if (
+                                    j,
+                                    h,
+                                    salle_lx
+                                ) not in occupes_lx
+                            )
+
+                            nombre_creneaux_occupes_lx = (
+                                nombre_creneaux_total_lx
+                                - nombre_creneaux_libres_lx
+                            )
+
+                            disponibilite_lx = (
+                                round(
+                                    100
+                                    * nombre_creneaux_libres_lx
+                                    / nombre_creneaux_total_lx
+                                )
+                                if nombre_creneaux_total_lx
+                                else 0
+                            )
+
+                            st.markdown(
+                                f"### 🗓 Grille — {salle_lx} "
+                                "(jours en vertical, horaires en horizontal)"
+                            )
+
+                            metrique_1_lx, metrique_2_lx, metrique_3_lx = st.columns(3)
+
+                            metrique_1_lx.metric(
+                                "🟢 Créneaux libres",
+                                nombre_creneaux_libres_lx
+                            )
+
+                            metrique_2_lx.metric(
+                                "🔴 Créneaux occupés",
+                                nombre_creneaux_occupes_lx
+                            )
+
+                            metrique_3_lx.metric(
+                                "📈 Disponibilité",
+                                f"{disponibilite_lx} %"
+                            )
+
+                            def couleur_cellule_lieu_lx(valeur):
+                                if "LIBRE" in str(valeur):
+                                    return (
+                                        "background-color: #dcfce7; "
+                                        "color: #166534; "
+                                        "font-weight: bold; "
+                                        "text-align: center;"
+                                    )
+
+                                return (
+                                    "background-color: #fee2e2; "
+                                    "color: #991b1b; "
+                                    "font-weight: bold; "
+                                    "text-align: center;"
+                                )
+
+                            st.dataframe(
+                                grille_aff_lx.style.applymap(
+                                    couleur_cellule_lieu_lx
+                                ),
+                                use_container_width=True,
+                                height=(
+                                    90
+                                    + 45 * len(jours_list_lx)
+                                )
+                            )
+
+                            libres_liste_lx = [
+                                {
+                                    "Jour": j,
+                                    "Horaire": h,
+                                    "Lieu": salle_lx,
+                                    "État": "🟢 LIBRE"
+                                }
+                                for j in jours_list_lx
+                                for h in horaires_list_lx
+                                if (
+                                    j,
+                                    h,
+                                    salle_lx
+                                ) not in occupes_lx
+                            ]
+
+                            st.markdown(
+                                f"##### 🟢 Créneaux libres — {salle_lx} "
+                                f"({len(libres_liste_lx)})"
+                            )
+
+                            st.dataframe(
+                                pd.DataFrame(libres_liste_lx),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+
+                            st.divider()
+
+                        # Grille récapitulative progressive : chaque cellule
+                        # contient les lieux libres à ce jour et horaire.
+                        st.markdown(
+                            "### 📊 Récapitulatif des lieux sélectionnés "
+                            "(jours en vertical, horaires en horizontal)"
+                        )
+
+                        grille_recap_lx = pd.DataFrame(
+                            [
+                                [
+                                    "\n".join(
+                                        [
+                                            f"🟢 {lieu}"
+                                            for lieu in lieux_selectionnes_lx
+                                            if (
+                                                j,
+                                                h,
+                                                lieu
+                                            ) not in occupes_lx
+                                        ]
+                                    )
+                                    or "🔴 Aucun lieu libre"
+                                    for h in horaires_list_lx
+                                ]
+                                for j in jours_list_lx
+                            ],
+                            index=jours_list_lx,
+                            columns=horaires_list_lx
+                        )
+
+                        def couleur_recap_lieux_lx(valeur):
+                            if str(valeur).startswith("🟢"):
+                                return (
+                                    "background-color: #dcfce7; "
+                                    "color: #166534; "
+                                    "font-weight: bold; "
+                                    "white-space: pre-line;"
+                                )
+
+                            return (
+                                "background-color: #fee2e2; "
+                                "color: #991b1b; "
+                                "font-weight: bold; "
+                                "white-space: pre-line;"
+                            )
+
+                        st.dataframe(
+                            grille_recap_lx.style.applymap(
+                                couleur_recap_lieux_lx
+                            ),
                             use_container_width=True,
-                            key=f"lx1_xlsx_{nom_f_lx}")
-                    except Exception as e:
-                        bx1_lx.error(f"Erreur Excel : {e}")
-                    try:
-                        pdf_lx = _lieux_libres_pdf_bytes(
-                            jours_list_lx, horaires_list_lx, cellules_lx, titre_lx,
-                            f"{etab_lx} | Semestre 01 — 2026-2027 | Date : {date_lx}",
-                            salle=salle_lx)
-                        bx2_lx.download_button(
-                            "📄 PDF — grille (jours vertical × horaires horizontal)",
-                            data=pdf_lx,
-                            file_name=f"Lieux_non_occupes_{nom_f_lx}_2027.pdf",
-                            mime="application/pdf",
-                            use_container_width=True,
-                            key=f"lx1_pdf_{nom_f_lx}")
-                    except Exception as e:
-                        bx2_lx.error(f"Erreur PDF : {e}")
+                            height=(
+                                100
+                                + 55 * len(jours_list_lx)
+                            )
+                        )
+
+                        # Exports pour tous les lieux sélectionnés.
+                        detail_lx = []
+                        cellules_lx = {}
+
+                        for j in jours_list_lx:
+                            for h in horaires_list_lx:
+                                lieux_libres_cellule_lx = [
+                                    lieu
+                                    for lieu in lieux_selectionnes_lx
+                                    if (
+                                        j,
+                                        h,
+                                        lieu
+                                    ) not in occupes_lx
+                                ]
+
+                                texte_cellule_lx = (
+                                    "\n".join(
+                                        f"LIBRE : {lieu}"
+                                        for lieu in lieux_libres_cellule_lx
+                                    )
+                                    or "Aucun lieu libre"
+                                )
+
+                                cellules_lx[(j, h)] = (
+                                    texte_cellule_lx,
+                                    bool(lieux_libres_cellule_lx)
+                                )
+
+                                for lieu in lieux_libres_cellule_lx:
+                                    detail_lx.append(
+                                        (j, h, lieu)
+                                    )
+
+                        total_creneaux_lx = (
+                            len(jours_list_lx)
+                            * len(horaires_list_lx)
+                        )
+
+                        synthese_lx = []
+
+                        for lieu in lieux_selectionnes_lx:
+                            nombre_occupes_lx = sum(
+                                1
+                                for j, h, lieu_occupe in occupes_lx
+                                if lieu_occupe == lieu
+                                and j in jours_list_lx
+                                and h in horaires_list_lx
+                            )
+
+                            synthese_lx.append(
+                                (
+                                    lieu,
+                                    total_creneaux_lx - nombre_occupes_lx,
+                                    nombre_occupes_lx
+                                )
+                            )
+
+                        nom_fichier_lx = "_".join(
+                            lieu.replace(" ", "_").replace("/", "-")
+                            for lieu in lieux_selectionnes_lx
+                        )
+
+                        st.markdown("### 📥 Exporter les lieux sélectionnés")
+
+                        bouton_excel_lx, bouton_pdf_lx = st.columns(2)
+
+                        try:
+                            fichier_excel_lx = _lieux_libres_excel_bytes(
+                                jours_list_lx,
+                                horaires_list_lx,
+                                cellules_lx,
+                                detail_lx,
+                                synthese_lx,
+                                "LIEUX SÉLECTIONNÉS — DISPONIBILITÉ",
+                                (
+                                    f"{etab_lx} | Semestre 01 — 2026-2027 | "
+                                    f"Date : {date_lx} | "
+                                    f"Lieux : {', '.join(lieux_selectionnes_lx)}"
+                                )
+                            )
+
+                            bouton_excel_lx.download_button(
+                                "📊 Télécharger Excel",
+                                data=fichier_excel_lx,
+                                file_name=(
+                                    f"Disponibilite_lieux_{nom_fichier_lx}.xlsx"
+                                ),
+                                mime=(
+                                    "application/vnd.openxmlformats-officedocument."
+                                    "spreadsheetml.sheet"
+                                ),
+                                use_container_width=True,
+                                key="lx_progressif_excel"
+                            )
+                        except Exception as erreur_excel_lx:
+                            bouton_excel_lx.error(
+                                f"❌ Erreur Excel : {erreur_excel_lx}"
+                            )
+
+                        try:
+                            fichier_pdf_lx = _lieux_libres_pdf_bytes(
+                                jours_list_lx,
+                                horaires_list_lx,
+                                cellules_lx,
+                                "LIEUX SÉLECTIONNÉS — DISPONIBILITÉ",
+                                (
+                                    f"{etab_lx} | Semestre 01 — 2026-2027 | "
+                                    f"Date : {date_lx} | "
+                                    f"Lieux : {', '.join(lieux_selectionnes_lx)}"
+                                ),
+                                salle=None
+                            )
+
+                            bouton_pdf_lx.download_button(
+                                "📄 Télécharger PDF",
+                                data=fichier_pdf_lx,
+                                file_name=(
+                                    f"Disponibilite_lieux_{nom_fichier_lx}.pdf"
+                                ),
+                                mime="application/pdf",
+                                use_container_width=True,
+                                key="lx_progressif_pdf"
+                            )
+                        except Exception as erreur_pdf_lx:
+                            bouton_pdf_lx.error(
+                                f"❌ Erreur PDF : {erreur_pdf_lx}"
+                            )
+
         elif mode_view == "🚩 Vérificateur de conflits":
             st.subheader("🚩 Détection des Conflits")
             
