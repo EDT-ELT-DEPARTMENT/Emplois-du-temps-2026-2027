@@ -8093,10 +8093,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
         elif mode_view == "🟢 Lieux Non Occupés":
             st.subheader("🟢 Lieux Non Occupés — disponibilité par jour et par horaire")
             st.caption(
-                "Ajoutez progressivement les lieux à analyser dans la liste déroulante. "
-                "Dans la grille, les cellules vertes indiquent un lieu libre et les "
-                "cellules rouges un lieu occupé. Les jours sont affichés verticalement "
-                "et les horaires horizontalement."
+                "Ajoutez progressivement les lieux dans la liste. Les cellules vertes "
+                "indiquent un lieu libre ; les cellules rouges indiquent un lieu occupé."
             )
 
             if df is None or df.empty:
@@ -8113,178 +8111,109 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 if not tous_lieux_lx:
                     st.warning("⚠️ Aucun lieu exploitable dans les données EDT.")
                 else:
-                    cle_liste_lieux = "lx1_lieux_selectionnes"
-                    lieux_actuels = st.session_state.get(
-                        cle_liste_lieux,
-                        []
-                    )
-
-                    lieux_actuels = [
-                        lieu for lieu in lieux_actuels
-                        if lieu in tous_lieux_lx
-                    ]
-
                     lieux_selectionnes_lx = st.multiselect(
                         "🏫 Ajouter progressivement les lieux à afficher :",
                         options=tous_lieux_lx,
-                        default=lieux_actuels,
-                        key=cle_liste_lieux,
-                        help=(
-                            "Sélectionnez un ou plusieurs lieux. Vous pouvez "
-                            "ajouter ou retirer des lieux à tout moment."
-                        )
+                        default=st.session_state.get("lx_lieux_progressifs", []),
+                        key="lx_lieux_progressifs",
+                        help="Vous pouvez ajouter ou retirer un lieu à tout moment."
                     )
 
                     if not lieux_selectionnes_lx:
-                        st.info(
-                            "ℹ️ Sélectionnez au moins un lieu pour afficher la grille."
-                        )
+                        st.info("ℹ️ Sélectionnez un ou plusieurs lieux dans la liste.")
                     else:
-                        date_lx = datetime.now().strftime("%d/%m/%Y")
-                        etab_lx = (
-                            "Département d'Électrotechnique — Faculté de Génie "
-                            "Électrique — UDL-SBA"
-                        )
-
                         st.markdown(
-                            "### ✅ Lieux actuellement affichés : "
+                            "### 🏫 Lieux affichés : "
                             + ", ".join(lieux_selectionnes_lx)
                         )
 
-                        for index_lieu_lx, salle_lx in enumerate(
-                            lieux_selectionnes_lx
-                        ):
+                        def _style_etat_lieu_lx(valeur):
+                            if "LIBRE" in str(valeur):
+                                return (
+                                    "background-color:#DCFCE7;"
+                                    "color:#166534;"
+                                    "font-weight:bold;"
+                                    "text-align:center;"
+                                )
+                            return (
+                                "background-color:#FEE2E2;"
+                                "color:#991B1B;"
+                                "font-weight:bold;"
+                                "text-align:center;"
+                            )
+
+                        for numero_lieu_lx, salle_lx in enumerate(lieux_selectionnes_lx):
                             grille_aff_lx = pd.DataFrame(
                                 [
                                     [
-                                        (
-                                            "🟢 LIBRE"
-                                            if (
-                                                j,
-                                                h,
-                                                salle_lx
-                                            ) not in occupes_lx
-                                            else "🔴 OCCUPÉ"
-                                        )
-                                        for h in horaires_list_lx
+                                        "🟢 LIBRE"
+                                        if (jour_lx, horaire_lx, salle_lx) not in occupes_lx
+                                        else "🔴 OCCUPÉ"
+                                        for horaire_lx in horaires_list_lx
                                     ]
-                                    for j in jours_list_lx
+                                    for jour_lx in jours_list_lx
                                 ],
                                 index=jours_list_lx,
                                 columns=horaires_list_lx
                             )
 
-                            nombre_creneaux_total_lx = (
-                                len(jours_list_lx)
-                                * len(horaires_list_lx)
-                            )
-
-                            nombre_creneaux_libres_lx = sum(
+                            nb_total_lx = len(jours_list_lx) * len(horaires_list_lx)
+                            nb_libres_lx = sum(
                                 1
-                                for j in jours_list_lx
-                                for h in horaires_list_lx
-                                if (
-                                    j,
-                                    h,
-                                    salle_lx
-                                ) not in occupes_lx
+                                for jour_lx in jours_list_lx
+                                for horaire_lx in horaires_list_lx
+                                if (jour_lx, horaire_lx, salle_lx) not in occupes_lx
                             )
-
-                            nombre_creneaux_occupes_lx = (
-                                nombre_creneaux_total_lx
-                                - nombre_creneaux_libres_lx
-                            )
-
+                            nb_occupes_lx = nb_total_lx - nb_libres_lx
                             disponibilite_lx = (
-                                round(
-                                    100
-                                    * nombre_creneaux_libres_lx
-                                    / nombre_creneaux_total_lx
-                                )
-                                if nombre_creneaux_total_lx
-                                else 0
+                                round(100 * nb_libres_lx / nb_total_lx)
+                                if nb_total_lx else 0
                             )
 
                             st.markdown(
                                 f"### 🗓 Grille — {salle_lx} "
                                 "(jours en vertical, horaires en horizontal)"
                             )
+                            col_libre_lx, col_occupe_lx, col_taux_lx = st.columns(3)
+                            col_libre_lx.metric("🟢 Créneaux libres", nb_libres_lx)
+                            col_occupe_lx.metric("🔴 Créneaux occupés", nb_occupes_lx)
+                            col_taux_lx.metric("📈 Disponibilité", f"{disponibilite_lx} %")
 
-                            metrique_1_lx, metrique_2_lx, metrique_3_lx = st.columns(3)
-
-                            metrique_1_lx.metric(
-                                "🟢 Créneaux libres",
-                                nombre_creneaux_libres_lx
+                            # Pandas récent : Styler.map remplace Styler.applymap.
+                            # Cette écriture corrige l'AttributeError produit par applymap.
+                            grille_stylee_lx = grille_aff_lx.style.map(
+                                _style_etat_lieu_lx
                             )
-
-                            metrique_2_lx.metric(
-                                "🔴 Créneaux occupés",
-                                nombre_creneaux_occupes_lx
-                            )
-
-                            metrique_3_lx.metric(
-                                "📈 Disponibilité",
-                                f"{disponibilite_lx} %"
-                            )
-
-                            def couleur_cellule_lieu_lx(valeur):
-                                if "LIBRE" in str(valeur):
-                                    return (
-                                        "background-color: #dcfce7; "
-                                        "color: #166534; "
-                                        "font-weight: bold; "
-                                        "text-align: center;"
-                                    )
-
-                                return (
-                                    "background-color: #fee2e2; "
-                                    "color: #991b1b; "
-                                    "font-weight: bold; "
-                                    "text-align: center;"
-                                )
-
                             st.dataframe(
-                                grille_aff_lx.style.applymap(
-                                    couleur_cellule_lieu_lx
-                                ),
+                                grille_stylee_lx,
                                 use_container_width=True,
-                                height=(
-                                    90
-                                    + 45 * len(jours_list_lx)
-                                )
+                                height=90 + 45 * len(jours_list_lx)
                             )
 
-                            libres_liste_lx = [
+                            details_libres_lx = [
                                 {
-                                    "Jour": j,
-                                    "Horaire": h,
+                                    "Jour": jour_lx,
+                                    "Horaire": horaire_lx,
                                     "Lieu": salle_lx,
                                     "État": "🟢 LIBRE"
                                 }
-                                for j in jours_list_lx
-                                for h in horaires_list_lx
-                                if (
-                                    j,
-                                    h,
-                                    salle_lx
-                                ) not in occupes_lx
+                                for jour_lx in jours_list_lx
+                                for horaire_lx in horaires_list_lx
+                                if (jour_lx, horaire_lx, salle_lx) not in occupes_lx
                             ]
-
                             st.markdown(
-                                f"##### 🟢 Créneaux libres — {salle_lx} "
-                                f"({len(libres_liste_lx)})"
+                                f"#### 🟢 Créneaux libres — {salle_lx} "
+                                f"({len(details_libres_lx)})"
                             )
-
                             st.dataframe(
-                                pd.DataFrame(libres_liste_lx),
+                                pd.DataFrame(details_libres_lx),
                                 use_container_width=True,
                                 hide_index=True
                             )
+                            if numero_lieu_lx < len(lieux_selectionnes_lx) - 1:
+                                st.divider()
 
-                            st.divider()
-
-                        # Grille récapitulative progressive : chaque cellule
-                        # contient les lieux libres à ce jour et horaire.
+                        st.divider()
                         st.markdown(
                             "### 📊 Récapitulatif des lieux sélectionnés "
                             "(jours en vertical, horaires en horizontal)"
@@ -8294,181 +8223,38 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                             [
                                 [
                                     "\n".join(
-                                        [
-                                            f"🟢 {lieu}"
-                                            for lieu in lieux_selectionnes_lx
-                                            if (
-                                                j,
-                                                h,
-                                                lieu
-                                            ) not in occupes_lx
-                                        ]
-                                    )
-                                    or "🔴 Aucun lieu libre"
-                                    for h in horaires_list_lx
+                                        f"🟢 {lieu_lx}"
+                                        for lieu_lx in lieux_selectionnes_lx
+                                        if (jour_lx, horaire_lx, lieu_lx) not in occupes_lx
+                                    ) or "🔴 Aucun lieu libre"
+                                    for horaire_lx in horaires_list_lx
                                 ]
-                                for j in jours_list_lx
+                                for jour_lx in jours_list_lx
                             ],
                             index=jours_list_lx,
                             columns=horaires_list_lx
                         )
 
-                        def couleur_recap_lieux_lx(valeur):
+                        def _style_recap_lieu_lx(valeur):
                             if str(valeur).startswith("🟢"):
                                 return (
-                                    "background-color: #dcfce7; "
-                                    "color: #166534; "
-                                    "font-weight: bold; "
-                                    "white-space: pre-line;"
+                                    "background-color:#DCFCE7;"
+                                    "color:#166534;"
+                                    "font-weight:bold;"
+                                    "white-space:pre-line;"
                                 )
-
                             return (
-                                "background-color: #fee2e2; "
-                                "color: #991b1b; "
-                                "font-weight: bold; "
-                                "white-space: pre-line;"
+                                "background-color:#FEE2E2;"
+                                "color:#991B1B;"
+                                "font-weight:bold;"
+                                "white-space:pre-line;"
                             )
 
                         st.dataframe(
-                            grille_recap_lx.style.applymap(
-                                couleur_recap_lieux_lx
-                            ),
+                            grille_recap_lx.style.map(_style_recap_lieu_lx),
                             use_container_width=True,
-                            height=(
-                                100
-                                + 55 * len(jours_list_lx)
-                            )
+                            height=100 + 55 * len(jours_list_lx)
                         )
-
-                        # Exports pour tous les lieux sélectionnés.
-                        detail_lx = []
-                        cellules_lx = {}
-
-                        for j in jours_list_lx:
-                            for h in horaires_list_lx:
-                                lieux_libres_cellule_lx = [
-                                    lieu
-                                    for lieu in lieux_selectionnes_lx
-                                    if (
-                                        j,
-                                        h,
-                                        lieu
-                                    ) not in occupes_lx
-                                ]
-
-                                texte_cellule_lx = (
-                                    "\n".join(
-                                        f"LIBRE : {lieu}"
-                                        for lieu in lieux_libres_cellule_lx
-                                    )
-                                    or "Aucun lieu libre"
-                                )
-
-                                cellules_lx[(j, h)] = (
-                                    texte_cellule_lx,
-                                    bool(lieux_libres_cellule_lx)
-                                )
-
-                                for lieu in lieux_libres_cellule_lx:
-                                    detail_lx.append(
-                                        (j, h, lieu)
-                                    )
-
-                        total_creneaux_lx = (
-                            len(jours_list_lx)
-                            * len(horaires_list_lx)
-                        )
-
-                        synthese_lx = []
-
-                        for lieu in lieux_selectionnes_lx:
-                            nombre_occupes_lx = sum(
-                                1
-                                for j, h, lieu_occupe in occupes_lx
-                                if lieu_occupe == lieu
-                                and j in jours_list_lx
-                                and h in horaires_list_lx
-                            )
-
-                            synthese_lx.append(
-                                (
-                                    lieu,
-                                    total_creneaux_lx - nombre_occupes_lx,
-                                    nombre_occupes_lx
-                                )
-                            )
-
-                        nom_fichier_lx = "_".join(
-                            lieu.replace(" ", "_").replace("/", "-")
-                            for lieu in lieux_selectionnes_lx
-                        )
-
-                        st.markdown("### 📥 Exporter les lieux sélectionnés")
-
-                        bouton_excel_lx, bouton_pdf_lx = st.columns(2)
-
-                        try:
-                            fichier_excel_lx = _lieux_libres_excel_bytes(
-                                jours_list_lx,
-                                horaires_list_lx,
-                                cellules_lx,
-                                detail_lx,
-                                synthese_lx,
-                                "LIEUX SÉLECTIONNÉS — DISPONIBILITÉ",
-                                (
-                                    f"{etab_lx} | Semestre 01 — 2026-2027 | "
-                                    f"Date : {date_lx} | "
-                                    f"Lieux : {', '.join(lieux_selectionnes_lx)}"
-                                )
-                            )
-
-                            bouton_excel_lx.download_button(
-                                "📊 Télécharger Excel",
-                                data=fichier_excel_lx,
-                                file_name=(
-                                    f"Disponibilite_lieux_{nom_fichier_lx}.xlsx"
-                                ),
-                                mime=(
-                                    "application/vnd.openxmlformats-officedocument."
-                                    "spreadsheetml.sheet"
-                                ),
-                                use_container_width=True,
-                                key="lx_progressif_excel"
-                            )
-                        except Exception as erreur_excel_lx:
-                            bouton_excel_lx.error(
-                                f"❌ Erreur Excel : {erreur_excel_lx}"
-                            )
-
-                        try:
-                            fichier_pdf_lx = _lieux_libres_pdf_bytes(
-                                jours_list_lx,
-                                horaires_list_lx,
-                                cellules_lx,
-                                "LIEUX SÉLECTIONNÉS — DISPONIBILITÉ",
-                                (
-                                    f"{etab_lx} | Semestre 01 — 2026-2027 | "
-                                    f"Date : {date_lx} | "
-                                    f"Lieux : {', '.join(lieux_selectionnes_lx)}"
-                                ),
-                                salle=None
-                            )
-
-                            bouton_pdf_lx.download_button(
-                                "📄 Télécharger PDF",
-                                data=fichier_pdf_lx,
-                                file_name=(
-                                    f"Disponibilite_lieux_{nom_fichier_lx}.pdf"
-                                ),
-                                mime="application/pdf",
-                                use_container_width=True,
-                                key="lx_progressif_pdf"
-                            )
-                        except Exception as erreur_pdf_lx:
-                            bouton_pdf_lx.error(
-                                f"❌ Erreur PDF : {erreur_pdf_lx}"
-                            )
-
         elif mode_view == "🚩 Vérificateur de conflits":
             st.subheader("🚩 Détection des Conflits")
             
