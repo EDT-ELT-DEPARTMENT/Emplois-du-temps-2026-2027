@@ -6122,8 +6122,10 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             )
 
             df_p = df[df["Promotion"].isin(promotions_selectionnees)].copy()
-            # Copie non filtrée : les trois contrôles restent actifs même si l'affichage est limité à Cours/TD/TP.
-            df_p_analyse_chevauchements = df_p.copy()
+            # df est l'EDT global : requis pour les conflits de lieu et d'enseignant
+            # entre promotions différentes. df_p reste l'EDT de la promotion affichée.
+            df_p_analyse_promotion = df_p.copy()
+            df_global_analyse_chevauchements = df.copy()
 
             def _type_enseignement_admin(valeur_code):
                 code_up = str(valeur_code).upper()
@@ -6637,12 +6639,14 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 return nombre_groupes * 2
 
             # ============================================================
-            # TROIS LOGIQUES DE CHEVAUCHEMENT — VUE PROMOTION
-            # 1. LIEU : même lieu utilisé par plusieurs séances simultanées.
-            # 2. ENSEIGNANT : même enseignant affecté simultanément.
-            # 3. PROMOTION : cours commun simultané avec TD/TP de groupe.
+            # ANALYSE COMPLÈTE DES CHEVAUCHEMENTS
+            # 1) LIEU GLOBAL : même salle, même jour, même horaire, même si
+            #    les séances appartiennent à DES PROMOTIONS différentes.
+            #    Ex. TD ING3RSE + TD ING4RSE dans AS12 au même créneau.
+            # 2) ENSEIGNANT GLOBAL : même enseignant, même jour, même horaire.
+            # 3) PROMOTION : cours commun simultané avec TD/TP de groupe.
             # ============================================================
-            def _norm_chev_promo(valeur):
+            def _normaliser_valeur_chev(valeur):
                 if valeur is None:
                     return ""
                 try:
@@ -6652,7 +6656,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     pass
                 return str(valeur).strip().casefold()
 
-            def _nature_chev_promo(code, enseignement=""):
+            def _nature_seance_chev(code, enseignement=""):
                 code = str(code).upper()
                 enseignement = str(enseignement).upper()
                 if "COURS" in code or enseignement.startswith("COURS-"):
@@ -6663,107 +6667,103 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     return "TP"
                 return "AUTRE"
 
-            def _analyser_trois_chevauchements(df_source):
+            def _preparer_cles_chevauchement(source):
+                travail = source.copy()
+                travail["_jour_chev"] = travail["Jours"].apply(_normaliser_valeur_chev)
+                travail["_horaire_chev"] = travail["Horaire"].apply(_normaliser_valeur_chev)
+                travail["_lieu_chev"] = travail["Lieu"].apply(_normaliser_valeur_chev)
+                travail["_enseignant_chev"] = travail["Enseignants"].apply(_normaliser_valeur_chev)
+                travail["_promotion_chev"] = travail["Promotion"].apply(_normaliser_valeur_chev)
+                travail["_nature_chev"] = travail.apply(lambda r: _nature_seance_chev(r.get("Code", ""), r.get("Enseignements", "")), axis=1)
+                return travail
+
+            def _analyser_toutes_logiques_chevauchement(df_global, df_promotion):
                 rapport = []
-                cellules_lieu = set()
-                cellules_enseignant = set()
+                cellules_lieu_global = set()
+                cellules_enseignant_global = set()
                 cellules_promotion = set()
-                if df_source is None or df_source.empty:
-                    return pd.DataFrame(), cellules_lieu, cellules_enseignant, cellules_promotion
 
-                travail = df_source.copy()
-                travail["_jour_chev"] = travail["Jours"].apply(_norm_chev_promo)
-                travail["_horaire_chev"] = travail["Horaire"].apply(_norm_chev_promo)
-                travail["_nature_chev"] = travail.apply(
-                    lambda r: _nature_chev_promo(r.get("Code", ""), r.get("Enseignements", "")),
-                    axis=1
-                )
+                global_travail = _preparer_cles_chevauchement(df_global)
+                promo_travail = _preparer_cles_chevauchement(df_promotion)
 
-                for (jour_norm, horaire_norm), groupe in travail.groupby(["_jour_chev", "_horaire_chev"], dropna=False):
-                    lieux = groupe["Lieu"].apply(_norm_chev_promo)
-                    lieux_valides = lieux[~lieux.isin(["", "non défini", "none", "nan", "nd"])]
-                    enseignants = groupe["Enseignants"].apply(_norm_chev_promo)
-                    enseignants_valides = enseignants[~enseignants.isin(["", "non défini", "none", "nan", "nd"])]
-                    conflit_lieu = lieux_valides.duplicated(keep=False).any()
-                    conflit_enseignant = enseignants_valides.duplicated(keep=False).any()
-                    cours = groupe[groupe["_nature_chev"] == "COURS"]
-                    td_tp = groupe[groupe["_nature_chev"].isin(["TD", "TP"])]
-                    conflit_promotion = not cours.empty and not td_tp.empty
+                # LIEU GLOBAL : le test est volontairement fait sur l'EDT GLOBAL.
+                for (jour, horaire, lieu), groupe in global_travail.groupby(
+                    ["_jour_chev", "_horaire_chev", "_lieu_chev"], dropna=False
+                ):
+                    if lieu in ["", "non défini", "none", "nan", "nd"] or len(groupe) < 2:
+                        continue
+                    cellules_lieu_global.add((jour, horaire))
+
+                # ENSEIGNANT GLOBAL : également sur l'EDT GLOBAL.
+                for (jour, horaire, enseignant), groupe in global_travail.groupby(
+                    ["_jour_chev", "_horaire_chev", "_enseignant_chev"], dropna=False
+                ):
+                    if enseignant in ["", "non défini", "none", "nan", "nd"] or len(groupe) < 2:
+                        continue
+                    cellules_enseignant_global.add((jour, horaire))
+
+                # PROMOTION : cours commun simultané avec TD ou TP de groupe.
+                for (jour, horaire), groupe in promo_travail.groupby(["_jour_chev", "_horaire_chev"], dropna=False):
+                    if not groupe[groupe["_nature_chev"] == "COURS"].empty and not groupe[groupe["_nature_chev"].isin(["TD", "TP"])].empty:
+                        cellules_promotion.add((jour, horaire))
+
+                # Rapport : seulement les cellules visibles pour la/les promotions choisies,
+                # mais les conflits lieu/enseignant sont calculés avec toutes les promotions.
+                for (jour, horaire), groupe in promo_travail.groupby(["_jour_chev", "_horaire_chev"], dropna=False):
+                    conflit_lieu = (jour, horaire) in cellules_lieu_global
+                    conflit_enseignant = (jour, horaire) in cellules_enseignant_global
+                    conflit_promotion = (jour, horaire) in cellules_promotion
                     if not (conflit_lieu or conflit_enseignant or conflit_promotion):
                         continue
-
-                    cle = (jour_norm, horaire_norm)
-                    if conflit_lieu:
-                        cellules_lieu.add(cle)
-                    if conflit_enseignant:
-                        cellules_enseignant.add(cle)
-                    if conflit_promotion:
-                        cellules_promotion.add(cle)
-
                     types = []
                     if conflit_lieu:
-                        types.append("LIEU")
+                        types.append("LIEU GLOBAL")
                     if conflit_enseignant:
-                        types.append("ENSEIGNANT")
+                        types.append("ENSEIGNANT GLOBAL")
                     if conflit_promotion:
                         types.append("PROMOTION : COURS + TD/TP")
-
-                    lieux_detail = " | ".join(sorted({str(v).strip() for v in groupe["Lieu"].tolist() if str(v).strip()}))
-                    enseignants_detail = " | ".join(sorted({str(v).strip() for v in groupe["Enseignants"].tolist() if str(v).strip()}))
-                    cours_detail = " | ".join(sorted({str(v).strip() for v in cours["Enseignements"].tolist() if str(v).strip()}))
-                    td_tp_detail = " | ".join(sorted({str(v).strip() for v in td_tp["Enseignements"].tolist() if str(v).strip()}))
-
+                    seances_globales = global_travail[(global_travail["_jour_chev"] == jour) & (global_travail["_horaire_chev"] == horaire)]
+                    lieux = " | ".join(sorted({str(x).strip() for x in seances_globales["Lieu"] if str(x).strip()}))
+                    enseignants = " | ".join(sorted({str(x).strip() for x in seances_globales["Enseignants"] if str(x).strip()}))
+                    promotions = " | ".join(sorted({str(x).strip() for x in seances_globales["Promotion"] if str(x).strip()}))
+                    cours = " | ".join(sorted({str(x).strip() for x in groupe[groupe["_nature_chev"] == "COURS"]["Enseignements"] if str(x).strip()}))
+                    td_tp = " | ".join(sorted({str(x).strip() for x in groupe[groupe["_nature_chev"].isin(["TD", "TP"])]["Enseignements"] if str(x).strip()}))
                     for _, ligne in groupe.iterrows():
                         rapport.append({
-                            "Type(s) de chevauchement": " + ".join(types),
-                            "Promotion": ligne.get("Promotion", ""),
-                            "Jour": ligne.get("Jours", ""),
-                            "Horaire": ligne.get("Horaire", ""),
-                            "Enseignement": ligne.get("Enseignements", ""),
-                            "Code": ligne.get("Code", ""),
-                            "Nature": ligne.get("_nature_chev", ""),
-                            "Enseignant": ligne.get("Enseignants", ""),
-                            "Lieu": ligne.get("Lieu", ""),
-                            "Nombre de séances dans la cellule": len(groupe),
-                            "Lieux concernés": lieux_detail,
-                            "Enseignants concernés": enseignants_detail,
-                            "Cours commun(s) simultané(s)": cours_detail,
-                            "TD / TP de groupe simultané(s)": td_tp_detail
+                            "Type(s) de chevauchement": " + ".join(types), "Promotion affichée": ligne.get("Promotion", ""), "Jour": ligne.get("Jours", ""), "Horaire": ligne.get("Horaire", ""),
+                            "Enseignement": ligne.get("Enseignements", ""), "Code": ligne.get("Code", ""), "Enseignant": ligne.get("Enseignants", ""), "Lieu": ligne.get("Lieu", ""),
+                            "Promotions globales au créneau": promotions, "Lieux globaux au créneau": lieux, "Enseignants globaux au créneau": enseignants,
+                            "Cours simultané(s) de la promotion": cours, "TD / TP simultané(s) de la promotion": td_tp
                         })
-                return pd.DataFrame(rapport), cellules_lieu, cellules_enseignant, cellules_promotion
+                return pd.DataFrame(rapport), cellules_lieu_global, cellules_enseignant_global, cellules_promotion
 
-            rapport_trois_chevauchements, cellules_lieu_promo, cellules_enseignant_promo, cellules_promotion_promo = _analyser_trois_chevauchements(df_p_analyse_chevauchements)
+            rapport_tous_chevauchements, cellules_lieu_global_promo, cellules_enseignant_global_promo, cellules_pedagogiques_promo = _analyser_toutes_logiques_chevauchement(
+                df_global_analyse_chevauchements, df_p_analyse_promotion
+            )
 
-            def _etat_trois_chevauchements(horaire, jour):
-                cle = (_norm_chev_promo(jour), _norm_chev_promo(horaire))
-                a_lieu = cle in cellules_lieu_promo
-                a_enseignant = cle in cellules_enseignant_promo
-                a_promotion = cle in cellules_promotion_promo
-                if not (a_lieu or a_enseignant or a_promotion):
+            def _etat_cellule_toutes_logiques(horaire, jour):
+                cle = (_normaliser_valeur_chev(jour), _normaliser_valeur_chev(horaire))
+                lieu = cle in cellules_lieu_global_promo
+                enseignant = cle in cellules_enseignant_global_promo
+                promotion = cle in cellules_pedagogiques_promo
+                if not (lieu or enseignant or promotion):
                     return "", "", ""
-                etiquettes = []
-                if a_lieu:
-                    etiquettes.append("📍 LIEU")
-                if a_enseignant:
-                    etiquettes.append("👤 ENSEIGNANT")
-                if a_promotion:
-                    etiquettes.append("🎓 PROMOTION : COURS + TD/TP")
-                if sum([a_lieu, a_enseignant, a_promotion]) >= 2:
-                    return "#FCA5A5", "#991B1B", "⚠️ CHEVAUCHEMENTS : " + " | ".join(etiquettes)
-                if a_promotion:
-                    return "#FDE68A", "#A16207", "⚠️ CHEVAUCHEMENT : " + " | ".join(etiquettes)
-                if a_lieu:
-                    return "#FED7AA", "#EA580C", "⚠️ CHEVAUCHEMENT : " + " | ".join(etiquettes)
-                return "#E9D5FF", "#9333EA", "⚠️ CHEVAUCHEMENT : " + " | ".join(etiquettes)
+                messages = []
+                if lieu: messages.append("📍 LIEU")
+                if enseignant: messages.append("👤 ENSEIGNANT")
+                if promotion: messages.append("🎓 COURS + TD/TP")
+                if sum([lieu, enseignant, promotion]) > 1:
+                    return "#FCA5A5", "#991B1B", "⚠️ CHEVAUCHEMENTS : " + " | ".join(messages)
+                if lieu: return "#FED7AA", "#EA580C", "⚠️ CHEVAUCHEMENT GLOBAL DE LIEU"
+                if enseignant: return "#E9D5FF", "#9333EA", "⚠️ CHEVAUCHEMENT GLOBAL D'ENSEIGNANT"
+                return "#FDE68A", "#A16207", "⚠️ CHEVAUCHEMENT PROMOTION : COURS + TD/TP"
 
             def fmt_p(rows):
                 items = []
                 premiere_ligne = rows.iloc[0]
-                fond_chev, bordure_chev, texte_chev = _etat_trois_chevauchements(
-                    premiere_ligne.get("Horaire", ""), premiere_ligne.get("Jours", "")
-                )
-                if texte_chev:
-                    items.append(f"<div style='background:{fond_chev};color:{bordure_chev};border:3px solid {bordure_chev};padding:6px;margin:2px 0;border-radius:6px;font-weight:bold;'>{texte_chev}</div>")
+                fond_chev, bordure_chev, libelle_chev = _etat_cellule_toutes_logiques(premiere_ligne.get("Horaire", ""), premiere_ligne.get("Jours", ""))
+                if libelle_chev:
+                    items.append(f"<div style='background:{fond_chev};color:{bordure_chev};border:3px solid {bordure_chev};padding:6px;margin:2px 0;border-radius:6px;font-weight:bold;'>{libelle_chev}</div>")
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
                     color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
@@ -7928,48 +7928,36 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 st.write(iso_header_html_p + html_table, unsafe_allow_html=True)
 
             # ============================================================
-            # RAPPORT ET EXCEL DES TROIS LOGIQUES DE CHEVAUCHEMENT
+            # RAPPORT EXCEL — LIEU GLOBAL, ENSEIGNANT GLOBAL, PROMOTION
             # ============================================================
             st.divider()
-            st.markdown("### ⚠️ Rapport des chevauchements — lieu, enseignant et promotion")
-            if rapport_trois_chevauchements.empty:
+            st.markdown("### ⚠️ Tous les chevauchements détectés")
+            if rapport_tous_chevauchements.empty:
                 st.success("✅ Aucun chevauchement de lieu, d'enseignant ou de promotion détecté.")
             else:
-                stat_1, stat_2, stat_3 = st.columns(3)
-                stat_1.metric("📍 Chevauchements de lieux", len(cellules_lieu_promo))
-                stat_2.metric("👤 Chevauchements d'enseignants", len(cellules_enseignant_promo))
-                stat_3.metric("🎓 Cours + TD/TP de groupe", len(cellules_promotion_promo))
-                st.caption("🟠 Lieu | 🟣 Enseignant | 🟡 Promotion : cours commun + TD/TP | 🔴 Plusieurs types dans la même cellule")
-                st.dataframe(rapport_trois_chevauchements, use_container_width=True, hide_index=True)
-                buffer_trois_chevauchements = io.BytesIO()
-                with pd.ExcelWriter(buffer_trois_chevauchements, engine="xlsxwriter") as writer:
-                    rapport_trois_chevauchements.to_excel(writer, sheet_name="Chevauchements", index=False, startrow=4)
-                    wb = writer.book
-                    ws = writer.sheets["Chevauchements"]
-                    fmt_titre = wb.add_format({"bold": True, "font_size": 14, "font_color": "white", "bg_color": "991B1B", "align": "center"})
-                    fmt_entete = wb.add_format({"bold": True, "font_color": "white", "bg_color": "334155", "border": 1, "text_wrap": True, "align": "center"})
-                    fmt_double = wb.add_format({"bg_color": "FCA5A5", "font_color": "7F1D1D", "bold": True, "border": 1, "text_wrap": True, "valign": "top"})
-                    fmt_lieu = wb.add_format({"bg_color": "FED7AA", "font_color": "9A3412", "border": 1, "text_wrap": True, "valign": "top"})
-                    fmt_enseignant = wb.add_format({"bg_color": "E9D5FF", "font_color": "6B21A8", "border": 1, "text_wrap": True, "valign": "top"})
-                    fmt_promotion = wb.add_format({"bg_color": "FDE68A", "font_color": "854D0E", "border": 1, "text_wrap": True, "valign": "top"})
-                    ncols = len(rapport_trois_chevauchements.columns)
-                    ws.merge_range(0, 0, 0, ncols - 1, f"RAPPORT DES CHEVAUCHEMENTS — {libelle_promotions}", fmt_titre)
-                    ws.write(1, 0, f"Logiques contrôlées : lieu, enseignant, promotion (cours + TD/TP) | Date : {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-                    for c, nom in enumerate(rapport_trois_chevauchements.columns):
-                        ws.write(4, c, nom, fmt_entete)
-                    for r, (_, ligne) in enumerate(rapport_trois_chevauchements.iterrows(), start=5):
-                        nature = str(ligne["Type(s) de chevauchement"])
-                        nombre_types = nature.count(" + ")
-                        fmt = fmt_double if nombre_types >= 1 else (fmt_lieu if nature == "LIEU" else (fmt_enseignant if nature == "ENSEIGNANT" else fmt_promotion))
-                        for c, nom in enumerate(rapport_trois_chevauchements.columns):
-                            valeur = ligne.get(nom, "")
-                            ws.write(r, c, "" if pd.isna(valeur) else str(valeur), fmt)
-                    ws.set_column(0, ncols - 1, 24)
-                    ws.set_column(4, 4, 40)
-                    ws.set_column(10, 13, 42)
-                    ws.freeze_panes(5, 0)
-                    ws.autofilter(4, 0, 4 + len(rapport_trois_chevauchements), ncols - 1)
-                st.download_button("📊 Télécharger Excel — tous les chevauchements", buffer_trois_chevauchements.getvalue(), f"Rapport_chevauchements_{str(libelle_promotions).replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="excel_trois_chevauchements_promotion")
+                a, b, c = st.columns(3)
+                a.metric("📍 Lieux globaux", len(cellules_lieu_global_promo))
+                b.metric("👤 Enseignants globaux", len(cellules_enseignant_global_promo))
+                c.metric("🎓 Cours + TD/TP", len(cellules_pedagogiques_promo))
+                st.caption("🟠 Lieu global, y compris entre promotions différentes | 🟣 Enseignant global | 🟡 Cours + TD/TP de groupe | 🔴 Plusieurs conflits")
+                st.dataframe(rapport_tous_chevauchements, use_container_width=True, hide_index=True)
+                buffer_rapport_total = io.BytesIO()
+                with pd.ExcelWriter(buffer_rapport_total, engine="xlsxwriter") as writer:
+                    rapport_tous_chevauchements.to_excel(writer, sheet_name="Chevauchements", index=False, startrow=4)
+                    wb = writer.book; ws = writer.sheets["Chevauchements"]
+                    titre = wb.add_format({"bold": True, "font_size": 14, "font_color": "white", "bg_color": "991B1B", "align": "center"})
+                    entete = wb.add_format({"bold": True, "font_color": "white", "bg_color": "334155", "border": 1, "text_wrap": True, "align": "center"})
+                    ligne = wb.add_format({"bg_color": "FCA5A5", "font_color": "7F1D1D", "border": 1, "text_wrap": True, "valign": "top"})
+                    ncols = len(rapport_tous_chevauchements.columns)
+                    ws.merge_range(0, 0, 0, ncols - 1, f"RAPPORT COMPLET DES CHEVAUCHEMENTS — {libelle_promotions}", titre)
+                    ws.write(1, 0, f"Lieu global, enseignant global, promotion | Date : {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+                    for col, nom in enumerate(rapport_tous_chevauchements.columns): ws.write(4, col, nom, entete)
+                    for row, (_, data) in enumerate(rapport_tous_chevauchements.iterrows(), start=5):
+                        for col, nom in enumerate(rapport_tous_chevauchements.columns):
+                            valeur = data.get(nom, ""); ws.write(row, col, "" if pd.isna(valeur) else str(valeur), ligne)
+                    ws.set_column(0, ncols - 1, 24); ws.set_column(4, 4, 42); ws.set_column(8, ncols - 1, 42)
+                    ws.freeze_panes(5, 0); ws.autofilter(4, 0, 4 + len(rapport_tous_chevauchements), ncols - 1)
+                st.download_button("📊 Télécharger Excel — rapport complet des chevauchements", buffer_rapport_total.getvalue(), f"Rapport_complet_chevauchements_{str(libelle_promotions).replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="excel_rapport_complet_chevauchements")
 
             # ═══════════════════════════════════════════════════════
             # 2) DONNÉES BRUTES (même structure, sans HTML)
