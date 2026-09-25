@@ -6122,8 +6122,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             )
 
             df_p = df[df["Promotion"].isin(promotions_selectionnees)].copy()
-            df_p_conflits_stricts = df_p.copy()
-            df_global_conflits_stricts = df.copy()
 
             def _type_enseignement_admin(valeur_code):
                 code_up = str(valeur_code).upper()
@@ -6636,115 +6634,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
                 return nombre_groupes * 2
 
-            # ============================================================
-            # CHEVAUCHEMENTS STRICTS — RÈGLES VALIDÉES
-            # ------------------------------------------------------------
-            # Uniquement trois cas :
-            # A. même LIEU exact, même jour et même horaire;
-            # B. même ENSEIGNANT exact, même jour et même horaire;
-            # C. dans UNE promotion : COURS commun + TD ou TP simultané.
-            # Ne sont PAS des conflits : TD+TD, TP+TP, TD+TP de groupes
-            # différents, même lorsqu'ils sont dans la même cellule EDT.
-            # ============================================================
-            def _norm_strict(valeur):
-                if valeur is None:
-                    return ""
-                try:
-                    if pd.isna(valeur):
-                        return ""
-                except Exception:
-                    pass
-                return str(valeur).strip().casefold()
-
-            def _nature_stricte(code, enseignement=""):
-                code = str(code).upper()
-                enseignement = str(enseignement).upper()
-                if "COURS" in code or enseignement.startswith("COURS-"):
-                    return "COURS"
-                if "TD" in code or enseignement.startswith("TD-"):
-                    return "TD"
-                if "TP" in code or enseignement.startswith("TP-"):
-                    return "TP"
-                return "AUTRE"
-
-            def _preparer_strict(source):
-                travail = source.copy()
-                travail["_jour_strict"] = travail["Jours"].apply(_norm_strict)
-                travail["_horaire_strict"] = travail["Horaire"].apply(_norm_strict)
-                travail["_lieu_strict"] = travail["Lieu"].apply(_norm_strict)
-                travail["_ens_strict"] = travail["Enseignants"].apply(_norm_strict)
-                travail["_promo_strict"] = travail["Promotion"].apply(_norm_strict)
-                travail["_nature_strict"] = travail.apply(lambda r: _nature_stricte(r.get("Code", ""), r.get("Enseignements", "")), axis=1)
-                return travail
-
-            def _analyser_conflits_stricts(global_source, promotion_source):
-                rapport = []
-                cellules_lieu = set()
-                cellules_enseignant = set()
-                cellules_cours_td_tp = set()
-                global_df = _preparer_strict(global_source)
-                promo_df = _preparer_strict(promotion_source)
-
-                # A. Le conflit de lieu existe seulement si le LIEU exact est répété.
-                for (jour, horaire, lieu), groupe in global_df.groupby(["_jour_strict", "_horaire_strict", "_lieu_strict"], dropna=False):
-                    if lieu not in ["", "nan", "none", "non défini", "nd"] and len(groupe) >= 2:
-                        cellules_lieu.add((jour, horaire))
-
-                # B. Le conflit enseignant existe seulement si l'ENSEIGNANT exact est répété.
-                for (jour, horaire, enseignant), groupe in global_df.groupby(["_jour_strict", "_horaire_strict", "_ens_strict"], dropna=False):
-                    if enseignant not in ["", "nan", "none", "non défini", "nd"] and len(groupe) >= 2:
-                        cellules_enseignant.add((jour, horaire))
-
-                # C. Conflit promotion uniquement : COURS avec TD ou TP.
-                # TD+TD, TP+TP et TD+TP ne sont volontairement jamais ajoutés.
-                for (jour, horaire), groupe in promo_df.groupby(["_jour_strict", "_horaire_strict"], dropna=False):
-                    contient_cours = (groupe["_nature_strict"] == "COURS").any()
-                    contient_td_ou_tp = groupe["_nature_strict"].isin(["TD", "TP"]).any()
-                    if contient_cours and contient_td_ou_tp:
-                        cellules_cours_td_tp.add((jour, horaire))
-
-                # Rapport limité aux cellules de la promotion affichée.
-                for (jour, horaire), groupe in promo_df.groupby(["_jour_strict", "_horaire_strict"], dropna=False):
-                    a_lieu = (jour, horaire) in cellules_lieu
-                    a_enseignant = (jour, horaire) in cellules_enseignant
-                    a_promotion = (jour, horaire) in cellules_cours_td_tp
-                    if not (a_lieu or a_enseignant or a_promotion):
-                        continue
-                    types = []
-                    if a_lieu: types.append("LIEU")
-                    if a_enseignant: types.append("ENSEIGNANT")
-                    if a_promotion: types.append("PROMOTION : COURS + TD/TP")
-                    cours = groupe[groupe["_nature_strict"] == "COURS"]
-                    td_tp = groupe[groupe["_nature_strict"].isin(["TD", "TP"])]
-                    for _, ligne in groupe.iterrows():
-                        rapport.append({
-                            "Type(s) de chevauchement": " + ".join(types), "Promotion": ligne.get("Promotion", ""), "Jour": ligne.get("Jours", ""), "Horaire": ligne.get("Horaire", ""),
-                            "Enseignement": ligne.get("Enseignements", ""), "Code": ligne.get("Code", ""), "Nature": ligne.get("_nature_strict", ""),
-                            "Enseignant": ligne.get("Enseignants", ""), "Lieu": ligne.get("Lieu", ""),
-                            "Cours simultané(s)": " | ".join(sorted({str(x).strip() for x in cours["Enseignements"] if str(x).strip()})),
-                            "TD / TP simultané(s)": " | ".join(sorted({str(x).strip() for x in td_tp["Enseignements"] if str(x).strip()}))
-                        })
-                return pd.DataFrame(rapport), cellules_lieu, cellules_enseignant, cellules_cours_td_tp
-
-            rapport_conflits_stricts, cellules_lieu_stricts, cellules_enseignant_stricts, cellules_promotion_stricts = _analyser_conflits_stricts(df_global_conflits_stricts, df_p_conflits_stricts)
-
-            def _etat_conflit_strict(horaire, jour):
-                cle = (_norm_strict(jour), _norm_strict(horaire))
-                lieu = cle in cellules_lieu_stricts
-                enseignant = cle in cellules_enseignant_stricts
-                promotion = cle in cellules_promotion_stricts
-                if not (lieu or enseignant or promotion): return "", "", ""
-                if sum([lieu, enseignant, promotion]) > 1: return "#FCA5A5", "#991B1B", "⚠️ CHEVAUCHEMENTS MULTIPLES"
-                if lieu: return "#FED7AA", "#EA580C", "⚠️ CHEVAUCHEMENT DE LIEU"
-                if enseignant: return "#E9D5FF", "#9333EA", "⚠️ CHEVAUCHEMENT D'ENSEIGNANT"
-                return "#FDE68A", "#A16207", "⚠️ COURS + TD/TP DE LA PROMOTION"
-
             def fmt_p(rows):
                 items = []
-                premiere_ligne = rows.iloc[0]
-                fond_strict, bordure_strict, texte_strict = _etat_conflit_strict(premiere_ligne.get("Horaire", ""), premiere_ligne.get("Jours", ""))
-                if texte_strict:
-                    items.append(f"<div style='background:{fond_strict};color:{bordure_strict};border:3px solid {bordure_strict};padding:6px;margin:2px 0;border-radius:6px;font-weight:bold;'>{texte_strict}</div>")
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
                     color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
@@ -7907,38 +7798,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
             else:
                 st.write(iso_header_html_p + html_table, unsafe_allow_html=True)
-
-            # ============================================================
-            # RAPPORT ET EXPORT EXCEL — CONFLITS STRICTS UNIQUEMENT
-            # ============================================================
-            st.divider()
-            st.markdown("### ⚠️ Chevauchements validés")
-            if rapport_conflits_stricts.empty:
-                st.success("✅ Aucun conflit de lieu, d'enseignant ou COURS + TD/TP détecté.")
-            else:
-                x1, x2, x3 = st.columns(3)
-                x1.metric("📍 Lieux identiques", len(cellules_lieu_stricts))
-                x2.metric("👤 Enseignants identiques", len(cellules_enseignant_stricts))
-                x3.metric("🎓 Cours + TD/TP", len(cellules_promotion_stricts))
-                st.caption("Les TD+TD, TP+TP et TD+TP de groupes différents ne sont pas considérés comme des chevauchements pédagogiques.")
-                st.dataframe(rapport_conflits_stricts, use_container_width=True, hide_index=True)
-                buffer_conflits_stricts = io.BytesIO()
-                with pd.ExcelWriter(buffer_conflits_stricts, engine="xlsxwriter") as writer:
-                    rapport_conflits_stricts.to_excel(writer, sheet_name="Chevauchements", index=False, startrow=4)
-                    wb = writer.book; ws = writer.sheets["Chevauchements"]
-                    titre = wb.add_format({"bold": True, "font_size": 14, "font_color": "white", "bg_color": "991B1B", "align": "center"})
-                    entete = wb.add_format({"bold": True, "font_color": "white", "bg_color": "334155", "border": 1, "text_wrap": True, "align": "center"})
-                    ligne = wb.add_format({"bg_color": "FCA5A5", "font_color": "7F1D1D", "border": 1, "text_wrap": True, "valign": "top"})
-                    ncols = len(rapport_conflits_stricts.columns)
-                    ws.merge_range(0, 0, 0, ncols - 1, f"RAPPORT DES CHEVAUCHEMENTS VALIDÉS — {libelle_promotions}", titre)
-                    ws.write(1, 0, "Règles : lieu identique, enseignant identique, cours + TD/TP | TD+TD, TP+TP, TD+TP exclus")
-                    for col, nom in enumerate(rapport_conflits_stricts.columns): ws.write(4, col, nom, entete)
-                    for row, (_, data) in enumerate(rapport_conflits_stricts.iterrows(), start=5):
-                        for col, nom in enumerate(rapport_conflits_stricts.columns):
-                            valeur = data.get(nom, ""); ws.write(row, col, "" if pd.isna(valeur) else str(valeur), ligne)
-                    ws.set_column(0, ncols - 1, 24); ws.set_column(4, 4, 42); ws.set_column(9, ncols - 1, 42)
-                    ws.freeze_panes(5, 0); ws.autofilter(4, 0, 4 + len(rapport_conflits_stricts), ncols - 1)
-                st.download_button("📊 Télécharger Excel — chevauchements validés", buffer_conflits_stricts.getvalue(), f"Chevauchements_valides_{str(libelle_promotions).replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="excel_chevauchements_valides")
 
             # ═══════════════════════════════════════════════════════
             # 2) DONNÉES BRUTES (même structure, sans HTML)
@@ -11107,8 +10966,11 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
                 }).reset_index()
         
                 df_communs['Nb_Promotions'] = df_communs['Promotion'].apply(lambda x: len(x.split(', ')))
-                df_communs = df_communs[df_communs['Nb_Promotions'] > 1].sort_values(
-                    by=['Nb_Promotions', 'Enseignements'], ascending=[False, True]
+                df_communs = df_communs[
+                    df_communs['Nb_Promotions'] > 1
+                ].sort_values(
+                    by=['Nb_Promotions', 'Enseignements'],
+                    ascending=[False, True]
                 )
         
                 if df_communs.empty:
