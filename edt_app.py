@@ -6122,6 +6122,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             )
 
             df_p = df[df["Promotion"].isin(promotions_selectionnees)].copy()
+            df_p_conflits = df_p.copy()
 
             def _type_enseignement_admin(valeur_code):
                 code_up = str(valeur_code).upper()
@@ -6634,8 +6635,87 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
                 return nombre_groupes * 2
 
+            # ============================================================
+            # DÉTECTION DES CHEVAUCHEMENTS — VUE PROMOTION
+            # ============================================================
+            def _norm_conflit_promo(valeur):
+                if valeur is None:
+                    return ""
+                try:
+                    if pd.isna(valeur):
+                        return ""
+                except Exception:
+                    pass
+                return str(valeur).strip().casefold()
+
+            def _analyser_conflits_promo(source):
+                rapport = []
+                cellules_lieu = set()
+                cellules_enseignant = set()
+                cellules_double = set()
+                if source is None or source.empty:
+                    return pd.DataFrame(), cellules_lieu, cellules_enseignant, cellules_double
+                travail = source.copy()
+                travail["_jour_conflit"] = travail["Jours"].apply(_norm_conflit_promo)
+                travail["_horaire_conflit"] = travail["Horaire"].apply(_norm_conflit_promo)
+                for (jour, horaire), groupe in travail.groupby(["_jour_conflit", "_horaire_conflit"], dropna=False):
+                    lieux = groupe["Lieu"].apply(_norm_conflit_promo)
+                    lieux = lieux[~lieux.isin(["", "non défini", "nan", "none", "nd"])]
+                    enseignants = groupe["Enseignants"].apply(_norm_conflit_promo)
+                    enseignants = enseignants[~enseignants.isin(["", "non défini", "nan", "none", "nd"])]
+                    conflit_lieu = lieux.duplicated(keep=False).any()
+                    conflit_enseignant = enseignants.duplicated(keep=False).any()
+                    if not conflit_lieu and not conflit_enseignant:
+                        continue
+                    cle = (jour, horaire)
+                    if conflit_lieu:
+                        cellules_lieu.add(cle)
+                    if conflit_enseignant:
+                        cellules_enseignant.add(cle)
+                    if conflit_lieu and conflit_enseignant:
+                        cellules_double.add(cle)
+                    type_conflit = "LIEU + ENSEIGNANT" if conflit_lieu and conflit_enseignant else ("LIEU" if conflit_lieu else "ENSEIGNANT")
+                    lieux_detail = " | ".join(sorted({str(x).strip() for x in groupe["Lieu"] if str(x).strip()}))
+                    enseignants_detail = " | ".join(sorted({str(x).strip() for x in groupe["Enseignants"] if str(x).strip()}))
+                    for _, ligne in groupe.iterrows():
+                        rapport.append({
+                            "Type de chevauchement": type_conflit,
+                            "Promotion": ligne.get("Promotion", ""),
+                            "Jour": ligne.get("Jours", ""),
+                            "Horaire": ligne.get("Horaire", ""),
+                            "Enseignement": ligne.get("Enseignements", ""),
+                            "Code": ligne.get("Code", ""),
+                            "Enseignant": ligne.get("Enseignants", ""),
+                            "Lieu": ligne.get("Lieu", ""),
+                            "Nombre de séances": len(groupe),
+                            "Lieux concernés": lieux_detail,
+                            "Enseignants concernés": enseignants_detail
+                        })
+                return pd.DataFrame(rapport), cellules_lieu, cellules_enseignant, cellules_double
+
+            rapport_chevauchements_promo, cellules_lieu_promo, cellules_enseignant_promo, cellules_double_promo = _analyser_conflits_promo(df_p_conflits)
+
+            def _etat_conflit_promo(horaire, jour):
+                cle = (_norm_conflit_promo(jour), _norm_conflit_promo(horaire))
+                if cle in cellules_double_promo:
+                    return "#FCA5A5", "#991B1B", "⚠️ CHEVAUCHEMENT : LIEU + ENSEIGNANT"
+                if cle in cellules_lieu_promo:
+                    return "#FED7AA", "#EA580C", "📍 CHEVAUCHEMENT DE LIEU"
+                if cle in cellules_enseignant_promo:
+                    return "#E9D5FF", "#9333EA", "👤 CHEVAUCHEMENT D'ENSEIGNANT"
+                return "", "", ""
+
             def fmt_p(rows):
                 items = []
+                ligne_premiere = rows.iloc[0]
+                fond_conflit, bordure_conflit, libelle_conflit = _etat_conflit_promo(
+                    ligne_premiere.get("Horaire", ""),
+                    ligne_premiere.get("Jours", "")
+                )
+                if libelle_conflit:
+                    items.append(
+                        f"<div style='background:{fond_conflit};color:{bordure_conflit};border:2px solid {bordure_conflit};padding:5px;margin:2px 0;border-radius:5px;font-weight:bold;'>{libelle_conflit}</div>"
+                    )
                 for _, r in rows.iterrows():
                     code_up = str(r['Code']).upper()
                     color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
@@ -7798,6 +7878,48 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
             else:
                 st.write(iso_header_html_p + html_table, unsafe_allow_html=True)
+
+            # ============================================================
+            # RAPPORT ET EXPORT EXCEL DES CHEVAUCHEMENTS
+            # ============================================================
+            st.divider()
+            st.markdown("### ⚠️ Chevauchements détectés pour la promotion")
+            if rapport_chevauchements_promo.empty:
+                st.success("✅ Aucun chevauchement de lieu ou d'enseignant détecté.")
+            else:
+                c_conf_1, c_conf_2, c_conf_3 = st.columns(3)
+                c_conf_1.metric("⚠️ Cellules en conflit", len(cellules_lieu_promo | cellules_enseignant_promo))
+                c_conf_2.metric("📍 Conflits de lieux", len(cellules_lieu_promo))
+                c_conf_3.metric("👤 Conflits d'enseignants", len(cellules_enseignant_promo))
+                st.caption("🔴 Rouge : lieu + enseignant | 🟠 Orange : lieu | 🟣 Violet : enseignant")
+                st.dataframe(rapport_chevauchements_promo, use_container_width=True, hide_index=True)
+                buffer_conflits_promo = io.BytesIO()
+                with pd.ExcelWriter(buffer_conflits_promo, engine="xlsxwriter") as writer:
+                    rapport_chevauchements_promo.to_excel(writer, sheet_name="Chevauchements", index=False, startrow=4)
+                    wb_conflits = writer.book
+                    ws_conflits = writer.sheets["Chevauchements"]
+                    fmt_titre_conflits = wb_conflits.add_format({"bold": True, "font_size": 14, "font_color": "white", "bg_color": "991B1B", "align": "center"})
+                    fmt_entete_conflits = wb_conflits.add_format({"bold": True, "font_color": "white", "bg_color": "334155", "border": 1, "text_wrap": True, "align": "center"})
+                    fmt_lieu_conflits = wb_conflits.add_format({"bg_color": "FED7AA", "font_color": "9A3412", "border": 1, "text_wrap": True, "valign": "top"})
+                    fmt_ens_conflits = wb_conflits.add_format({"bg_color": "E9D5FF", "font_color": "6B21A8", "border": 1, "text_wrap": True, "valign": "top"})
+                    fmt_double_conflits = wb_conflits.add_format({"bg_color": "FCA5A5", "font_color": "7F1D1D", "bold": True, "border": 1, "text_wrap": True, "valign": "top"})
+                    nb_cols_conflits = len(rapport_chevauchements_promo.columns)
+                    ws_conflits.merge_range(0, 0, 0, nb_cols_conflits - 1, f"RAPPORT DES CHEVAUCHEMENTS — {libelle_promotions}", fmt_titre_conflits)
+                    ws_conflits.write(1, 0, f"Date : {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+                    for col_num, col_name in enumerate(rapport_chevauchements_promo.columns):
+                        ws_conflits.write(4, col_num, col_name, fmt_entete_conflits)
+                    for excel_row, (_, ligne) in enumerate(rapport_chevauchements_promo.iterrows(), start=5):
+                        nature = str(ligne["Type de chevauchement"])
+                        fmt_ligne = fmt_double_conflits if "LIEU + ENSEIGNANT" in nature else (fmt_lieu_conflits if nature == "LIEU" else fmt_ens_conflits)
+                        for col_num, col_name in enumerate(rapport_chevauchements_promo.columns):
+                            valeur = ligne.get(col_name, "")
+                            ws_conflits.write(excel_row, col_num, "" if pd.isna(valeur) else str(valeur), fmt_ligne)
+                    ws_conflits.set_column(0, nb_cols_conflits - 1, 24)
+                    ws_conflits.set_column(4, 4, 42)
+                    ws_conflits.set_column(9, 10, 42)
+                    ws_conflits.freeze_panes(5, 0)
+                    ws_conflits.autofilter(4, 0, 4 + len(rapport_chevauchements_promo), nb_cols_conflits - 1)
+                st.download_button("📊 Télécharger Excel — chevauchements", buffer_conflits_promo.getvalue(), f"Chevauchements_{str(libelle_promotions).replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="excel_chevauchements_promotion")
 
             # ═══════════════════════════════════════════════════════
             # 2) DONNÉES BRUTES (même structure, sans HTML)
