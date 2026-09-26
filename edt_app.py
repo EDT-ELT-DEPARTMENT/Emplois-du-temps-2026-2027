@@ -3254,8 +3254,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 st.markdown("#### 📥 Enregistrement d'une absence")
                 cn1, cn2, cn3 = st.columns(3)
                 with cn1:
-                    etud_non = st.selectbox("👤 Étudiant :", [""] + noms_e, key="ne_et_t1")
-                    if etud_non and col_mat_bac:
+                    etud_non = st.selectbox(
+                        "👤 Étudiant ou type d'absence :",
+                        ["", "👥 ABSENCE COLLECTIVE — tous les étudiants"] + noms_e,
+                        key="ne_et_t1",
+                        help="Choisissez l'absence collective pour enregistrer la même absence pour tous les étudiants de la promotion concernée."
+                    )
+                    absence_collective = etud_non == "👥 ABSENCE COLLECTIVE — tous les étudiants"
+                    if etud_non and not absence_collective and col_mat_bac:
                         mat_bac_val = df_etudiants_tous[df_etudiants_tous["Nom_Complet"] == etud_non][col_mat_bac]
                         if not mat_bac_val.empty:
                             mat_bac_str = str(mat_bac_val.iloc[0])
@@ -3273,8 +3279,13 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 with c_d3:
                     horaire_abs = st.selectbox("🕒 Horaire :", HORAIRES_LIST, key="horaire_t1")
 
+                if absence_collective:
+                    st.warning(
+                        f"👥 **Absence collective sélectionnée** : l'absence sera enregistrée pour les **{len(noms_e)}** étudiant(s) de la/des promotion(s) concernée(s)."
+                    )
+
                 # ─── COMPTEUR NUMÉRIQUE D'ABSENCES ───
-                if etud_non and status_assid == "Absent":
+                if etud_non and not absence_collective and status_assid == "Absent":
                     if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
                         absences_etu_matiere = df_db_full[df_db_full["etud_non_eligible"] == etud_non]
                         nb_abs_matiere = len(absences_etu_matiere)
@@ -3347,7 +3358,134 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 
                 with col_btn1:
                     if st.button("💾 ENREGISTRER L'ABSENCE", use_container_width=True, type="primary"):
-                        if not etud_non:
+                        if absence_collective:
+                            if status_assid != "Absent":
+                                st.warning("⚠️ L'enregistrement collectif nécessite le statut 'Absent'.")
+                            else:
+                                enregistrees_collectif = 0
+                                deja_presentes_collectif = 0
+                                erreurs_collectif = []
+
+                                for nom_collectif in noms_e:
+                                    existe_collectif = False
+
+                                    if MODE_SUPABASE:
+                                        try:
+                                            resultat_collectif = supabase.table(
+                                                "suivi_assiduite_2026"
+                                            ).select("id").eq(
+                                                "etud_non_eligible",
+                                                nom_collectif
+                                            ).eq(
+                                                "matiere",
+                                                sel_mat
+                                            ).eq(
+                                                "jour_absence",
+                                                jour_abs
+                                            ).eq(
+                                                "horaire_absence",
+                                                horaire_abs
+                                            ).eq(
+                                                "date_absence",
+                                                str(date_abs)
+                                            ).execute()
+
+                                            existe_collectif = bool(
+                                                resultat_collectif.data
+                                            )
+                                        except Exception as erreur_verif_collectif:
+                                            erreurs_collectif.append(
+                                                f"{nom_collectif} : vérification impossible ({erreur_verif_collectif})"
+                                            )
+                                            continue
+                                    else:
+                                        existe_collectif = any(
+                                            absence.get("etud_non_eligible") == nom_collectif
+                                            and absence.get("matiere") == sel_mat
+                                            and absence.get("jour_absence") == jour_abs
+                                            and absence.get("horaire_absence") == horaire_abs
+                                            and absence.get("date_absence") == str(date_abs)
+                                            for absence in st.session_state.absences
+                                        )
+
+                                    if existe_collectif:
+                                        deja_presentes_collectif += 1
+                                        continue
+
+                                    payload_collectif = {
+                                        "enseignant": sel_prof,
+                                        "matiere": sel_mat,
+                                        "promotion": promo_c,
+                                        "etud_non_eligible": nom_collectif,
+                                        "cause_non_eligibilite": (
+                                            cause_s if cause_s else "Absence collective"
+                                        ),
+                                        "date_absence": str(date_abs),
+                                        "jour_absence": jour_abs,
+                                        "horaire_absence": horaire_abs,
+                                        "date_saisie": datetime.now().strftime(
+                                            "%d/%m/%Y %H:%M"
+                                        ),
+                                        "justifie": False,
+                                        "absence_collective": True
+                                    }
+
+                                    try:
+                                        if MODE_SUPABASE:
+                                            succes_collectif = enregistrer_absence_supabase(
+                                                payload_collectif
+                                            )
+                                        else:
+                                            payload_collectif["id"] = (
+                                                len(st.session_state.absences) + 1
+                                            )
+                                            st.session_state.absences.append(
+                                                payload_collectif
+                                            )
+                                            succes_collectif = True
+
+                                        if succes_collectif:
+                                            enregistrees_collectif += 1
+                                        else:
+                                            erreurs_collectif.append(
+                                                f"{nom_collectif} : échec d'enregistrement"
+                                            )
+                                    except Exception as erreur_collectif:
+                                        erreurs_collectif.append(
+                                            f"{nom_collectif} : {erreur_collectif}"
+                                        )
+
+                                if enregistrees_collectif:
+                                    st.success(
+                                        f"✅ Absence collective enregistrée pour "
+                                        f"**{enregistrees_collectif}** étudiant(s) — "
+                                        f"{sel_mat}, {jour_abs} {horaire_abs}."
+                                    )
+
+                                if deja_presentes_collectif:
+                                    st.info(
+                                        f"ℹ️ **{deja_presentes_collectif}** absence(s) "
+                                        f"étaient déjà enregistrées et n'ont pas été dupliquées."
+                                    )
+
+                                if erreurs_collectif:
+                                    st.warning(
+                                        f"⚠️ {len(erreurs_collectif)} erreur(s) pendant "
+                                        f"l'enregistrement collectif."
+                                    )
+                                    st.dataframe(
+                                        pd.DataFrame(
+                                            {"Détail des erreurs": erreurs_collectif}
+                                        ),
+                                        use_container_width=True,
+                                        hide_index=True
+                                    )
+
+                                if enregistrees_collectif:
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+                        elif not etud_non:
                             st.error("❌ Veuillez sélectionner un étudiant.")
                         elif status_assid != "Absent":
                             st.warning("⚠️ L'enregistrement nécessite le statut 'Absent'.")
@@ -10966,11 +11104,8 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
                 }).reset_index()
         
                 df_communs['Nb_Promotions'] = df_communs['Promotion'].apply(lambda x: len(x.split(', ')))
-                df_communs = df_communs[
-                    df_communs['Nb_Promotions'] > 1
-                ].sort_values(
-                    by=['Nb_Promotions', 'Enseignements'],
-                    ascending=[False, True]
+                df_communs = df_communs[df_communs['Nb_Promotions'] > 1].sort_values(
+                    by=['Nb_Promotions', 'Enseignements'], ascending=[False, True]
                 )
         
                 if df_communs.empty:
