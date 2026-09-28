@@ -372,31 +372,29 @@ def _ajouter_demande_locale_fichier(enregistrement):
 # ------------------------------------------------------------
 # Règle demandée : dans une même cellule (même Jour + même Horaire)
 # pour un enseignant donné :
-#   - si CETTE cellule contient PLUSIEURS NATURES DIFFÉRENTES
-#     (par exemple un Cours ET un TD au même horaire), CHACUNE
-#     de ces natures doit être comptabilisée ;
 #   - si CETTE cellule contient PLUSIEURS SÉANCES DE LA MÊME NATURE
 #     (par exemple TP-G1 et TP-G2 au même horaire — même séance,
 #     seulement dédoublée par sous-groupe), cette nature n'est
-#     comptabilisée QU'UNE SEULE FOIS.
-#
-# Auparavant, le code appelait `drop_duplicates(subset=[...jour,
-# horaire...])` : cela ne conservait qu'UNE SEULE ligne par cellule
-# (la première rencontrée), quelle que soit sa nature — si une même
-# cellule contenait réellement deux natures différentes, l'une des
-# deux était purement et simplement perdue et jamais comptée. La
-# fonction ci-dessous corrige ce point en comptant, pour chaque
-# cellule, l'ENSEMBLE des natures distinctes qui s'y trouvent.
+#     comptabilisée QU'UNE SEULE FOIS ;
+#   - si CETTE cellule contient PLUSIEURS NATURES DIFFÉRENTES
+#     (par exemple un Cours ET un TD au même horaire), c'est un
+#     CHEVAUCHEMENT : un enseignant ne peut pas assurer deux types
+#     d'enseignement en même temps. Seule la nature PRIORITAIRE est
+#     comptabilisée (ordre : COURS > TD > TP) et un message d'erreur
+#     de chevauchement est affiché (voir
+#     `_detecter_chevauchements_natures` et
+#     `_afficher_erreur_chevauchement_natures`).
 # ============================================================
+_PRIORITE_NATURES = ["COURS", "TD", "TP"]
+
+
 def _compter_natures_par_cellule(df_type, colonnes_cellule):
-    """Compte le nombre de séances de Cours / TD / TP pour un enseignant,
-    en comptant chaque NATURE une seule fois par cellule (colonnes
-    identifiant le jour + l'horaire), même si plusieurs lignes se
-    partagent cette cellule (ex. TP-G1 et TP-G2 au même horaire :
-    c'est la MÊME séance, seulement dédoublée par sous-groupe -> comptée
-    UNE fois). En revanche, si une même cellule regroupe plusieurs
-    natures VRAIMENT différentes (ex. Cours ET TD au même horaire),
-    CHACUNE est comptée.
+    """Compte le nombre de séances de Cours / TD / TP pour un enseignant.
+
+    Pour chaque cellule (colonnes identifiant le jour + l'horaire) :
+      - plusieurs lignes de la MÊME nature = UNE seule séance ;
+      - plusieurs natures DIFFÉRENTES (chevauchement) = seule la nature
+        prioritaire est comptée (COURS > TD > TP).
 
     'df_type' doit contenir une colonne 'Type' (valeurs 'COURS', 'TD' ou
     'TP') ainsi que les colonnes indiquées dans 'colonnes_cellule'
@@ -414,13 +412,81 @@ def _compter_natures_par_cellule(df_type, colonnes_cellule):
     nb_tp = 0
     for _, groupe_cellule in df_type.groupby(colonnes_cellule):
         natures_presentes = set(groupe_cellule['Type'].dropna().unique())
+        # Une seule nature comptée par cellule : la plus prioritaire.
         if "COURS" in natures_presentes:
             nb_cours += 1
-        if "TD" in natures_presentes:
+        elif "TD" in natures_presentes:
             nb_td += 1
-        if "TP" in natures_presentes:
+        elif "TP" in natures_presentes:
             nb_tp += 1
     return nb_cours, nb_td, nb_tp
+
+
+def _detecter_chevauchements_natures(df_type, colonnes_cellule):
+    """Retourne la liste des cellules (jour + horaire) où un même
+    enseignant a plusieurs natures DIFFÉRENTES (ex. Cours + TD).
+
+    Chaque élément est un dict :
+      {'jour': ..., 'horaire': ..., 'natures': ['COURS', 'TD'],
+       'enseignements': ['...', '...']}
+    """
+    resultat = []
+    if df_type is None or df_type.empty:
+        return resultat
+    if 'Type' not in df_type.columns or any(
+        c not in df_type.columns for c in colonnes_cellule
+    ):
+        return resultat
+
+    for cle, groupe_cellule in df_type.groupby(colonnes_cellule):
+        natures_presentes = set(groupe_cellule['Type'].dropna().unique())
+        if len(natures_presentes) > 1:
+            # Affichage lisible : colonnes brutes si disponibles
+            if 'Jours' in groupe_cellule.columns:
+                jour_aff = str(groupe_cellule['Jours'].iloc[0])
+            else:
+                jour_aff = str(groupe_cellule[colonnes_cellule[0]].iloc[0])
+            if 'Horaire' in groupe_cellule.columns:
+                horaire_aff = str(groupe_cellule['Horaire'].iloc[0])
+            else:
+                horaire_aff = str(groupe_cellule[colonnes_cellule[-1]].iloc[0])
+            natures_triees = [n for n in _PRIORITE_NATURES if n in natures_presentes]
+            if 'Enseignements' in groupe_cellule.columns:
+                enseignements = [
+                    str(e) for e in groupe_cellule['Enseignements'].dropna().unique()
+                ]
+            else:
+                enseignements = []
+            resultat.append({
+                'jour': jour_aff,
+                'horaire': horaire_aff,
+                'natures': natures_triees,
+                'enseignements': enseignements,
+            })
+    return resultat
+
+
+def _afficher_erreur_chevauchement_natures(df_type, colonnes_cellule, nom_enseignant=""):
+    """Affiche (st.error) un message de chevauchement pour chaque cellule
+    où l'enseignant a plusieurs natures différentes en même temps.
+    Retourne la liste des chevauchements détectés."""
+    chevauchements = _detecter_chevauchements_natures(df_type, colonnes_cellule)
+    if chevauchements:
+        prefixe = f" pour {nom_enseignant}" if nom_enseignant else ""
+        lignes = []
+        for c in chevauchements:
+            detail = " + ".join(c['natures'])
+            ens_txt = f" ({' / '.join(c['enseignements'])})" if c['enseignements'] else ""
+            lignes.append(
+                f"- **{c['jour']} — {c['horaire']}** : {detail}{ens_txt}"
+            )
+        st.error(
+            f"🚨 Chevauchement détecté{prefixe} : un enseignant ne peut pas "
+            f"avoir deux types d'enseignement en même temps. Seule la nature "
+            f"prioritaire (COURS > TD > TP) est comptabilisée pour ces créneaux.\n\n"
+            + "\n".join(lignes)
+        )
+    return chevauchements
 
 
 def sauvegarder_demande_edt(email_prof, nom_prof, donnees_lignes, supabase_client):
@@ -5436,6 +5502,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             # enseignements (Cours+TD+TP) des enseignants sélectionnés,
             # indépendamment du filtre d'affichage choisi ci-dessus.
             nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f_complet, ['j_norm', 'h_norm'])
+            _afficher_erreur_chevauchement_natures(df_f_complet, ['j_norm', 'h_norm'], cible)
             seuil = 3.0 if poste_sup else 6.0
             charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
             delta = charge_eq - seuil
@@ -11222,6 +11289,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
 
         df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
         nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
+        _afficher_erreur_chevauchement_natures(df_f, ['j_norm', 'h_norm'], cible)
         seuil = 3.0 if poste_sup else 6.0
         charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
         delta = charge_eq - seuil
@@ -15812,9 +15880,10 @@ def render_download_hub(df_global, user_data, is_admin):
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
             # Comptage : chaque nature comptée une seule fois par cellule
-            # (jour + horaire), toutes les natures différentes comptées
-            # si plusieurs coexistent dans la même cellule.
+            # (jour + horaire) ; en cas de chevauchement (natures différentes
+            # dans la même cellule), seule la nature prioritaire est comptée.
             nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_filtre_p, ['Horaire', 'Jours'])
+            _afficher_erreur_chevauchement_natures(df_filtre_p, ['Horaire', 'Jours'], sel_prof)
 
             # Calcul de la charge équivalente
             # 1h Cours = 1.5 eq/h  |  1h TD/TP = 1.0 eq/h
@@ -17194,24 +17263,47 @@ if is_admin:
             enseignants_liste = sorted([e for e in df['Enseignants'].unique() 
                                        if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
 
+            # Colonnes normalisées (jour / horaire), comme dans la vue administrative
+            if 'h_norm' not in df.columns:
+                df['h_norm'] = df['Horaire'].apply(normalize)
+            if 'j_norm' not in df.columns:
+                df['j_norm'] = df['Jours'].apply(normalize)
+
+            chevauchements_bilan = []
             bilan_data = []
             for ens in enseignants_liste:
-                df_ens = df[df['Enseignants'] == ens].copy()
+                # Même filtrage que la vue administrative « Enseignant » :
+                # une ligne est retenue si la colonne « Enseignants » CONTIENT
+                # le nom (insensible à la casse), et non pas en égalité stricte.
+                df_ens = df[df['Enseignants'].str.contains(
+                    re.escape(str(ens)), case=False, na=False, regex=True
+                )].copy()
                 if df_ens.empty:
                     continue
 
                 # Typage, puis comptage par cellule (jour + horaire) :
-                # chaque nature comptée une seule fois par cellule, mais
-                # toutes les natures différentes comptées si plusieurs
-                # coexistent dans la même cellule.
+                # une seule séance par cellule ; en cas de chevauchement
+                # (natures différentes), seule la nature prioritaire est
+                # comptée (COURS > TD > TP).
                 df_ens['Type'] = df_ens['Code'].apply(
                     lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
                 )
-                nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_ens, ['Horaire', 'Jours'])
+                # Comptage identique à la vue administrative : cellule =
+                # (jour normalisé, horaire normalisé).
+                nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_ens, ['j_norm', 'h_norm'])
+                chev_ens = _detecter_chevauchements_natures(df_ens, ['j_norm', 'h_norm'])
+                for c in chev_ens:
+                    chevauchements_bilan.append(
+                        f"**{ens}** — {c['jour']} {c['horaire']} : {' + '.join(c['natures'])}"
+                    )
+                txt_chevauchement = "; ".join(
+                    f"{c['jour']} {c['horaire']} ({' + '.join(c['natures'])})" for c in chev_ens
+                )
 
-                charge_eq = round((nb_cours * 1.5) + (nb_td * 1.0) + (nb_tp * 1.0), 2)
-                delta_eq = round(charge_eq - seuil, 2)
-                heures_sup = round(delta_eq * 1.5, 2)
+                # Formule identique : Cours x 1.5 ; TD et TP x 1 ; HS = (charge - seuil) x 1.5
+                charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
+                delta_eq = charge_eq - seuil
+                heures_sup = delta_eq * 1.5
 
                 # Infos répertoire
                 nom_key = str(ens).strip().upper()
@@ -17234,7 +17326,8 @@ if is_admin:
                     "Seuil Réglem.": seuil,
                     "Delta Eq/h": delta_eq,
                     "Heures Sup/Déficit (h)": heures_sup,
-                    "Situation": "✅ Heures Sup" if heures_sup > 0 else ("⚠️ Déficit" if heures_sup < 0 else "⚖️ Seuil exact")
+                    "Situation": "✅ Heures Sup" if heures_sup > 0 else ("⚠️ Déficit" if heures_sup < 0 else "⚖️ Seuil exact"),
+                    "Chevauchement": txt_chevauchement
                 })
 
             if bilan_data:
@@ -17332,6 +17425,13 @@ if is_admin:
                     ws_recap.set_column(1, 1, 25)
 
                 st.success(f"✅ Bilan généré : **{len(bilan_data)}** enseignants analysés (Seuil : {seuil} eq/h)")
+                if chevauchements_bilan:
+                    st.error(
+                        "🚨 Chevauchements détectés : un enseignant ne peut pas avoir deux "
+                        "types d'enseignement en même temps. Seule la nature prioritaire "
+                        "(COURS > TD > TP) est comptabilisée pour ces créneaux.\n\n"
+                        + "\n".join(f"- {t}" for t in chevauchements_bilan)
+                    )
                 st.download_button(
                     label="📥 Télécharger le Bilan Heures Sup (Excel)",
                     data=buffer.getvalue(),
@@ -17794,14 +17894,13 @@ if df is not None:
             # Définition des types pour le calcul (COURS, TD ou TP)
             df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
             
-            # Comptage par cellule (jour + horaire) : chaque nature
-            # comptée une seule fois par cellule, mais toutes les
-            # natures différentes comptées si plusieurs coexistent dans
-            # la même cellule (corrige la perte d'une nature en cas de
-            # cellule à natures multiples).
+            # Comptage par cellule (jour + horaire) : une seule séance par
+            # cellule ; en cas de chevauchement (natures différentes),
+            # seule la nature prioritaire (COURS > TD > TP) est comptée.
             
             # --- 1. CALCUL DES COMPTEURS (LOGIQUE BILAN DIRECT) ---
             nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
+            _afficher_erreur_chevauchement_natures(df_f, ['j_norm', 'h_norm'], cible)
 
             # Le seuil réglementaire (3.0 si poste sup, sinon 6.0)
             seuil_obligatoire = 3.0 if poste_sup else 6.0
@@ -19545,11 +19644,11 @@ if df is not None:
             df_f['Type'] = df_f['Code'].apply(
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
-            # Comptage par cellule (jour + horaire) : chaque nature
-            # comptée une seule fois par cellule, mais toutes les
-            # natures différentes comptées si plusieurs coexistent dans
-            # la même cellule.
+            # Comptage par cellule (jour + horaire) : une seule séance par
+            # cellule ; en cas de chevauchement (natures différentes),
+            # seule la nature prioritaire (COURS > TD > TP) est comptée.
             nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
+            _afficher_erreur_chevauchement_natures(df_f, ['j_norm', 'h_norm'], cible)
         
             seuil_obligatoire = 3.0 if poste_sup else 6.0
             charge_totale_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
