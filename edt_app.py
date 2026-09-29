@@ -6373,6 +6373,87 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 st.info("ℹ️ Aucune matière définie pour la promotion sélectionnée.")
 
             # ============================================================
+            # CRÉNEAUX HORAIRES : AJOUT DES CRÉNEAUX D'UNE HEURE
+            # ------------------------------------------------------------
+            # On complète la liste des horaires (utilisée par toutes les
+            # listes déroulantes du mode édition et par l'affichage) avec
+            # les créneaux suivants, s'ils n'existent pas déjà :
+            #   8h - 9h, 9h - 10h, 10h - 11h, 11h - 12h, 12h - 13h, 13h - 14h
+            # Les créneaux déjà existants sont conservés. La liste finale
+            # est triée dans l'ordre chronologique.
+            # ============================================================
+            creneaux_supplementaires_edt = [
+                "8h - 9h", "9h - 10h", "10h - 11h",
+                "11h - 12h", "12h - 13h", "13h - 14h"
+            ]
+
+            def _cle_tri_creneau(libelle_creneau):
+                m_creneau = re.match(
+                    r'^\s*(\d{1,2})\s*h\s*(\d{0,2})\s*-\s*(\d{1,2})\s*h\s*(\d{0,2})\s*$',
+                    str(libelle_creneau).lower()
+                )
+                if not m_creneau:
+                    return (99 * 60, 99 * 60)
+                h_debut, mn_debut, h_fin, mn_fin = m_creneau.groups()
+                debut_min = int(h_debut) * 60 + (int(mn_debut) if mn_debut else 0)
+                fin_min = int(h_fin) * 60 + (int(mn_fin) if mn_fin else 0)
+                return (debut_min, fin_min)
+
+            _creneaux_existants_norm = {normalize(h) for h in horaires_list}
+            horaires_list = sorted(
+                list(horaires_list) + [
+                    h for h in creneaux_supplementaires_edt
+                    if normalize(h) not in _creneaux_existants_norm
+                ],
+                key=_cle_tri_creneau
+            )
+            map_h = {normalize(h): h for h in horaires_list}
+
+            # ============================================================
+            # CRÉNEAUX À AFFICHER DANS L'EDT (flexible)
+            # ------------------------------------------------------------
+            #   - Automatique : l'EDT affiche les créneaux qui contiennent
+            #                   des enseignements (comportement d'origine,
+            #                   les nouveaux créneaux apparaissent dès
+            #                   qu'ils sont utilisés).
+            #   - Choisir les créneaux : l'EDT n'affiche QUE les créneaux
+            #                   sélectionnés. Si aucun créneau n'est
+            #                   sélectionné, rien n'est affiché.
+            # ============================================================
+            mode_creneaux_edt = st.radio(
+                "Créneaux horaires affichés dans l'EDT :",
+                ["Automatique (créneaux utilisés)", "Choisir les créneaux"],
+                horizontal=True,
+                key="mode_creneaux_edt_promotion_admin"
+            )
+
+            creneaux_choisis = None
+            if mode_creneaux_edt == "Choisir les créneaux":
+                _creneaux_utilises_promos = {
+                    normalize(h)
+                    for h in df.loc[
+                        df["Promotion"].isin(promotions_selectionnees), "Horaire"
+                    ].dropna().tolist()
+                }
+                creneaux_choisis = st.multiselect(
+                    "Choisir les créneaux (sélection progressive) :",
+                    horaires_list,
+                    default=[h for h in horaires_list if normalize(h) in _creneaux_utilises_promos],
+                    key=f"creneaux_admin_multiples_{_sig_promos_matieres}",
+                    help="Sélectionnez les créneaux à afficher dans l'EDT, y compris les "
+                         "nouveaux créneaux d'une heure (8h - 9h, 9h - 10h, ...). "
+                         "Sans créneau sélectionné, aucun EDT n'est affiché."
+                )
+                if not creneaux_choisis:
+                    st.warning("⚠️ Sélectionnez au moins un créneau pour afficher l'EDT.")
+                    st.stop()
+                # Ordre chronologique, quel que soit l'ordre de sélection
+                creneaux_choisis = [h for h in horaires_list if h in creneaux_choisis]
+                st.caption(
+                    f"⏰ {len(creneaux_choisis)} créneau(x) affiché(s) sur {len(horaires_list)}."
+                )
+
+            # ============================================================
             # MODE ÉDITION INTERACTIVE DE L'EDT (PROMOTION)
             # ------------------------------------------------------------
             # Ce toggle active l'édition directe des cellules de l'EDT :
@@ -6419,6 +6500,12 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             if matieres_selectionnees:
                 df_p = df_p[
                     df_p["Enseignements"].astype(str).str.strip().isin(matieres_selectionnees)
+                ].copy()
+
+            # Filtre par créneaux : uniquement en mode « Choisir les créneaux ».
+            if creneaux_choisis is not None:
+                df_p = df_p[
+                    df_p["h_norm"].isin({normalize(h) for h in creneaux_choisis})
                 ].copy()
 
             libelle_promotions = " + ".join(promotions_selectionnees)
@@ -7195,8 +7282,11 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                             nouvelle_horaire = st.selectbox(
                                 "\u23F0 Horaire :",
                                 horaires_list,
-                                index=horaires_list.index(str(ligne_edition["Horaire"]))
-                                if str(ligne_edition["Horaire"]) in horaires_list else 0,
+                                index=next(
+                                    (k_h for k_h, h_l in enumerate(horaires_list)
+                                     if normalize(h_l) == normalize(ligne_edition["Horaire"])),
+                                    0
+                                ),
                                 key=f"edit_horaire_{idx_edition}"
                             )
 
@@ -7341,13 +7431,22 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 if not horaires_affiches:
                     horaires_affiches = horaires_list
 
+                # Mode « Choisir les créneaux » : l'EDT affiche exactement les
+                # créneaux sélectionnés (même vides, pour pouvoir y déposer).
+                if creneaux_choisis is not None:
+                    horaires_affiches = list(creneaux_choisis)
+
                 en_glissement = st.session_state[cle_glisser] is not None
 
                 # Pendant un glissement, on affiche TOUS les créneaux horaires
                 # afin de pouvoir déposer l'enseignement dans n'importe quelle
-                # cellule, y compris une cellule encore vide.
+                # cellule, y compris une cellule encore vide (ou, en mode
+                # « Choisir les créneaux », tous les créneaux sélectionnés).
                 if en_glissement:
-                    horaires_affiches = horaires_list
+                    if creneaux_choisis is not None:
+                        horaires_affiches = list(creneaux_choisis)
+                    else:
+                        horaires_affiches = horaires_list
 
                 entetes = st.columns([1.1] + [1] * len(jours_list))
                 with entetes[0]:
