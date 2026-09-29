@@ -23438,16 +23438,58 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                             # Pas un horaire (ex. un jour) : normalisation simple.
                             return re.sub(r'\s+', '', s)
 
-                        horaires_ref_indiv = [
+                        # ═══════════════════════════════════════════════════════
+                        # HORAIRES DE LA GRILLE (flexibles)
+                        # ------------------------------------------------------
+                        # La grille contient :
+                        #   1) les créneaux déjà existants ;
+                        #   2) les créneaux d'une heure ajoutés :
+                        #      8h - 9h, 9h - 10h, 10h - 11h, 11h - 12h,
+                        #      12h - 13h, 13h - 14h ;
+                        #   3) tout autre horaire présent dans les séances de
+                        #      l'étudiant (pour qu'aucune séance ne soit
+                        #      masquée).
+                        # Le tout est trié dans l'ordre chronologique.
+                        # ═══════════════════════════════════════════════════
+                        horaires_ref_base_indiv = [
                             "08h00-09h30", "09h30-11h00", "11h00-12h30",
                             "12h30-14h00", "14h00-15h30", "15h30-17h00"
                         ]
+                        horaires_ajoutes_indiv = [
+                            "08h00-09h00", "09h00-10h00", "10h00-11h00",
+                            "11h00-12h00", "12h00-13h00", "13h00-14h00"
+                        ]
+
+                        def _cle_tri_creneau_indiv(h_norm_val):
+                            m_c = re.match(r'^(\d{2})h(\d{2})-(\d{2})h(\d{2})$', str(h_norm_val))
+                            if not m_c:
+                                return (99 * 60, 99 * 60)
+                            a1, b1, a2, b2 = m_c.groups()
+                            return (int(a1) * 60 + int(b1), int(a2) * 60 + int(b2))
+
+                        def _label_creneau_indiv(h_norm_val):
+                            m_c = re.match(r'^(\d{2})h(\d{2})-(\d{2})h(\d{2})$', str(h_norm_val))
+                            if not m_c:
+                                return str(h_norm_val)
+                            a1, b1, a2, b2 = m_c.groups()
+                            debut_lbl = f"{int(a1)}h" + ("" if b1 == "00" else b1)
+                            fin_lbl = f"{int(a2)}h" + ("" if b2 == "00" else b2)
+                            return f"{debut_lbl} - {fin_lbl}"
+
+                        _horaires_donnees_indiv = [
+                            h for h in df_edt_final_type["Horaire"].apply(_norm_edt).unique()
+                            if re.match(r'^\d{2}h\d{2}-\d{2}h\d{2}$', str(h))
+                        ]
+                        horaires_ref_indiv = sorted(
+                            set(horaires_ref_base_indiv)
+                            | set(horaires_ajoutes_indiv)
+                            | set(_horaires_donnees_indiv),
+                            key=_cle_tri_creneau_indiv
+                        )
                         jours_ref_indiv = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
 
                         map_h_labels_indiv = {
-                            "08h00-09h30": "8h - 9h30", "09h30-11h00": "9h30 - 11h",
-                            "11h00-12h30": "11h - 12h30", "12h30-14h00": "12h30 - 14h",
-                            "14h00-15h30": "14h - 15h30", "15h30-17h00": "15h30 - 17h"
+                            h: _label_creneau_indiv(h) for h in horaires_ref_indiv
                         }
                         map_j_labels_indiv = {
                             "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
@@ -23456,6 +23498,52 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
 
                         df_edt_final_type["h_norm"] = df_edt_final_type["Horaire"].apply(_norm_edt)
                         df_edt_final_type["j_norm"] = df_edt_final_type["Jours"].apply(_norm_edt)
+
+                        # ═══════════════════════════════════════════════════════
+                        # 🔎 CRÉNEAUX HORAIRES À AFFICHER (flexible)
+                        #   - Automatique : seuls les créneaux qui contiennent des
+                        #     séances sont affichés (nouveaux créneaux inclus).
+                        #   - Choisir les créneaux : la grille affiche exactement
+                        #     les créneaux sélectionnés. Sans créneau
+                        #     sélectionné, aucune grille n'est affichée.
+                        # ═══════════════════════════════════════════════════════
+                        mode_creneaux_indiv = st.radio(
+                            "⏰ Créneaux horaires affichés sur la grille :",
+                            ["Automatique (créneaux utilisés)", "Choisir les créneaux"],
+                            horizontal=True,
+                            key="mode_creneaux_etu_indiv"
+                        )
+
+                        creneaux_choisis_indiv = None
+                        if mode_creneaux_indiv == "Choisir les créneaux":
+                            _sig_etu_creneaux = hashlib.md5(
+                                f"{promo_sel_indiv}|{etudiant_sel}".encode("utf-8")
+                            ).hexdigest()[:8]
+                            _labels_creneaux_indiv = [map_h_labels_indiv[h] for h in horaires_ref_indiv]
+                            _labels_utilises_indiv = [
+                                map_h_labels_indiv[h] for h in horaires_ref_indiv
+                                if h in set(df_edt_final_type["h_norm"])
+                            ]
+                            creneaux_choisis_indiv = st.multiselect(
+                                "Choisir les créneaux (sélection progressive) :",
+                                _labels_creneaux_indiv,
+                                default=_labels_utilises_indiv,
+                                key=f"creneaux_etu_indiv_{_sig_etu_creneaux}",
+                                help="Sélectionnez les créneaux à afficher, y compris les "
+                                     "créneaux d'une heure (8h - 9h, 9h - 10h, ...). "
+                                     "Sans créneau sélectionné, aucune grille n'est affichée."
+                            )
+                            # Ordre chronologique, quel que soit l'ordre de sélection
+                            creneaux_choisis_indiv = [
+                                lbl for lbl in _labels_creneaux_indiv if lbl in creneaux_choisis_indiv
+                            ]
+                            _h_norm_choisis_indiv = {
+                                h for h in horaires_ref_indiv
+                                if map_h_labels_indiv[h] in creneaux_choisis_indiv
+                            }
+                            df_edt_final_type = df_edt_final_type[
+                                df_edt_final_type["h_norm"].isin(_h_norm_choisis_indiv)
+                            ].copy()
 
                         def _fmt_cell_indiv(rows):
                             items = []
@@ -23511,9 +23599,21 @@ if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
                         grid_indiv_texte = grouped_indiv_texte.unstack("h_norm") if not grouped_indiv_texte.empty else pd.DataFrame()
 
                         jours_present_indiv = [j for j in jours_ref_indiv if j in grid_indiv.index]
-                        h_present_indiv = [h for h in horaires_ref_indiv if h in grid_indiv.columns]
+                        if creneaux_choisis_indiv is not None:
+                            # Mode « Choisir les créneaux » : exactement les
+                            # créneaux sélectionnés (même s'ils sont vides).
+                            h_present_indiv = [
+                                h for h in horaires_ref_indiv
+                                if map_h_labels_indiv[h] in creneaux_choisis_indiv
+                            ]
+                        else:
+                            h_present_indiv = [h for h in horaires_ref_indiv if h in grid_indiv.columns]
 
-                        if jours_present_indiv and h_present_indiv:
+                        if creneaux_choisis_indiv is not None and not creneaux_choisis_indiv:
+                            st.warning("⚠️ Sélectionnez au moins un créneau pour afficher l'EDT.")
+                        elif creneaux_choisis_indiv is not None and not jours_present_indiv:
+                            st.info("ℹ️ Aucune séance sur les créneaux sélectionnés.")
+                        elif jours_present_indiv and h_present_indiv:
                             grid_indiv = grid_indiv.reindex(index=jours_present_indiv, columns=h_present_indiv).fillna("")
                             grid_indiv.index = [map_j_labels_indiv.get(i, i) for i in grid_indiv.index]
                             grid_indiv.columns = [map_h_labels_indiv.get(c, c) for c in grid_indiv.columns]
