@@ -6306,6 +6306,73 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             )
 
             # ============================================================
+            # CHOIX DE LA / DES MATIÈRES (PROMOTION)
+            # ------------------------------------------------------------
+            # La liste déroulante contient TOUTES les matières (colonne
+            # « Enseignements ») qui concernent la ou les promotions
+            # sélectionnées ci-dessus. Trois modes :
+            #   - Toutes les matières : aucun filtre (comportement d'origine)
+            #   - Une matière         : une seule matière bien définie
+            #   - Plusieurs matières  : ajout progressif d'une ou plusieurs
+            #                           matières à afficher dans l'EDT
+            # ============================================================
+            _masque_promos_matieres = df["Promotion"].isin(promotions_selectionnees)
+            liste_matieres_promotion = sorted(
+                {
+                    str(m).strip()
+                    for m in df.loc[_masque_promos_matieres, "Enseignements"].dropna().tolist()
+                    if str(m).strip() and str(m).strip().lower() not in ["nan", "none", "non défini"]
+                },
+                key=lambda x: x.lower()
+            )
+
+            # Signature des promotions choisies : les listes de matières
+            # changent avec la promotion, donc les widgets sont réinitialisés
+            # automatiquement quand la sélection de promotions change.
+            _sig_promos_matieres = hashlib.md5(
+                "|".join(sorted(promotions_selectionnees)).encode("utf-8")
+            ).hexdigest()[:8]
+
+            matieres_selectionnees = []
+
+            if liste_matieres_promotion:
+                mode_selection_matieres = st.radio(
+                    "Mode d'affichage des matières :",
+                    ["Toutes les matières", "Une matière", "Plusieurs matières"],
+                    horizontal=True,
+                    key="mode_selection_matieres_admin"
+                )
+
+                if mode_selection_matieres == "Une matière":
+                    matiere_sel = st.selectbox(
+                        "Choisir Matière :",
+                        liste_matieres_promotion,
+                        key=f"matiere_admin_unique_{_sig_promos_matieres}"
+                    )
+                    matieres_selectionnees = [matiere_sel]
+                elif mode_selection_matieres == "Plusieurs matières":
+                    matieres_selectionnees = st.multiselect(
+                        "Choisir les matières (sélection progressive) :",
+                        liste_matieres_promotion,
+                        default=liste_matieres_promotion[:1],
+                        key=f"matieres_admin_multiples_{_sig_promos_matieres}",
+                        help="Sélectionnez d'abord une matière, puis ajoutez progressivement "
+                             "une deuxième, une troisième, etc. Seules les matières choisies "
+                             "seront affichées dans l'EDT."
+                    )
+                    if not matieres_selectionnees:
+                        st.warning("⚠️ Sélectionnez au moins une matière pour afficher l'EDT.")
+                        st.stop()
+
+                if matieres_selectionnees:
+                    st.caption(
+                        f"📚 {len(matieres_selectionnees)} matière(s) affichée(s) "
+                        f"sur {len(liste_matieres_promotion)} pour la sélection."
+                    )
+            else:
+                st.info("ℹ️ Aucune matière définie pour la promotion sélectionnée.")
+
+            # ============================================================
             # MODE ÉDITION INTERACTIVE DE L'EDT (PROMOTION)
             # ------------------------------------------------------------
             # Ce toggle active l'édition directe des cellules de l'EDT :
@@ -6346,6 +6413,13 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 df_p = df_p[df_p["_type_affichage_admin"] == "TD"].copy()
             elif filtre_type_admin == "TP seulement":
                 df_p = df_p[df_p["_type_affichage_admin"] == "TP"].copy()
+
+            # Filtre par matière(s) : uniquement si un choix précis a été fait
+            # (« Une matière » ou « Plusieurs matières »).
+            if matieres_selectionnees:
+                df_p = df_p[
+                    df_p["Enseignements"].astype(str).str.strip().isin(matieres_selectionnees)
+                ].copy()
 
             libelle_promotions = " + ".join(promotions_selectionnees)
 
