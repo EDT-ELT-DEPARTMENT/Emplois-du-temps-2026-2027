@@ -3492,8 +3492,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                         "date_saisie": datetime.now().strftime(
                                             "%d/%m/%Y %H:%M"
                                         ),
-                                        "justifie": False,
-                                        "absence_collective": True
+                                        "justifie": False
                                     }
 
                                     try:
@@ -5413,31 +5412,9 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
     # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
     
     # Constantes locales pour EDT
-    # Liste unique des créneaux disponibles dans TOUS les modes d'édition.
-    # Les anciens créneaux sont conservés et les créneaux d'une heure sont ajoutés.
     horaires_list = [
-        # Créneaux ajoutés d'une heure
-        "8h - 9h",
-        "9h - 10h",
-        "10h - 11h",
-        "11h - 12h",
-        "12h - 13h",
-        "13h - 14h",
-        "14h - 15h",
-        "15h - 16h",
-        "16h - 17h",
-
-        # Créneaux existants conservés
-        "8h - 9h30",
-        "9h30 - 11h",
-        "11h - 12h30",
-        "12h30 - 14h",
-        "14h - 15h30",
-        "15h30 - 17h",
-
-        # Créneaux anciens supplémentaires déjà utilisés dans certains EDT
-        "8h - 10h",
-        "14h - 16h"
+        "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
+        "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
     ]
     jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     map_h = {normalize(h): h for h in horaires_list}
