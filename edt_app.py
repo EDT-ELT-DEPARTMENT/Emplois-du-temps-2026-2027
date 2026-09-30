@@ -4125,12 +4125,22 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 return f"{int(h1):02d}h{m1 or '00'}-{int(h2):02d}h{m2 or '00'}"
                             return re.sub(r'\s+', '', s)
 
+                        # Les deux séries sont affichées dans l'EDT individuel :
+                        # créneaux d'une heure + créneaux institutionnels d'1h30.
                         horaires_ref_justif = [
+                            "08h00-09h00", "09h00-10h00", "10h00-11h00",
+                            "11h00-12h00", "12h00-13h00", "13h00-14h00",
+                            "14h00-15h00", "15h00-16h00", "16h00-17h00",
                             "08h00-09h30", "09h30-11h00", "11h00-12h30",
                             "12h30-14h00", "14h00-15h30", "15h30-17h00"
                         ]
                         jours_ref_justif = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
                         map_h_labels_justif = {
+                            "08h00-09h00": "8h - 9h", "09h00-10h00": "9h - 10h",
+                            "10h00-11h00": "10h - 11h", "11h00-12h00": "11h - 12h",
+                            "12h00-13h00": "12h - 13h", "13h00-14h00": "13h - 14h",
+                            "14h00-15h00": "14h - 15h", "15h00-16h00": "15h - 16h",
+                            "16h00-17h00": "16h - 17h",
                             "08h00-09h30": "8h - 9h30", "09h30-11h00": "9h30 - 11h",
                             "11h00-12h30": "11h - 12h30", "12h30-14h00": "12h30 - 14h",
                             "14h00-15h30": "14h - 15h30", "15h30-17h00": "15h30 - 17h"
@@ -4181,7 +4191,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             grid_justif_texte = pd.DataFrame()
 
                         jours_present_justif = [j for j in jours_ref_justif if j in grid_justif.index]
-                        h_present_justif = [h for h in horaires_ref_justif if h in grid_justif.columns]
+                        h_present_justif = list(horaires_ref_justif)
 
                         if jours_present_justif and h_present_justif:
                             grid_justif = grid_justif.reindex(index=jours_present_justif, columns=h_present_justif).fillna("")
@@ -5412,9 +5422,13 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
     # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
     
     # Constantes locales pour EDT
+    # Créneaux communs aux modes d'édition : anciens créneaux conservés
+    # et créneaux d'une heure ajoutés pour créer/déplacer des séances.
     horaires_list = [
-        "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
-        "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
+        "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h",
+        "12h - 13h", "13h - 14h", "14h - 15h", "15h - 16h", "16h - 17h",
+        "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h",
+        "14h - 15h30", "15h30 - 17h", "8h - 10h", "14h - 16h"
     ]
     jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     map_h = {normalize(h): h for h in horaires_list}
