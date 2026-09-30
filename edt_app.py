@@ -3492,7 +3492,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                         "date_saisie": datetime.now().strftime(
                                             "%d/%m/%Y %H:%M"
                                         ),
-                                        "justifie": False
+                                        "justifie": False,
+                                        "absence_collective": True
                                     }
 
                                     try:
@@ -4125,22 +4126,12 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 return f"{int(h1):02d}h{m1 or '00'}-{int(h2):02d}h{m2 or '00'}"
                             return re.sub(r'\s+', '', s)
 
-                        # Les deux séries sont affichées dans l'EDT individuel :
-                        # créneaux d'une heure + créneaux institutionnels d'1h30.
                         horaires_ref_justif = [
-                            "08h00-09h00", "09h00-10h00", "10h00-11h00",
-                            "11h00-12h00", "12h00-13h00", "13h00-14h00",
-                            "14h00-15h00", "15h00-16h00", "16h00-17h00",
                             "08h00-09h30", "09h30-11h00", "11h00-12h30",
                             "12h30-14h00", "14h00-15h30", "15h30-17h00"
                         ]
                         jours_ref_justif = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
                         map_h_labels_justif = {
-                            "08h00-09h00": "8h - 9h", "09h00-10h00": "9h - 10h",
-                            "10h00-11h00": "10h - 11h", "11h00-12h00": "11h - 12h",
-                            "12h00-13h00": "12h - 13h", "13h00-14h00": "13h - 14h",
-                            "14h00-15h00": "14h - 15h", "15h00-16h00": "15h - 16h",
-                            "16h00-17h00": "16h - 17h",
                             "08h00-09h30": "8h - 9h30", "09h30-11h00": "9h30 - 11h",
                             "11h00-12h30": "11h - 12h30", "12h30-14h00": "12h30 - 14h",
                             "14h00-15h30": "14h - 15h30", "15h30-17h00": "15h30 - 17h"
@@ -4191,7 +4182,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             grid_justif_texte = pd.DataFrame()
 
                         jours_present_justif = [j for j in jours_ref_justif if j in grid_justif.index]
-                        h_present_justif = list(horaires_ref_justif)
+                        h_present_justif = [h for h in horaires_ref_justif if h in grid_justif.columns]
 
                         if jours_present_justif and h_present_justif:
                             grid_justif = grid_justif.reindex(index=jours_present_justif, columns=h_present_justif).fillna("")
@@ -5422,13 +5413,9 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
     # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
     
     # Constantes locales pour EDT
-    # Créneaux communs aux modes d'édition : anciens créneaux conservés
-    # et créneaux d'une heure ajoutés pour créer/déplacer des séances.
     horaires_list = [
-        "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h",
-        "12h - 13h", "13h - 14h", "14h - 15h", "15h - 16h", "16h - 17h",
-        "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h",
-        "14h - 15h30", "15h30 - 17h", "8h - 10h", "14h - 16h"
+        "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
+        "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
     ]
     jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     map_h = {normalize(h): h for h in horaires_list}
@@ -6071,7 +6058,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                                 key=f"edit_enseignant_sel_ens_{idx_creneau_ens}"
                                             )
                                             st.text_input(
-                                                "Enseignant (saisie libre) :",
+                                                "Enseignant (saisie libre — remplace la liste) :",
                                                 value="",
                                                 key=f"edit_enseignant_libre_ens_{idx_creneau_ens}"
                                             )
@@ -6092,7 +6079,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                                 key=f"edit_lieu_sel_ens_{idx_creneau_ens}"
                                             )
                                             st.text_input(
-                                                "Lieu (saisie libre) :",
+                                                "Lieu (saisie libre — remplace la liste) :",
                                                 value="",
                                                 key=f"edit_lieu_libre_ens_{idx_creneau_ens}"
                                             )
@@ -6198,12 +6185,19 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 horaires_list[0] if horaires_list else ""
                             )
 
-                            if choix_enseignant_ens == "➕ Saisie libre":
+                            # Même règle que l'édition Promotion : une saisie libre
+                            # non vide est prioritaire et remplace le choix de liste.
+                            if str(enseignant_libre_ens).strip():
                                 enseignant_final_ens = str(enseignant_libre_ens).strip()
+                            elif choix_enseignant_ens == "➕ Saisie libre":
+                                enseignant_final_ens = ""
                             else:
                                 enseignant_final_ens = str(choix_enseignant_ens).strip()
-                            if choix_lieu_ens == "➕ Saisie libre":
+
+                            if str(lieu_libre_ens).strip():
                                 lieu_final_ens = str(lieu_libre_ens).strip()
+                            elif choix_lieu_ens == "➕ Saisie libre":
+                                lieu_final_ens = ""
                             else:
                                 lieu_final_ens = str(choix_lieu_ens).strip()
 
@@ -7303,12 +7297,17 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 key=f"edit_horaire_{idx_edition}"
                             )
 
-                        if choix_enseignant == "\u2795 Saisie libre (voir champ suivant)":
-                            enseignant_final = nouveau_enseignant_libre.strip()
+                        # Une valeur libre non vide remplace toujours le choix de liste.
+                        if str(nouveau_enseignant_libre).strip():
+                            enseignant_final = str(nouveau_enseignant_libre).strip()
+                        elif choix_enseignant == "\u2795 Saisie libre (voir champ suivant)":
+                            enseignant_final = ""
                         else:
                             enseignant_final = str(choix_enseignant).strip()
-                        if choix_lieu == "\u2795 Saisie libre (voir champ suivant)":
-                            lieu_final = nouveau_lieu_libre.strip()
+                        if str(nouveau_lieu_libre).strip():
+                            lieu_final = str(nouveau_lieu_libre).strip()
+                        elif choix_lieu == "\u2795 Saisie libre (voir champ suivant)":
+                            lieu_final = ""
                         else:
                             lieu_final = str(choix_lieu).strip()
 
