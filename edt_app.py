@@ -5482,16 +5482,48 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
             cible = ", ".join(enseignants_selectionnes)
 
-            # Créneaux réels de l'EDT source : ils sont affichés intégralement
-            # dans la vue Enseignant, y compris lorsqu'une cellule est vide.
-            horaires_affichage_enseignant = [
-                "8h - 9h30",
-                "9h30 - 11h",
-                "11h - 12h30",
-                "12h30 - 14h",
-                "14h - 15h30",
-                "15h30 - 17h"
+            # Deux séries d'horaires affichées ensemble, comme la vue Promotion :
+            # série d'une heure + série institutionnelle d'une heure et demie.
+            # Les créneaux réellement présents dans l'EDT de l'enseignant sont
+            # ajoutés automatiquement, même s'ils ont un format différent.
+            horaires_serie_une_heure = [
+                "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h",
+                "12h - 13h", "13h - 14h", "14h - 15h", "15h - 16h",
+                "16h - 17h"
             ]
+            horaires_serie_institutionnelle = [
+                "8h - 9h30", "9h30 - 11h", "11h - 12h30",
+                "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
+            ]
+
+            def _cle_tri_horaire_enseignant(horaire):
+                texte = str(horaire).strip().lower().replace(" ", "")
+                resultat = re.search(r"(\d{1,2})h?(?::?(\d{2}))?", texte)
+                if resultat:
+                    heure = int(resultat.group(1))
+                    minute = int(resultat.group(2) or 0)
+                    return heure * 60 + minute
+                return 99999
+
+            horaires_reels_enseignant = [
+                str(h).strip()
+                for h in df_f_complet["Horaire"].dropna().unique().tolist()
+                if str(h).strip()
+            ]
+
+            horaires_affichage_enseignant = []
+            for horaire in (
+                horaires_serie_une_heure
+                + horaires_serie_institutionnelle
+                + horaires_reels_enseignant
+            ):
+                if horaire not in horaires_affichage_enseignant:
+                    horaires_affichage_enseignant.append(horaire)
+
+            horaires_affichage_enseignant = sorted(
+                horaires_affichage_enseignant,
+                key=_cle_tri_horaire_enseignant
+            )
 
             filtre_type_enseignant_admin = st.selectbox(
                 "Type d'enseignement à afficher :",
@@ -5567,8 +5599,9 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 return "".join(items)
 
             st.caption(
-                "Créneaux réels affichés : 8h - 9h30, 9h30 - 11h, "
-                "11h - 12h30, 12h30 - 14h, 14h - 15h30 et 15h30 - 17h."
+                "Affichage flexible : créneaux d'une heure et créneaux "
+                "institutionnels d'1h30, complétés automatiquement par les "
+                "horaires réellement présents dans l'EDT de l'enseignant."
             )
 
             grid_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e).unstack('j_norm')
