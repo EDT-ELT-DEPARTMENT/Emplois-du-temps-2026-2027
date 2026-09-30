@@ -5413,9 +5413,31 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
     # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
     
     # Constantes locales pour EDT
+    # Liste unique des créneaux disponibles dans TOUS les modes d'édition.
+    # Les anciens créneaux sont conservés et les créneaux d'une heure sont ajoutés.
     horaires_list = [
-        "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
-        "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
+        # Créneaux ajoutés d'une heure
+        "8h - 9h",
+        "9h - 10h",
+        "10h - 11h",
+        "11h - 12h",
+        "12h - 13h",
+        "13h - 14h",
+        "14h - 15h",
+        "15h - 16h",
+        "16h - 17h",
+
+        # Créneaux existants conservés
+        "8h - 9h30",
+        "9h30 - 11h",
+        "11h - 12h30",
+        "12h30 - 14h",
+        "14h - 15h30",
+        "15h30 - 17h",
+
+        # Créneaux anciens supplémentaires déjà utilisés dans certains EDT
+        "8h - 10h",
+        "14h - 16h"
     ]
     jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     map_h = {normalize(h): h for h in horaires_list}
@@ -5498,29 +5520,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
 
-            # Horaires flexibles : deux séries + horaires réellement présents.
-            horaires_serie_une_heure = [
-                "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h",
-                "12h - 13h", "13h - 14h", "14h - 15h", "15h - 16h", "16h - 17h"
-            ]
-            horaires_serie_institutionnelle = [
-                "8h - 9h30", "9h30 - 11h", "11h - 12h30",
-                "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
-            ]
-
-            def _cle_tri_horaire_enseignant(horaire):
-                match_horaire = re.search(r"(\d{1,2})h?(?::?(\d{2}))?", str(horaire).lower().replace(" ", ""))
-                if match_horaire:
-                    return int(match_horaire.group(1)) * 60 + int(match_horaire.group(2) or 0)
-                return 99999
-
-            horaires_reels_enseignant = [str(h).strip() for h in df_f_complet["Horaire"].dropna().unique().tolist() if str(h).strip()]
-            horaires_affichage_enseignant = []
-            for horaire in horaires_serie_une_heure + horaires_serie_institutionnelle + horaires_reels_enseignant:
-                if normalize(horaire) not in [normalize(h) for h in horaires_affichage_enseignant]:
-                    horaires_affichage_enseignant.append(horaire)
-            horaires_affichage_enseignant = sorted(horaires_affichage_enseignant, key=_cle_tri_horaire_enseignant)
-
             # La charge horaire porte TOUJOURS sur l'ensemble des
             # enseignements (Cours+TD+TP) des enseignants sélectionnés,
             # indépendamment du filtre d'affichage choisi ci-dessus.
@@ -5580,21 +5579,44 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
             grid_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e).unstack('j_norm')
             grid_e = grid_e.reindex(
-                index=[normalize(h) for h in horaires_affichage_enseignant],
+                index=[normalize(h) for h in horaires_list],
                 columns=[normalize(j) for j in jours_list]
             ).fillna("")
             grid_e = grid_e[grid_e.any(axis=1)]
             grid_e.index = [map_h.get(i, i) for i in grid_e.index]
             grid_e.columns = [map_j.get(c, c) for c in grid_e.columns]
 
-            # Rendu HTML direct : robuste avec toutes les versions de pandas.
-            # Aucun Styler.map/apply/set_properties n'est utilisé ici, donc
-            # aucune erreur KeyError ne peut venir des index de style.
-            html_table_e = grid_e.to_html(
-                escape=False,
-                classes="tableau-edt-enseignant",
-                border=0
+            styled_e = (
+                grid_e.style
+                .set_properties(**{
+                    'text-align': 'center',
+                    'vertical-align': 'middle',
+                    'border': '1px solid #cbd5e1'
+                })
+                .set_table_styles([
+                    {'selector': 'th',
+                     'props': [
+                         ('text-align', 'center'),
+                         ('vertical-align', 'middle'),
+                         ('border', '1px solid #94a3b8'),
+                         ('background-color', '#f1f5f9'),
+                         ('font-weight', '600')
+                     ]},
+                    {'selector': 'th.row_heading, th.index_name',
+                     'props': [
+                         ('white-space', 'nowrap'),
+                         ('border', '1px solid #94a3b8'),
+                         ('background-color', '#f8fafc')
+                     ]},
+                    {'selector': 'td',
+                     'props': [
+                         ('text-align', 'center'),
+                         ('vertical-align', 'middle'),
+                         ('border', '1px solid #cbd5e1')
+                     ]}
+                ])
             )
+            html_table_e = styled_e.to_html(escape=False)
 
             iso_header_html = f"""
             <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:15px;border-radius:8px 8px 0 0;margin-bottom:0;text-align:center;">
@@ -5641,7 +5663,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
             grid_text_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e_text).unstack('j_norm')
             grid_text_e = grid_text_e.reindex(
-                index=[normalize(h) for h in horaires_affichage_enseignant],
+                index=[normalize(h) for h in horaires_list],
                 columns=[normalize(j) for j in jours_list]
             ).fillna("")
             grid_text_e = grid_text_e[grid_text_e.any(axis=1)]
