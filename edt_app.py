@@ -5482,24 +5482,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
             cible = ", ".join(enseignants_selectionnes)
 
-            # Références des deux séries : une heure et créneaux institutionnels.
-            horaires_serie_une_heure = [
-                "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h",
-                "12h - 13h", "13h - 14h", "14h - 15h", "15h - 16h",
-                "16h - 17h"
-            ]
-            horaires_serie_institutionnelle = [
-                "8h - 9h30", "9h30 - 11h", "11h - 12h30",
-                "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
-            ]
-
-            def _cle_tri_horaire_enseignant(horaire):
-                texte = str(horaire).strip().lower().replace(" ", "")
-                resultat = re.search(r"(\d{1,2})h?(?::?(\d{2}))?", texte)
-                if resultat:
-                    return int(resultat.group(1)) * 60 + int(resultat.group(2) or 0)
-                return 99999
-
             filtre_type_enseignant_admin = st.selectbox(
                 "Type d'enseignement à afficher :",
                 ["Tous les enseignements", "Cours seulement", "TD seulement", "TP seulement"],
@@ -5516,25 +5498,28 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
 
-            # Les horaires réels sont calculés seulement APRÈS création de df_f_complet.
-            # Cette dépendance explicite évite UnboundLocalError.
-            horaires_reels_enseignant = [
-                str(h).strip()
-                for h in df_f_complet["Horaire"].dropna().unique().tolist()
-                if str(h).strip()
+            # Horaires flexibles : deux séries + horaires réellement présents.
+            horaires_serie_une_heure = [
+                "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h",
+                "12h - 13h", "13h - 14h", "14h - 15h", "15h - 16h", "16h - 17h"
             ]
+            horaires_serie_institutionnelle = [
+                "8h - 9h30", "9h30 - 11h", "11h - 12h30",
+                "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
+            ]
+
+            def _cle_tri_horaire_enseignant(horaire):
+                match_horaire = re.search(r"(\d{1,2})h?(?::?(\d{2}))?", str(horaire).lower().replace(" ", ""))
+                if match_horaire:
+                    return int(match_horaire.group(1)) * 60 + int(match_horaire.group(2) or 0)
+                return 99999
+
+            horaires_reels_enseignant = [str(h).strip() for h in df_f_complet["Horaire"].dropna().unique().tolist() if str(h).strip()]
             horaires_affichage_enseignant = []
-            for horaire in (
-                horaires_serie_une_heure
-                + horaires_serie_institutionnelle
-                + horaires_reels_enseignant
-            ):
-                if horaire not in horaires_affichage_enseignant:
+            for horaire in horaires_serie_une_heure + horaires_serie_institutionnelle + horaires_reels_enseignant:
+                if normalize(horaire) not in [normalize(h) for h in horaires_affichage_enseignant]:
                     horaires_affichage_enseignant.append(horaire)
-            horaires_affichage_enseignant = sorted(
-                horaires_affichage_enseignant,
-                key=_cle_tri_horaire_enseignant
-            )
+            horaires_affichage_enseignant = sorted(horaires_affichage_enseignant, key=_cle_tri_horaire_enseignant)
 
             # La charge horaire porte TOUJOURS sur l'ensemble des
             # enseignements (Cours+TD+TP) des enseignants sélectionnés,
@@ -5593,11 +5578,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     )
                 return "".join(items)
 
-            st.caption(
-                "Affichage flexible : série d'une heure, série institutionnelle "
-                "d'1h30 et horaires réels de l'enseignant."
-            )
-
             grid_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e).unstack('j_norm')
             grid_e = grid_e.reindex(
                 index=[normalize(h) for h in horaires_affichage_enseignant],
@@ -5607,37 +5587,14 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             grid_e.index = [map_h.get(i, i) for i in grid_e.index]
             grid_e.columns = [map_j.get(c, c) for c in grid_e.columns]
 
-            styled_e = (
-                grid_e.style
-                .set_properties(**{
-                    'text-align': 'center',
-                    'vertical-align': 'middle',
-                    'border': '1px solid #cbd5e1'
-                })
-                .set_table_styles([
-                    {'selector': 'th',
-                     'props': [
-                         ('text-align', 'center'),
-                         ('vertical-align', 'middle'),
-                         ('border', '1px solid #94a3b8'),
-                         ('background-color', '#f1f5f9'),
-                         ('font-weight', '600')
-                     ]},
-                    {'selector': 'th.row_heading, th.index_name',
-                     'props': [
-                         ('white-space', 'nowrap'),
-                         ('border', '1px solid #94a3b8'),
-                         ('background-color', '#f8fafc')
-                     ]},
-                    {'selector': 'td',
-                     'props': [
-                         ('text-align', 'center'),
-                         ('vertical-align', 'middle'),
-                         ('border', '1px solid #cbd5e1')
-                     ]}
-                ])
+            # Rendu HTML direct : robuste avec toutes les versions de pandas.
+            # Aucun Styler.map/apply/set_properties n'est utilisé ici, donc
+            # aucune erreur KeyError ne peut venir des index de style.
+            html_table_e = grid_e.to_html(
+                escape=False,
+                classes="tableau-edt-enseignant",
+                border=0
             )
-            html_table_e = styled_e.to_html(escape=False)
 
             iso_header_html = f"""
             <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:15px;border-radius:8px 8px 0 0;margin-bottom:0;text-align:center;">
