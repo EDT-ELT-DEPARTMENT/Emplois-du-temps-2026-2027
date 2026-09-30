@@ -5482,15 +5482,15 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
             cible = ", ".join(enseignants_selectionnes)
 
-            # Horaires de référence demandés pour l'EDT enseignant.
-            # La grille affiche chaque créneau de 08h à 14h, même vide.
+            # Créneaux réels de l'EDT source : ils sont affichés intégralement
+            # dans la vue Enseignant, y compris lorsqu'une cellule est vide.
             horaires_affichage_enseignant = [
-                "8h - 9h",
-                "9h - 10h",
-                "10h - 11h",
-                "11h - 12h",
-                "12h - 13h",
-                "13h - 14h"
+                "8h - 9h30",
+                "9h30 - 11h",
+                "11h - 12h30",
+                "12h30 - 14h",
+                "14h - 15h30",
+                "15h30 - 17h"
             ]
 
             filtre_type_enseignant_admin = st.selectbox(
@@ -5567,8 +5567,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 return "".join(items)
 
             st.caption(
-                "Grille enseignant : créneaux affichés de 8h - 9h à 13h - 14h. "
-                "Les cellules vides sont conservées pour faciliter la lecture."
+                "Créneaux réels affichés : 8h - 9h30, 9h30 - 11h, "
+                "11h - 12h30, 12h30 - 14h, 14h - 15h30 et 15h30 - 17h."
             )
 
             grid_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e).unstack('j_norm')
