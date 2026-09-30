@@ -3234,7 +3234,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         return
 
     # =============================================================================
-    # ONGLETS — contenus conservés, présentés dans des pages internes
+    # ONGLETS
     # =============================================================================
     # Création des onglets (toujours 4 pour éviter UnboundLocalError)
     tab1, tab2, tab3, tab4 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports", "👤 Infos Étudiant"])
@@ -5439,19 +5439,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
     if df is None or df.empty:
         st.error("❌ Les données EDT ne sont pas disponibles. Vérifiez le fichier source.")
         return
-
-    st.markdown(
-        f"<div class='platform-banner'>"
-        f"<h1>Plateforme EDT & Assiduité</h1>"
-        f"<p>Département d'Électrotechnique · Faculté de Génie Électrique · UDL-SBA</p>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        f"<div class='page-indicator'>📍 Espace : <b>{portail}</b>"
-        f" · Vue : <b>{mode_view}</b> · {date_str}</div>",
-        unsafe_allow_html=True
-    )
 
     # ============================================================
     # PORTAIL : EMPLOI DU TEMPS (ADMIN)
@@ -16607,102 +16594,132 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# ORGANISATION VISUELLE — NAVIGATION PAR PAGES ET CARTES
+# THÈME LISIBILITÉ — FOND BLANC ET TEXTE NOIR
+# Les couleurs pédagogiques des alertes et des états sont conservées.
 # =============================================================================
 st.markdown("""
 <style>
-:root {
-    --bleu-fonce: #0f2a5f;
-    --bleu: #1e3a8a;
-    --bleu-clair: #eff6ff;
-    --or: #d4af37;
-    --gris-fond: #f4f7fb;
-    --gris-texte: #475569;
-    --blanc: #ffffff;
+html, body, [class*="css"] {
+    color: #111111 !important;
 }
-.stApp {
-    background: linear-gradient(180deg, #f8fbff 0%, #f4f7fb 100%);
-}
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+.main,
 .block-container {
-    max-width: 1500px;
-    padding-top: 1.2rem;
-    padding-bottom: 3rem;
+    background: #ffffff !important;
+    color: #111111 !important;
 }
-.platform-banner {
-    background: linear-gradient(120deg, #0f2a5f 0%, #1e3a8a 55%, #2563eb 100%);
-    border-radius: 22px;
-    padding: 26px 30px;
-    color: white;
-    box-shadow: 0 12px 30px rgba(15, 42, 95, .20);
-    margin-bottom: 20px;
+[data-testid="stHeader"] {
+    background: #ffffff !important;
 }
-.platform-banner h1 {
-    margin: 0;
-    font-size: 2rem;
-    letter-spacing: .2px;
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] > div:first-child {
+    background: #ffffff !important;
+    color: #111111 !important;
+    border-right: 1px solid #d1d5db;
 }
-.platform-banner p {
-    margin: 8px 0 0 0;
-    opacity: .88;
-    font-size: .98rem;
+[data-testid="stSidebar"] *,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] div {
+    color: #111111 !important;
 }
-.section-card {
-    background: rgba(255,255,255,.94);
-    border: 1px solid #dbe5f1;
-    border-radius: 18px;
-    padding: 20px;
-    box-shadow: 0 8px 24px rgba(30,58,138,.07);
-    margin-bottom: 18px;
+h1, h2, h3, h4, h5, h6,
+p, label, span, div,
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li,
+[data-testid="stCaptionContainer"] {
+    color: #111111;
 }
-.page-indicator {
-    color: #64748b;
-    font-size: .86rem;
-    margin: 4px 0 16px 0;
+[data-testid="stMetric"],
+[data-testid="stExpander"],
+[data-testid="stForm"],
+[data-testid="stVerticalBlockBorderWrapper"],
+[data-testid="stDataFrame"] {
+    background: #ffffff !important;
+    color: #111111 !important;
+    border-color: #cbd5e1 !important;
 }
-div[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0f2a5f 0%, #163d80 100%);
+[data-testid="stMetricLabel"],
+[data-testid="stMetricValue"],
+[data-testid="stMetricDelta"] {
+    color: #111111 !important;
 }
-div[data-testid="stSidebar"] * {
-    color: white !important;
+.stTextInput input,
+.stTextArea textarea,
+.stSelectbox [data-baseweb="select"] > div,
+.stMultiSelect [data-baseweb="select"] > div,
+.stDateInput input,
+.stNumberInput input {
+    background: #ffffff !important;
+    color: #111111 !important;
+    border-color: #64748b !important;
 }
-div[data-testid="stSidebar"] .stButton button,
-div[data-testid="stSidebar"] .stDownloadButton button {
-    border-radius: 11px;
-    border: 1px solid rgba(255,255,255,.25);
-    background: rgba(255,255,255,.12);
+.stTextInput input::placeholder,
+.stTextArea textarea::placeholder {
+    color: #475569 !important;
+    opacity: 1 !important;
 }
-div[data-testid="stSidebar"] .stButton button:hover {
-    background: rgba(212,175,55,.25);
-    border-color: #d4af37;
+[data-baseweb="menu"],
+[data-baseweb="popover"],
+[data-baseweb="select"] {
+    background: #ffffff !important;
+    color: #111111 !important;
 }
-.stButton button, .stDownloadButton button {
-    border-radius: 10px;
-    font-weight: 600;
-    min-height: 42px;
+[data-baseweb="menu"] li,
+[data-baseweb="menu"] span {
+    color: #111111 !important;
 }
-div[data-testid="stMetric"] {
-    background: white;
-    border: 1px solid #dbe5f1;
-    border-radius: 14px;
-    padding: 12px;
-    box-shadow: 0 4px 14px rgba(15,42,95,.06);
+.stButton button,
+.stDownloadButton button {
+    background: #ffffff !important;
+    color: #111111 !important;
+    border: 1.5px solid #1e3a8a !important;
+    font-weight: 700 !important;
 }
-div[data-testid="stExpander"] {
-    border: 1px solid #dbe5f1;
-    border-radius: 14px;
-    background: rgba(255,255,255,.9);
+.stButton button:hover,
+.stDownloadButton button:hover {
+    background: #eff6ff !important;
+    color: #111111 !important;
+    border-color: #0f2a5f !important;
 }
-div[data-testid="stDataFrame"] {
-    border-radius: 12px;
-    overflow: hidden;
+[data-testid="stTabs"] button {
+    color: #111111 !important;
+    background: #ffffff !important;
+    font-weight: 700 !important;
 }
-hr { border-color: #d4af37 !important; }
+[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #0f2a5f !important;
+    border-bottom-color: #1e3a8a !important;
+}
+table, th, td {
+    color: #111111 !important;
+    background-color: #ffffff;
+    border-color: #64748b !important;
+}
+th {
+    background-color: #e5e7eb !important;
+    color: #111111 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # --- CHARGEMENT DES DONNÉES ---
 NOM_FICHIER_FIXE = "dataEDT-ELT-S1-2027.xlsx"
 NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
+
+# Configuration partagée, en lecture seule dans les fonctions.
+# Les fonctions continuent de recevoir leurs DataFrames et leurs choix en
+# paramètres : aucune dépendance métier cachée n'est créée.
+CONFIGURATION_PLATEFORME = {
+    "annee_universitaire": "2026-2027",
+    "departement": "Département d'Électrotechnique",
+    "etablissement": "Faculté de Génie Électrique — UDL-SBA",
+    "fichier_edt": NOM_FICHIER_FIXE,
+    "fichier_contacts": NOM_FICHIER_CONTACTS,
+}
 
 df = None
 repertoire_source = {}        # Pour stocker les Emails : { "NOM": "email" }
@@ -17765,45 +17782,21 @@ with st.sidebar:
             "📅 Surveillances Examens"
         ]
 
-    st.markdown("### 🧭 Navigation")
-    portail = st.selectbox(
-        "🚀 Sélectionner Espace",
-        options_portail,
-        key="navigation_portail_principale"
-    )
+    portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
     st.divider()
 
     mode_view = "Personnel"
     poste_sup = False
 
     if portail == "📖 Emploi du Temps" and is_admin:
-        st.markdown("#### 📖 Pages EDT")
-        mode_view = st.radio(
-            "Choisir une page :",
-            [
-                "Promotion",
-                "Enseignant",
-                "🏢 Planning Salles",
-                "🟢 Lieux Non Occupés",
-                "🚩 Vérificateur de conflits",
-                "✍️ Éditeur de données"
-            ],
-            key="navigation_page_edt_admin"
-        )
-        poste_sup = st.checkbox(
-            "Poste Supérieur (Décharge 3h)",
-            key="navigation_poste_superieur"
-        )
+        mode_view = st.radio("Vue Administration :", [
+            "Promotion", "Enseignant", "🏢 Planning Salles", 
+            "🟢 Lieux Non Occupés", 
+            "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
+        ])
+        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
     elif portail == "👤 Mon Espace Enseignant":
         poste_sup = st.session_state.get("poste_sup_ens", False)
-
-    st.markdown(
-        f"<div style='padding:10px 12px;border-radius:12px;"
-        f"background:rgba(255,255,255,.12);margin-top:12px;'>"
-        f"📄 <b>Page active</b><br>{portail}"
-        f"</div>",
-        unsafe_allow_html=True
-    )
 
     if st.button("🚪 Déconnexion du compte"):
         st.session_state["user_data"] = None
