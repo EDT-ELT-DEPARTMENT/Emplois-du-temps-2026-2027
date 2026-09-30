@@ -22964,6 +22964,653 @@ else:
     st.warning("⚠️ Données EDT non disponibles pour le répertoire des matières.")
     st.write("Jours trouvés :", df_filtre["Jours"].unique().tolist())
 # =============================================================================
+# EDT PAR GROUPE / SOUS-GROUPE — FONCTIONS UTILITAIRES (affichage + exports)
+# -----------------------------------------------------------------------------
+# Ces fonctions reprennent EXACTEMENT la logique de filtrage et de construction
+# de grille de la vue « EDT Individuel Étudiant », mais pour un couple
+# (groupe, sous-groupe) donné au lieu d'un étudiant. Elles permettent :
+#   - d'afficher automatiquement l'EDT d'un groupe + sous-groupe ;
+#   - de télécharger cet EDT (Excel / HTML / PDF) ;
+#   - de télécharger TOUS les EDT (un par groupe et sous-groupe) dans UN SEUL
+#     fichier Excel (une feuille par groupe/sous-groupe), HTML (une section par
+#     groupe/sous-groupe) ou PDF (une page par groupe/sous-groupe).
+# =============================================================================
+import html as _html_grp
+from xml.sax.saxutils import escape as _xml_escape_grp
+
+_EDT_GRP_HORAIRES_BASE = [
+    "08h00-09h30", "09h30-11h00", "11h00-12h30",
+    "12h30-14h00", "14h00-15h30", "15h30-17h00"
+]
+_EDT_GRP_HORAIRES_AJOUTES = [
+    "08h00-09h00", "09h00-10h00", "10h00-11h00",
+    "11h00-12h00", "12h00-13h00", "13h00-14h00"
+]
+_EDT_GRP_JOURS_REF = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
+_EDT_GRP_JOURS_LABELS = {
+    "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
+    "mercredi": "Mercredi", "jeudi": "Jeudi"
+}
+_EDT_GRP_TYPES_AFFICHAGE = [
+    "Tous les enseignements",
+    "📘 Cours uniquement",
+    "📗 TD uniquement",
+    "🔴 TP uniquement",
+]
+
+
+def _edt_grp_norm(x):
+    """Normalise un horaire ou un jour (même logique que la vue étudiant) :
+    '8h - 9h30' -> '08h00-09h30' ; 'Lundi' -> 'lundi'."""
+    if not x or str(x).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
+        return ""
+    s = str(x).strip().lower()
+    m = re.match(
+        r'^\s*(\d{1,2})[h:](\d{2})?\s*[-–à]\s*(\d{1,2})[h:](\d{2})?\s*$',
+        s
+    )
+    if m:
+        h1, m1, h2, m2 = m.groups()
+        m1 = m1 or "00"
+        m2 = m2 or "00"
+        return f"{int(h1):02d}h{m1}-{int(h2):02d}h{m2}"
+    return re.sub(r'\s+', '', s)
+
+
+def _edt_grp_cle_tri_creneau(h_norm_val):
+    m = re.match(r'^(\d{2})h(\d{2})-(\d{2})h(\d{2})$', str(h_norm_val))
+    if not m:
+        return (99 * 60, 99 * 60)
+    a1, b1, a2, b2 = m.groups()
+    return (int(a1) * 60 + int(b1), int(a2) * 60 + int(b2))
+
+
+def _edt_grp_label_creneau(h_norm_val):
+    m = re.match(r'^(\d{2})h(\d{2})-(\d{2})h(\d{2})$', str(h_norm_val))
+    if not m:
+        return str(h_norm_val)
+    a1, b1, a2, b2 = m.groups()
+    debut_lbl = f"{int(a1)}h" + ("" if b1 == "00" else b1)
+    fin_lbl = f"{int(a2)}h" + ("" if b2 == "00" else b2)
+    return f"{debut_lbl} - {fin_lbl}"
+
+
+def _edt_grp_tri_naturel(valeur):
+    """Tri naturel : G1, G2, ..., G10 (et non G1, G10, G2)."""
+    v = str(valeur)
+    m = re.search(r'\d+', v)
+    return (int(m.group()) if m else 10 ** 6, v)
+
+
+def _edt_grp_extraire_groupe_td(val):
+    """Extrait le GROUPE (TD) : 'TD-Analyse 3-G4' -> 'G4'."""
+    if pd.isna(val):
+        return None
+    val_str = str(val).strip().upper()
+    m = re.search(r'(?<![A-Z])G[\s\-]?(\d+)\s*$', val_str)
+    if not m:
+        return None
+    return f"G{m.group(1)}"
+
+
+def _edt_grp_extraire_sousgroupes_tp(val):
+    """Extrait TOUS les sous-groupes (TP) sous forme d'ensemble :
+    'TP-Structure de la matière-SG11/SG12' -> {'SG11', 'SG12'}."""
+    if pd.isna(val):
+        return set()
+    val_str = str(val).strip().upper()
+    trouvailles = re.findall(r'SG[\s\-]?(\d+)', val_str)
+    return {f"SG{n}" for n in trouvailles}
+
+
+def _edt_grp_extraire_groupes_cours(val):
+    """Groupes auxquels un COURS est restreint (liste entre parenthèses en
+    fin d'intitulé) ; None si le Cours est commun."""
+    if pd.isna(val):
+        return None
+    val_str = str(val).strip().upper()
+    m = re.search(r'\(([^)]*)\)\s*$', val_str)
+    if not m:
+        return None
+    trouvailles = re.findall(r'G(\d+)', m.group(1))
+    if not trouvailles:
+        return None
+    return {f"G{n}" for n in trouvailles}
+
+
+def _edt_grp_seances_promotion(df_edt, promo, fonction_mapping):
+    """Séances de l'EDT correspondant à la promotion (même logique que la
+    vue étudiant : mapping de promotion, puis correspondance directe)."""
+    if df_edt is None or df_edt.empty or "Promotion" not in df_edt.columns:
+        return pd.DataFrame()
+    promo_mappee = fonction_mapping(promo)
+    table_mapping = {p: fonction_mapping(p) for p in df_edt["Promotion"].dropna().unique()}
+    colonne_mappee = df_edt["Promotion"].map(table_mapping)
+    resultat = df_edt[colonne_mappee == promo_mappee].copy()
+    if resultat.empty:
+        resultat = df_edt[
+            df_edt["Promotion"].astype(str).str.strip().str.upper() == str(promo).upper()
+        ].copy()
+    return resultat
+
+
+def _edt_grp_filtrer_seances(df_promo, groupe, sous_groupe):
+    """Séances visibles pour un couple (groupe, sous-groupe) — logique
+    identique à celle de la vue « EDT Individuel Étudiant » :
+      - COURS commun (sans liste de groupes) ou restreint au groupe ;
+      - TD commun (sans tag de groupe) ou du groupe ;
+      - TP commun (sans sous-groupe) ou du sous-groupe."""
+    if df_promo is None or df_promo.empty:
+        return pd.DataFrame()
+
+    df = df_promo.copy()
+    groupe = str(groupe or "").strip().upper()
+    sous_groupe = str(sous_groupe or "").strip().upper()
+
+    codes = df["Code"].astype(str)
+    mask_cours = codes.str.contains("COURS", case=False, na=False)
+    mask_td = codes.str.contains("TD", case=False, na=False) & ~mask_cours
+    mask_tp = ~mask_cours & ~mask_td
+
+    enseignements = df["Enseignements"]
+    groupes_cours = pd.Series(
+        [_edt_grp_extraire_groupes_cours(v) if est else None
+         for v, est in zip(enseignements, mask_cours)],
+        index=df.index, dtype=object
+    )
+    groupe_td = pd.Series(
+        [_edt_grp_extraire_groupe_td(v) if est else None
+         for v, est in zip(enseignements, mask_td)],
+        index=df.index, dtype=object
+    )
+    sousgroupes_tp = pd.Series(
+        [_edt_grp_extraire_sousgroupes_tp(v) if est else None
+         for v, est in zip(enseignements, mask_tp)],
+        index=df.index, dtype=object
+    )
+
+    cours_commun = mask_cours & groupes_cours.apply(
+        lambda g: (not g) if isinstance(g, set) else True
+    )
+    cours_choisi = mask_cours & groupes_cours.apply(
+        lambda g: bool(groupe) and isinstance(g, set) and groupe in g
+    )
+    td_commun = mask_td & groupe_td.isna()
+    td_choisi = mask_td & groupe_td.apply(
+        lambda g: bool(groupe) and g == groupe
+    )
+    tp_commun = mask_tp & sousgroupes_tp.apply(
+        lambda s: (not s) if isinstance(s, set) else True
+    )
+    tp_choisi = mask_tp & sousgroupes_tp.apply(
+        lambda s: bool(sous_groupe) and isinstance(s, set) and sous_groupe in s
+    )
+
+    return df[
+        cours_commun | cours_choisi | td_commun | td_choisi | tp_commun | tp_choisi
+    ].copy()
+
+
+def _edt_grp_appliquer_type(df, type_affiche):
+    """Filtre par type d'enseignement (mêmes règles que la vue étudiant)."""
+    if df is None or df.empty:
+        return pd.DataFrame() if df is None else df.copy()
+    codes = df["Code"].astype(str)
+    if type_affiche == "📘 Cours uniquement":
+        return df[codes.str.contains("COURS", case=False, na=False)].copy()
+    if type_affiche == "📗 TD uniquement":
+        return df[
+            codes.str.contains("TD", case=False, na=False)
+            & ~codes.str.contains("COURS", case=False, na=False)
+        ].copy()
+    if type_affiche == "🔴 TP uniquement":
+        return df[~codes.str.contains("COURS|TD", case=False, na=False)].copy()
+    return df.copy()
+
+
+def _edt_grp_horaires_reference(df):
+    """Créneaux de référence : existants + créneaux d'une heure ajoutés +
+    horaires présents dans les séances. Retourne (liste_normalisée, labels)."""
+    if df is None or df.empty or "Horaire" not in df.columns:
+        donnees = []
+    else:
+        donnees = [
+            h for h in df["Horaire"].apply(_edt_grp_norm).unique()
+            if re.match(r'^\d{2}h\d{2}-\d{2}h\d{2}$', str(h))
+        ]
+    refs = sorted(
+        set(_EDT_GRP_HORAIRES_BASE) | set(_EDT_GRP_HORAIRES_AJOUTES) | set(donnees),
+        key=_edt_grp_cle_tri_creneau
+    )
+    return refs, {h: _edt_grp_label_creneau(h) for h in refs}
+
+
+def _edt_grp_nature(code):
+    code_up = str(code).upper()
+    if "COURS" in code_up:
+        return "COURS"
+    if "TD" in code_up:
+        return "TD"
+    return "TP"
+
+
+def _edt_grp_cellule_html(rows):
+    items = []
+    for _, r in rows.iterrows():
+        nature = _edt_grp_nature(r["Code"])
+        if nature == "COURS":
+            emoji, color, bg = "📘", "#1e40af", "#dbeafe"
+        elif nature == "TD":
+            emoji, color, bg = "📗", "#166534", "#dcfce7"
+        else:
+            emoji, color, bg = "🔴", "#991b1b", "#fee2e2"
+        items.append(
+            f"<div style='margin-bottom:5px;padding:6px;border-left:4px solid {color};"
+            f"background-color:{bg};border-radius:6px;text-align:left;'>"
+            f"<b style='color:{color};font-size:12px;'>{emoji} {_html_grp.escape(str(r['Enseignements']))}</b><br>"
+            f"<span style='font-size:11px;color:#334155;'>👤 {_html_grp.escape(str(r['Enseignants']))}</span><br>"
+            f"<span style='font-size:10px;color:#64748b;'>📍 {_html_grp.escape(str(r['Lieu']))}</span>"
+            f"</div>"
+        )
+    return "".join(items)
+
+
+def _edt_grp_cellule_texte(rows):
+    items = []
+    for _, r in rows.iterrows():
+        nature = _edt_grp_nature(r["Code"])
+        emoji = "📘" if nature == "COURS" else ("📗" if nature == "TD" else "🔴")
+        items.append(
+            f"{emoji} {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}"
+        )
+    return "\n\n".join(items)
+
+
+def _edt_grp_cellule_pdf(rows):
+    """Version PDF : sans emoji (police Helvetica standard) et échappée."""
+    items = []
+    for _, r in rows.iterrows():
+        nature = _edt_grp_nature(r["Code"])
+        items.append(
+            f"<b>[{nature}] {_xml_escape_grp(str(r['Enseignements']))}</b><br/>"
+            f"{_xml_escape_grp(str(r['Enseignants']))}<br/>"
+            f"Lieu : {_xml_escape_grp(str(r['Lieu']))}"
+        )
+    return "<br/><br/>".join(items)
+
+
+def _edt_grp_construire_grilles(df_final, type_affiche="Tous les enseignements",
+                                creneaux_labels=None):
+    """Construit les grilles (jours en lignes, horaires en colonnes).
+
+    - type_affiche : filtre par type d'enseignement ;
+    - creneaux_labels : None = automatique (créneaux utilisés) ; sinon liste
+      des libellés de créneaux à afficher (même vides).
+
+    Retourne None s'il n'y a aucune séance à afficher, sinon un dict :
+      {'html': DataFrame, 'texte': DataFrame, 'pdf': DataFrame,
+       'seances': DataFrame}
+    """
+    df_t = _edt_grp_appliquer_type(df_final, type_affiche)
+    if df_t is None or df_t.empty:
+        return None
+
+    df_t["h_norm"] = df_t["Horaire"].apply(_edt_grp_norm)
+    df_t["j_norm"] = df_t["Jours"].apply(_edt_grp_norm)
+
+    refs, labels = _edt_grp_horaires_reference(df_t)
+
+    if creneaux_labels is not None:
+        choisis = {h for h in refs if labels[h] in creneaux_labels}
+        df_t = df_t[df_t["h_norm"].isin(choisis)].copy()
+        if df_t.empty:
+            return None
+        colonnes = [h for h in refs if h in choisis]
+    else:
+        presents = set(df_t["h_norm"])
+        colonnes = [h for h in refs if h in presents]
+
+    jours_presents = set(df_t["j_norm"])
+    jours = [j for j in _EDT_GRP_JOURS_REF if j in jours_presents]
+    if not jours or not colonnes:
+        return None
+
+    cell_html, cell_texte, cell_pdf = {}, {}, {}
+    for (j_n, h_n), rows in df_t.groupby(["j_norm", "h_norm"]):
+        cell_html[(j_n, h_n)] = _edt_grp_cellule_html(rows)
+        cell_texte[(j_n, h_n)] = _edt_grp_cellule_texte(rows)
+        cell_pdf[(j_n, h_n)] = _edt_grp_cellule_pdf(rows)
+
+    def _grille(cellules):
+        return pd.DataFrame(
+            [[cellules.get((j, h), "") for h in colonnes] for j in jours],
+            index=[_EDT_GRP_JOURS_LABELS[j] for j in jours],
+            columns=[labels[h] for h in colonnes]
+        )
+
+    return {
+        "html": _grille(cell_html),
+        "texte": _grille(cell_texte),
+        "pdf": _grille(cell_pdf),
+        "seances": df_t,
+    }
+
+
+def _edt_grp_combinaisons(df_etu, col_groupe, col_sous_groupe):
+    """Liste des couples (groupe, sous-groupe) présents dans le fichier
+    étudiants d'une promotion, avec le nombre et les noms des étudiants."""
+    if df_etu is None or df_etu.empty:
+        return []
+
+    def _propre(v):
+        if pd.isna(v):
+            return ""
+        s = str(v).strip().upper()
+        return "" if s.lower() in ["nan", "none", ""] else s
+
+    vide = pd.Series([""] * len(df_etu), index=df_etu.index)
+    g = df_etu[col_groupe].apply(_propre) if col_groupe and col_groupe in df_etu.columns else vide
+    sg = df_etu[col_sous_groupe].apply(_propre) if col_sous_groupe and col_sous_groupe in df_etu.columns else vide
+    noms = df_etu["Nom_Complet"] if "Nom_Complet" in df_etu.columns else vide
+
+    tmp = pd.DataFrame({"g": g, "sg": sg, "nom": noms})
+    tmp = tmp[(tmp["g"] != "") | (tmp["sg"] != "")]
+
+    resultat = []
+    for (g_val, sg_val), sous in tmp.groupby(["g", "sg"]):
+        resultat.append({
+            "groupe": g_val,
+            "sous_groupe": sg_val,
+            "nb_etudiants": len(sous),
+            "etudiants": sorted(sous["nom"].dropna().astype(str).unique().tolist()),
+        })
+    resultat.sort(key=lambda d: (
+        _edt_grp_tri_naturel(d["groupe"]), _edt_grp_tri_naturel(d["sous_groupe"])
+    ))
+    return resultat
+
+
+def _edt_grp_libelle(valeur, vide):
+    return valeur if valeur else vide
+
+
+def _edt_grp_nom_fichier(texte):
+    return re.sub(r'[^A-Za-z0-9_\-]+', '_', str(texte)).strip('_')
+
+
+def _edt_grp_nom_feuille(base, deja_utilises):
+    """Nom de feuille Excel valide (<= 31 caractères, sans []:*?/\\, unique)."""
+    nom = re.sub(r'[\[\]\:\*\?\/\\]', '-', str(base)).strip().strip("'")
+    nom = nom[:31] or "EDT"
+    candidat = nom
+    compteur = 2
+    while candidat.lower() in deja_utilises:
+        suffixe = f"_{compteur}"
+        candidat = nom[:31 - len(suffixe)] + suffixe
+        compteur += 1
+    deja_utilises.add(candidat.lower())
+    return candidat
+
+
+# -----------------------------------------------------------------------------
+# EXPORTS — chaque fonction reçoit une LISTE d'EDT (un seul élément pour un
+# EDT unique, plusieurs pour le fichier global). Un élément est un dict :
+#   {'titre', 'sous_titre', 'nom_feuille', 'grilles' (dict de
+#    _edt_grp_construire_grilles), 'meta' (dict : promotion, groupe,
+#    sous_groupe, nb_etudiants, nb_seances)}
+# -----------------------------------------------------------------------------
+def _edt_grp_export_excel(elements):
+    import xlsxwriter
+    buf = io.BytesIO()
+    wb = xlsxwriter.Workbook(buf, {'in_memory': True})
+
+    fmt_titre = wb.add_format({
+        'bold': True, 'font_size': 13, 'font_color': 'white',
+        'bg_color': '#1E3A8A', 'align': 'center', 'valign': 'vcenter'
+    })
+    fmt_sous_titre = wb.add_format({
+        'italic': True, 'align': 'center', 'font_size': 9, 'font_color': '#64748b'
+    })
+    fmt_hdr = wb.add_format({
+        'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
+        'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True
+    })
+    fmt_jour = wb.add_format({
+        'bold': True, 'bg_color': '#f1f5f9', 'border': 1,
+        'align': 'center', 'valign': 'vcenter'
+    })
+    fmt_cell = wb.add_format({
+        'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10
+    })
+    fmt_lien = wb.add_format({'font_color': 'blue', 'underline': 1, 'border': 1})
+    fmt_bord = wb.add_format({'border': 1})
+
+    utilises = set()
+    noms_feuilles = []
+    if len(elements) > 1:
+        utilises.add("sommaire")
+    for el in elements:
+        noms_feuilles.append(_edt_grp_nom_feuille(el["nom_feuille"], utilises))
+
+    # ── Feuille « Sommaire » (uniquement pour le fichier global) ──
+    if len(elements) > 1:
+        ws_s = wb.add_worksheet("Sommaire")
+        entetes = ["Promotion", "Groupe", "Sous-groupe", "Étudiants", "Séances", "Feuille"]
+        ws_s.merge_range(0, 0, 0, len(entetes) - 1,
+                         f"📚 Sommaire des EDT par groupe et sous-groupe — généré le "
+                         f"{datetime.now().strftime('%d/%m/%Y')}", fmt_titre)
+        for c, h in enumerate(entetes):
+            ws_s.write(2, c, h, fmt_hdr)
+        for r, (el, nom_f) in enumerate(zip(elements, noms_feuilles), start=3):
+            meta = el.get("meta", {})
+            ws_s.write(r, 0, meta.get("promotion", ""), fmt_bord)
+            ws_s.write(r, 1, meta.get("groupe", ""), fmt_bord)
+            ws_s.write(r, 2, meta.get("sous_groupe", ""), fmt_bord)
+            ws_s.write(r, 3, meta.get("nb_etudiants", ""), fmt_bord)
+            ws_s.write(r, 4, meta.get("nb_seances", ""), fmt_bord)
+            ws_s.write_url(r, 5, f"internal:'{nom_f}'!A1", fmt_lien, string=nom_f)
+        ws_s.set_column(0, 2, 16)
+        ws_s.set_column(3, 4, 11)
+        ws_s.set_column(5, 5, 24)
+        ws_s.freeze_panes(3, 0)
+
+    # ── Une feuille par EDT ──
+    for el, nom_f in zip(elements, noms_feuilles):
+        grille = el["grilles"]["texte"]
+        nb_cols = len(grille.columns)
+        ws = wb.add_worksheet(nom_f)
+        ws.merge_range(0, 0, 0, nb_cols, el["titre"], fmt_titre)
+        ws.merge_range(
+            1, 0, 1, nb_cols,
+            f"{el['sous_titre']} | Généré le {datetime.now().strftime('%d/%m/%Y')}",
+            fmt_sous_titre
+        )
+        ws.write(2, 0, "JOUR", fmt_hdr)
+        for c, h in enumerate(grille.columns, start=1):
+            ws.write(2, c, h, fmt_hdr)
+        ws.set_column(0, 0, 14)
+        ws.set_column(1, nb_cols, 26)
+        for r, (jour, ligne) in enumerate(grille.iterrows(), start=3):
+            ws.write(r, 0, jour, fmt_jour)
+            max_lignes = 1
+            for c, val in enumerate(ligne, start=1):
+                ws.write_string(r, c, str(val), fmt_cell)
+                max_lignes = max(max_lignes, str(val).count('\n') + 1)
+            ws.set_row(r, max(40, max_lignes * 14))
+        ws.freeze_panes(3, 1)
+        ws.set_landscape()
+        ws.fit_to_pages(1, 0)
+
+    wb.close()
+    return buf.getvalue()
+
+
+def _edt_grp_export_html(elements, titre_document):
+    css = """
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+body{font-family:'Inter','Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#f1f5f9 0%,#e2e8f0 100%);margin:0;padding:30px;color:#1e293b;}
+.container{max-width:1200px;margin:0 auto 30px auto;background:white;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,0.08);overflow:hidden;}
+.header{background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:30px;text-align:center;}
+.header h1{margin:0;font-size:22px;}.header p{margin:8px 0 0 0;opacity:0.9;font-size:14px;}
+.badge{display:inline-block;background:#D4AF37;color:#1E3A8A;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px;}
+.content{padding:30px;overflow-x:auto;}table{width:100%;border-collapse:collapse;table-layout:fixed;}
+th{background-color:#0f172a;color:white;padding:14px;text-align:center;font-size:13px;border:1px solid #e2e8f0;}
+td{padding:14px;border:1px solid #e2e8f0;vertical-align:top;font-size:12px;word-wrap:break-word;}
+tr:nth-child(even){background-color:#f8fafc;}
+.footer{text-align:center;padding:20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;}
+.sommaire ul{columns:2;list-style:none;padding:0;margin:0;}
+.sommaire li{padding:6px 0;font-size:14px;}
+.sommaire a{color:#1E3A8A;text-decoration:none;font-weight:600;}
+.sommaire small{color:#64748b;}
+@media print{body{background:white;padding:0;}.container{box-shadow:none;border-radius:0;margin:0;}.edt-section{page-break-before:always;}.sommaire{page-break-after:always;}}
+"""
+    date_txt = datetime.now().strftime('%d/%m/%Y à %H:%M')
+    parties = []
+
+    if len(elements) > 1:
+        lignes_som = []
+        for i, el in enumerate(elements):
+            meta = el.get("meta", {})
+            lignes_som.append(
+                f"<li><a href='#edt{i}'>{_html_grp.escape(el['titre'])}</a> "
+                f"<small>— {meta.get('nb_etudiants', '?')} étudiant(s), "
+                f"{meta.get('nb_seances', '?')} séance(s)</small></li>"
+            )
+        parties.append(
+            f"<div class='container sommaire'>"
+            f"<div class='header'><h1>📚 {_html_grp.escape(titre_document)}</h1>"
+            f"<p>{len(elements)} emplois du temps — un par groupe et sous-groupe</p>"
+            f"<span class='badge'>Semestre 01 — 2026-2027</span></div>"
+            f"<div class='content'><p style='color:#64748b;font-size:13px;'>Généré le {date_txt}</p>"
+            f"<ul>{''.join(lignes_som)}</ul></div></div>"
+        )
+
+    for i, el in enumerate(elements):
+        parties.append(
+            f"<div class='container edt-section' id='edt{i}'>"
+            f"<div class='header'><h1>📅 {_html_grp.escape(el['titre'])}</h1>"
+            f"<p>{_html_grp.escape(el['sous_titre'])}</p>"
+            f"<span class='badge'>Semestre 01 — 2026-2027</span></div>"
+            f"<div class='content'>"
+            f"<p style='color:#64748b;font-size:13px;'>Généré le {date_txt}</p>"
+            f"{el['grilles']['html'].to_html(escape=False)}"
+            f"</div>"
+            f"<div class='footer'>département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA</div>"
+            f"</div>"
+        )
+
+    return (
+        "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n<meta charset=\"UTF-8\">\n"
+        f"<title>{_html_grp.escape(titre_document)}</title>\n<style>{css}</style>\n"
+        "</head>\n<body>\n" + "\n".join(parties) + "\n</body></html>"
+    )
+
+
+def _edt_grp_export_pdf(elements):
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepInFrame, PageBreak
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        topMargin=15 * mm, bottomMargin=12 * mm,
+        leftMargin=10 * mm, rightMargin=10 * mm
+    )
+    styles = getSampleStyleSheet()
+    titre_style = ParagraphStyle(
+        'TitreGrp', parent=styles['Heading1'], fontSize=14,
+        textColor=rl_colors.HexColor('#1E3A8A'), alignment=1
+    )
+    sous_titre_style = ParagraphStyle(
+        'SousTitreGrp', parent=styles['Normal'], fontSize=9,
+        textColor=rl_colors.HexColor('#64748b'), alignment=1
+    )
+    cell_style = ParagraphStyle('CellGrp', parent=styles['Normal'], fontSize=7, leading=9)
+
+    page_width = landscape(A4)[0] - 20 * mm
+    col_j = 26 * mm
+    date_txt = datetime.now().strftime('%d/%m/%Y')
+
+    def _cel(markup, largeur):
+        return KeepInFrame(
+            max(largeur - 10, 10), 380,
+            [Paragraph(markup, cell_style)], mode='shrink'
+        )
+
+    story = []
+    for i, el in enumerate(elements):
+        grille = el["grilles"]["pdf"]
+        nb_cols = len(grille.columns)
+        col_h = (page_width - col_j) / max(nb_cols, 1)
+
+        story.append(Paragraph(_xml_escape_grp(el["titre"]), titre_style))
+        story.append(Paragraph(
+            f"{_xml_escape_grp(el['sous_titre'])} | Généré le {date_txt}", sous_titre_style
+        ))
+        story.append(Spacer(1, 8))
+
+        data = [
+            [Paragraph("<b>JOUR</b>", cell_style)] +
+            [Paragraph(f"<b>{_xml_escape_grp(str(h))}</b>", cell_style) for h in grille.columns]
+        ]
+        for jour, ligne in grille.iterrows():
+            data.append(
+                [_cel(f"<b>{_xml_escape_grp(str(jour))}</b>", col_j)] +
+                [_cel(val, col_h) if val else "" for val in ligne]
+            )
+        table = Table(data, colWidths=[col_j] + [col_h] * nb_cols, repeatRows=1)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1E3A8A')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+            ('BACKGROUND', (0, 1), (0, -1), rl_colors.HexColor('#f1f5f9')),
+            ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#cbd5e1')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+        ]))
+        story.append(table)
+        if i < len(elements) - 1:
+            story.append(PageBreak())
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+def _edt_grp_construire_element(promo, groupe, sous_groupe, grilles, nb_etudiants,
+                                inclure_promo_dans_feuille, type_affiche="Tous les enseignements"):
+    """Assemble un élément prêt à être exporté."""
+    g_lbl = _edt_grp_libelle(groupe, "sans groupe")
+    sg_lbl = _edt_grp_libelle(sous_groupe, "sans sous-groupe")
+    titre = f"EDT — {promo} — Groupe {g_lbl} — Sous-groupe {sg_lbl}"
+    sous_titre = f"Promotion {promo} | Groupe {g_lbl} | Sous-groupe {sg_lbl}"
+    if nb_etudiants is not None:
+        sous_titre += f" | {nb_etudiants} étudiant(s)"
+    if type_affiche != "Tous les enseignements":
+        sous_titre += f" | {type_affiche}"
+    base_feuille = (
+        f"{promo}_{groupe or 'SansG'}_{sous_groupe or 'SansSG'}"
+        if inclure_promo_dans_feuille else f"{groupe or 'SansG'}_{sous_groupe or 'SansSG'}"
+    )
+    return {
+        "titre": titre,
+        "sous_titre": sous_titre,
+        "nom_feuille": base_feuille,
+        "grilles": grilles,
+        "meta": {
+            "promotion": promo,
+            "groupe": g_lbl,
+            "sous_groupe": sg_lbl,
+            "nb_etudiants": nb_etudiants if nb_etudiants is not None else "",
+            "nb_seances": len(grilles["seances"]),
+        },
+    }
+
+
+# =============================================================================
 # RÉPERTOIRE EDT INDIVIDUEL ÉTUDIANT — PAR GROUPE & SOUS-GROUPE
 # =============================================================================
 
@@ -22974,7 +23621,7 @@ st.markdown("""
                 box-shadow: 0 8px 24px rgba(37,99,235,0.25);">
         <h3 style="margin:0; font-size: 20px;">🎓 EDT Individuel Étudiant</h3>
         <p style="margin:8px 0 0 0; opacity:0.85; font-size:13px;">
-            Sélectionnez un étudiant pour afficher son emploi du temps personnel (filtré par groupe/sous-groupe)
+            Sélectionnez un étudiant pour afficher son emploi du temps personnel (filtré par groupe/sous-groupe) — ou choisissez directement un groupe et un sous-groupe plus bas
         </p>
     </div>
 """, unsafe_allow_html=True)
@@ -23867,6 +24514,397 @@ tr:nth-child(even){{background-color:#f8fafc;}}
                     st.error(f"❌ Aucun enseignement trouvé pour la promotion **{promo_sel_indiv}** dans le fichier EDT.")
         else:
             st.warning(f"⚠️ Aucun étudiant trouvé pour la promotion {promo_sel_indiv}.")
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # 👥 EDT PAR GROUPE ET SOUS-GROUPE
+    # ---------------------------------------------------------------------
+    # Dès que la promotion, le groupe ET le sous-groupe sont sélectionnés,
+    # l'EDT correspondant s'affiche automatiquement (même logique de filtrage
+    # que l'EDT individuel d'un étudiant). Des boutons permettent de le
+    # télécharger (Excel / HTML / PDF) et de télécharger TOUS les EDT en un
+    # seul fichier par format (une feuille / section / page par groupe et
+    # sous-groupe).
+    # ═════════════════════════════════════════════════════════════════════════
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+                    padding: 16px; border-radius: 14px; color: white; margin: 10px 0 14px 0;
+                    box-shadow: 0 8px 24px rgba(37,99,235,0.25);">
+            <h3 style="margin:0; font-size: 18px;">👥 EDT par Groupe et Sous-groupe</h3>
+            <p style="margin:6px 0 0 0; opacity:0.85; font-size:13px;">
+                Choisissez la promotion, le groupe puis le sous-groupe : l'emploi du temps s'affiche automatiquement.
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    col_groupe_grp = cols_etu_map.get('groupe')
+    col_sous_groupe_grp = cols_etu_map.get('sous_groupe')
+
+    cg1, cg2, cg3 = st.columns(3)
+    with cg1:
+        promo_grp_sel = st.selectbox(
+            "🎓 Promotion :",
+            options=["— Choisir —"] + promos_etu_dispo,
+            key="edt_grp_promo_sel"
+        )
+
+    promo_grp_choisie = bool(promo_grp_sel) and promo_grp_sel != "— Choisir —"
+
+    if promo_grp_choisie:
+        df_etu_grp = df_etu_rep_indiv[
+            df_etu_rep_indiv[col_promo_etu].astype(str).str.strip().str.upper() == promo_grp_sel.upper()
+        ].copy()
+        combos_grp = _edt_grp_combinaisons(df_etu_grp, col_groupe_grp, col_sous_groupe_grp)
+        sig_promo_grp = hashlib.md5(promo_grp_sel.encode("utf-8")).hexdigest()[:8]
+
+        if not combos_grp:
+            st.warning(
+                f"⚠️ Aucun groupe / sous-groupe renseigné pour la promotion **{promo_grp_sel}** "
+                f"dans le fichier des étudiants."
+            )
+        else:
+            groupes_grp = sorted({c["groupe"] for c in combos_grp}, key=_edt_grp_tri_naturel)
+            labels_groupes_grp = {_edt_grp_libelle(g, "(sans groupe)"): g for g in groupes_grp}
+
+            with cg2:
+                groupe_lbl_sel = st.selectbox(
+                    "👥 Groupe :",
+                    options=["— Choisir —"] + list(labels_groupes_grp.keys()),
+                    key=f"edt_grp_groupe_sel_{sig_promo_grp}"
+                )
+
+            if groupe_lbl_sel != "— Choisir —":
+                groupe_val_grp = labels_groupes_grp[groupe_lbl_sel]
+                sous_groupes_grp = sorted(
+                    {c["sous_groupe"] for c in combos_grp if c["groupe"] == groupe_val_grp},
+                    key=_edt_grp_tri_naturel
+                )
+                labels_sg_grp = {
+                    _edt_grp_libelle(sg, "(sans sous-groupe)"): sg for sg in sous_groupes_grp
+                }
+                sig_groupe_grp = hashlib.md5(
+                    f"{promo_grp_sel}|{groupe_val_grp}".encode("utf-8")
+                ).hexdigest()[:8]
+
+                with cg3:
+                    sg_lbl_sel = st.selectbox(
+                        "🧩 Sous-groupe associé :",
+                        options=["— Choisir —"] + list(labels_sg_grp.keys()),
+                        key=f"edt_grp_sg_sel_{sig_groupe_grp}"
+                    )
+
+                if sg_lbl_sel != "— Choisir —":
+                    sous_groupe_val_grp = labels_sg_grp[sg_lbl_sel]
+                    sig_sel_grp = hashlib.md5(
+                        f"{promo_grp_sel}|{groupe_val_grp}|{sous_groupe_val_grp}".encode("utf-8")
+                    ).hexdigest()[:8]
+
+                    combo_sel_grp = next(
+                        (c for c in combos_grp
+                         if c["groupe"] == groupe_val_grp and c["sous_groupe"] == sous_groupe_val_grp),
+                        None
+                    )
+                    nb_etu_grp = combo_sel_grp["nb_etudiants"] if combo_sel_grp else 0
+
+                    df_edt_promo_grp = _edt_grp_seances_promotion(
+                        df_edt_rep, promo_grp_sel, mapper_promotion
+                    )
+
+                    if df_edt_promo_grp.empty:
+                        st.error(
+                            f"❌ Aucun enseignement trouvé pour la promotion **{promo_grp_sel}** "
+                            f"dans le fichier EDT."
+                        )
+                    else:
+                        df_final_grp = _edt_grp_filtrer_seances(
+                            df_edt_promo_grp, groupe_val_grp, sous_groupe_val_grp
+                        )
+
+                        st.markdown(f"""
+                            <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+                                        padding: 16px; border-radius: 12px; color: white; margin: 15px 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                                    <div>
+                                        <div style="font-size: 11px; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">EDT du groupe</div>
+                                        <div style="font-size: 20px; font-weight: bold; margin-top: 4px;">
+                                            {promo_grp_sel} — {_edt_grp_libelle(groupe_val_grp, 'sans groupe')} / {_edt_grp_libelle(sous_groupe_val_grp, 'sans sous-groupe')}
+                                        </div>
+                                    </div>
+                                    <div style="text-align: right; font-size: 12px; line-height: 1.8;">
+                                        <div>🎓 Promotion : <b>{promo_grp_sel}</b></div>
+                                        <div>👥 Groupe : <b>{_edt_grp_libelle(groupe_val_grp, 'N/A')}</b> | Sous-groupe : <b>{_edt_grp_libelle(sous_groupe_val_grp, 'N/A')}</b></div>
+                                        <div>🧑‍🎓 Étudiants concernés : <b>{nb_etu_grp}</b></div>
+                                    </div>
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+                        if df_final_grp.empty:
+                            st.warning(
+                                f"⚠️ Aucune séance trouvée pour le groupe **{groupe_val_grp or 'non détecté'}** / "
+                                f"sous-groupe **{sous_groupe_val_grp or 'non détecté'}** "
+                                f"dans la promotion **{promo_grp_sel}**."
+                            )
+                        else:
+                            # ── Afficheurs numériques ──
+                            codes_grp = df_final_grp["Code"].astype(str)
+                            mk1, mk2, mk3, mk4 = st.columns(4)
+                            mk1.metric("📅 Séances", len(df_final_grp))
+                            mk2.metric("📘 Cours", int(codes_grp.str.contains("COURS", case=False, na=False).sum()))
+                            mk3.metric("📗 TD", int(codes_grp.str.contains("TD", case=False, na=False).sum()))
+                            mk4.metric("🔴 TP", int((~codes_grp.str.contains("COURS|TD", case=False, na=False)).sum()))
+
+                            # ── Filtre par type d'enseignement ──
+                            type_aff_grp = st.selectbox(
+                                "📚 Type d'enseignement à afficher :",
+                                _EDT_GRP_TYPES_AFFICHAGE,
+                                key="edt_grp_type_affiche"
+                            )
+
+                            # ── Créneaux horaires affichés (flexible) ──
+                            df_pour_creneaux_grp = _edt_grp_appliquer_type(df_final_grp, type_aff_grp)
+                            refs_grp, labels_h_grp = _edt_grp_horaires_reference(df_pour_creneaux_grp)
+
+                            mode_creneaux_grp = st.radio(
+                                "⏰ Créneaux horaires affichés sur la grille :",
+                                ["Automatique (créneaux utilisés)", "Choisir les créneaux"],
+                                horizontal=True,
+                                key="edt_grp_mode_creneaux"
+                            )
+
+                            creneaux_grp = None
+                            if mode_creneaux_grp == "Choisir les créneaux":
+                                labels_liste_grp = [labels_h_grp[h] for h in refs_grp]
+                                h_utilises_grp = (
+                                    set(df_pour_creneaux_grp["Horaire"].apply(_edt_grp_norm))
+                                    if not df_pour_creneaux_grp.empty else set()
+                                )
+                                creneaux_grp = st.multiselect(
+                                    "Choisir les créneaux (sélection progressive) :",
+                                    labels_liste_grp,
+                                    default=[labels_h_grp[h] for h in refs_grp if h in h_utilises_grp],
+                                    key=f"edt_grp_creneaux_{sig_sel_grp}",
+                                    help="Sélectionnez les créneaux à afficher, y compris les créneaux "
+                                         "d'une heure (8h - 9h, 9h - 10h, ...). Sans créneau "
+                                         "sélectionné, aucune grille n'est affichée."
+                                )
+                                creneaux_grp = [l for l in labels_liste_grp if l in creneaux_grp]
+
+                            if creneaux_grp is not None and not creneaux_grp:
+                                st.warning("⚠️ Sélectionnez au moins un créneau pour afficher l'EDT.")
+                            else:
+                                grilles_grp = _edt_grp_construire_grilles(
+                                    df_final_grp, type_aff_grp, creneaux_grp
+                                )
+
+                                if grilles_grp is None:
+                                    st.info("ℹ️ Aucune séance à afficher pour ce choix (type / créneaux).")
+                                else:
+                                    st.markdown("### 📋 Emploi du Temps du Groupe")
+                                    st.write(grilles_grp["html"].to_html(escape=False), unsafe_allow_html=True)
+
+                                    # ── Étudiants concernés ──
+                                    if combo_sel_grp and combo_sel_grp["etudiants"]:
+                                        with st.expander(f"🧑‍🎓 Étudiants du groupe ({nb_etu_grp})"):
+                                            st.write(", ".join(combo_sel_grp["etudiants"]))
+
+                                    # ── Téléchargements de cet EDT ──
+                                    st.markdown("#### 📥 Télécharger cet EDT")
+                                    element_grp = _edt_grp_construire_element(
+                                        promo_grp_sel, groupe_val_grp, sous_groupe_val_grp,
+                                        grilles_grp, nb_etu_grp, False, type_aff_grp
+                                    )
+                                    type_suffix_grp = (
+                                        "_Cours" if type_aff_grp == "📘 Cours uniquement" else
+                                        "_TD" if type_aff_grp == "📗 TD uniquement" else
+                                        "_TP" if type_aff_grp == "🔴 TP uniquement" else ""
+                                    )
+                                    nom_base_grp = _edt_grp_nom_fichier(
+                                        f"EDT_{promo_grp_sel}_{groupe_val_grp or 'SansGroupe'}_"
+                                        f"{sous_groupe_val_grp or 'SansSousGroupe'}{type_suffix_grp}"
+                                    )
+                                    dgl1, dgl2, dgl3 = st.columns(3)
+
+                                    try:
+                                        dgl1.download_button(
+                                            "📊 Excel", _edt_grp_export_excel([element_grp]),
+                                            f"{nom_base_grp}.xlsx",
+                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                            use_container_width=True, key="dl_edt_grp_xlsx"
+                                        )
+                                    except Exception as e:
+                                        dgl1.warning(f"Excel indisponible : {e}")
+
+                                    try:
+                                        dgl2.download_button(
+                                            "🌐 HTML",
+                                            _edt_grp_export_html([element_grp], element_grp["titre"]),
+                                            f"{nom_base_grp}.html", "text/html",
+                                            use_container_width=True, key="dl_edt_grp_html"
+                                        )
+                                    except Exception as e:
+                                        dgl2.warning(f"HTML indisponible : {e}")
+
+                                    try:
+                                        dgl3.download_button(
+                                            "📄 PDF", _edt_grp_export_pdf([element_grp]),
+                                            f"{nom_base_grp}.pdf", "application/pdf",
+                                            use_container_width=True, key="dl_edt_grp_pdf"
+                                        )
+                                    except Exception as e:
+                                        dgl3.warning(f"PDF indisponible : {e}")
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # 🗂️ TÉLÉCHARGER TOUS LES EDT — UN SEUL FICHIER PAR FORMAT
+    # ---------------------------------------------------------------------
+    #   Excel : une feuille par groupe / sous-groupe (+ feuille « Sommaire »)
+    #   HTML  : une section par groupe / sous-groupe (+ sommaire cliquable)
+    #   PDF   : une page par groupe / sous-groupe
+    # ═════════════════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("#### 🗂️ Télécharger tous les EDT — un seul fichier (par groupe et sous-groupe)")
+
+    portee_globale = st.radio(
+        "Portée du fichier global :",
+        ["Promotion sélectionnée", "Toutes les promotions"],
+        horizontal=True,
+        key="edt_grp_portee_globale"
+    )
+
+    if portee_globale == "Promotion sélectionnée" and not promo_grp_choisie:
+        st.info("ℹ️ Choisissez une promotion ci-dessus pour générer tous ses EDT (groupes et sous-groupes).")
+    else:
+        promos_cibles_grp = (
+            [promo_grp_sel] if portee_globale == "Promotion sélectionnée" else list(promos_etu_dispo)
+        )
+        signature_globale = f"{portee_globale}|{'|'.join(promos_cibles_grp)}"
+
+        if st.button(
+            "⚙️ Générer tous les EDT (Excel + HTML + PDF)",
+            key="btn_edt_grp_generer_tous",
+            use_container_width=True,
+            type="primary"
+        ):
+            elements_globaux = []
+            ignores_globaux = []
+            barre_globale = st.progress(0.0, text="Préparation des EDT...")
+
+            for i_promo, promo_cible in enumerate(promos_cibles_grp):
+                barre_globale.progress(
+                    i_promo / max(len(promos_cibles_grp), 1),
+                    text=f"Promotion {promo_cible}..."
+                )
+                df_etu_cible = df_etu_rep_indiv[
+                    df_etu_rep_indiv[col_promo_etu].astype(str).str.strip().str.upper() == promo_cible.upper()
+                ].copy()
+                combos_cible = _edt_grp_combinaisons(df_etu_cible, col_groupe_grp, col_sous_groupe_grp)
+                df_edt_cible = _edt_grp_seances_promotion(df_edt_rep, promo_cible, mapper_promotion)
+
+                if df_edt_cible.empty:
+                    ignores_globaux.append(f"{promo_cible} (aucun enseignement dans le fichier EDT)")
+                    continue
+                if not combos_cible:
+                    ignores_globaux.append(f"{promo_cible} (aucun groupe/sous-groupe renseigné)")
+                    continue
+
+                for combo_cible in combos_cible:
+                    df_f_cible = _edt_grp_filtrer_seances(
+                        df_edt_cible, combo_cible["groupe"], combo_cible["sous_groupe"]
+                    )
+                    grilles_cible = _edt_grp_construire_grilles(df_f_cible)
+                    if grilles_cible is None:
+                        ignores_globaux.append(
+                            f"{promo_cible} {combo_cible['groupe'] or '-'}/{combo_cible['sous_groupe'] or '-'} (aucune séance)"
+                        )
+                        continue
+                    elements_globaux.append(
+                        _edt_grp_construire_element(
+                            promo_cible, combo_cible["groupe"], combo_cible["sous_groupe"],
+                            grilles_cible, combo_cible["nb_etudiants"],
+                            portee_globale == "Toutes les promotions"
+                        )
+                    )
+
+            barre_globale.progress(1.0, text="Génération des fichiers...")
+
+            if not elements_globaux:
+                st.session_state.pop("edt_grp_fichiers_globaux", None)
+                st.warning("⚠️ Aucun EDT à exporter pour cette sélection.")
+            else:
+                titre_global = (
+                    f"EDT par groupe et sous-groupe — {promo_grp_sel}"
+                    if portee_globale == "Promotion sélectionnée"
+                    else "EDT par groupe et sous-groupe — Toutes les promotions"
+                )
+                fichiers_globaux = {
+                    "signature": signature_globale,
+                    "nb_edt": len(elements_globaux),
+                    "ignores": ignores_globaux,
+                    "nom_base": _edt_grp_nom_fichier(
+                        f"EDT_Tous_Groupes_{promo_grp_sel}"
+                        if portee_globale == "Promotion sélectionnée"
+                        else "EDT_Tous_Groupes_Toutes_Promotions"
+                    ),
+                    "xlsx": None, "html": None, "pdf": None,
+                    "erreurs": {},
+                }
+                try:
+                    fichiers_globaux["xlsx"] = _edt_grp_export_excel(elements_globaux)
+                except Exception as e:
+                    fichiers_globaux["erreurs"]["Excel"] = str(e)
+                try:
+                    fichiers_globaux["html"] = _edt_grp_export_html(
+                        elements_globaux, titre_global
+                    ).encode("utf-8")
+                except Exception as e:
+                    fichiers_globaux["erreurs"]["HTML"] = str(e)
+                try:
+                    fichiers_globaux["pdf"] = _edt_grp_export_pdf(elements_globaux)
+                except Exception as e:
+                    fichiers_globaux["erreurs"]["PDF"] = str(e)
+
+                st.session_state["edt_grp_fichiers_globaux"] = fichiers_globaux
+
+            barre_globale.empty()
+
+        fichiers_prets = st.session_state.get("edt_grp_fichiers_globaux")
+        if fichiers_prets and fichiers_prets.get("signature") == signature_globale:
+            st.success(
+                f"✅ {fichiers_prets['nb_edt']} EDT prêts (un par groupe et sous-groupe). "
+                f"Téléchargez le fichier global dans le format souhaité :"
+            )
+            if fichiers_prets["ignores"]:
+                with st.expander(f"ℹ️ {len(fichiers_prets['ignores'])} élément(s) ignoré(s)"):
+                    for ig in fichiers_prets["ignores"]:
+                        st.write(f"- {ig}")
+            for nom_format, msg_erreur in fichiers_prets["erreurs"].items():
+                st.warning(f"{nom_format} indisponible : {msg_erreur}")
+
+            dga1, dga2, dga3 = st.columns(3)
+            if fichiers_prets["xlsx"] is not None:
+                dga1.download_button(
+                    "📊 Excel (une feuille par groupe)", fichiers_prets["xlsx"],
+                    f"{fichiers_prets['nom_base']}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True, key="dl_edt_grp_tous_xlsx"
+                )
+            if fichiers_prets["html"] is not None:
+                dga2.download_button(
+                    "🌐 HTML (une section par groupe)", fichiers_prets["html"],
+                    f"{fichiers_prets['nom_base']}.html", "text/html",
+                    use_container_width=True, key="dl_edt_grp_tous_html"
+                )
+            if fichiers_prets["pdf"] is not None:
+                dga3.download_button(
+                    "📄 PDF (une page par groupe)", fichiers_prets["pdf"],
+                    f"{fichiers_prets['nom_base']}.pdf", "application/pdf",
+                    use_container_width=True, key="dl_edt_grp_tous_pdf"
+                )
+        elif fichiers_prets:
+            st.caption(
+                "ℹ️ Le fichier généré précédemment correspond à une autre sélection : "
+                "cliquez sur « Générer » pour le mettre à jour."
+            )
 else:
     st.warning("⚠️ Fichiers sources (EDT et/ou Étudiants) non disponibles pour le répertoire EDT individuel.")
 
