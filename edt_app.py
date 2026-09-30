@@ -5482,6 +5482,17 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
             cible = ", ".join(enseignants_selectionnes)
 
+            # Horaires de référence demandés pour l'EDT enseignant.
+            # La grille affiche chaque créneau de 08h à 14h, même vide.
+            horaires_affichage_enseignant = [
+                "8h - 9h",
+                "9h - 10h",
+                "10h - 11h",
+                "11h - 12h",
+                "12h - 13h",
+                "13h - 14h"
+            ]
+
             filtre_type_enseignant_admin = st.selectbox(
                 "Type d'enseignement à afficher :",
                 ["Tous les enseignements", "Cours seulement", "TD seulement", "TP seulement"],
@@ -5555,9 +5566,14 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     )
                 return "".join(items)
 
+            st.caption(
+                "Grille enseignant : créneaux affichés de 8h - 9h à 13h - 14h. "
+                "Les cellules vides sont conservées pour faciliter la lecture."
+            )
+
             grid_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e).unstack('j_norm')
             grid_e = grid_e.reindex(
-                index=[normalize(h) for h in horaires_list],
+                index=[normalize(h) for h in horaires_affichage_enseignant],
                 columns=[normalize(j) for j in jours_list]
             ).fillna("")
             grid_e = grid_e[grid_e.any(axis=1)]
@@ -5641,7 +5657,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
             grid_text_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e_text).unstack('j_norm')
             grid_text_e = grid_text_e.reindex(
-                index=[normalize(h) for h in horaires_list],
+                index=[normalize(h) for h in horaires_affichage_enseignant],
                 columns=[normalize(j) for j in jours_list]
             ).fillna("")
             grid_text_e = grid_text_e[grid_text_e.any(axis=1)]
@@ -16593,133 +16609,9 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# =============================================================================
-# THÈME LISIBILITÉ — FOND BLANC ET TEXTE NOIR
-# Les couleurs pédagogiques des alertes et des états sont conservées.
-# =============================================================================
-st.markdown("""
-<style>
-html, body, [class*="css"] {
-    color: #111111 !important;
-}
-.stApp,
-[data-testid="stAppViewContainer"],
-[data-testid="stMain"],
-.main,
-.block-container {
-    background: #ffffff !important;
-    color: #111111 !important;
-}
-[data-testid="stHeader"] {
-    background: #ffffff !important;
-}
-[data-testid="stSidebar"],
-[data-testid="stSidebar"] > div:first-child {
-    background: #ffffff !important;
-    color: #111111 !important;
-    border-right: 1px solid #d1d5db;
-}
-[data-testid="stSidebar"] *,
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] p,
-[data-testid="stSidebar"] span,
-[data-testid="stSidebar"] div {
-    color: #111111 !important;
-}
-h1, h2, h3, h4, h5, h6,
-p, label, span, div,
-[data-testid="stMarkdownContainer"] p,
-[data-testid="stMarkdownContainer"] li,
-[data-testid="stCaptionContainer"] {
-    color: #111111;
-}
-[data-testid="stMetric"],
-[data-testid="stExpander"],
-[data-testid="stForm"],
-[data-testid="stVerticalBlockBorderWrapper"],
-[data-testid="stDataFrame"] {
-    background: #ffffff !important;
-    color: #111111 !important;
-    border-color: #cbd5e1 !important;
-}
-[data-testid="stMetricLabel"],
-[data-testid="stMetricValue"],
-[data-testid="stMetricDelta"] {
-    color: #111111 !important;
-}
-.stTextInput input,
-.stTextArea textarea,
-.stSelectbox [data-baseweb="select"] > div,
-.stMultiSelect [data-baseweb="select"] > div,
-.stDateInput input,
-.stNumberInput input {
-    background: #ffffff !important;
-    color: #111111 !important;
-    border-color: #64748b !important;
-}
-.stTextInput input::placeholder,
-.stTextArea textarea::placeholder {
-    color: #475569 !important;
-    opacity: 1 !important;
-}
-[data-baseweb="menu"],
-[data-baseweb="popover"],
-[data-baseweb="select"] {
-    background: #ffffff !important;
-    color: #111111 !important;
-}
-[data-baseweb="menu"] li,
-[data-baseweb="menu"] span {
-    color: #111111 !important;
-}
-.stButton button,
-.stDownloadButton button {
-    background: #ffffff !important;
-    color: #111111 !important;
-    border: 1.5px solid #1e3a8a !important;
-    font-weight: 700 !important;
-}
-.stButton button:hover,
-.stDownloadButton button:hover {
-    background: #eff6ff !important;
-    color: #111111 !important;
-    border-color: #0f2a5f !important;
-}
-[data-testid="stTabs"] button {
-    color: #111111 !important;
-    background: #ffffff !important;
-    font-weight: 700 !important;
-}
-[data-testid="stTabs"] button[aria-selected="true"] {
-    color: #0f2a5f !important;
-    border-bottom-color: #1e3a8a !important;
-}
-table, th, td {
-    color: #111111 !important;
-    background-color: #ffffff;
-    border-color: #64748b !important;
-}
-th {
-    background-color: #e5e7eb !important;
-    color: #111111 !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
 # --- CHARGEMENT DES DONNÉES ---
 NOM_FICHIER_FIXE = "dataEDT-ELT-S1-2027.xlsx"
 NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
-
-# Configuration partagée, en lecture seule dans les fonctions.
-# Les fonctions continuent de recevoir leurs DataFrames et leurs choix en
-# paramètres : aucune dépendance métier cachée n'est créée.
-CONFIGURATION_PLATEFORME = {
-    "annee_universitaire": "2026-2027",
-    "departement": "Département d'Électrotechnique",
-    "etablissement": "Faculté de Génie Électrique — UDL-SBA",
-    "fichier_edt": NOM_FICHIER_FIXE,
-    "fichier_contacts": NOM_FICHIER_CONTACTS,
-}
 
 df = None
 repertoire_source = {}        # Pour stocker les Emails : { "NOM": "email" }
