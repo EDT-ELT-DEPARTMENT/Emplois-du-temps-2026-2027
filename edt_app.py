@@ -11513,10 +11513,9 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         with col_filtre1:
             promotion_choisie_ens = st.selectbox(
                 "🎓 Choisir Promotion :",
-                promotions_dispo_ens,
+                ["📚 Afficher tous mes enseignements"] + promotions_dispo_ens,
                 key="promo_choisie_ens_indiv"
             )
-        
         with col_filtre2:
             type_choisi_ens = st.selectbox(
                 "📚 Type d'enseignement à afficher :",
@@ -11524,20 +11523,41 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
                 key="type_choisi_ens_indiv"
             )
 
-        # --- Application des filtres ---
-        df_f_filtre_ens = df_f.copy()
-        if promotion_choisie_ens != "Toutes les promotions":
-            df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Promotion"] == promotion_choisie_ens]
+        groupe_choisi_ens = "Tous les groupes"
+        sous_groupe_choisi_ens = "Tous les sous-groupes"
+        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
+            source_promo_ens = df_f[df_f["Promotion"] == promotion_choisie_ens]
+            texte_codes_ens = " ".join(source_promo_ens["Enseignements"].fillna("").astype(str)).upper()
+            groupes_ens = sorted(set(re.findall(r"(?<![A-Z0-9])G(\d+)(?![A-Z0-9])", texte_codes_ens)), key=lambda x: int(x))
+            sous_groupes_ens = sorted(set(re.findall(r"(?<![A-Z0-9])SG(\d+)(?![A-Z0-9])", texte_codes_ens)), key=lambda x: int(x))
+            col_groupe_ens, col_sg_ens = st.columns(2)
+            with col_groupe_ens:
+                groupe_choisi_ens = st.selectbox("👥 Afficher par groupe :", ["Tous les groupes"] + [f"G{x}" for x in groupes_ens], key="groupe_choisi_ens_indiv")
+            with col_sg_ens:
+                options_sg_ens = ["Tous les sous-groupes"] + [f"SG{x}" for x in sous_groupes_ens if groupe_choisi_ens == "Tous les groupes" or x.startswith(groupe_choisi_ens[1:])]
+                sous_groupe_choisi_ens = st.selectbox("🔹 Afficher par sous-groupe :", options_sg_ens, key="sous_groupe_choisi_ens_indiv")
 
+        df_f_filtre_ens = df_f.copy()
+        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
+            df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Promotion"] == promotion_choisie_ens]
         if type_choisi_ens == "📘 Cours uniquement":
             df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "COURS"]
         elif type_choisi_ens == "📗 TD uniquement":
             df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "TD"]
         elif type_choisi_ens == "🔴 TP uniquement":
             df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "TP"]
+        if groupe_choisi_ens != "Tous les groupes" or sous_groupe_choisi_ens != "Tous les sous-groupes":
+            texte_filtre_ens = df_f_filtre_ens["Enseignements"].fillna("").astype(str).str.upper()
+            communs = df_f_filtre_ens["Type"].eq("COURS")
+            filtre_g = texte_filtre_ens.str.contains(rf"(?<![A-Z0-9]){re.escape(groupe_choisi_ens)}(?![A-Z0-9])", regex=True, na=False) if groupe_choisi_ens != "Tous les groupes" else pd.Series(False,index=df_f_filtre_ens.index)
+            filtre_sg = texte_filtre_ens.str.contains(rf"(?<![A-Z0-9]){re.escape(sous_groupe_choisi_ens)}(?![A-Z0-9])", regex=True, na=False) if sous_groupe_choisi_ens != "Tous les sous-groupes" else pd.Series(False,index=df_f_filtre_ens.index)
+            df_f_filtre_ens = df_f_filtre_ens[communs | filtre_g | filtre_sg].copy()
 
         # --- Constantes locales ---
-        _HORAIRES = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"]
+        _HORAIRES = [
+            "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h", "12h - 13h", "13h - 14h", "14h - 15h", "15h - 16h", "16h - 17h",
+            "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h", "8h - 10h", "14h - 16h"
+        ]
         _JOURS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
         def _norm_h(h):
@@ -11619,7 +11639,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
 
         # --- AFFICHAGE À L'ÉCRAN : GRILLE BIEN VISIBLE ET COLORÉE ---
         sous_titre_grille_ens = f"{cible}"
-        if promotion_choisie_ens != "Toutes les promotions":
+        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
             sous_titre_grille_ens += f" — 🎓 {promotion_choisie_ens}"
         if type_choisi_ens != "Tous les types":
             sous_titre_grille_ens += f" — {type_choisi_ens}"
@@ -11647,7 +11667,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         c1, c2, c3 = st.columns(3)
 
         suffixe_fichier_ens = cible.replace(' ', '_')
-        if promotion_choisie_ens != "Toutes les promotions":
+        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
             suffixe_fichier_ens += f"_{promotion_choisie_ens.replace(' ', '_')}"
         if type_choisi_ens != "Tous les types":
             suffixe_fichier_ens += f"_{type_choisi_ens.split()[1].replace(' ', '_')}"
@@ -11838,7 +11858,7 @@ td{{word-wrap:break-word;}}
         # « Toutes les promotions »), puisqu'il s'agit de voir l'ensemble de
         # l'EDT de CETTE promotion, avec TOUS les enseignants qui y
         # interviennent — pas seulement l'enseignant connecté.
-        if promotion_choisie_ens != "Toutes les promotions":
+        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
             st.divider()
             st.markdown(
                 f"### 👥 EDT complet de la promotion « {promotion_choisie_ens} » "
@@ -12203,63 +12223,6 @@ td{{word-wrap:break-word;}}
             elif type_recherche_ens == "🔴 TP uniquement":
                 df_promo_recherchee = df_promo_recherchee[df_promo_recherchee["Type"] == "TP"]
 
-            # Fonctions locales garanties pour cette vue : elles ne dépendent
-            # d'aucune fonction définie dans une autre branche conditionnelle.
-            # Cela corrige définitivement UnboundLocalError sur _fmt_html_promo.
-            def _fmt_html_promo_recherche(rows):
-                elements_html = []
-                for _, ligne_recherche in rows.iterrows():
-                    emoji_recherche, fond_recherche, couleur_recherche = _type_emoji(
-                        ligne_recherche.get("Code", "")
-                    )
-                    enseignant_ligne = str(
-                        ligne_recherche.get("Enseignants", "")
-                    ).strip()
-                    est_enseignant_connecte_recherche = (
-                        str(cible).strip().upper()
-                        in enseignant_ligne.upper()
-                    )
-                    bordure_recherche = (
-                        "#D4AF37"
-                        if est_enseignant_connecte_recherche
-                        else couleur_recherche
-                    )
-                    marque_recherche = " ⭐" if est_enseignant_connecte_recherche else ""
-                    elements_html.append(
-                        f"<div style='background:{fond_recherche};"
-                        f"border-left:4px solid {bordure_recherche};"
-                        f"border-radius:4px;padding:5px;margin:2px 0;line-height:1.3;'>"
-                        f"<b style='color:{couleur_recherche};font-size:12px;'>"
-                        f"{emoji_recherche} {ligne_recherche.get('Enseignements', '')}</b><br>"
-                        f"<span style='font-size:10px;color:#334155;'>"
-                        f"👤 {enseignant_ligne}{marque_recherche}</span><br>"
-                        f"<span style='font-size:10px;color:#64748b;'>"
-                        f"📍 {ligne_recherche.get('Lieu', '')}</span>"
-                        f"</div>"
-                    )
-                return "".join(elements_html)
-
-            def _fmt_text_promo_recherche(rows):
-                elements_texte = []
-                for _, ligne_recherche in rows.iterrows():
-                    emoji_recherche, _, _ = _type_emoji(
-                        ligne_recherche.get("Code", "")
-                    )
-                    enseignant_ligne = str(
-                        ligne_recherche.get("Enseignants", "")
-                    ).strip()
-                    marque_recherche = (
-                        " (MOI)"
-                        if str(cible).strip().upper() in enseignant_ligne.upper()
-                        else ""
-                    )
-                    elements_texte.append(
-                        f"{emoji_recherche} {ligne_recherche.get('Enseignements', '')}\n"
-                        f"👤 {enseignant_ligne}{marque_recherche} | "
-                        f"📍 {ligne_recherche.get('Lieu', '')}"
-                    )
-                return "\n\n".join(elements_texte)
-
             df_g_recherche = df_promo_recherchee.copy()
             df_g_recherche["h_norm"] = df_g_recherche["Horaire"].apply(_norm_h)
             df_g_recherche["j_norm"] = df_g_recherche["Jours"].apply(_norm_j)
@@ -12271,10 +12234,10 @@ td{{word-wrap:break-word;}}
 
             if not df_g_recherche.empty:
                 g_html_r = df_g_recherche.groupby(["j_norm", "h_norm"]).apply(
-                    _fmt_html_promo_recherche
+                    _fmt_html_promo
                 ).unstack(fill_value="")
                 g_text_r = df_g_recherche.groupby(["j_norm", "h_norm"]).apply(
-                    _fmt_text_promo_recherche
+                    _fmt_text_promo
                 ).unstack(fill_value="")
 
                 jours_ok_r = [j for j in _JOURS if j in g_html_r.index]
