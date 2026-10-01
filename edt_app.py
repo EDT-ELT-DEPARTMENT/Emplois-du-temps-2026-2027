@@ -11513,9 +11513,14 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         with col_filtre1:
             promotion_choisie_ens = st.selectbox(
                 "🎓 Choisir Promotion :",
-                ["📚 Afficher tous mes enseignements"] + promotions_dispo_ens,
+                ["Afficher tous mes enseignements"] + promotions_dispo_ens,
                 key="promo_choisie_ens_indiv"
             )
+            # « Afficher tous mes enseignements » = aucune restriction de promotion
+            # (valeur historique utilisée par tout le code en aval).
+            if promotion_choisie_ens == "Afficher tous mes enseignements":
+                promotion_choisie_ens = "Toutes les promotions"
+        
         with col_filtre2:
             type_choisi_ens = st.selectbox(
                 "📚 Type d'enseignement à afficher :",
@@ -11523,40 +11528,29 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
                 key="type_choisi_ens_indiv"
             )
 
-        groupe_choisi_ens = "Tous les groupes"
-        sous_groupe_choisi_ens = "Tous les sous-groupes"
-        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
-            source_promo_ens = df_f[df_f["Promotion"] == promotion_choisie_ens]
-            texte_codes_ens = " ".join(source_promo_ens["Enseignements"].fillna("").astype(str)).upper()
-            groupes_ens = sorted(set(re.findall(r"(?<![A-Z0-9])G(\d+)(?![A-Z0-9])", texte_codes_ens)), key=lambda x: int(x))
-            sous_groupes_ens = sorted(set(re.findall(r"(?<![A-Z0-9])SG(\d+)(?![A-Z0-9])", texte_codes_ens)), key=lambda x: int(x))
-            col_groupe_ens, col_sg_ens = st.columns(2)
-            with col_groupe_ens:
-                groupe_choisi_ens = st.selectbox("👥 Afficher par groupe :", ["Tous les groupes"] + [f"G{x}" for x in groupes_ens], key="groupe_choisi_ens_indiv")
-            with col_sg_ens:
-                options_sg_ens = ["Tous les sous-groupes"] + [f"SG{x}" for x in sous_groupes_ens if groupe_choisi_ens == "Tous les groupes" or x.startswith(groupe_choisi_ens[1:])]
-                sous_groupe_choisi_ens = st.selectbox("🔹 Afficher par sous-groupe :", options_sg_ens, key="sous_groupe_choisi_ens_indiv")
-
+        # --- Application des filtres ---
         df_f_filtre_ens = df_f.copy()
-        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
+        if promotion_choisie_ens != "Toutes les promotions":
             df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Promotion"] == promotion_choisie_ens]
+
         if type_choisi_ens == "📘 Cours uniquement":
             df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "COURS"]
         elif type_choisi_ens == "📗 TD uniquement":
             df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "TD"]
         elif type_choisi_ens == "🔴 TP uniquement":
             df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "TP"]
-        if groupe_choisi_ens != "Tous les groupes" or sous_groupe_choisi_ens != "Tous les sous-groupes":
-            texte_filtre_ens = df_f_filtre_ens["Enseignements"].fillna("").astype(str).str.upper()
-            communs = df_f_filtre_ens["Type"].eq("COURS")
-            filtre_g = texte_filtre_ens.str.contains(rf"(?<![A-Z0-9]){re.escape(groupe_choisi_ens)}(?![A-Z0-9])", regex=True, na=False) if groupe_choisi_ens != "Tous les groupes" else pd.Series(False,index=df_f_filtre_ens.index)
-            filtre_sg = texte_filtre_ens.str.contains(rf"(?<![A-Z0-9]){re.escape(sous_groupe_choisi_ens)}(?![A-Z0-9])", regex=True, na=False) if sous_groupe_choisi_ens != "Tous les sous-groupes" else pd.Series(False,index=df_f_filtre_ens.index)
-            df_f_filtre_ens = df_f_filtre_ens[communs | filtre_g | filtre_sg].copy()
 
         # --- Constantes locales ---
         _HORAIRES = [
-            "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h", "12h - 13h", "13h - 14h", "14h - 15h", "15h - 16h", "16h - 17h",
-            "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h30", "15h30 - 17h", "8h - 10h", "14h - 16h"
+            "8h - 9h", "8h - 9h30",
+            "9h - 10h", "9h30 - 11h",
+            "10h - 11h",
+            "11h - 12h", "11h - 12h30",
+            "12h - 13h", "12h30 - 14h",
+            "13h - 14h",
+            "14h - 15h", "14h - 15h30",
+            "15h - 16h", "15h30 - 17h",
+            "16h - 17h",
         ]
         _JOURS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
@@ -11639,7 +11633,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
 
         # --- AFFICHAGE À L'ÉCRAN : GRILLE BIEN VISIBLE ET COLORÉE ---
         sous_titre_grille_ens = f"{cible}"
-        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
+        if promotion_choisie_ens != "Toutes les promotions":
             sous_titre_grille_ens += f" — 🎓 {promotion_choisie_ens}"
         if type_choisi_ens != "Tous les types":
             sous_titre_grille_ens += f" — {type_choisi_ens}"
@@ -11652,7 +11646,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
                 f"<b>📅 Grille EDT — {sous_titre_grille_ens}</b></div>"
                 f"<div style='overflow-x:auto;border:1px solid #e2e8f0;"
                 f"border-radius:0 0 8px 8px;'>"
-                f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;'>"
+                f"<table style='width:100%;min-width:{100 + 130 * len(grille_html.columns)}px;border-collapse:collapse;table-layout:fixed;'>"
                 f"<thead>{thead}</thead><tbody>{tbody}</tbody></table></div>",
                 unsafe_allow_html=True
             )
@@ -11667,7 +11661,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         c1, c2, c3 = st.columns(3)
 
         suffixe_fichier_ens = cible.replace(' ', '_')
-        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
+        if promotion_choisie_ens != "Toutes les promotions":
             suffixe_fichier_ens += f"_{promotion_choisie_ens.replace(' ', '_')}"
         if type_choisi_ens != "Tous les types":
             suffixe_fichier_ens += f"_{type_choisi_ens.split()[1].replace(' ', '_')}"
@@ -11730,8 +11724,8 @@ body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;ma
 .container{{max-width:1200px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
 .header{{background:linear-gradient(135deg,#1E3A8A,#3B82F6);color:white;padding:20px;text-align:center;}}
 .header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
-.content{{padding:20px;}}
-table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+.content{{padding:20px;overflow-x:auto;}}
+table{{width:100%;min-width:{100 + 130 * len(grille_html.columns)}px;border-collapse:collapse;table-layout:fixed;}}
 th{{position:sticky;top:0;z-index:10;}}
 td{{word-wrap:break-word;}}
 .footer{{text-align:center;padding:15px;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;}}
@@ -11778,7 +11772,7 @@ td{{word-wrap:break-word;}}
                     for o,n in repl.items(): t=t.replace(o,n)
                     return t.encode('latin-1','ignore').decode('latin-1')
 
-                pdf = MonEDTpdf(orientation='L',unit='mm',format='A4')
+                pdf = MonEDTpdf(orientation='L',unit='mm',format=('A3' if len(grille_text.columns) > 8 else 'A4'))
                 pdf.set_auto_page_break(auto=True,margin=15)
                 pdf.add_page()
                 pdf.set_font('Arial','B',13); pdf.set_text_color(30,58,138)
@@ -11805,7 +11799,7 @@ td{{word-wrap:break-word;}}
                     max_h=12
                     for val in row:
                         if val:
-                            n_lines = str(val).count('\n') + max(1, int(len(str(val))/30))
+                            n_lines = str(val).count('\n') + max(1, int(len(str(val))/16))
                             h_needed = n_lines*3.8 + 4
                             if h_needed>max_h: max_h=h_needed
                     
@@ -11858,7 +11852,7 @@ td{{word-wrap:break-word;}}
         # « Toutes les promotions »), puisqu'il s'agit de voir l'ensemble de
         # l'EDT de CETTE promotion, avec TOUS les enseignants qui y
         # interviennent — pas seulement l'enseignant connecté.
-        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
+        if promotion_choisie_ens != "Toutes les promotions":
             st.divider()
             st.markdown(
                 f"### 👥 EDT complet de la promotion « {promotion_choisie_ens} » "
@@ -11989,7 +11983,7 @@ td{{word-wrap:break-word;}}
                     f"<b>👥 {sous_titre_promo_ens}</b></div>"
                     f"<div style='overflow-x:auto;border:1px solid #fed7aa;"
                     f"border-radius:0 0 8px 8px;'>"
-                    f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;'>"
+                    f"<table style='width:100%;min-width:{100 + 130 * len(grille_html_promo.columns)}px;border-collapse:collapse;table-layout:fixed;'>"
                     f"<thead>{thead_promo}</thead><tbody>{tbody_promo}</tbody></table></div>",
                     unsafe_allow_html=True
                 )
@@ -12060,8 +12054,8 @@ body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;ma
 .container{{max-width:1200px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
 .header{{background:linear-gradient(135deg,#7C2D12,#EA580C);color:white;padding:20px;text-align:center;}}
 .header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
-.content{{padding:20px;}}
-table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+.content{{padding:20px;overflow-x:auto;}}
+table{{width:100%;min-width:{100 + 130 * len(grille_html_promo.columns)}px;border-collapse:collapse;table-layout:fixed;}}
 th{{position:sticky;top:0;z-index:10;}}
 td{{word-wrap:break-word;}}
 .footer{{text-align:center;padding:15px;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;}}
@@ -12109,7 +12103,7 @@ td{{word-wrap:break-word;}}
                         for o, n in repl.items(): t = t.replace(o, n)
                         return t.encode('latin-1', 'ignore').decode('latin-1')
 
-                    pdf_promo = EDTPromoPdf(orientation='L', unit='mm', format='A4')
+                    pdf_promo = EDTPromoPdf(orientation='L', unit='mm', format=('A3' if len(grille_text_promo.columns) > 8 else 'A4'))
                     pdf_promo.set_auto_page_break(auto=True, margin=15)
                     pdf_promo.add_page()
                     pdf_promo.set_font('Arial', 'B', 13); pdf_promo.set_text_color(124, 45, 18)
@@ -12134,7 +12128,7 @@ td{{word-wrap:break-word;}}
                         max_h_promo = 12
                         for val in row:
                             if val:
-                                n_lines = str(val).count('\n') + max(1, int(len(str(val)) / 30))
+                                n_lines = str(val).count('\n') + max(1, int(len(str(val)) / 16))
                                 h_needed = n_lines * 3.8 + 4
                                 if h_needed > max_h_promo: max_h_promo = h_needed
 
@@ -12212,6 +12206,81 @@ td{{word-wrap:break-word;}}
                 key="type_recherche_ens_toutes"
             )
 
+            # ─────────────────────────────────────────────────────────────
+            # FILTRES GROUPE / SOUS-GROUPE (selon la promotion sélectionnée)
+            # Codage des séances dans la colonne « Enseignements » :
+            #   COURS : groupes entre parenthèses en fin de libellé  -> (G1, G2)
+            #   TD    : groupe en fin de libellé                      -> G1
+            #   TP    : sous-groupe(s)                                -> SG11, SG12
+            # Le sous-groupe SGxy appartient au groupe Gx (SG11, SG12 -> G1).
+            # ─────────────────────────────────────────────────────────────
+            def _rg_groupes_cours(val):
+                if pd.isna(val):
+                    return set()
+                m_rg = re.search(r'\(([^)]*)\)\s*$', str(val).strip().upper())
+                if not m_rg:
+                    return set()
+                return {f"G{n}" for n in re.findall(r'G(\d+)', m_rg.group(1))}
+
+            def _rg_groupe_td(val):
+                if pd.isna(val):
+                    return None
+                m_rg = re.search(r'(?<![A-Z])G[\s\-]?(\d+)\s*$', str(val).strip().upper())
+                return f"G{m_rg.group(1)}" if m_rg else None
+
+            def _rg_sous_groupes_tp(val):
+                if pd.isna(val):
+                    return set()
+                return {f"SG{n}" for n in re.findall(r'SG[\s\-]?(\d+)', str(val).strip().upper())}
+
+            def _rg_parent_sg(sg):
+                chiffres_rg = str(sg)[2:]
+                return "G" + (chiffres_rg[:-1] if len(chiffres_rg) > 1 else chiffres_rg)
+
+            def _rg_num(code_rg):
+                m_num = re.search(r'(\d+)', str(code_rg))
+                return int(m_num.group(1)) if m_num else 0
+
+            _df_promo_options_rg = df[df["Promotion"] == promotion_recherchee_ens]
+            _groupes_dispo_rg = set()
+            _sg_dispo_rg = set()
+            for _, _lg_rg in _df_promo_options_rg.iterrows():
+                _code_rg = str(_lg_rg.get("Code", "")).upper()
+                _ens_rg = _lg_rg.get("Enseignements", "")
+                if "COURS" in _code_rg:
+                    _groupes_dispo_rg |= _rg_groupes_cours(_ens_rg)
+                elif "TD" in _code_rg:
+                    _g_td_rg = _rg_groupe_td(_ens_rg)
+                    if _g_td_rg:
+                        _groupes_dispo_rg.add(_g_td_rg)
+                else:
+                    for _sg_rg in _rg_sous_groupes_tp(_ens_rg):
+                        _sg_dispo_rg.add(_sg_rg)
+                        _groupes_dispo_rg.add(_rg_parent_sg(_sg_rg))
+
+            _groupes_tries_rg = sorted(_groupes_dispo_rg, key=_rg_num)
+            col_grp_rech, col_sgrp_rech = st.columns(2)
+            with col_grp_rech:
+                groupe_recherche_ens = st.selectbox(
+                    "👥 Groupe :",
+                    ["Tous les groupes"] + _groupes_tries_rg,
+                    key=f"groupe_recherche_ens_toutes_{promotion_recherchee_ens}"
+                )
+            _sg_options_rg = sorted(
+                [
+                    s for s in _sg_dispo_rg
+                    if groupe_recherche_ens == "Tous les groupes"
+                    or _rg_parent_sg(s) == groupe_recherche_ens
+                ],
+                key=_rg_num
+            )
+            with col_sgrp_rech:
+                sous_groupe_recherche_ens = st.selectbox(
+                    "🔹 Sous-groupe :",
+                    ["Tous les sous-groupes"] + _sg_options_rg,
+                    key=f"sous_groupe_recherche_ens_toutes_{promotion_recherchee_ens}_{groupe_recherche_ens}"
+                )
+
             df_promo_recherchee = df[df["Promotion"] == promotion_recherchee_ens].copy()
             df_promo_recherchee['Type'] = df_promo_recherchee['Code'].apply(
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
@@ -12222,6 +12291,90 @@ td{{word-wrap:break-word;}}
                 df_promo_recherchee = df_promo_recherchee[df_promo_recherchee["Type"] == "TD"]
             elif type_recherche_ens == "🔴 TP uniquement":
                 df_promo_recherchee = df_promo_recherchee[df_promo_recherchee["Type"] == "TP"]
+
+            # Application du filtre Groupe / Sous-groupe
+            _sg_filtre_rg = None if sous_groupe_recherche_ens == "Tous les sous-groupes" else sous_groupe_recherche_ens
+            _g_filtre_rg = None if groupe_recherche_ens == "Tous les groupes" else groupe_recherche_ens
+            if _sg_filtre_rg and not _g_filtre_rg:
+                _g_filtre_rg = _rg_parent_sg(_sg_filtre_rg)
+
+            if (_g_filtre_rg or _sg_filtre_rg) and not df_promo_recherchee.empty:
+                def _garder_ligne_groupe_rg(ligne_rg):
+                    code_l_rg = str(ligne_rg.get("Code", "")).upper()
+                    ens_l_rg = ligne_rg.get("Enseignements", "")
+                    if "COURS" in code_l_rg:
+                        gs_rg = _rg_groupes_cours(ens_l_rg)
+                        return (not gs_rg) or (_g_filtre_rg in gs_rg)
+                    if "TD" in code_l_rg:
+                        g_l_rg = _rg_groupe_td(ens_l_rg)
+                        return (g_l_rg is None) or (g_l_rg == _g_filtre_rg)
+                    sgs_rg = _rg_sous_groupes_tp(ens_l_rg)
+                    if not sgs_rg:
+                        return True
+                    if _sg_filtre_rg:
+                        return _sg_filtre_rg in sgs_rg
+                    return any(_rg_parent_sg(s) == _g_filtre_rg for s in sgs_rg)
+
+                df_promo_recherchee = df_promo_recherchee[
+                    df_promo_recherchee.apply(_garder_ligne_groupe_rg, axis=1)
+                ]
+
+            # Fonctions locales garanties pour cette vue : elles ne dépendent
+            # d'aucune fonction définie dans une autre branche conditionnelle.
+            # Cela corrige définitivement UnboundLocalError sur _fmt_html_promo.
+            def _fmt_html_promo_recherche(rows):
+                elements_html = []
+                for _, ligne_recherche in rows.iterrows():
+                    emoji_recherche, fond_recherche, couleur_recherche = _type_emoji(
+                        ligne_recherche.get("Code", "")
+                    )
+                    enseignant_ligne = str(
+                        ligne_recherche.get("Enseignants", "")
+                    ).strip()
+                    est_enseignant_connecte_recherche = (
+                        str(cible).strip().upper()
+                        in enseignant_ligne.upper()
+                    )
+                    bordure_recherche = (
+                        "#D4AF37"
+                        if est_enseignant_connecte_recherche
+                        else couleur_recherche
+                    )
+                    marque_recherche = " ⭐" if est_enseignant_connecte_recherche else ""
+                    elements_html.append(
+                        f"<div style='background:{fond_recherche};"
+                        f"border-left:4px solid {bordure_recherche};"
+                        f"border-radius:4px;padding:5px;margin:2px 0;line-height:1.3;'>"
+                        f"<b style='color:{couleur_recherche};font-size:12px;'>"
+                        f"{emoji_recherche} {ligne_recherche.get('Enseignements', '')}</b><br>"
+                        f"<span style='font-size:10px;color:#334155;'>"
+                        f"👤 {enseignant_ligne}{marque_recherche}</span><br>"
+                        f"<span style='font-size:10px;color:#64748b;'>"
+                        f"📍 {ligne_recherche.get('Lieu', '')}</span>"
+                        f"</div>"
+                    )
+                return "".join(elements_html)
+
+            def _fmt_text_promo_recherche(rows):
+                elements_texte = []
+                for _, ligne_recherche in rows.iterrows():
+                    emoji_recherche, _, _ = _type_emoji(
+                        ligne_recherche.get("Code", "")
+                    )
+                    enseignant_ligne = str(
+                        ligne_recherche.get("Enseignants", "")
+                    ).strip()
+                    marque_recherche = (
+                        " (MOI)"
+                        if str(cible).strip().upper() in enseignant_ligne.upper()
+                        else ""
+                    )
+                    elements_texte.append(
+                        f"{emoji_recherche} {ligne_recherche.get('Enseignements', '')}\n"
+                        f"👤 {enseignant_ligne}{marque_recherche} | "
+                        f"📍 {ligne_recherche.get('Lieu', '')}"
+                    )
+                return "\n\n".join(elements_texte)
 
             df_g_recherche = df_promo_recherchee.copy()
             df_g_recherche["h_norm"] = df_g_recherche["Horaire"].apply(_norm_h)
@@ -12234,10 +12387,10 @@ td{{word-wrap:break-word;}}
 
             if not df_g_recherche.empty:
                 g_html_r = df_g_recherche.groupby(["j_norm", "h_norm"]).apply(
-                    _fmt_html_promo
+                    _fmt_html_promo_recherche
                 ).unstack(fill_value="")
                 g_text_r = df_g_recherche.groupby(["j_norm", "h_norm"]).apply(
-                    _fmt_text_promo
+                    _fmt_text_promo_recherche
                 ).unstack(fill_value="")
 
                 jours_ok_r = [j for j in _JOURS if j in g_html_r.index]
@@ -12274,6 +12427,10 @@ td{{word-wrap:break-word;}}
             sous_titre_recherche_ens = f"Promotion {promotion_recherchee_ens}"
             if type_recherche_ens != "Tous les types":
                 sous_titre_recherche_ens += f" — {type_recherche_ens}"
+            if groupe_recherche_ens != "Tous les groupes":
+                sous_titre_recherche_ens += f" — 👥 {groupe_recherche_ens}"
+            if sous_groupe_recherche_ens != "Tous les sous-groupes":
+                sous_titre_recherche_ens += f" — 🔹 {sous_groupe_recherche_ens}"
 
             if not grille_html_recherche.empty:
                 st.markdown(
@@ -12283,7 +12440,7 @@ td{{word-wrap:break-word;}}
                     f"<b>🔍 {sous_titre_recherche_ens}</b></div>"
                     f"<div style='overflow-x:auto;border:1px solid #99f6e4;"
                     f"border-radius:0 0 8px 8px;'>"
-                    f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;'>"
+                    f"<table style='width:100%;min-width:{100 + 130 * len(grille_html_recherche.columns)}px;border-collapse:collapse;table-layout:fixed;'>"
                     f"<thead>{thead_r2}</thead><tbody>{tbody_r2}</tbody></table></div>",
                     unsafe_allow_html=True
                 )
@@ -12298,6 +12455,10 @@ td{{word-wrap:break-word;}}
             suffixe_recherche_ens = promotion_recherchee_ens.replace(' ', '_')
             if type_recherche_ens != "Tous les types":
                 suffixe_recherche_ens += f"_{type_recherche_ens.split()[1].replace(' ', '_')}"
+            if groupe_recherche_ens != "Tous les groupes":
+                suffixe_recherche_ens += f"_{groupe_recherche_ens}"
+            if sous_groupe_recherche_ens != "Tous les sous-groupes":
+                suffixe_recherche_ens += f"_{sous_groupe_recherche_ens}"
 
             # 1️⃣ EXCEL
             if not grille_text_recherche.empty:
@@ -12352,8 +12513,8 @@ body{{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:20px;ma
 .container{{max-width:1200px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
 .header{{background:linear-gradient(135deg,#0f766e,#14b8a6);color:white;padding:20px;text-align:center;}}
 .header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
-.content{{padding:20px;}}
-table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+.content{{padding:20px;overflow-x:auto;}}
+table{{width:100%;min-width:{100 + 130 * len(grille_html_recherche.columns)}px;border-collapse:collapse;table-layout:fixed;}}
 td,th{{word-wrap:break-word;}}
 .footer{{text-align:center;padding:15px;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;}}
 </style></head><body>
@@ -12400,7 +12561,7 @@ td,th{{word-wrap:break-word;}}
                             t = t.replace(o, n)
                         return t.encode('latin-1', 'ignore').decode('latin-1')
 
-                    pdf_r2 = EDTRecherchePdf(orientation='L', unit='mm', format='A4')
+                    pdf_r2 = EDTRecherchePdf(orientation='L', unit='mm', format=('A3' if len(grille_text_recherche.columns) > 8 else 'A4'))
                     pdf_r2.set_auto_page_break(auto=True, margin=15)
                     pdf_r2.add_page()
                     pdf_r2.set_font('Arial', 'B', 13); pdf_r2.set_text_color(15, 118, 110)
@@ -12425,7 +12586,7 @@ td,th{{word-wrap:break-word;}}
                         max_h_r2 = 12
                         for val in row:
                             if val:
-                                n_lines = str(val).count('\n') + max(1, int(len(str(val)) / 30))
+                                n_lines = str(val).count('\n') + max(1, int(len(str(val)) / 16))
                                 h_needed = n_lines * 3.8 + 4
                                 if h_needed > max_h_r2:
                                     max_h_r2 = h_needed
