@@ -12172,7 +12172,7 @@ td{{word-wrap:break-word;}}
                 cp3.button("📄 PDF (Promotion)", disabled=True, use_container_width=True)
 
         # =============================================================================
-        # 🔍 CONSULTER L'EDT DE N'IMPORTE QUELLE PROMOTION (LISTE COMPLÈTE)
+        # 🔍 Consulter l'EDT par promotion, groupe & sous groupe (LISTE COMPLÈTE)
         # =============================================================================
         # Contrairement au sélecteur "Choisir Promotion" plus haut (limité
         # aux promotions où CET enseignant intervient), cette liste
@@ -12180,11 +12180,10 @@ td{{word-wrap:break-word;}}
         # pour consulter et télécharger l'EDT de n'importe laquelle,
         # même une promotion où l'enseignant n'a aucune séance.
         st.divider()
-        st.markdown("### 🔍 Consulter l'EDT de n'importe quelle promotion")
+        st.markdown("### 🔍 Consulter l'EDT par promotion, groupe & sous groupe")
         st.caption(
-            "Liste complète des promotions de l'établissement — vos "
-            "propres séances (le cas échéant) restent mises en évidence "
-            "par un liseré doré."
+            "Liste complète des promotions du département d"électrotechnique"
+                        
         )
 
         toutes_les_promotions_etab = sorted([
