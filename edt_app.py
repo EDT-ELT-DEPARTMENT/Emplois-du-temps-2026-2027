@@ -12182,7 +12182,7 @@ td{{word-wrap:break-word;}}
         st.divider()
         st.markdown("### 🔍 Consulter l'EDT par promotion, groupe & sous groupe")
         st.caption(
-            "Liste complète des promotions du département d"électrotechnique"
+            "Liste complète des promotions du département d'électrotechnique."
                         
         )
 
