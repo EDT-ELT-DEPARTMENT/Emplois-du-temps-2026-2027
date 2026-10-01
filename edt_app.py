@@ -4127,19 +4127,11 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             return re.sub(r'\s+', '', s)
 
                         horaires_ref_justif = [
-                            "08h00-09h00", "09h00-10h00", "10h00-11h00",
-                            "11h00-12h00", "12h00-13h00", "13h00-14h00",
-                            "14h00-15h00", "15h00-16h00", "16h00-17h00",
                             "08h00-09h30", "09h30-11h00", "11h00-12h30",
                             "12h30-14h00", "14h00-15h30", "15h30-17h00"
                         ]
                         jours_ref_justif = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
                         map_h_labels_justif = {
-                            "08h00-09h00": "8h - 9h", "09h00-10h00": "9h - 10h",
-                            "10h00-11h00": "10h - 11h", "11h00-12h00": "11h - 12h",
-                            "12h00-13h00": "12h - 13h", "13h00-14h00": "13h - 14h",
-                            "14h00-15h00": "14h - 15h", "15h00-16h00": "15h - 16h",
-                            "16h00-17h00": "16h - 17h",
                             "08h00-09h30": "8h - 9h30", "09h30-11h00": "9h30 - 11h",
                             "11h00-12h30": "11h - 12h30", "12h30-14h00": "12h30 - 14h",
                             "14h00-15h30": "14h - 15h30", "15h30-17h00": "15h30 - 17h"
@@ -4190,7 +4182,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             grid_justif_texte = pd.DataFrame()
 
                         jours_present_justif = [j for j in jours_ref_justif if j in grid_justif.index]
-                        h_present_justif = list(horaires_ref_justif)
+                        h_present_justif = [h for h in horaires_ref_justif if h in grid_justif.columns]
 
                         if jours_present_justif and h_present_justif:
                             grid_justif = grid_justif.reindex(index=jours_present_justif, columns=h_present_justif).fillna("")
@@ -5421,13 +5413,9 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
     # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
     
     # Constantes locales pour EDT
-    # Liste commune aux grilles et aux listes déroulantes d'édition.
-    # Elle conserve les créneaux historiques et ajoute tous les créneaux d'une heure.
     horaires_list = [
-        "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h",
-        "12h - 13h", "13h - 14h", "14h - 15h", "15h - 16h", "16h - 17h",
-        "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h",
-        "14h - 15h30", "15h30 - 17h", "8h - 10h", "14h - 16h"
+        "8h - 9h30", "9h30 - 11h", "11h - 12h30", 
+        "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
     ]
     jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
     map_h = {normalize(h): h for h in horaires_list}
@@ -6197,16 +6185,12 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 horaires_list[0] if horaires_list else ""
                             )
 
-                            if str(enseignant_libre_ens).strip():
+                            if choix_enseignant_ens == "➕ Saisie libre":
                                 enseignant_final_ens = str(enseignant_libre_ens).strip()
-                            elif choix_enseignant_ens == "➕ Saisie libre":
-                                enseignant_final_ens = ""
                             else:
                                 enseignant_final_ens = str(choix_enseignant_ens).strip()
-                            if str(lieu_libre_ens).strip():
+                            if choix_lieu_ens == "➕ Saisie libre":
                                 lieu_final_ens = str(lieu_libre_ens).strip()
-                            elif choix_lieu_ens == "➕ Saisie libre":
-                                lieu_final_ens = ""
                             else:
                                 lieu_final_ens = str(choix_lieu_ens).strip()
 
@@ -7306,16 +7290,12 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 key=f"edit_horaire_{idx_edition}"
                             )
 
-                        if str(nouveau_enseignant_libre).strip():
-                            enseignant_final = str(nouveau_enseignant_libre).strip()
-                        elif choix_enseignant == "\u2795 Saisie libre (voir champ suivant)":
-                            enseignant_final = ""
+                        if choix_enseignant == "\u2795 Saisie libre (voir champ suivant)":
+                            enseignant_final = nouveau_enseignant_libre.strip()
                         else:
                             enseignant_final = str(choix_enseignant).strip()
-                        if str(nouveau_lieu_libre).strip():
-                            lieu_final = str(nouveau_lieu_libre).strip()
-                        elif choix_lieu == "\u2795 Saisie libre (voir champ suivant)":
-                            lieu_final = ""
+                        if choix_lieu == "\u2795 Saisie libre (voir champ suivant)":
+                            lieu_final = nouveau_lieu_libre.strip()
                         else:
                             lieu_final = str(choix_lieu).strip()
 
@@ -11533,7 +11513,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         with col_filtre1:
             promotion_choisie_ens = st.selectbox(
                 "🎓 Choisir Promotion :",
-                promotions_dispo_ens,
+                ["📚 Afficher tous mes enseignements"] + promotions_dispo_ens,
                 key="promo_choisie_ens_indiv"
             )
         
@@ -11546,8 +11526,10 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
 
         # --- Application des filtres ---
         df_f_filtre_ens = df_f.copy()
-        if promotion_choisie_ens != "Toutes les promotions":
-            df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Promotion"] == promotion_choisie_ens]
+        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
+            df_f_filtre_ens = df_f_filtre_ens[
+                df_f_filtre_ens["Promotion"] == promotion_choisie_ens
+            ]
 
         if type_choisi_ens == "📘 Cours uniquement":
             df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "COURS"]
@@ -11557,7 +11539,12 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
             df_f_filtre_ens = df_f_filtre_ens[df_f_filtre_ens["Type"] == "TP"]
 
         # --- Constantes locales ---
-        _HORAIRES = ["8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"]
+        _HORAIRES = [
+            "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h",
+            "12h - 13h", "13h - 14h", "14h - 15h", "15h - 16h", "16h - 17h",
+            "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h",
+            "14h - 15h30", "15h30 - 17h", "8h - 10h", "14h - 16h"
+        ]
         _JOURS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
 
         def _norm_h(h):
@@ -11639,7 +11626,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
 
         # --- AFFICHAGE À L'ÉCRAN : GRILLE BIEN VISIBLE ET COLORÉE ---
         sous_titre_grille_ens = f"{cible}"
-        if promotion_choisie_ens != "Toutes les promotions":
+        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
             sous_titre_grille_ens += f" — 🎓 {promotion_choisie_ens}"
         if type_choisi_ens != "Tous les types":
             sous_titre_grille_ens += f" — {type_choisi_ens}"
@@ -11667,7 +11654,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         c1, c2, c3 = st.columns(3)
 
         suffixe_fichier_ens = cible.replace(' ', '_')
-        if promotion_choisie_ens != "Toutes les promotions":
+        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
             suffixe_fichier_ens += f"_{promotion_choisie_ens.replace(' ', '_')}"
         if type_choisi_ens != "Tous les types":
             suffixe_fichier_ens += f"_{type_choisi_ens.split()[1].replace(' ', '_')}"
@@ -11858,7 +11845,7 @@ td{{word-wrap:break-word;}}
         # « Toutes les promotions »), puisqu'il s'agit de voir l'ensemble de
         # l'EDT de CETTE promotion, avec TOUS les enseignants qui y
         # interviennent — pas seulement l'enseignant connecté.
-        if promotion_choisie_ens != "Toutes les promotions":
+        if promotion_choisie_ens != "📚 Afficher tous mes enseignements":
             st.divider()
             st.markdown(
                 f"### 👥 EDT complet de la promotion « {promotion_choisie_ens} » "
@@ -12212,6 +12199,48 @@ td{{word-wrap:break-word;}}
                 key="type_recherche_ens_toutes"
             )
 
+            # Filtres pédagogiques additionnels : groupe et sous-groupe.
+            # Ils sont construits depuis les codes Gx / SGxx présents dans
+            # la colonne Enseignements de la promotion choisie.
+            source_groupes_recherche = df[
+                df["Promotion"] == promotion_recherchee_ens
+            ].copy()
+            texte_groupes_recherche = " ".join(
+                source_groupes_recherche["Enseignements"].fillna("").astype(str).tolist()
+            ).upper()
+            groupes_recherche = sorted(
+                set(re.findall(r"(?<![A-Z0-9])G(\d+)(?![A-Z0-9])", texte_groupes_recherche)),
+                key=lambda valeur: int(valeur)
+            )
+            sous_groupes_recherche = sorted(
+                set(re.findall(r"(?<![A-Z0-9])SG(\d+)(?![A-Z0-9])", texte_groupes_recherche)),
+                key=lambda valeur: int(valeur)
+            )
+
+            filtre_groupe_recherche, filtre_sous_groupe_recherche = st.columns(2)
+            with filtre_groupe_recherche:
+                groupe_recherche_ens = st.selectbox(
+                    "👥 Afficher par groupe :",
+                    ["Tous les groupes"] + [f"G{numero}" for numero in groupes_recherche],
+                    key="groupe_recherche_ens_toutes"
+                )
+            with filtre_sous_groupe_recherche:
+                options_sous_groupes = ["Tous les sous-groupes"]
+                if groupe_recherche_ens != "Tous les groupes":
+                    numero_groupe_recherche = groupe_recherche_ens[1:]
+                    options_sous_groupes += [
+                        f"SG{numero}"
+                        for numero in sous_groupes_recherche
+                        if numero.startswith(numero_groupe_recherche)
+                    ]
+                else:
+                    options_sous_groupes += [f"SG{numero}" for numero in sous_groupes_recherche]
+                sous_groupe_recherche_ens = st.selectbox(
+                    "🔹 Afficher par sous-groupe :",
+                    options_sous_groupes,
+                    key="sous_groupe_recherche_ens_toutes"
+                )
+
             df_promo_recherchee = df[df["Promotion"] == promotion_recherchee_ens].copy()
             df_promo_recherchee['Type'] = df_promo_recherchee['Code'].apply(
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
@@ -12222,6 +12251,34 @@ td{{word-wrap:break-word;}}
                 df_promo_recherchee = df_promo_recherchee[df_promo_recherchee["Type"] == "TD"]
             elif type_recherche_ens == "🔴 TP uniquement":
                 df_promo_recherchee = df_promo_recherchee[df_promo_recherchee["Type"] == "TP"]
+
+            if groupe_recherche_ens != "Tous les groupes" or sous_groupe_recherche_ens != "Tous les sous-groupes":
+                texte_enseignement_recherche = df_promo_recherchee["Enseignements"].fillna("").astype(str).str.upper()
+                masque_cours_communs_recherche = df_promo_recherchee["Type"] == "COURS"
+                masque_groupe_recherche = pd.Series(False, index=df_promo_recherchee.index)
+                masque_sous_groupe_recherche = pd.Series(False, index=df_promo_recherchee.index)
+
+                if groupe_recherche_ens != "Tous les groupes":
+                    code_groupe_recherche = re.escape(groupe_recherche_ens)
+                    masque_groupe_recherche = texte_enseignement_recherche.str.contains(
+                        rf"(?<![A-Z0-9]){code_groupe_recherche}(?![A-Z0-9])",
+                        regex=True,
+                        na=False
+                    )
+
+                if sous_groupe_recherche_ens != "Tous les sous-groupes":
+                    code_sous_groupe_recherche = re.escape(sous_groupe_recherche_ens)
+                    masque_sous_groupe_recherche = texte_enseignement_recherche.str.contains(
+                        rf"(?<![A-Z0-9]){code_sous_groupe_recherche}(?![A-Z0-9])",
+                        regex=True,
+                        na=False
+                    )
+
+                df_promo_recherchee = df_promo_recherchee[
+                    masque_cours_communs_recherche
+                    | masque_groupe_recherche
+                    | masque_sous_groupe_recherche
+                ].copy()
 
             df_g_recherche = df_promo_recherchee.copy()
             df_g_recherche["h_norm"] = df_g_recherche["Horaire"].apply(_norm_h)
