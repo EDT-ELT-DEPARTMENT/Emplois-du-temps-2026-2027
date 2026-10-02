@@ -12948,13 +12948,15 @@ td,th{{word-wrap:break-word;}}
                     m_ed = _re_ed.search(r"(\d+)", str(v))
                     return (int(m_ed.group(1)) if m_ed else 10**9, str(v))
 
-                def _construire_excel_etu_edite_ad(chemin, edits_dict, noms_cols, df_ref):
+                def _construire_excel_etu_edite_ad(chemin, edits_dict, noms_cols, df_ref, ajouts_list=None, noms_np=(None, None, None)):
                     """Retourne (octets_xlsx, nb_modifs, nb_suppr, avertissements).
                     Le fichier source est rouvert tel quel (openpyxl) : en-têtes,
                     colonnes vides, autres feuilles et mise en forme sont conservés."""
                     avert_ed = []
-                    nb_mod_ed, nb_sup_ed = 0, 0
+                    nb_mod_ed, nb_sup_ed, nb_aj_ed = 0, 0, 0
+                    ajouts_list = ajouts_list or []
                     nom_g, nom_sg, nom_mat = noms_cols
+                    nom_nom, nom_prenom, nom_promo = noms_np
                     if str(chemin).lower().endswith((".xlsx", ".xlsm")) and os.path.exists(chemin):
                         import openpyxl as _opx_ed
                         from openpyxl.utils import get_column_letter as _gcl_ed
@@ -12994,14 +12996,32 @@ td,th{{word-wrap:break-word;}}
                                     ws_ed.cell(r_ed, c_g).value = e_ed["groupe"]
                                 if c_sg and e_ed.get("sous_groupe") not in (None, ""):
                                     ws_ed.cell(r_ed, c_sg).value = e_ed["sous_groupe"]
+                                # Attribuer / effacer : Admis dette, Congé académique, Statut, email
+                                for col_x, val_x in (e_ed.get("extra") or {}).items():
+                                    c_x = entetes_ed.get(str(col_x).strip().lower())
+                                    if c_x:
+                                        ws_ed.cell(r_ed, c_x).value = val_x if val_x not in (None, "") else None
                                 nb_mod_ed += 1
                         for r_ed in sorted(set(lignes_suppr_ed), reverse=True):
                             ws_ed.delete_rows(r_ed)
+                        # Nouveaux étudiants : ajoutés en fin de liste (style de la dernière ligne conservé)
+                        from copy import copy as _copy_ed
+                        for a_ed in ajouts_list:
+                            r_new = ws_ed.max_row + 1
+                            for c_n in range(1, ws_ed.max_column + 1):
+                                ws_ed.cell(r_new, c_n)._style = _copy_ed(ws_ed.cell(r_new - 1, c_n)._style)
+                            for nom_c, val_c in ((nom_nom, a_ed["nom"]), (nom_prenom, a_ed["prenom"]),
+                                                 (nom_promo, a_ed["promo"]), (nom_g, a_ed["groupe"]),
+                                                 (nom_sg, a_ed["sous_groupe"]), (nom_mat, a_ed.get("mat", ""))):
+                                c_c = entetes_ed.get(str(nom_c).strip().lower()) if nom_c else None
+                                if c_c and val_c not in (None, ""):
+                                    ws_ed.cell(r_new, c_c).value = val_c
+                            nb_aj_ed += 1
                         if ws_ed.auto_filter and ws_ed.auto_filter.ref:
                             ws_ed.auto_filter.ref = f"A1:{_gcl_ed(ws_ed.max_column)}{ws_ed.max_row}"
                         buf_ed = _BytesIO_ed()
                         wb_ed.save(buf_ed)
-                        return buf_ed.getvalue(), nb_mod_ed, nb_sup_ed, avert_ed
+                        return buf_ed.getvalue(), nb_mod_ed, nb_sup_ed, avert_ed, nb_aj_ed
                     # Repli (format .xls/.xlsb) : reconstruction depuis le tableau chargé
                     df_out_ed = df_ref.drop(columns=["Nom_Complet"], errors="ignore").copy()
                     for idx_ed, e_ed in edits_dict.items():
@@ -13014,28 +13034,104 @@ td,th{{word-wrap:break-word;}}
                             df_out_ed.loc[idx_ed, nom_g] = e_ed["groupe"]
                         if nom_sg and e_ed.get("sous_groupe") not in (None, ""):
                             df_out_ed.loc[idx_ed, nom_sg] = e_ed["sous_groupe"]
+                        for col_x, val_x in (e_ed.get("extra") or {}).items():
+                            if col_x in df_out_ed.columns:
+                                df_out_ed.loc[idx_ed, col_x] = val_x if val_x not in (None, "") else None
                         nb_mod_ed += 1
                     df_out_ed = df_out_ed.drop(
                         index=[i for i, e in edits_dict.items() if e["action"] == "supprimer" and i in df_out_ed.index]
                     )
+                    if ajouts_list:
+                        lignes_aj = []
+                        for a_ed in ajouts_list:
+                            ligne_aj = {c: None for c in df_out_ed.columns}
+                            for nom_c, val_c in ((nom_nom, a_ed["nom"]), (nom_prenom, a_ed["prenom"]),
+                                                 (nom_promo, a_ed["promo"]), (nom_g, a_ed["groupe"]),
+                                                 (nom_sg, a_ed["sous_groupe"]), (nom_mat, a_ed.get("mat", ""))):
+                                if nom_c and nom_c in ligne_aj and val_c not in (None, ""):
+                                    ligne_aj[nom_c] = val_c
+                            lignes_aj.append(ligne_aj)
+                            nb_aj_ed += 1
+                        df_out_ed = pd.concat([df_out_ed, pd.DataFrame(lignes_aj)], ignore_index=True)
                     buf_ed = _BytesIO_ed()
                     with pd.ExcelWriter(buf_ed, engine="openpyxl") as w_ed:
                         df_out_ed.to_excel(w_ed, sheet_name="ETUDIANTS_FUSIONNES", index=False)
                     avert_ed.append("Fichier source non .xlsx : export reconstruit depuis le tableau chargé.")
-                    return buf_ed.getvalue(), nb_mod_ed, nb_sup_ed, avert_ed
+                    return buf_ed.getvalue(), nb_mod_ed, nb_sup_ed, avert_ed, nb_aj_ed
 
                 if "edits_etu_source" not in st.session_state:
                     st.session_state["edits_etu_source"] = {}
                 _edits_src = st.session_state["edits_etu_source"]
+                if "ajouts_etu_source" not in st.session_state:
+                    st.session_state["ajouts_etu_source"] = []
+                _ajouts_src = st.session_state["ajouts_etu_source"]
+                if "ed_src_add_n" not in st.session_state:
+                    st.session_state["ed_src_add_n"] = 0
                 _cm_ed = detecter_colonnes_etudiant(df_etu_edt)
                 _col_g_ed = _cm_ed.get("groupe")
                 _col_sg_ed = _cm_ed.get("sous_groupe")
                 _col_mat_ed = _cm_ed.get("mat_etud")
                 _col_promo_ed = _cm_ed.get("promotion")
+                _col_nom_ed = _cm_ed.get("nom")
+                _col_prenom_ed = _cm_ed.get("prenom")
+                _col_admis_ed = _cm_ed.get("admis_dette")
+                _col_conge_ed = _cm_ed.get("conge_acad")
+                _col_statut_ed = _cm_ed.get("statut")
+                _col_email_ed = _cm_ed.get("email")
+
+                def _txt_apres_ed(e_x):
+                    if e_x["action"] == "supprimer":
+                        return "— supprimé —"
+                    morceaux_x = []
+                    if e_x.get("groupe") or e_x.get("sous_groupe"):
+                        morceaux_x.append(f"{e_x.get('groupe')} / {e_x.get('sous_groupe')}")
+                    for c_x, v_x in (e_x.get("extra") or {}).items():
+                        morceaux_x.append(f"{c_x} : {v_x if v_x else '(effacé)'}")
+                    return " ; ".join(morceaux_x)
+
+                # ── Historique des changements du fichier source (session + fichier CSV persistant) ──
+                _FICHIER_HISTO_ED = str(Path(FILE_ETUDIANTS).parent / "Historique_modifications_etudiants.csv")
+                _COLS_HISTO_ED = ["Date/Heure", "Utilisateur", "Action", "Étudiant", "Promotion",
+                                  "Champ", "Ancienne valeur", "Nouvelle valeur"]
+                if "histo_etu_source" not in st.session_state:
+                    _h_init = []
+                    try:
+                        if os.path.exists(_FICHIER_HISTO_ED):
+                            _h_init = pd.read_csv(
+                                _FICHIER_HISTO_ED, dtype=str, keep_default_na=False, encoding="utf-8-sig"
+                            ).to_dict("records")
+                    except Exception:
+                        _h_init = []
+                    st.session_state["histo_etu_source"] = _h_init
+
+                def _log_histo_ed(action_h, etudiant_h, promo_h="", champ_h="", ancien_h="", nouveau_h=""):
+                    u_h = st.session_state.get("user_data") or {}
+                    ligne_h = {
+                        "Date/Heure": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                        "Utilisateur": str(u_h.get("nom_officiel", u_h.get("username", "Admin"))),
+                        "Action": action_h,
+                        "Étudiant": etudiant_h,
+                        "Promotion": promo_h,
+                        "Champ": champ_h,
+                        "Ancienne valeur": ancien_h if ancien_h not in (None, "") else "(vide)",
+                        "Nouvelle valeur": nouveau_h if nouveau_h not in (None, "") else "(vide)",
+                    }
+                    st.session_state["histo_etu_source"].append(ligne_h)
+                    try:
+                        pd.DataFrame([ligne_h], columns=_COLS_HISTO_ED).to_csv(
+                            _FICHIER_HISTO_ED, mode="a", header=not os.path.exists(_FICHIER_HISTO_ED),
+                            index=False, encoding="utf-8-sig"
+                        )
+                    except Exception:
+                        pass  # persistance fichier indisponible : l'historique de session reste actif
+
+                def _cb_log_export_ed(nm_x, ns_x, na_x):
+                    _log_histo_ed("Export", "—", "", "Fichier édité téléchargé", "",
+                                  f"{nm_x} modification(s), {ns_x} suppression(s), {na_x} ajout(s)")
 
                 with st.expander(
                     "🛠️ Édition du fichier source des étudiants (Admin) — changer groupe / sous-groupe ou supprimer un étudiant",
-                    expanded=bool(_edits_src)
+                    expanded=bool(_edits_src) or bool(_ajouts_src)
                 ):
                     if not (_col_g_ed and _col_sg_ed):
                         st.warning("⚠️ Colonnes « Groupe » / « Sous groupe » introuvables dans le fichier source.")
@@ -13073,11 +13169,13 @@ td,th{{word-wrap:break-word;}}
                             if _e_prev["action"] == "supprimer":
                                 st.error("🗑️ Cet étudiant est marqué pour SUPPRESSION (effective dans le fichier téléchargé).")
                             else:
-                                st.info(f"✏️ Modification en attente : {_e_prev.get('groupe')} / {_e_prev.get('sous_groupe')}")
+                                st.info(f"✏️ Modification en attente : {_txt_apres_ed(_e_prev)}")
 
                         _action_ed = st.radio(
                             "Action :",
-                            ["✏️ Changer le groupe / sous-groupe", "🗑️ Supprimer de la liste"],
+                            ["✏️ Changer le groupe / sous-groupe",
+                             "🏷️ Attribuer / effacer (Admis dette, Congé académique, Statut, Email)",
+                             "🗑️ Supprimer de la liste"],
                             horizontal=True, key=f"ed_src_action_{_idx_sel_ed}"
                         )
 
@@ -13123,14 +13221,19 @@ td,th{{word-wrap:break-word;}}
                                 if not _g_choix_ed or not _sg_choix_ed:
                                     st.error("❌ Groupe et sous-groupe sont obligatoires.")
                                 else:
+                                    _prev_g = _edits_src.get(_idx_sel_ed, {})
                                     _edits_src[_idx_sel_ed] = {
                                         "action": "modifier", "mat": _mat_ed, "nom": sel_etud,
                                         "promo": str(_r_ed.get(_col_promo_ed, "")),
                                         "ancien": f"{_g_act} / {_sg_act}",
                                         "groupe": _g_choix_ed, "sous_groupe": _sg_choix_ed,
+                                        "extra": dict(_prev_g.get("extra", {})) if _prev_g.get("action") == "modifier" else {},
                                     }
+                                    _log_histo_ed("Modification", sel_etud, str(_r_ed.get(_col_promo_ed, "")),
+                                                  "Groupe / Sous groupe", f"{_g_act} / {_sg_act}",
+                                                  f"{_g_choix_ed} / {_sg_choix_ed}")
                                     st.success(f"✅ {sel_etud} : {_g_act}/{_sg_act} → {_g_choix_ed}/{_sg_choix_ed} (en attente d'export)")
-                        else:
+                        elif _action_ed.startswith("🗑️"):
                             _ok_sup_ed = st.checkbox(
                                 f"Je confirme vouloir supprimer « {sel_etud} » de la liste",
                                 key=f"ed_src_confirm_{_idx_sel_ed}"
@@ -13141,7 +13244,207 @@ td,th{{word-wrap:break-word;}}
                                     "promo": str(_r_ed.get(_col_promo_ed, "")),
                                     "ancien": f"{_g_act} / {_sg_act}",
                                 }
+                                _log_histo_ed("Suppression", sel_etud, str(_r_ed.get(_col_promo_ed, "")),
+                                              "Étudiant supprimé de la liste", f"{_g_act} / {_sg_act}", "(supprimé)")
                                 st.success(f"🗑️ {sel_etud} sera supprimé du fichier téléchargé.")
+                        else:
+                            # ── Attribuer / effacer : Admis dette, Congé académique, Statut, email ──
+                            def _val_act_ed(col_x):
+                                if not col_x:
+                                    return ""
+                                v_x = _r_ed.get(col_x)
+                                return "" if pd.isna(v_x) else str(v_x).strip()
+
+                            _defs_ed = [
+                                ("Admis dette", _col_admis_ed, ["OUI"]),
+                                ("Congé académique", _col_conge_ed, ["OUI"]),
+                                ("Statut", _col_statut_ed, None),
+                                ("Email", _col_email_ed, "email"),
+                                ("Matricule étudiant", _col_mat_ed, "matricule"),
+                            ]
+                            _lib_par_col_ed = {c_l: l_l for l_l, c_l, _o in _defs_ed if c_l}
+                            _extra_new_ed = {}
+                            _cols_attr_ed = st.columns(2)
+                            for i_d, (lib_d, col_d, opts_d) in enumerate(_defs_ed):
+                                with _cols_attr_ed[i_d % 2]:
+                                    with st.container(border=True):
+                                        if not col_d:
+                                            st.caption(f"⚠️ Colonne « {lib_d} » introuvable dans le fichier source.")
+                                            continue
+                                        _v_act_d = _val_act_ed(col_d)
+                                        st.markdown(f"**{lib_d}** — actuel : `{_v_act_d or 'vide'}`")
+                                        _mode_d = st.radio(
+                                            f"Action sur « {lib_d} »", ["Ne pas modifier", "Attribuer", "Effacer"],
+                                            horizontal=True, label_visibility="collapsed",
+                                            key=f"ed_src_x_mode_{col_d}_{_idx_sel_ed}"
+                                        )
+                                        if _mode_d == "Effacer":
+                                            _extra_new_ed[col_d] = ""
+                                        elif _mode_d == "Attribuer":
+                                            if opts_d == "matricule":
+                                                _saisie_mat_d = st.text_input(
+                                                    "Matricule (chiffres) :", value=_chiffres_ed(_v_act_d),
+                                                    key=f"ed_src_x_val_{col_d}_{_idx_sel_ed}"
+                                                )
+                                                _val_d = _chiffres_ed(_saisie_mat_d)
+                                                if _saisie_mat_d.strip() and _val_d != _saisie_mat_d.strip():
+                                                    st.caption("ℹ️ Seuls les chiffres sont conservés.")
+                                            elif opts_d == "email":
+                                                _val_d = st.text_input(
+                                                    "Adresse email :", value=_v_act_d,
+                                                    key=f"ed_src_x_val_{col_d}_{_idx_sel_ed}"
+                                                ).strip()
+                                            elif opts_d is None:
+                                                _exist_d = sorted({
+                                                    str(v).strip() for v in df_etu_edt[col_d].dropna() if str(v).strip()
+                                                })
+                                                if "Doublant (e)" not in _exist_d:
+                                                    _exist_d.append("Doublant (e)")
+                                                _o_d = _exist_d + ["➕ Autre valeur…"]
+                                                _val_d = st.selectbox(
+                                                    "Statut :", _o_d,
+                                                    index=_o_d.index(_v_act_d) if _v_act_d in _o_d else 0,
+                                                    key=f"ed_src_x_val_{col_d}_{_idx_sel_ed}"
+                                                )
+                                                if _val_d == "➕ Autre valeur…":
+                                                    _val_d = st.text_input(
+                                                        "Saisir le statut :", key=f"ed_src_x_txt_{col_d}_{_idx_sel_ed}"
+                                                    ).strip()
+                                            else:
+                                                _val_d = st.selectbox(
+                                                    f"{lib_d} :", opts_d, key=f"ed_src_x_val_{col_d}_{_idx_sel_ed}"
+                                                )
+                                            if _val_d:
+                                                _extra_new_ed[col_d] = _val_d
+                                            else:
+                                                st.caption("⚠️ Valeur vide : choisissez « Effacer » pour vider la case.")
+                            if st.button("✅ Enregistrer ces attributions", key=f"ed_src_attr_save_{_idx_sel_ed}",
+                                         type="primary", disabled=not _extra_new_ed):
+                                _conflit_mat_ed = False
+                                if _col_mat_ed and _extra_new_ed.get(_col_mat_ed):
+                                    _autres_mat_ed = df_etu_edt.drop(index=_idx_sel_ed)[_col_mat_ed].map(_chiffres_ed)
+                                    if (_autres_mat_ed == _extra_new_ed[_col_mat_ed]).any():
+                                        _conflit_mat_ed = True
+                                        st.error("❌ Ce matricule est déjà attribué à un autre étudiant du fichier.")
+                                if not _conflit_mat_ed:
+                                    _prev_a = _edits_src.get(_idx_sel_ed, {})
+                                    if _prev_a.get("action") == "modifier":
+                                        _fusion_a = dict(_prev_a)
+                                        _fusion_a["extra"] = {**_prev_a.get("extra", {}), **_extra_new_ed}
+                                    else:
+                                        _fusion_a = {
+                                            "action": "modifier", "mat": _mat_ed, "nom": sel_etud,
+                                            "promo": str(_r_ed.get(_col_promo_ed, "")),
+                                            "ancien": f"{_g_act} / {_sg_act}",
+                                            "groupe": None, "sous_groupe": None, "extra": dict(_extra_new_ed),
+                                        }
+                                    _edits_src[_idx_sel_ed] = _fusion_a
+                                    for c_h, v_h in _extra_new_ed.items():
+                                        _log_histo_ed(
+                                            "Attribution" if v_h else "Effacement", sel_etud,
+                                            str(_r_ed.get(_col_promo_ed, "")), _lib_par_col_ed.get(c_h, c_h),
+                                            _val_act_ed(c_h), v_h
+                                        )
+                                    st.success(f"✅ Attributions enregistrées pour {sel_etud} (en attente d'export).")
+
+                    # ── Ajouter un nouvel étudiant au fichier source ────────────
+                    if _col_g_ed and _col_sg_ed and _col_nom_ed and _col_prenom_ed and _col_promo_ed:
+                        st.markdown("#### ➕ Ajouter un nouvel étudiant au fichier source")
+                        _n_add = st.session_state["ed_src_add_n"]
+                        _AUTRE_AJ = "➕ Autre valeur…"
+                        ca1, ca2 = st.columns(2)
+                        with ca1:
+                            _nom_aj = st.text_input("Nom :", key=f"ed_src_add_nom_{_n_add}").strip().upper()
+                        with ca2:
+                            _prenom_aj = st.text_input("Prénom :", key=f"ed_src_add_prenom_{_n_add}").strip().title()
+                        _mat_saisie_aj = st.text_input(
+                            "🆔 Matricule étudiant (colonne « Mat. Etudiant », facultatif) :",
+                            key=f"ed_src_add_mat_{_n_add}"
+                        )
+                        _mat_aj = _chiffres_ed(_mat_saisie_aj)
+                        if _mat_saisie_aj.strip() and _mat_aj != _mat_saisie_aj.strip():
+                            st.caption("ℹ️ Seuls les chiffres du matricule sont conservés.")
+                        cb1, cb2, cb3 = st.columns(3)
+                        _promos_aj = sorted({str(v).strip() for v in df_etu_edt[_col_promo_ed].dropna() if str(v).strip()})
+                        with cb1:
+                            _promo_aj = st.selectbox("🎓 Promotion :", _promos_aj + [_AUTRE_AJ], key=f"ed_src_add_promo_{_n_add}")
+                            if _promo_aj == _AUTRE_AJ:
+                                _promo_aj = st.text_input("Saisir la promotion :", key=f"ed_src_add_promo_txt_{_n_add}").strip().upper()
+                        _groupes_aj = sorted(
+                            {str(v).strip() for v in df_etu_edt[_col_g_ed].dropna() if str(v).strip()}, key=_cle_naturelle_ed
+                        )
+                        with cb2:
+                            _groupe_aj = st.selectbox("👥 Groupe :", _groupes_aj + [_AUTRE_AJ], key=f"ed_src_add_g_{_n_add}")
+                            if _groupe_aj == _AUTRE_AJ:
+                                _groupe_aj = st.text_input("Saisir le groupe (ex : G3) :", key=f"ed_src_add_g_txt_{_n_add}").strip().upper()
+                        _chiffre_aj = _re_ed.search(r"(\d+)", str(_groupe_aj))
+                        _sg_all_aj = sorted(
+                            {str(v).strip() for v in df_etu_edt[_col_sg_ed].dropna() if str(v).strip()}, key=_cle_naturelle_ed
+                        )
+                        _sg_opts_aj = [
+                            v for v in _sg_all_aj
+                            if _chiffre_aj and _re_ed.sub(r"\D", "", v)[:-1] == _chiffre_aj.group(1)
+                        ] or _sg_all_aj
+                        with cb3:
+                            _sg_aj = st.selectbox(
+                                "🔹 Sous groupe :", _sg_opts_aj + [_AUTRE_AJ], key=f"ed_src_add_sg_{_n_add}_{_groupe_aj}"
+                            )
+                            if _sg_aj == _AUTRE_AJ:
+                                _sg_aj = st.text_input("Saisir le sous-groupe (ex : SG31) :", key=f"ed_src_add_sg_txt_{_n_add}").strip().upper()
+
+                        _nc_aj = f"{_nom_aj} {_prenom_aj}".strip()
+                        _doublon_aj = bool(_nom_aj and _prenom_aj) and (
+                            bool(((df_etu_edt["Nom_Complet"] == _nc_aj) & (df_etu_edt[_col_promo_ed].astype(str).str.strip() == str(_promo_aj))).any())
+                            or any(a["nom"] == _nom_aj and a["prenom"] == _prenom_aj and a["promo"] == _promo_aj for a in _ajouts_src)
+                        )
+                        _ok_dup_aj = True
+                        if _doublon_aj:
+                            st.warning("⚠️ Un étudiant portant ce nom et prénom existe déjà dans cette promotion.")
+                            _ok_dup_aj = st.checkbox("Ajouter malgré tout", key=f"ed_src_add_dup_{_n_add}")
+                        if st.button("➕ Ajouter cet étudiant", key=f"ed_src_add_btn_{_n_add}", type="primary"):
+                            if not (_nom_aj and _prenom_aj and _promo_aj and _groupe_aj and _sg_aj):
+                                st.error("❌ Nom, prénom, promotion, groupe et sous-groupe sont obligatoires.")
+                            elif not _ok_dup_aj:
+                                st.error("❌ Cochez « Ajouter malgré tout » pour confirmer l'ajout d'un homonyme.")
+                            elif _mat_aj and (
+                                (df_etu_edt[_col_mat_ed].map(_chiffres_ed) == _mat_aj).any()
+                                or any(a.get("mat") == _mat_aj for a in _ajouts_src)
+                            ) if _col_mat_ed else False:
+                                st.error("❌ Ce matricule existe déjà dans le fichier.")
+                            else:
+                                _ajouts_src.append({
+                                    "nom": _nom_aj, "prenom": _prenom_aj, "promo": _promo_aj,
+                                    "groupe": _groupe_aj, "sous_groupe": _sg_aj, "mat": _mat_aj,
+                                })
+                                _log_histo_ed("Ajout", f"{_nom_aj} {_prenom_aj}", _promo_aj, "Nouvel étudiant", "",
+                                              f"{_groupe_aj} / {_sg_aj}" + (f" — Mat. {_mat_aj}" if _mat_aj else ""))
+                                st.session_state["ed_src_add_n"] += 1
+                                st.rerun()
+                        if _ajouts_src:
+                            st.markdown("**🆕 Étudiants à ajouter (en attente d'export) :**")
+                            st.dataframe(
+                                pd.DataFrame([
+                                    {"Nom": a["nom"], "Prénom": a["prenom"], "Promotion": a["promo"],
+                                     "Groupe": a["groupe"], "Sous groupe": a["sous_groupe"],
+                                     "Matricule": a.get("mat", "")}
+                                    for a in _ajouts_src
+                                ]),
+                                use_container_width=True, hide_index=True
+                            )
+                            _ret_aj = st.multiselect(
+                                "↩️ Retirer des ajouts :", list(range(len(_ajouts_src))),
+                                format_func=lambda i: f"{_ajouts_src[i]['nom']} {_ajouts_src[i]['prenom']} ({_ajouts_src[i]['promo']})",
+                                key="ed_src_add_retirer"
+                            )
+                            if _ret_aj and st.button("↩️ Retirer la sélection", key="ed_src_add_retirer_btn"):
+                                for i_r in _ret_aj:
+                                    a_r = _ajouts_src[i_r]
+                                    _log_histo_ed("Annulation", f"{a_r['nom']} {a_r['prenom']}", a_r["promo"],
+                                                  "Ajout retiré avant export", f"{a_r['groupe']} / {a_r['sous_groupe']}", "")
+                                st.session_state["ajouts_etu_source"] = [
+                                    a for i, a in enumerate(_ajouts_src) if i not in _ret_aj
+                                ]
+                                st.rerun()
 
                     # ── Modifications en attente + export Excel ─────────────
                     if _edits_src:
@@ -13152,7 +13455,7 @@ td,th{{word-wrap:break-word;}}
                                     "Étudiant": e["nom"], "Promotion": e.get("promo", ""),
                                     "Action": "Suppression" if e["action"] == "supprimer" else "Modification",
                                     "Avant (Groupe / Sous groupe)": e.get("ancien", ""),
-                                    "Après": "— supprimé —" if e["action"] == "supprimer" else f"{e.get('groupe')} / {e.get('sous_groupe')}",
+                                    "Après": _txt_apres_ed(e),
                                 }
                                 for e in _edits_src.values()
                             ]),
@@ -13168,40 +13471,86 @@ td,th{{word-wrap:break-word;}}
                             )
                             if _annul_ed and st.button("↩️ Annuler la sélection", key="ed_src_annul_btn"):
                                 for i_a in _annul_ed:
+                                    e_a = _edits_src.get(i_a)
+                                    if e_a:
+                                        _log_histo_ed("Annulation", e_a["nom"], e_a.get("promo", ""),
+                                                      "Modification en attente annulée", _txt_apres_ed(e_a), "")
                                     _edits_src.pop(i_a, None)
                                 st.rerun()
                         with _cb_ed:
                             st.markdown("<br>", unsafe_allow_html=True)
                             if st.button("🧹 Tout réinitialiser", key="ed_src_reset"):
+                                _log_histo_ed("Réinitialisation", "—", "", "Toutes les modifications en attente",
+                                              f"{len(_edits_src)} modification(s), {len(_ajouts_src)} ajout(s)", "annulées")
                                 st.session_state["edits_etu_source"] = {}
+                                st.session_state["ajouts_etu_source"] = []
                                 st.rerun()
 
                     # Bouton Excel : fichier source actualisé avec TOUTES ses colonnes
                     try:
-                        _memo_cle_ed = repr(sorted((k, sorted(v.items())) for k, v in _edits_src.items())) + (
+                        _memo_cle_ed = repr(sorted((k, repr(sorted(v.items(), key=lambda kv: kv[0]))) for k, v in _edits_src.items())) + repr(_ajouts_src) + (
                             str(os.path.getmtime(FILE_ETUDIANTS)) if os.path.exists(FILE_ETUDIANTS) else ""
                         )
                         if st.session_state.get("ed_src_memo_cle") != _memo_cle_ed:
                             st.session_state["ed_src_memo_res"] = _construire_excel_etu_edite_ad(
                                 FILE_ETUDIANTS, _edits_src,
-                                (_col_g_ed, _col_sg_ed, _col_mat_ed), df_etu_edt
+                                (_col_g_ed, _col_sg_ed, _col_mat_ed), df_etu_edt,
+                                _ajouts_src, (_col_nom_ed, _col_prenom_ed, _col_promo_ed)
                             )
                             st.session_state["ed_src_memo_cle"] = _memo_cle_ed
-                        _octets_ed, _nm_ed, _ns_ed, _av_ed = st.session_state["ed_src_memo_res"]
+                        _octets_ed, _nm_ed, _ns_ed, _av_ed, _na_ed = st.session_state["ed_src_memo_res"]
                         for _a_ed in _av_ed:
                             st.warning("⚠️ " + _a_ed)
                         st.download_button(
-                            label=f"📥 Télécharger le fichier étudiants édité (Excel) — {_nm_ed} modif., {_ns_ed} suppression(s)",
+                            label=f"📥 Télécharger le fichier étudiants édité (Excel) — {_nm_ed} modif., {_ns_ed} suppression(s), {_na_ed} ajout(s)",
                             data=_octets_ed,
                             file_name=f"Liste des étudiants_2026-2027_edite_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True,
-                            key="dl_etu_source_edite"
+                            key="dl_etu_source_edite",
+                            on_click=_cb_log_export_ed,
+                            args=(_nm_ed, _ns_ed, _na_ed)
                         )
                         st.caption("ℹ️ Le fichier téléchargé contient toutes les colonnes et feuilles du fichier source. "
                                    "Remplacez le fichier « Liste des étudiants_2026-2027.xlsx » du serveur par ce fichier pour appliquer les changements à la plateforme.")
                     except Exception as e:
                         st.error(f"❌ Erreur génération du fichier édité : {str(e)[:150]}")
+
+                    # ── Historique des changements du fichier source ─────────
+                    st.markdown("#### 🕘 Historique des changements du fichier source")
+                    _histo_ed = st.session_state.get("histo_etu_source", [])
+                    if not _histo_ed:
+                        st.caption("Aucun changement enregistré pour le moment.")
+                    else:
+                        df_histo_ed = pd.DataFrame(_histo_ed).reindex(columns=_COLS_HISTO_ED).iloc[::-1].reset_index(drop=True)
+                        _filtre_h_ed = st.text_input("🔎 Filtrer l'historique (nom, action, champ…) :", key="ed_src_histo_filtre").strip().lower()
+                        if _filtre_h_ed:
+                            _masque_h = df_histo_ed.astype(str).apply(
+                                lambda col_h: col_h.str.lower().str.contains(_filtre_h_ed, regex=False)
+                            ).any(axis=1)
+                            df_histo_aff = df_histo_ed[_masque_h]
+                        else:
+                            df_histo_aff = df_histo_ed
+                        st.caption(f"{len(df_histo_aff)} ligne(s) affichée(s) sur {len(df_histo_ed)} — du plus récent au plus ancien.")
+                        st.dataframe(df_histo_aff, use_container_width=True, hide_index=True, height=300)
+                        _buf_h_ed = _BytesIO_ed()
+                        with pd.ExcelWriter(_buf_h_ed, engine="openpyxl") as w_h:
+                            df_histo_ed.to_excel(w_h, sheet_name="Historique", index=False)
+                            ws_h = w_h.sheets["Historique"]
+                            for col_cells in ws_h.columns:
+                                larg_h = max(len(str(c_h.value)) if c_h.value is not None else 0 for c_h in col_cells)
+                                ws_h.column_dimensions[col_cells[0].column_letter].width = min(max(14, larg_h + 2), 60)
+                            ws_h.freeze_panes = "A2"
+                        st.download_button(
+                            label=f"📥 Télécharger l'historique des changements (Excel) — {len(df_histo_ed)} ligne(s)",
+                            data=_buf_h_ed.getvalue(),
+                            file_name=f"Historique_modifications_etudiants_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key="dl_histo_etu_source"
+                        )
+                        st.caption("ℹ️ L'historique est conservé dans le fichier « Historique_modifications_etudiants.csv » "
+                                   "(à côté de l'application) lorsque le serveur le permet.")
 
             # ✨ Boutons de téléchargement Excel (AVANT les congés)
             st.markdown("### 📥 Télécharger les Listes")
