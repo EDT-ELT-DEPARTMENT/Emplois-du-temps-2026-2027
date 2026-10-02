@@ -12172,7 +12172,7 @@ td{{word-wrap:break-word;}}
                 cp3.button("📄 PDF (Promotion)", disabled=True, use_container_width=True)
 
         # =============================================================================
-        # 🔍 Consulter l'EDT par promotion, groupe & sous groupe (LISTE COMPLÈTE)
+        # 🔍 CONSULTER L'EDT DE N'IMPORTE QUELLE PROMOTION (LISTE COMPLÈTE)
         # =============================================================================
         # Contrairement au sélecteur "Choisir Promotion" plus haut (limité
         # aux promotions où CET enseignant intervient), cette liste
@@ -12180,10 +12180,11 @@ td{{word-wrap:break-word;}}
         # pour consulter et télécharger l'EDT de n'importe laquelle,
         # même une promotion où l'enseignant n'a aucune séance.
         st.divider()
-        st.markdown("### 🔍 Consulter l'EDT par promotion, groupe & sous groupe")
+        st.markdown("### 🔍 Consulter l'EDT de n'importe quelle promotion")
         st.caption(
-            "Liste complète des promotions du département d'électrotechnique."
-                        
+            "Liste complète des promotions de l'établissement — vos "
+            "propres séances (le cas échéant) restent mises en évidence "
+            "par un liseré doré."
         )
 
         toutes_les_promotions_etab = sorted([
@@ -12929,6 +12930,279 @@ td,th{{word-wrap:break-word;}}
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.metric("Total étudiants (Y compris en congé Académique)", len(liste_etudiants))
             
+            # ═════════════════════════════════════════════════════════════
+            # 🛠️ ÉDITION DU FICHIER SOURCE DES ÉTUDIANTS (ADMIN UNIQUEMENT)
+            #   - changer le Groupe / Sous groupe d'un étudiant
+            #   - supprimer un étudiant de la liste
+            #   - télécharger le fichier Excel édité (TOUTES les colonnes
+            #     et TOUTES les feuilles du fichier source conservées)
+            # ═════════════════════════════════════════════════════════════
+            if is_admin:
+                import re as _re_ed
+                from io import BytesIO as _BytesIO_ed
+
+                def _chiffres_ed(v):
+                    return _re_ed.sub(r"\D", "", str(v)) if v is not None else ""
+
+                def _cle_naturelle_ed(v):
+                    m_ed = _re_ed.search(r"(\d+)", str(v))
+                    return (int(m_ed.group(1)) if m_ed else 10**9, str(v))
+
+                def _construire_excel_etu_edite_ad(chemin, edits_dict, noms_cols, df_ref):
+                    """Retourne (octets_xlsx, nb_modifs, nb_suppr, avertissements).
+                    Le fichier source est rouvert tel quel (openpyxl) : en-têtes,
+                    colonnes vides, autres feuilles et mise en forme sont conservés."""
+                    avert_ed = []
+                    nb_mod_ed, nb_sup_ed = 0, 0
+                    nom_g, nom_sg, nom_mat = noms_cols
+                    if str(chemin).lower().endswith((".xlsx", ".xlsm")) and os.path.exists(chemin):
+                        import openpyxl as _opx_ed
+                        from openpyxl.utils import get_column_letter as _gcl_ed
+                        wb_ed = _opx_ed.load_workbook(chemin)
+                        ws_ed = wb_ed.worksheets[0]
+                        entetes_ed = {}
+                        for c_ed in range(1, ws_ed.max_column + 1):
+                            v_ed = ws_ed.cell(1, c_ed).value
+                            if v_ed is not None:
+                                entetes_ed.setdefault(str(v_ed).strip().lower(), c_ed)
+                        c_g = entetes_ed.get(str(nom_g).strip().lower()) if nom_g else None
+                        c_sg = entetes_ed.get(str(nom_sg).strip().lower()) if nom_sg else None
+                        c_mat = entetes_ed.get(str(nom_mat).strip().lower()) if nom_mat else None
+
+                        def _ligne_ed(idx_ed, mat_ed):
+                            r_ed = int(idx_ed) + 2
+                            if c_mat and mat_ed:
+                                if _chiffres_ed(ws_ed.cell(r_ed, c_mat).value) == mat_ed:
+                                    return r_ed
+                                for rr_ed in range(2, ws_ed.max_row + 1):
+                                    if _chiffres_ed(ws_ed.cell(rr_ed, c_mat).value) == mat_ed:
+                                        return rr_ed
+                                return None
+                            return r_ed
+
+                        lignes_suppr_ed = []
+                        for idx_ed, e_ed in edits_dict.items():
+                            r_ed = _ligne_ed(idx_ed, e_ed.get("mat", ""))
+                            if r_ed is None:
+                                avert_ed.append(f"Étudiant introuvable dans le fichier : {e_ed.get('nom', idx_ed)}")
+                                continue
+                            if e_ed["action"] == "supprimer":
+                                lignes_suppr_ed.append(r_ed)
+                                nb_sup_ed += 1
+                            else:
+                                if c_g and e_ed.get("groupe") not in (None, ""):
+                                    ws_ed.cell(r_ed, c_g).value = e_ed["groupe"]
+                                if c_sg and e_ed.get("sous_groupe") not in (None, ""):
+                                    ws_ed.cell(r_ed, c_sg).value = e_ed["sous_groupe"]
+                                nb_mod_ed += 1
+                        for r_ed in sorted(set(lignes_suppr_ed), reverse=True):
+                            ws_ed.delete_rows(r_ed)
+                        if ws_ed.auto_filter and ws_ed.auto_filter.ref:
+                            ws_ed.auto_filter.ref = f"A1:{_gcl_ed(ws_ed.max_column)}{ws_ed.max_row}"
+                        buf_ed = _BytesIO_ed()
+                        wb_ed.save(buf_ed)
+                        return buf_ed.getvalue(), nb_mod_ed, nb_sup_ed, avert_ed
+                    # Repli (format .xls/.xlsb) : reconstruction depuis le tableau chargé
+                    df_out_ed = df_ref.drop(columns=["Nom_Complet"], errors="ignore").copy()
+                    for idx_ed, e_ed in edits_dict.items():
+                        if idx_ed not in df_out_ed.index:
+                            continue
+                        if e_ed["action"] == "supprimer":
+                            nb_sup_ed += 1
+                            continue
+                        if nom_g and e_ed.get("groupe") not in (None, ""):
+                            df_out_ed.loc[idx_ed, nom_g] = e_ed["groupe"]
+                        if nom_sg and e_ed.get("sous_groupe") not in (None, ""):
+                            df_out_ed.loc[idx_ed, nom_sg] = e_ed["sous_groupe"]
+                        nb_mod_ed += 1
+                    df_out_ed = df_out_ed.drop(
+                        index=[i for i, e in edits_dict.items() if e["action"] == "supprimer" and i in df_out_ed.index]
+                    )
+                    buf_ed = _BytesIO_ed()
+                    with pd.ExcelWriter(buf_ed, engine="openpyxl") as w_ed:
+                        df_out_ed.to_excel(w_ed, sheet_name="ETUDIANTS_FUSIONNES", index=False)
+                    avert_ed.append("Fichier source non .xlsx : export reconstruit depuis le tableau chargé.")
+                    return buf_ed.getvalue(), nb_mod_ed, nb_sup_ed, avert_ed
+
+                if "edits_etu_source" not in st.session_state:
+                    st.session_state["edits_etu_source"] = {}
+                _edits_src = st.session_state["edits_etu_source"]
+                _cm_ed = detecter_colonnes_etudiant(df_etu_edt)
+                _col_g_ed = _cm_ed.get("groupe")
+                _col_sg_ed = _cm_ed.get("sous_groupe")
+                _col_mat_ed = _cm_ed.get("mat_etud")
+                _col_promo_ed = _cm_ed.get("promotion")
+
+                with st.expander(
+                    "🛠️ Édition du fichier source des étudiants (Admin) — changer groupe / sous-groupe ou supprimer un étudiant",
+                    expanded=bool(_edits_src)
+                ):
+                    if not (_col_g_ed and _col_sg_ed):
+                        st.warning("⚠️ Colonnes « Groupe » / « Sous groupe » introuvables dans le fichier source.")
+                    elif not sel_etud:
+                        st.info("🔍 Sélectionnez d'abord un étudiant ci-dessus pour le modifier ou le supprimer.")
+                    else:
+                        _cands_ed = df_etu_edt[df_etu_edt["Nom_Complet"] == sel_etud]
+
+                        def _lib_cand_ed(i_ed):
+                            r_c = df_etu_edt.loc[i_ed]
+                            return (
+                                f"{_chiffres_ed(r_c.get(_col_mat_ed, '')) or 'sans matricule'} — "
+                                f"{r_c.get(_col_promo_ed, '')} — "
+                                f"{r_c.get(_col_g_ed, '')} / {r_c.get(_col_sg_ed, '')}"
+                            )
+
+                        _idx_list_ed = list(_cands_ed.index)
+                        if len(_idx_list_ed) > 1:
+                            st.warning(f"⚠️ {len(_idx_list_ed)} étudiants portent ce nom : choisissez le bon (matricule).")
+                            _idx_sel_ed = st.selectbox(
+                                "Étudiant concerné :", _idx_list_ed, format_func=_lib_cand_ed, key="ed_src_idx"
+                            )
+                        else:
+                            _idx_sel_ed = _idx_list_ed[0]
+                        _r_ed = df_etu_edt.loc[_idx_sel_ed]
+                        _g_act = "" if pd.isna(_r_ed.get(_col_g_ed)) else str(_r_ed.get(_col_g_ed)).strip()
+                        _sg_act = "" if pd.isna(_r_ed.get(_col_sg_ed)) else str(_r_ed.get(_col_sg_ed)).strip()
+                        _mat_ed = _chiffres_ed(_r_ed.get(_col_mat_ed, "")) if _col_mat_ed else ""
+                        st.markdown(
+                            f"**{sel_etud}** — Promotion : `{_r_ed.get(_col_promo_ed, 'N/A')}` — "
+                            f"Groupe actuel : `{_g_act or 'N/A'}` — Sous groupe actuel : `{_sg_act or 'N/A'}`"
+                        )
+                        if _idx_sel_ed in _edits_src:
+                            _e_prev = _edits_src[_idx_sel_ed]
+                            if _e_prev["action"] == "supprimer":
+                                st.error("🗑️ Cet étudiant est marqué pour SUPPRESSION (effective dans le fichier téléchargé).")
+                            else:
+                                st.info(f"✏️ Modification en attente : {_e_prev.get('groupe')} / {_e_prev.get('sous_groupe')}")
+
+                        _action_ed = st.radio(
+                            "Action :",
+                            ["✏️ Changer le groupe / sous-groupe", "🗑️ Supprimer de la liste"],
+                            horizontal=True, key=f"ed_src_action_{_idx_sel_ed}"
+                        )
+
+                        if _action_ed.startswith("✏️"):
+                            _vals_g_ed = sorted(
+                                {str(v).strip() for v in df_etu_edt[_col_g_ed].dropna() if str(v).strip()},
+                                key=_cle_naturelle_ed
+                            )
+                            _AUTRE_ED = "➕ Autre valeur…"
+                            _opts_g_ed = _vals_g_ed + [_AUTRE_ED]
+                            cg_ed, csg_ed = st.columns(2)
+                            with cg_ed:
+                                _g_choix_ed = st.selectbox(
+                                    "👥 Nouveau groupe :", _opts_g_ed,
+                                    index=_opts_g_ed.index(_g_act) if _g_act in _opts_g_ed else 0,
+                                    key=f"ed_src_g_{_idx_sel_ed}"
+                                )
+                                if _g_choix_ed == _AUTRE_ED:
+                                    _g_choix_ed = st.text_input(
+                                        "Saisir le groupe (ex : G3) :", key=f"ed_src_g_txt_{_idx_sel_ed}"
+                                    ).strip().upper()
+                            _chiffre_g_ed = _re_ed.search(r"(\d+)", str(_g_choix_ed))
+                            _vals_sg_all_ed = sorted(
+                                {str(v).strip() for v in df_etu_edt[_col_sg_ed].dropna() if str(v).strip()},
+                                key=_cle_naturelle_ed
+                            )
+                            _vals_sg_ed = [
+                                v for v in _vals_sg_all_ed
+                                if _chiffre_g_ed and _re_ed.sub(r"\D", "", v)[:-1] == _chiffre_g_ed.group(1)
+                            ] or _vals_sg_all_ed
+                            _opts_sg_ed = _vals_sg_ed + [_AUTRE_ED]
+                            with csg_ed:
+                                _sg_choix_ed = st.selectbox(
+                                    "🔹 Nouveau sous-groupe :", _opts_sg_ed,
+                                    index=_opts_sg_ed.index(_sg_act) if _sg_act in _opts_sg_ed else 0,
+                                    key=f"ed_src_sg_{_idx_sel_ed}_{_g_choix_ed}"
+                                )
+                                if _sg_choix_ed == _AUTRE_ED:
+                                    _sg_choix_ed = st.text_input(
+                                        "Saisir le sous-groupe (ex : SG31) :", key=f"ed_src_sg_txt_{_idx_sel_ed}"
+                                    ).strip().upper()
+                            if st.button("✅ Enregistrer la modification", key=f"ed_src_save_{_idx_sel_ed}", type="primary"):
+                                if not _g_choix_ed or not _sg_choix_ed:
+                                    st.error("❌ Groupe et sous-groupe sont obligatoires.")
+                                else:
+                                    _edits_src[_idx_sel_ed] = {
+                                        "action": "modifier", "mat": _mat_ed, "nom": sel_etud,
+                                        "promo": str(_r_ed.get(_col_promo_ed, "")),
+                                        "ancien": f"{_g_act} / {_sg_act}",
+                                        "groupe": _g_choix_ed, "sous_groupe": _sg_choix_ed,
+                                    }
+                                    st.success(f"✅ {sel_etud} : {_g_act}/{_sg_act} → {_g_choix_ed}/{_sg_choix_ed} (en attente d'export)")
+                        else:
+                            _ok_sup_ed = st.checkbox(
+                                f"Je confirme vouloir supprimer « {sel_etud} » de la liste",
+                                key=f"ed_src_confirm_{_idx_sel_ed}"
+                            )
+                            if st.button("🗑️ Marquer pour suppression", key=f"ed_src_del_{_idx_sel_ed}", disabled=not _ok_sup_ed):
+                                _edits_src[_idx_sel_ed] = {
+                                    "action": "supprimer", "mat": _mat_ed, "nom": sel_etud,
+                                    "promo": str(_r_ed.get(_col_promo_ed, "")),
+                                    "ancien": f"{_g_act} / {_sg_act}",
+                                }
+                                st.success(f"🗑️ {sel_etud} sera supprimé du fichier téléchargé.")
+
+                    # ── Modifications en attente + export Excel ─────────────
+                    if _edits_src:
+                        st.markdown("#### 📋 Modifications en attente")
+                        st.dataframe(
+                            pd.DataFrame([
+                                {
+                                    "Étudiant": e["nom"], "Promotion": e.get("promo", ""),
+                                    "Action": "Suppression" if e["action"] == "supprimer" else "Modification",
+                                    "Avant (Groupe / Sous groupe)": e.get("ancien", ""),
+                                    "Après": "— supprimé —" if e["action"] == "supprimer" else f"{e.get('groupe')} / {e.get('sous_groupe')}",
+                                }
+                                for e in _edits_src.values()
+                            ]),
+                            use_container_width=True, hide_index=True
+                        )
+                        _ca_ed, _cb_ed = st.columns(2)
+                        with _ca_ed:
+                            _annul_ed = st.multiselect(
+                                "↩️ Annuler certaines modifications :",
+                                list(_edits_src.keys()),
+                                format_func=lambda i: _edits_src[i]["nom"],
+                                key="ed_src_annul"
+                            )
+                            if _annul_ed and st.button("↩️ Annuler la sélection", key="ed_src_annul_btn"):
+                                for i_a in _annul_ed:
+                                    _edits_src.pop(i_a, None)
+                                st.rerun()
+                        with _cb_ed:
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            if st.button("🧹 Tout réinitialiser", key="ed_src_reset"):
+                                st.session_state["edits_etu_source"] = {}
+                                st.rerun()
+
+                    # Bouton Excel : fichier source actualisé avec TOUTES ses colonnes
+                    try:
+                        _memo_cle_ed = repr(sorted((k, sorted(v.items())) for k, v in _edits_src.items())) + (
+                            str(os.path.getmtime(FILE_ETUDIANTS)) if os.path.exists(FILE_ETUDIANTS) else ""
+                        )
+                        if st.session_state.get("ed_src_memo_cle") != _memo_cle_ed:
+                            st.session_state["ed_src_memo_res"] = _construire_excel_etu_edite_ad(
+                                FILE_ETUDIANTS, _edits_src,
+                                (_col_g_ed, _col_sg_ed, _col_mat_ed), df_etu_edt
+                            )
+                            st.session_state["ed_src_memo_cle"] = _memo_cle_ed
+                        _octets_ed, _nm_ed, _ns_ed, _av_ed = st.session_state["ed_src_memo_res"]
+                        for _a_ed in _av_ed:
+                            st.warning("⚠️ " + _a_ed)
+                        st.download_button(
+                            label=f"📥 Télécharger le fichier étudiants édité (Excel) — {_nm_ed} modif., {_ns_ed} suppression(s)",
+                            data=_octets_ed,
+                            file_name=f"Liste des étudiants_2026-2027_edite_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key="dl_etu_source_edite"
+                        )
+                        st.caption("ℹ️ Le fichier téléchargé contient toutes les colonnes et feuilles du fichier source. "
+                                   "Remplacez le fichier « Liste des étudiants_2026-2027.xlsx » du serveur par ce fichier pour appliquer les changements à la plateforme.")
+                    except Exception as e:
+                        st.error(f"❌ Erreur génération du fichier édité : {str(e)[:150]}")
+
             # ✨ Boutons de téléchargement Excel (AVANT les congés)
             st.markdown("### 📥 Télécharger les Listes")
             db1, db2, db3, db4, db5 = st.columns(5)
