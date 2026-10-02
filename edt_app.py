@@ -13174,6 +13174,7 @@ td,th{{word-wrap:break-word;}}
                         _action_ed = st.radio(
                             "Action :",
                             ["✏️ Changer le groupe / sous-groupe",
+                             "🔄 Permuter avec un autre étudiant (groupe / sous-groupe)",
                              "🏷️ Attribuer / effacer (Admis dette, Congé académique, Statut, Email)",
                              "🗑️ Supprimer de la liste"],
                             horizontal=True, key=f"ed_src_action_{_idx_sel_ed}"
@@ -13247,6 +13248,79 @@ td,th{{word-wrap:break-word;}}
                                 _log_histo_ed("Suppression", sel_etud, str(_r_ed.get(_col_promo_ed, "")),
                                               "Étudiant supprimé de la liste", f"{_g_act} / {_sg_act}", "(supprimé)")
                                 st.success(f"🗑️ {sel_etud} sera supprimé du fichier téléchargé.")
+                        elif _action_ed.startswith("🔄"):
+                            # ── Permutation : échange Groupe / Sous groupe entre deux étudiants en UNE action ──
+                            if _idx_sel_ed in _edits_src and _edits_src[_idx_sel_ed]["action"] == "supprimer":
+                                st.error("❌ Cet étudiant est marqué pour suppression : permutation impossible.")
+                            else:
+                                def _val_fichier_ed(i_e, col_e):
+                                    v_e = df_etu_edt.loc[i_e].get(col_e)
+                                    return "" if pd.isna(v_e) else str(v_e).strip()
+
+                                def _eff_gsg_ed(i_e):
+                                    """Groupe / sous-groupe effectifs (modification en attente prise en compte)."""
+                                    g_e, sg_e = _val_fichier_ed(i_e, _col_g_ed), _val_fichier_ed(i_e, _col_sg_ed)
+                                    e_e = _edits_src.get(i_e)
+                                    if e_e and e_e["action"] == "modifier":
+                                        return (e_e.get("groupe") or g_e, e_e.get("sous_groupe") or sg_e)
+                                    return g_e, sg_e
+
+                                _meme_promo_sw = st.checkbox(
+                                    "Limiter aux étudiants de la même promotion", value=True,
+                                    key=f"ed_swap_promo_{_idx_sel_ed}"
+                                )
+                                _promo_a_sw = str(_r_ed.get(_col_promo_ed, "")).strip()
+                                _cands_sw = df_etu_edt.drop(index=_idx_sel_ed)
+                                if _meme_promo_sw:
+                                    _cands_sw = _cands_sw[_cands_sw[_col_promo_ed].astype(str).str.strip() == _promo_a_sw]
+                                _idx_sw_list = [
+                                    i_c for i_c in _cands_sw.index
+                                    if not (i_c in _edits_src and _edits_src[i_c]["action"] == "supprimer")
+                                ]
+                                if not _idx_sw_list:
+                                    st.info("ℹ️ Aucun autre étudiant disponible pour la permutation.")
+                                else:
+                                    def _lib_sw(i_s):
+                                        r_s = df_etu_edt.loc[i_s]
+                                        g_s, sg_s = _eff_gsg_ed(i_s)
+                                        return (f"{r_s.get('Nom_Complet', '')} — {r_s.get(_col_promo_ed, '')} — "
+                                                f"{g_s or '?'}/{sg_s or '?'} — Mat. "
+                                                f"{(_chiffres_ed(r_s.get(_col_mat_ed, '')) if _col_mat_ed else '') or '—'}")
+                                    _idx_b_sw = st.selectbox(
+                                        "🔄 Permuter avec (tapez pour rechercher) :", _idx_sw_list,
+                                        format_func=_lib_sw, key=f"ed_swap_b_{_idx_sel_ed}"
+                                    )
+                                    _gA, _sgA = _eff_gsg_ed(_idx_sel_ed)
+                                    _gB, _sgB = _eff_gsg_ed(_idx_b_sw)
+                                    _nom_b_sw = str(df_etu_edt.loc[_idx_b_sw].get("Nom_Complet", ""))
+                                    st.markdown(
+                                        f"**{sel_etud}** : `{_gA}/{_sgA}` → `{_gB}/{_sgB}`  \n"
+                                        f"**{_nom_b_sw}** : `{_gB}/{_sgB}` → `{_gA}/{_sgA}`"
+                                    )
+                                    if not (_gA and _sgA and _gB and _sgB):
+                                        st.error("❌ L'un des deux étudiants n'a pas de groupe / sous-groupe défini : permutation impossible.")
+                                    elif (_gA, _sgA) == (_gB, _sgB):
+                                        st.info("ℹ️ Les deux étudiants ont déjà le même groupe et sous-groupe : rien à permuter.")
+                                    elif st.button("🔄 Effectuer la permutation", key=f"ed_swap_btn_{_idx_sel_ed}_{_idx_b_sw}", type="primary"):
+                                        for i_x, g_old, sg_old, g_new, sg_new in (
+                                            (_idx_sel_ed, _gA, _sgA, _gB, _sgB),
+                                            (_idx_b_sw, _gB, _sgB, _gA, _sgA),
+                                        ):
+                                            r_x = df_etu_edt.loc[i_x]
+                                            prev_x = _edits_src.get(i_x, {})
+                                            _edits_src[i_x] = {
+                                                "action": "modifier",
+                                                "mat": _chiffres_ed(r_x.get(_col_mat_ed, "")) if _col_mat_ed else "",
+                                                "nom": str(r_x.get("Nom_Complet", "")),
+                                                "promo": str(r_x.get(_col_promo_ed, "")),
+                                                "ancien": f"{_val_fichier_ed(i_x, _col_g_ed)} / {_val_fichier_ed(i_x, _col_sg_ed)}",
+                                                "groupe": g_new, "sous_groupe": sg_new,
+                                                "extra": dict(prev_x.get("extra", {})) if prev_x.get("action") == "modifier" else {},
+                                            }
+                                            _log_histo_ed("Permutation", str(r_x.get("Nom_Complet", "")),
+                                                          str(r_x.get(_col_promo_ed, "")), "Groupe / Sous groupe",
+                                                          f"{g_old} / {sg_old}", f"{g_new} / {sg_new}")
+                                        st.success(f"✅ Permutation enregistrée : {sel_etud} ⇄ {_nom_b_sw} (en attente d'export).")
                         else:
                             # ── Attribuer / effacer : Admis dette, Congé académique, Statut, email ──
                             def _val_act_ed(col_x):
