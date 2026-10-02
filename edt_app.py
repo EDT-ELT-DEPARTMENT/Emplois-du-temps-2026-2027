@@ -5446,6 +5446,41 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
     if portail == "📖 Emploi du Temps" and is_admin:
         if mode_view == "Enseignant":
             # ============================================================
+            # CRÉNEAUX HORAIRES D'UNE HEURE (affichage ET mode édition)
+            # ------------------------------------------------------------
+            # On complète la liste des horaires de cette vue avec tous les
+            # créneaux d'une heure : 8h - 9h, 9h - 10h, 10h - 11h, 11h - 12h,
+            # 12h - 13h, 13h - 14h, 14h - 15h, 15h - 16h, 16h - 17h.
+            # Ainsi les séances placées sur ces créneaux s'affichent dans l'EDT
+            # de l'enseignant, et ces créneaux sont proposés dans la liste
+            # « ⏰ Horaire » du mode édition. Liste triée chronologiquement ;
+            # les créneaux déjà présents sont conservés.
+            # ============================================================
+            def _cle_tri_creneau_ens_adm(libelle_creneau):
+                m_cr = re.match(
+                    r'^\s*(\d{1,2})\s*h\s*(\d{0,2})\s*-\s*(\d{1,2})\s*h\s*(\d{0,2})\s*$',
+                    str(libelle_creneau).lower()
+                )
+                if not m_cr:
+                    return (99 * 60, 99 * 60)
+                h_d, mn_d, h_f, mn_f = m_cr.groups()
+                return (int(h_d) * 60 + (int(mn_d) if mn_d else 0),
+                        int(h_f) * 60 + (int(mn_f) if mn_f else 0))
+
+            _creneaux_une_heure_ens_adm = [
+                "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h", "12h - 13h",
+                "13h - 14h", "14h - 15h", "15h - 16h", "16h - 17h"
+            ]
+            _deja_ens_adm = {normalize(h) for h in horaires_list}
+            horaires_list = sorted(
+                list(horaires_list) + [
+                    h for h in _creneaux_une_heure_ens_adm if normalize(h) not in _deja_ens_adm
+                ],
+                key=_cle_tri_creneau_ens_adm
+            )
+            map_h = {normalize(h): h for h in horaires_list}
+
+            # ============================================================
             # CHOIX DU / DES ENSEIGNANTS
             # ============================================================
             liste_enseignants_admin_dispo = sorted([
