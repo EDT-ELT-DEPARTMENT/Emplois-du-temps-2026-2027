@@ -13666,7 +13666,33 @@ td,th{{word-wrap:break-word;}}
             db1, db2, db3, db4, db5 = st.columns(5)
             
             cols_map_temp = detecter_colonnes_etudiant(df_etu_edt)
-            
+
+            # ── Colonnes de contact du fichier source (admin ET compte enseignant) ──
+            # « email » = dernière colonne du fichier ; « N° de téléphone ».
+            def _trouver_colonne_exacte_liste(df_src, noms_possibles, secours=None):
+                def _nc(v):
+                    return re.sub(r'\s+', ' ', str(v).replace('\u00a0', ' ')).strip().casefold()
+                trouvees = [c for c in df_src.columns if _nc(c) in noms_possibles]
+                if trouvees:
+                    return trouvees[-1]
+                return secours if (secours and secours in df_src.columns) else None
+
+            _col_email_liste = _trouver_colonne_exacte_liste(df_etu_edt, {'email'}, cols_map_temp.get('email'))
+            _col_tel_liste = _trouver_colonne_exacte_liste(
+                df_etu_edt,
+                {'n° de téléphone', 'n° de telephone', 'n° téléphone', 'numéro de téléphone', 'numero de telephone'},
+                cols_map_temp.get('telephone')
+            )
+            _cols_contact_liste = [c for c in (_col_email_liste, _col_tel_liste) if c]
+
+            def _ajouter_colonnes_contact(colonnes, df_src):
+                """Ajoute « email » et « N° de téléphone » à la fin de la liste de colonnes exportées."""
+                colonnes = list(colonnes)
+                for c in _cols_contact_liste:
+                    if c in df_src.columns and c not in colonnes:
+                        colonnes.append(c)
+                return colonnes
+
             with db1:
                 if cols_map_temp.get('admis_dette'):
                     df_admis_dette = df_etu_edt[df_etu_edt[cols_map_temp['admis_dette']].astype(str).str.strip().str.upper() == 'OUI'].copy()
@@ -13675,6 +13701,7 @@ td,th{{word-wrap:break-word;}}
                             colonnes_export = [c for c in ['Nom_Complet', cols_map_temp.get('promotion', ''), cols_map_temp.get('mat_etud', ''), cols_map_temp.get('admis_dette', '')] if c and c in df_admis_dette.columns]
                             if not colonnes_export:
                                 colonnes_export = df_admis_dette.columns.tolist()[:4]
+                            colonnes_export = _ajouter_colonnes_contact(colonnes_export, df_admis_dette)
                             
                             excel_buffer = io.BytesIO()
                             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
@@ -13705,6 +13732,7 @@ td,th{{word-wrap:break-word;}}
                             colonnes_export2 = [c for c in ['Nom_Complet', cols_map_temp.get('promotion', ''), cols_map_temp.get('mat_etud', ''), cols_map_temp.get('conge_acad', '')] if c and c in df_conge.columns]
                             if not colonnes_export2:
                                 colonnes_export2 = df_conge.columns.tolist()[:4]
+                            colonnes_export2 = _ajouter_colonnes_contact(colonnes_export2, df_conge)
                             
                             excel_buffer2 = io.BytesIO()
                             with pd.ExcelWriter(excel_buffer2, engine='openpyxl') as writer:
@@ -13762,6 +13790,7 @@ td,th{{word-wrap:break-word;}}
                         
                         if not colonnes_export3:
                             colonnes_export3 = df_special_filtered.columns.tolist()[:4]
+                        colonnes_export3 = _ajouter_colonnes_contact(colonnes_export3, df_special_filtered)
                         
                         excel_buffer3 = io.BytesIO()
                         with pd.ExcelWriter(excel_buffer3, engine='openpyxl') as writer:
@@ -13828,6 +13857,7 @@ td,th{{word-wrap:break-word;}}
                         
                         if not colonnes_export4:
                             colonnes_export4 = df_export.columns.tolist()[:6]
+                        colonnes_export4 = _ajouter_colonnes_contact(colonnes_export4, df_export)
                         
                         try:
                             excel_buffer4 = io.BytesIO()
