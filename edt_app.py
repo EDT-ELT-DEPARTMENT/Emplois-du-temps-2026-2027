@@ -17184,26 +17184,79 @@ def render_download_hub(df_global, user_data, is_admin):
     
     with col3:
         st.markdown("**🏢 Par Lieu**")
-        sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", ["Toutes"] + salles, key="hub_salle")
-        df_filtre_s = df_propre.copy()
-        
-        if sel_salle != "Toutes":
-            df_filtre_s = df_filtre_s[df_filtre_s["Lieu"].astype(str).str.startswith(sel_salle)]
-        
+        # Trois modes : un seul lieu, plusieurs lieux (ajout progressif), tous
+        mode_hub_lieu = st.radio(
+            "Mode de sélection des lieux :",
+            ["Un lieu", "Plusieurs lieux", "Tous les lieux"],
+            horizontal=True,
+            key="hub_mode_lieu"
+        )
+
+        lieux_choisis = []
+        if mode_hub_lieu == "Un lieu":
+            sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", salles, key="hub_salle_unique")
+            lieux_choisis = [sel_salle] if sel_salle else []
+        elif mode_hub_lieu == "Plusieurs lieux":
+            lieux_choisis = st.multiselect(
+                "Choisir les lieux (ajoutez-en progressivement) :",
+                salles,
+                default=salles[:1],
+                key="hub_salles_multi",
+                help="Sélectionnez un lieu, puis ajoutez-en un deuxième, un troisième, etc."
+            )
+
+        _multi_lieux = mode_hub_lieu == "Plusieurs lieux"
+        _tous_lieux = mode_hub_lieu == "Tous les lieux"
+
+        if _tous_lieux:
+            df_filtre_s = df_propre.copy()
+            sel_salle = "Tous"
+        elif not lieux_choisis:
+            st.warning("⚠️ Sélectionnez au moins un lieu.")
+            df_filtre_s = df_propre.iloc[0:0].copy()
+            sel_salle = ""
+        elif _multi_lieux:
+            df_filtre_s = df_propre[df_propre["Lieu"].astype(str).isin(lieux_choisis)].copy()
+            sel_salle = "_".join(lieux_choisis) if len(lieux_choisis) <= 3 else f"{len(lieux_choisis)}_lieux"
+        else:
+            sel_salle = lieux_choisis[0]
+            df_filtre_s = df_propre[df_propre["Lieu"].astype(str).str.startswith(sel_salle)].copy()
+
+        # Nom de fichier sûr (sans espaces ni caractères spéciaux)
+        nom_fichier_lieu = re.sub(r"[^\w\-]+", "_", str(sel_salle)).strip("_") or "Lieux"
+
         c1, c2, c3 = st.columns(3)
-        
+
         # ═══════════════════════════════════════════════════════
-        # PDF : individuel ou global (meme logique que Promotions)
+        # PDF : un lieu (immédiat) / plusieurs lieux ou tous (au clic)
         # ═══════════════════════════════════════════════════════
-        if sel_salle != "Toutes":
-            # Un seul lieu → generation immediate avec grille standard PPER.03
+        if not _tous_lieux and not _multi_lieux and lieux_choisis:
+            # Un seul lieu → génération immédiate avec grille standard PPER.03
             pdf_data_s, _ = generate_edt_individuel_lieu_pdf(df_filtre_s, sel_salle)
             if pdf_data_s is not None:
-                c1.download_button("📄 PDF", pdf_data_s, f"Planning_{sel_salle}_2027.pdf", "application/pdf", use_container_width=True, key="sp")
+                c1.download_button("📄 PDF", pdf_data_s, f"Planning_{nom_fichier_lieu}_2027.pdf", "application/pdf", use_container_width=True, key="sp")
             else:
                 c1.button("📄 PDF", disabled=True, use_container_width=True, key="sp")
-        else:
-            # Tous les lieux → generation au clic avec progression
+        elif _multi_lieux and lieux_choisis:
+            # Plusieurs lieux → un seul PDF, une page par lieu, généré au clic
+            _sig_lieux = "|".join(sorted(lieux_choisis))
+            if c1.button(f"📄 Générer PDF ({len(lieux_choisis)} lieu(x))", use_container_width=True, key="btn_gen_multi_pdf_lieu"):
+                with st.spinner("Préparation du PDF des lieux sélectionnés..."):
+                    prog = st.progress(0, text="Démarrage...")
+                    pdf_multi, err_multi = generate_edt_tous_lieux_pdf(df_filtre_s, progress_bar=prog)
+                    if pdf_multi:
+                        st.session_state['pdf_multi_lieu_data'] = pdf_multi
+                        st.session_state['pdf_multi_lieu_sig'] = _sig_lieux
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Erreur : {err_multi}")
+
+            if st.session_state.get('pdf_multi_lieu_sig') == _sig_lieux and 'pdf_multi_lieu_data' in st.session_state:
+                c1.download_button("⬇️ Télécharger PDF", st.session_state['pdf_multi_lieu_data'],
+                                  f"Planning_{nom_fichier_lieu}_2027.pdf", "application/pdf",
+                                  use_container_width=True, key="dp_down_multi_lieu")
+        elif _tous_lieux:
+            # Tous les lieux → génération au clic avec progression
             if c1.button("📄 Génerer PDF Global", use_container_width=True, key="btn_gen_all_pdf_lieu"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
@@ -17215,19 +17268,26 @@ def render_download_hub(df_global, user_data, is_admin):
                         st.rerun()
                     else:
                         st.error(f"❌ Erreur : {err_all}")
-            
+
             if st.session_state.get('pdf_all_lieu_ready') and 'pdf_all_lieu_data' in st.session_state:
                 c1.download_button("⬇️ Télecharger PDF Global lieu", st.session_state['pdf_all_lieu_data'],
                                   "Planning_Tous_Lieux_2027.pdf", "application/pdf",
                                   use_container_width=True, key="dp_down_lieu")
-        
-        # HTML et Excel (toujours disponibles)
-        html_data_s = generate_pro_html(df_filtre_s, f"Planning {sel_salle}", "Faculté de génie Electrique - UDL-SBA")
-        c2.download_button("🌐 HTML", html_data_s, f"Planning_{sel_salle}_2027.html", "text/html", use_container_width=True, key="sh")
-        xlsx_data_s = generate_pro_excel(df_filtre_s, f"Planning {sel_salle}")
-        c3.download_button("📊 Excel", xlsx_data_s, f"Planning_{sel_salle}_2027.xlsx", 
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="sx")
-    
+        else:
+            c1.button("📄 PDF", disabled=True, use_container_width=True, key="sp_vide")
+
+        # HTML et Excel (toujours disponibles dès qu'un lieu est choisi)
+        if lieux_choisis or _tous_lieux:
+            _titre_lieux = "Tous les lieux" if _tous_lieux else ", ".join(lieux_choisis)
+            html_data_s = generate_pro_html(df_filtre_s, f"Planning {_titre_lieux}", "Faculté de génie Electrique - UDL-SBA")
+            c2.download_button("🌐 HTML", html_data_s, f"Planning_{nom_fichier_lieu}_2027.html", "text/html", use_container_width=True, key="sh")
+            xlsx_data_s = generate_pro_excel(df_filtre_s, f"Planning {_titre_lieux}"[:31])
+            c3.download_button("📊 Excel", xlsx_data_s, f"Planning_{nom_fichier_lieu}_2027.xlsx",
+                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="sx")
+        else:
+            c2.button("🌐 HTML", disabled=True, use_container_width=True, key="sh_vide")
+            c3.button("📊 Excel", disabled=True, use_container_width=True, key="sx_vide")
+
     if is_admin:
         st.divider()
         st.markdown("**🌍 Export Global (Admin)**")
