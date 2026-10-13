@@ -6301,11 +6301,73 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             # ============================================================
             # CHOIX DE LA / DES PROMOTIONS
             # ============================================================
+            # ------------------------------------------------------------
+            # FILTRE PAR DÉPARTEMENT (colonne « Département » : ELT, ELN, AUTO)
+            #   - Tous les départements
+            #   - Un seul département
+            #   - Plusieurs départements (2, 3 ou plus)
+            # La liste des promotions ci-dessous est restreinte aux
+            # départements choisis.
+            # ------------------------------------------------------------
+            df_promos_source = df
+            _sig_dept = "all"
+            if "Département" in df.columns:
+                _dept_norm = (
+                    df["Département"].fillna("").astype(str).str.strip().str.upper()
+                )
+                liste_departements_admin = sorted(
+                    d for d in _dept_norm.unique()
+                    if d and d not in ("NAN", "NONE", "NON DÉFINI")
+                )
+            else:
+                _dept_norm = None
+                liste_departements_admin = []
+
+            if liste_departements_admin:
+                mode_selection_departements = st.radio(
+                    "Mode d'affichage des départements :",
+                    ["Tous les départements", "Un département", "Plusieurs départements"],
+                    horizontal=True,
+                    key="mode_selection_departements_admin"
+                )
+
+                if mode_selection_departements == "Un département":
+                    _dept_choisi = st.selectbox(
+                        "Choisir le département :",
+                        liste_departements_admin,
+                        key="departement_admin_unique"
+                    )
+                    departements_selectionnes = [_dept_choisi]
+                elif mode_selection_departements == "Plusieurs départements":
+                    departements_selectionnes = st.multiselect(
+                        "Choisir les départements (2, 3 ou plus) :",
+                        liste_departements_admin,
+                        default=liste_departements_admin[:2],
+                        key="departements_admin_multiples"
+                    )
+                    if not departements_selectionnes:
+                        st.warning("⚠️ Sélectionnez au moins un département.")
+                        st.stop()
+                else:
+                    departements_selectionnes = list(liste_departements_admin)
+
+                if len(departements_selectionnes) < len(liste_departements_admin):
+                    df_promos_source = df[_dept_norm.isin(departements_selectionnes)]
+                _sig_dept = hashlib.md5(
+                    "|".join(sorted(departements_selectionnes)).encode("utf-8")
+                ).hexdigest()[:6]
+            else:
+                st.info("ℹ️ Colonne « Département » absente ou vide dans le fichier de données : filtre département indisponible.")
+
             liste_promotions_admin = sorted([
                 str(p).strip()
-                for p in df["Promotion"].dropna().unique()
+                for p in df_promos_source["Promotion"].dropna().unique()
                 if str(p).strip() and str(p).strip() != "Non défini"
             ])
+
+            if not liste_promotions_admin:
+                st.warning("⚠️ Aucune promotion trouvée pour ce(s) département(s).")
+                st.stop()
 
             mode_selection_promotions = st.radio(
                 "Mode d'affichage des promotions :",
@@ -6314,11 +6376,13 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 key="mode_selection_promotions_admin"
             )
 
+            # La clé des widgets dépend des départements choisis : la liste
+            # des promotions change, donc les widgets sont réinitialisés.
             if mode_selection_promotions == "Une promotion":
                 p_sel = st.selectbox(
                     "Choisir Promotion :",
                     liste_promotions_admin,
-                    key="promotion_admin_unique"
+                    key=f"promotion_admin_unique_{_sig_dept}"
                 )
                 promotions_selectionnees = [p_sel]
             else:
@@ -6326,7 +6390,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     "Choisir les promotions (sélection progressive) :",
                     liste_promotions_admin,
                     default=liste_promotions_admin[:1],
-                    key="promotions_admin_multiples",
+                    key=f"promotions_admin_multiples_{_sig_dept}",
                     help="Sélectionnez d'abord une promotion, puis ajoutez progressivement une deuxième, une troisième, etc."
                 )
                 if not promotions_selectionnees:
