@@ -17251,6 +17251,9 @@ def render_download_hub(df_global, user_data, is_admin):
     
     with col3:
         st.markdown("**🏢 Par Lieu**")
+        # Filtre par département (liste déroulante) : limite les lieux proposés et l'export « Tous les lieux »
+        df_lieu_src, depts_lieu, suffixe_dept_lieu, sig_dept_lieu = _hub_selection_departements(df_propre, "lieu")
+        salles_hub = sorted([s for s in df_lieu_src["Lieu"].unique() if s and s != "Non defini"])
         # Trois modes : un seul lieu, plusieurs lieux (ajout progressif), tous
         mode_hub_lieu = st.radio(
             "Mode de sélection des lieux :",
@@ -17261,14 +17264,15 @@ def render_download_hub(df_global, user_data, is_admin):
 
         lieux_choisis = []
         if mode_hub_lieu == "Un lieu":
-            sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", salles, key="hub_salle_unique")
+            sel_salle = st.selectbox("Choisir lieu (Salle, Amphi, Labo, Autres)", salles_hub,
+                                     key="hub_salle_unique" if sig_dept_lieu == "all" else f"hub_salle_unique_{sig_dept_lieu}")
             lieux_choisis = [sel_salle] if sel_salle else []
         elif mode_hub_lieu == "Plusieurs lieux":
             lieux_choisis = st.multiselect(
                 "Choisir les lieux (ajoutez-en progressivement) :",
-                salles,
-                default=salles[:1],
-                key="hub_salles_multi",
+                salles_hub,
+                default=salles_hub[:1],
+                key="hub_salles_multi" if sig_dept_lieu == "all" else f"hub_salles_multi_{sig_dept_lieu}",
                 help="Sélectionnez un lieu, puis ajoutez-en un deuxième, un troisième, etc."
             )
 
@@ -17276,7 +17280,7 @@ def render_download_hub(df_global, user_data, is_admin):
         _tous_lieux = mode_hub_lieu == "Tous les lieux"
 
         if _tous_lieux:
-            df_filtre_s = df_propre.copy()
+            df_filtre_s = df_lieu_src.copy()
             sel_salle = "Tous"
         elif not lieux_choisis:
             st.warning("⚠️ Sélectionnez au moins un lieu.")
@@ -17291,6 +17295,8 @@ def render_download_hub(df_global, user_data, is_admin):
 
         # Nom de fichier sûr (sans espaces ni caractères spéciaux)
         nom_fichier_lieu = re.sub(r"[^\w\-]+", "_", str(sel_salle)).strip("_") or "Lieux"
+        if _tous_lieux:
+            nom_fichier_lieu += suffixe_dept_lieu
 
         c1, c2, c3 = st.columns(3)
 
@@ -17327,18 +17333,20 @@ def render_download_hub(df_global, user_data, is_admin):
             if c1.button("📄 Génerer PDF Global", use_container_width=True, key="btn_gen_all_pdf_lieu"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
-                    pdf_data_all, err_all = generate_edt_tous_lieux_pdf(df_propre, progress_bar=prog)
+                    pdf_data_all, err_all = generate_edt_tous_lieux_pdf(df_lieu_src, progress_bar=prog)
                     if pdf_data_all:
                         st.session_state['pdf_all_lieu_data'] = pdf_data_all
                         st.session_state['pdf_all_lieu_ready'] = True
-                        st.success(f"✅ PDF Genere : {len(salles)} lieux")
+                        st.session_state['pdf_all_lieu_sig'] = sig_dept_lieu
+                        st.success(f"✅ PDF Genere : {len(salles_hub)} lieux")
                         st.rerun()
                     else:
                         st.error(f"❌ Erreur : {err_all}")
 
-            if st.session_state.get('pdf_all_lieu_ready') and 'pdf_all_lieu_data' in st.session_state:
+            if (st.session_state.get('pdf_all_lieu_ready') and 'pdf_all_lieu_data' in st.session_state
+                    and st.session_state.get('pdf_all_lieu_sig', 'all') == sig_dept_lieu):
                 c1.download_button("⬇️ Télecharger PDF Global lieu", st.session_state['pdf_all_lieu_data'],
-                                  "Planning_Tous_Lieux_2027.pdf", "application/pdf",
+                                  f"Planning_Tous_Lieux{suffixe_dept_lieu}_2027.pdf", "application/pdf",
                                   use_container_width=True, key="dp_down_lieu")
         else:
             c1.button("📄 PDF", disabled=True, use_container_width=True, key="sp_vide")
@@ -21600,11 +21608,19 @@ if is_admin:
     EMAIL_EXPEDITEUR = "chef.department.elt.fge@gmail.com"
     SECRET_APP = "gkzs pdza yodb icvd"
     
+    # --- EMAILS SAISIS MANUELLEMENT DANS LE TABLEAU (conservés pendant la session) ---
+    if "emails_saisis" not in st.session_state:
+        st.session_state["emails_saisis"] = {}
+
     # --- PRÉPARATION DES DONNÉES ---
     donnees_finales = []
     if df is not None:
         for ens in sorted(df["Enseignants"].unique()):
             email = repertoire_source.get(str(ens).strip().upper(), "Non communiquée")
+            # Email écrit à la main dans le tableau : prioritaire, l'état devient alors « ✅ Prêt »
+            email_saisi = st.session_state["emails_saisis"].get(str(ens).strip().upper())
+            if email_saisi:
+                email = email_saisi
             donnees_finales.append({
                 "Enseignant": ens,
                 "Email": email,
@@ -21628,6 +21644,75 @@ if is_admin:
         if (choix_enseignant == "TOUS" or e["Enseignant"] == choix_enseignant) and
            (choix_statut == "TOUS" or e["État d'envoi"] == choix_statut)
     ]
+    # =============================================================================
+    # TABLEAU ÉDITABLE (colonne Email) + EXPORT EXCEL DU TABLEAU
+    # =============================================================================
+    def tableau_emails_editable(lignes, cle):
+        """Affiche le tableau avec la colonne Email modifiable.
+        Dès qu'une adresse valide est saisie, « État d'envoi » devient « ✅ Prêt »."""
+        df_tab = pd.DataFrame(lignes)
+        signature = hashlib.md5("|".join(df_tab["Enseignant"].astype(str)).encode("utf-8")).hexdigest()[:6]
+        edite = st.data_editor(
+            df_tab,
+            use_container_width=True,
+            hide_index=True,
+            key=f"editeur_emails_{cle}_{signature}",
+            disabled=["Enseignant", "État d'envoi"],
+            column_config={
+                "Email": st.column_config.TextColumn(
+                    "Email",
+                    help="Double-cliquez pour saisir l'adresse email de l'enseignant puis validez avec Entrée."
+                )
+            }
+        )
+        st.caption("✏️ Double-cliquez sur une cellule de la colonne Email pour écrire l'adresse : l'état passe automatiquement à « ✅ Prêt ».")
+
+        def _vide(x):
+            x = "" if pd.isna(x) else str(x).strip()
+            return "" if x in ("Non communiquée", "nan", "None") else x
+
+        modifie = False
+        for i in range(len(df_tab)):
+            ancien = _vide(df_tab.iloc[i]["Email"])
+            nouveau = _vide(edite.iloc[i]["Email"])
+            if nouveau == ancien:
+                continue
+            nom_cle = str(df_tab.iloc[i]["Enseignant"]).strip().upper()
+            if nouveau == "":
+                # Adresse effacée : on retire seulement une saisie manuelle
+                if st.session_state["emails_saisis"].pop(nom_cle, None) is not None:
+                    modifie = True
+            elif re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", nouveau):
+                if st.session_state["emails_saisis"].get(nom_cle) != nouveau:
+                    st.session_state["emails_saisis"][nom_cle] = nouveau
+                    modifie = True
+            else:
+                st.warning(f"⚠️ Adresse invalide pour {df_tab.iloc[i]['Enseignant']} : « {nouveau} »")
+        if modifie:
+            st.rerun()
+
+    def bouton_excel_tableau(lignes, nom_fichier, cle):
+        """Bouton de téléchargement Excel du contenu du tableau affiché."""
+        if not lignes:
+            return
+        df_x = pd.DataFrame(lignes)
+        buffer_x = io.BytesIO()
+        with pd.ExcelWriter(buffer_x, engine='xlsxwriter') as writer_x:
+            df_x.to_excel(writer_x, index=False, sheet_name='Envois')
+            ws_x = writer_x.sheets['Envois']
+            for i_x, col_x in enumerate(df_x.columns):
+                largeur_x = max(df_x[col_x].astype(str).map(len).max(), len(col_x)) + 2
+                ws_x.set_column(i_x, i_x, largeur_x)
+        buffer_x.seek(0)
+        st.download_button(
+            label="📥 Télécharger le tableau en Excel",
+            data=buffer_x,
+            file_name=nom_fichier,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key=f"dl_excel_envois_{cle}"
+        )
+
     # =============================================================================
     # FONCTION DE GÉNÉRATION PDF : GRILLE JOURS × HORAIRES (ISO PPER.03)
     # =============================================================================
@@ -22020,7 +22105,8 @@ if is_admin:
     # AFFICHAGE SELON LE MODE
     # =============================================================================
     if mode_envoi == "Un par un (Individuel)":
-        st.dataframe(pd.DataFrame(enseignants_filtres), use_container_width=True, hide_index=True)
+        tableau_emails_editable(enseignants_filtres, "individuel")
+        bouton_excel_tableau(enseignants_filtres, "Gestion_envois_emails_S1_2027.xlsx", "individuel")
         if st.button("🚀 ENVOYER AUX ENSEIGNANTS FILTRÉS", type="primary", use_container_width=True):
             destinataires = [e for e in enseignants_filtres if "@" in str(e["Email"])]
             if destinataires:
@@ -22037,7 +22123,8 @@ if is_admin:
             st.write(f"🔍 **Prévisualisation de la sélection ({len(selection)}) :**")
             donnees_previsu = [e for e in enseignants_filtres if e["Enseignant"] in selection]
             df_previsu = pd.DataFrame(donnees_previsu)[["Enseignant", "Email", "État d'envoi"]]
-            st.dataframe(df_previsu, use_container_width=True, hide_index=True)
+            tableau_emails_editable(df_previsu.to_dict("records"), "groupee")
+            bouton_excel_tableau(df_previsu.to_dict("records"), "Gestion_envois_selection_S1_2027.xlsx", "groupee")
         
         if st.button("🚀 ENVOYER À LA SÉLECTION", type="primary", use_container_width=True):
             destinataires = [e for e in enseignants_filtres if e["Enseignant"] in selection]
@@ -22061,7 +22148,7 @@ if is_admin:
             nb_ok = sum(1 for e in liste_promo if "@" in str(e["Email"]))
             st.metric("Emails opérationnels", f"{nb_ok} / {len(liste_promo)}")
             
-            st.dataframe(df_export, use_container_width=True, hide_index=True)
+            tableau_emails_editable(liste_promo, "promotion")
     
             # Téléchargement liste Excel
             buffer = io.BytesIO()
