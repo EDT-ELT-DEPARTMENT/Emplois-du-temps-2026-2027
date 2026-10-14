@@ -77,6 +77,196 @@ except ImportError:
     Document = None
 
 # ═══════════════════════════════════════════════════════════════════════════
+# COMPOSANT EDT GLISSER-DÉPOSER (souris) — Vue Administration / Promotion
+#   🔴 cercle rouge = TP   🟦 carré bleu = Cours   🟩 losange vert = TD
+#   glisser la forme vers une autre cellule = déplacer
+#   survoler la forme puis cliquer sur ✕ = supprimer directement
+# ═══════════════════════════════════════════════════════════════════════════
+_EDT_DND_HTML = r"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Source Sans Pro", system-ui, "Segoe UI", Arial, sans-serif; font-size: 13px; color: #1e293b; background: transparent; }
+  table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+  th { background: #1e3a8a; color: #fff; padding: 8px 4px; border: 1px solid #1e3a8a; font-size: 13px; }
+  th.h0 { width: 92px; }
+  td.h { background: #f1f5f9; font-weight: 600; text-align: center; vertical-align: middle; border: 1px solid #94a3b8; color: #1e293b; padding: 6px 4px; }
+  td.c { border: 1px solid #cbd5e1; vertical-align: top; padding: 4px; min-height: 58px; height: 58px; background: #ffffff; transition: background .12s; }
+  td.c.over { background: #dbeafe; outline: 2px dashed #2563eb; outline-offset: -3px; }
+  .vide { color: #cbd5e1; font-size: 12px; text-align: center; padding-top: 14px; user-select: none; }
+  .carte { position: relative; display: flex; gap: 7px; align-items: flex-start; border-left: 3px solid var(--c); background: #f8fafc; border-radius: 4px; padding: 5px 22px 5px 6px; margin: 3px 0; cursor: grab; }
+  .carte.dragging { opacity: .35; }
+  .carte:hover { background: #eef2ff; box-shadow: 0 1px 4px rgba(15,23,42,.18); }
+  .poignee { position: relative; flex: 0 0 20px; width: 20px; height: 20px; margin-top: 1px; cursor: grab; }
+  .forme { position: absolute; inset: 1px; transition: transform .12s; }
+  .poignee:hover .forme { transform: scale(1.2); }
+  .forme.tp { background: #dc2626; border-radius: 50%; }
+  .forme.cours { background: #2563eb; border-radius: 3px; }
+  .forme.td { background: #16a34a; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+  .forme.autre { background: #64748b; border-radius: 3px; }
+  .x { display: none; position: absolute; top: -8px; right: -9px; width: 17px; height: 17px; border-radius: 50%; background: #fff; color: #dc2626; border: 1.5px solid #dc2626; font-size: 11px; line-height: 14px; text-align: center; cursor: pointer; font-weight: 700; z-index: 6; }
+  .x:hover { background: #dc2626; color: #fff; }
+  .poignee:hover .x { display: block; }
+  .ed { display: none; position: absolute; top: 3px; right: 3px; font-size: 12px; cursor: pointer; border: none; background: transparent; padding: 0 2px; }
+  .carte:hover .ed { display: block; }
+  .txt b { font-size: 13px; }
+  .txt small { color: #475569; display: block; }
+  .legende { font-size: 12px; color: #475569; margin: 0 0 6px 2px; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .legende i { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; margin-right: 4px; }
+  .legende .tp { background: #dc2626; border-radius: 50%; }
+  .legende .cours { background: #2563eb; border-radius: 2px; }
+  .legende .td { background: #16a34a; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var ARGS = null;
+  function post(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*"); }
+  function setValue(v) { post("streamlit:setComponentValue", { value: v, dataType: "json" }); }
+  function fit() { post("streamlit:setFrameHeight", { height: document.documentElement.scrollHeight + 6 }); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function nonce() { return Date.now() + "-" + Math.random().toString(36).slice(2, 8); }
+  function classe(t) { return t === "TP" ? "tp" : (t === "COURS" ? "cours" : (t === "TD" ? "td" : "autre")); }
+  function couleur(t) { return t === "TP" ? "#991b1b" : (t === "COURS" ? "#1e40af" : (t === "TD" ? "#166534" : "#475569")); }
+
+  function carte(it) {
+    var c = classe(it.type);
+    return '<div class="carte" draggable="true" data-id="' + esc(it.id) + '" style="--c:' + couleur(it.type) + '">' +
+      '<div class="poignee" title="Glisser pour déplacer \u2022 cliquer sur \u2715 pour supprimer">' +
+        '<div class="forme ' + c + '"></div><div class="x" data-act="delete" title="Supprimer directement">\u2715</div></div>' +
+      '<div class="txt"><b>' + esc(it.titre) + '</b><small>\uD83D\uDC64 ' + esc(it.enseignant) + ' | \uD83D\uDCCD ' + esc(it.lieu) +
+      ' | \uD83C\uDF93 ' + esc(it.promotion) + '</small></div>' +
+      '<button class="ed" data-act="edit" title="\u00c9diter cette cellule">\u270F\uFE0F</button></div>';
+  }
+
+  function render(a) {
+    ARGS = a;
+    var jours = a.jours || [], horaires = a.horaires || [], items = a.items || [];
+    var h = '<div class="legende"><span><i class="tp"></i>TP</span><span><i class="cours"></i>Cours</span><span><i class="td"></i>TD</span>' +
+            '<span>\u2022 Glissez une forme vers une autre cellule pour la d\u00e9placer \u2022 survolez la forme puis cliquez sur \u2715 pour la supprimer</span></div>';
+    h += '<table><thead><tr><th class="h0">\u23F0 Horaire</th>';
+    jours.forEach(function (j) { h += '<th>' + esc(j) + '</th>'; });
+    h += '</tr></thead><tbody>';
+    horaires.forEach(function (hr) {
+      h += '<tr><td class="h">' + esc(hr) + '</td>';
+      jours.forEach(function (j) {
+        h += '<td class="c" data-j="' + esc(j) + '" data-h="' + esc(hr) + '">';
+        var n = 0;
+        items.forEach(function (it) { if (it.jour === j && it.horaire === hr) { h += carte(it); n++; } });
+        if (!n) h += '<div class="vide">\u2014</div>';
+        h += '</td>';
+      });
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+    document.getElementById("root").innerHTML = h;
+    fit();
+  }
+
+  function itemById(id) { var r = null; (ARGS.items || []).forEach(function (it) { if (String(it.id) === String(id)) r = it; }); return r; }
+  function majVides() {
+    document.querySelectorAll("td.c").forEach(function (td) {
+      var v = td.querySelector(".vide"), nb = td.querySelectorAll(".carte").length;
+      if (nb && v) v.remove();
+      if (!nb && !v) { var d = document.createElement("div"); d.className = "vide"; d.innerHTML = "\u2014"; td.appendChild(d); }
+    });
+  }
+  var dragId = null;
+  var root = document.getElementById("root");
+  root.addEventListener("dragstart", function (e) {
+    var c = e.target.closest ? e.target.closest(".carte") : null;
+    if (!c) return;
+    dragId = c.getAttribute("data-id");
+    e.dataTransfer.setData("text/plain", dragId); e.dataTransfer.effectAllowed = "move";
+    setTimeout(function () { c.classList.add("dragging"); }, 0);
+  });
+  root.addEventListener("dragend", function () {
+    dragId = null;
+    document.querySelectorAll(".dragging").forEach(function (x) { x.classList.remove("dragging"); });
+    document.querySelectorAll("td.over").forEach(function (x) { x.classList.remove("over"); });
+  });
+  root.addEventListener("dragover", function (e) {
+    var td = e.target.closest ? e.target.closest("td.c") : null;
+    if (!td || dragId === null) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = "move"; td.classList.add("over");
+  });
+  root.addEventListener("dragleave", function (e) {
+    var td = e.target.closest ? e.target.closest("td.c") : null;
+    if (td && !td.contains(e.relatedTarget)) td.classList.remove("over");
+  });
+  root.addEventListener("drop", function (e) {
+    var td = e.target.closest ? e.target.closest("td.c") : null;
+    if (!td || dragId === null) return;
+    e.preventDefault(); td.classList.remove("over");
+    var it = itemById(dragId); var carteEl = root.querySelector('.carte[data-id="' + dragId + '"]');
+    dragId = null;
+    if (!it || !carteEl) return;
+    var j = td.getAttribute("data-j"), hr = td.getAttribute("data-h");
+    if (it.jour === j && it.horaire === hr) { carteEl.classList.remove("dragging"); return; }   // même cellule : rien à faire
+    carteEl.classList.remove("dragging"); td.appendChild(carteEl);                                // retour visuel immédiat
+    it.jour = j; it.horaire = hr; majVides(); fit();
+    setValue({ action: "move", idx: it.idx, sig: it.sig, jour: j, horaire: hr, nonce: nonce() });
+  });
+  root.addEventListener("click", function (e) {
+    var b = e.target.closest ? e.target.closest("[data-act]") : null;
+    if (!b) return;
+    var c = b.closest(".carte"); if (!c) return;
+    var it = itemById(c.getAttribute("data-id")); if (!it) return;
+    e.stopPropagation();
+    if (b.getAttribute("data-act") === "delete") {
+      c.remove(); majVides(); fit();
+      setValue({ action: "delete", idx: it.idx, sig: it.sig, nonce: nonce() });
+    } else if (b.getAttribute("data-act") === "edit") {
+      setValue({ action: "edit", idx: it.idx, sig: it.sig, nonce: nonce() });
+    }
+  });
+
+  window.addEventListener("message", function (ev) {
+    if (ev.data && ev.data.type === "streamlit:render") render(ev.data.args || {});
+  });
+  window.addEventListener("resize", fit);
+  post("streamlit:componentReady", { apiVersion: 1 });
+</script>
+</body>
+</html>
+"""
+
+
+@st.cache_resource(show_spinner=False)
+def _composant_edt_dnd():
+    """Déclare (une seule fois) le composant HTML/JS de l'EDT glisser-déposer."""
+    import tempfile
+    import streamlit.components.v1 as components
+    try:
+        base_app = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        base_app = os.getcwd()
+    dossiers = [
+        os.path.join(base_app, "composant_edt_dnd"),
+        os.path.join(tempfile.gettempdir(), "composant_edt_dnd"),
+    ]
+    derniere_erreur = None
+    for dossier in dossiers:
+        try:
+            os.makedirs(dossier, exist_ok=True)
+            chemin_html = os.path.join(dossier, "index.html")
+            contenu_actuel = None
+            if os.path.exists(chemin_html):
+                with open(chemin_html, "r", encoding="utf-8") as f_lecture:
+                    contenu_actuel = f_lecture.read()
+            if contenu_actuel != _EDT_DND_HTML:
+                with open(chemin_html, "w", encoding="utf-8") as f_ecriture:
+                    f_ecriture.write(_EDT_DND_HTML)
+            return components.declare_component("edt_dnd_grille", path=dossier)
+        except Exception as e_comp:
+            derniere_erreur = e_comp
+    raise RuntimeError(f"Composant glisser-déposer indisponible : {derniere_erreur}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # FONCTIONS UTILITAIRES : Demande EDT + Email Admin
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -7547,135 +7737,327 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     else:
                         horaires_affiches = horaires_list
 
-                entetes = st.columns([1.1] + [1] * len(jours_list))
-                with entetes[0]:
-                    st.markdown("**\u23F0 Horaire**")
-                for num_jour, jour in enumerate(jours_list, start=1):
-                    with entetes[num_jour]:
-                        st.markdown(f"**{jour}**")
-
-                for horaire in horaires_affiches:
-                    colonnes = st.columns([1.1] + [1] * len(jours_list))
-                    with colonnes[0]:
-                        st.markdown(
-                            f"<div style='background:#f1f5f9;border:1px solid #94a3b8;"
-                            f"border-radius:6px;padding:8px;text-align:center;"
-                            f"font-weight:600;color:#1e293b;'>{horaire}</div>",
-                            unsafe_allow_html=True
-                        )
-                    for num_jour, jour in enumerate(jours_list, start=1):
-                        with colonnes[num_jour]:
-                            cle_creneau = (normalize(horaire), normalize(jour))
-                            indices_creneau = enseignements_par_creneau.get(cle_creneau, [])
-
-                            # Conteneur repr\u00e9sentant la cellule de l'EDT :
-                            # les widgets (boutons \u00e9diter / glisser / supprimer /
-                            # d\u00e9poser) sont plac\u00e9s \u00e0 l'int\u00e9rieur.
-                            cellule = st.container(border=True)
-
-                            with cellule:
-                                for idx_creneau in indices_creneau:
-                                    r = df_edt_interactif.loc[idx_creneau]
-                                    code_up = str(r["Code"]).upper()
-                                    couleur = "#1e40af" if "COURS" in code_up else (
-                                        "#166534" if "TD" in code_up else "#991b1b")
-                                    nature = "\U0001F4D8" if "COURS" in code_up else (
-                                        "\U0001F4D7" if "TD" in code_up else "\U0001F534")
-
-                                    est_saisi = (
-                                        st.session_state[cle_glisser] == idx_creneau
-                                    )
-                                    fond_carte = "#fde68a" if est_saisi else "#f8fafc"
-                                    st.markdown(
-                                        f"<div style='border-left:3px solid {couleur};"
-                                        f"padding:4px;margin:2px 0;background:{fond_carte};"
-                                        f"border-radius:4px;'>"
-                                        f"<b>{nature} {r['Enseignements']}</b><br>"
-                                        f"<small>\U0001F464 {r['Enseignants']} | "
-                                        f"\U0001F4CD {r['Lieu']}</small>"
-                                        f"</div>",
-                                        unsafe_allow_html=True
-                                    )
-
-                                    c_b1, c_b2, c_b3 = st.columns(3)
-                                    if c_b1.button(
-                                        "\u270f\ufe0f",
-                                        key=f"btn_cell_edit_{idx_creneau}",
-                                        help="\u00c9diter cette cellule"
-                                    ):
-                                        # Purge des anciennes saisies du formulaire
-                                        # d'\u00e9dition afin que les valeurs actuelles
-                                        # de la cellule soient bien affich\u00e9es.
-                                        try:
-                                            for cle_widget in list(st.session_state.keys()):
-                                                if str(cle_widget).startswith("edit_"):
-                                                    st.session_state.pop(cle_widget, None)
-                                        except Exception:
-                                            pass
-                                        st.session_state[cle_edition] = idx_creneau
-                                        st.session_state[cle_glisser] = None
-                                        st.session_state[cle_suppression] = None
-                                        st.rerun()
-                                    if c_b2.button(
-                                        "\u270b\ufe0f",
-                                        key=f"btn_cell_drag_{idx_creneau}",
-                                        help="Saisir pour glisser vers une autre cellule "
-                                             "(cliquer \u00e0 nouveau pour changer d'\u00e9l\u00e9ment)"
-                                    ):
-                                        st.session_state[cle_glisser] = idx_creneau
-                                        st.rerun()
-                                    if c_b3.button(
-                                        "\U0001F5D1\ufe0f",
-                                        key=f"btn_cell_del_{idx_creneau}",
-                                        help="Supprimer cet enseignement"
-                                    ):
-                                        st.session_state[cle_suppression] = idx_creneau
-                                        st.rerun()
-
-                                if en_glissement:
-                                    # Bouton de d\u00e9p\u00f4t disponible dans chaque
-                                    # cellule (y compris les cellules occup\u00e9es :
-                                    # deux enseignements peuvent coexister dans
-                                    # un m\u00eame cr\u00e9neau), sauf dans la cellule
-                                    # d'origine du glissement (d\u00e9p\u00f4t inutile).
-                                    cellule_est_origine = any(
-                                        st.session_state[cle_glisser] == idx_origine
-                                        for idx_origine in indices_creneau
-                                    )
-                                    if not cellule_est_origine and st.button(
-                                        "\U0001F4CD D\u00e9poser ici",
-                                        key=f"btn_drop_{normalize(horaire)}_{normalize(jour)}",
-                                        use_container_width=True,
-                                        type="primary"
-                                    ):
-                                        idx_deplace = st.session_state[cle_glisser]
-                                        try:
-                                            df.loc[idx_deplace, "Jours"] = jour
-                                            df.loc[idx_deplace, "Horaire"] = horaire
-                                            df.loc[idx_deplace, "j_norm"] = normalize(jour)
-                                            df.loc[idx_deplace, "h_norm"] = normalize(horaire)
-                                            _sauvegarder_fichier_edt_source()
-                                            st.success(
-                                                f"\u2705 D\u00e9plac\u00e9 vers "
-                                                f"{jour} \u2014 {horaire}"
-                                            )
-                                            st.session_state[cle_glisser] = None
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Erreur de d\u00e9placement : {e}")
-                                elif not indices_creneau:
-                                    st.markdown(
-                                        "<div style='color:#94a3b8;font-size:12px;"
-                                        "text-align:center;'>&mdash;</div>",
-                                        unsafe_allow_html=True
-                                    )
-
-                st.caption(
-                    "\u270f\ufe0f \u00c9diter \u2022 \u270b\ufe0f Saisir/Glisser \u2022 "
-                    "\U0001F4CD D\u00e9poser ici \u2022 \U0001F5D1\ufe0f Supprimer \u2014 "
-                    "Les modifications sont enregistr\u00e9es dans le fichier "
-                    f"`{os.path.basename(NOM_FICHIER_FIXE)}`."
+                # --------------------------------------------------------
+                # CHOIX DU MODE D'AFFICHAGE DE LA GRILLE D'ÉDITION
+                #   • Glisser-déposer à la souris (par défaut)
+                #   • Grille à boutons (méthode classique ✏️ ✋ 📍 🗑️)
+                # --------------------------------------------------------
+                utiliser_dnd_edt = st.checkbox(
+                    "\U0001F5B1\ufe0f Glisser-d\u00e9poser \u00e0 la souris "
+                    "(\U0001F534 TP \u00b7 \U0001F7E6 Cours \u00b7 \U0001F7E9 TD)",
+                    value=True,
+                    key="edt_dnd_actif_promo",
+                    help="Glissez la forme (cercle rouge = TP, carr\u00e9 bleu = Cours, "
+                         "losange vert = TD) vers une autre cellule pour la d\u00e9placer ; "
+                         "survolez la forme puis cliquez sur \u2715 pour la supprimer "
+                         "directement. D\u00e9cochez pour revenir \u00e0 la grille \u00e0 boutons."
                 )
+
+                if utiliser_dnd_edt:
+                    # ====================================================
+                    # GRILLE GLISSER-DÉPOSER À LA SOURIS
+                    #   🔴 cercle rouge = TP   🟦 carré bleu = Cours   🟩 losange vert = TD
+                    #   ↔ glisser la forme vers une autre cellule = déplacer
+                    #   ✕ survoler la forme puis cliquer sur ✕ = supprimer directement
+                    #   ✏️ au survol de la carte = éditer (formulaire ci-dessus)
+                    # Les modifications sont enregistrées dans le fichier source
+                    # (NOM_FICHIER_FIXE) comme dans la grille à boutons.
+                    # ====================================================
+                    message_dnd = st.session_state.pop("edt_dnd_message", None)
+                    if message_dnd:
+                        st.success(message_dnd)
+
+                    # Créneaux affichés : les 6 créneaux standard de 1h30 (pour pouvoir
+                    # déposer dans une cellule vide) + tout créneau déjà utilisé.
+                    creneaux_standard_dnd = [
+                        "8h - 9h30", "9h30 - 11h", "11h - 12h30",
+                        "12h30 - 14h", "14h - 15h30", "15h30 - 17h"
+                    ]
+                    if creneaux_choisis is not None:
+                        horaires_dnd = list(creneaux_choisis)
+                    else:
+                        _norm_standard_dnd = {normalize(h) for h in creneaux_standard_dnd}
+                        horaires_dnd = [
+                            h for h in horaires_list
+                            if normalize(h) in _norm_standard_dnd
+                            or any((normalize(h), normalize(j)) in enseignements_par_creneau
+                                   for j in jours_list)
+                        ]
+
+                    def _sig_ligne_dnd(idx_ligne):
+                        """Signature d'une ligne : protège contre une action sur une ligne périmée."""
+                        r_sig = df.loc[idx_ligne]
+                        brut_sig = "|".join(
+                            str(r_sig[c_sig]) for c_sig in
+                            ["Enseignements", "Code", "Enseignants", "Jours", "Horaire", "Lieu", "Promotion"]
+                        )
+                        return hashlib.md5(f"{idx_ligne}|{brut_sig}".encode("utf-8")).hexdigest()[:10]
+
+                    map_h_dnd = {normalize(h): h for h in horaires_dnd}
+                    map_j_dnd = {normalize(j): j for j in jours_list}
+                    items_dnd = []
+                    for idx_dnd_item in df_edt_interactif.index:
+                        r_dnd = df_edt_interactif.loc[idx_dnd_item]
+                        jour_item = map_j_dnd.get(normalize(r_dnd["Jours"]))
+                        horaire_item = map_h_dnd.get(normalize(r_dnd["Horaire"]))
+                        if jour_item is None or horaire_item is None:
+                            continue
+                        type_item = str(r_dnd["_type_affichage_admin"])
+                        items_dnd.append({
+                            "id": f"l{idx_dnd_item}",
+                            "idx": int(idx_dnd_item),
+                            "sig": _sig_ligne_dnd(idx_dnd_item),
+                            "jour": jour_item,
+                            "horaire": horaire_item,
+                            "type": type_item,
+                            "titre": str(r_dnd["Enseignements"]),
+                            "enseignant": str(r_dnd["Enseignants"]),
+                            "lieu": str(r_dnd["Lieu"]),
+                            "promotion": str(r_dnd["Promotion"]),
+                        })
+
+                    action_dnd = None
+                    try:
+                        action_dnd = _composant_edt_dnd()(
+                            jours=list(jours_list),
+                            horaires=list(horaires_dnd),
+                            items=items_dnd,
+                            key="edt_dnd_grille_promo",
+                            default=None
+                        )
+                    except Exception as e_dnd:
+                        st.error(
+                            f"\u26a0\ufe0f Grille glisser-d\u00e9poser indisponible ({e_dnd}). "
+                            "D\u00e9cochez l'option ci-dessus pour utiliser la grille \u00e0 boutons."
+                        )
+
+                    # --- Traitement de l'action reçue du composant (une seule fois par action) ---
+                    if isinstance(action_dnd, dict) and action_dnd.get("nonce"):
+                        nonce_dnd = str(action_dnd.get("nonce"))
+                        if nonce_dnd != st.session_state.get("edt_dnd_dernier_nonce"):
+                            st.session_state["edt_dnd_dernier_nonce"] = nonce_dnd
+                            type_action_dnd = action_dnd.get("action")
+                            try:
+                                idx_action_dnd = int(action_dnd.get("idx"))
+                            except Exception:
+                                idx_action_dnd = None
+
+                            if (idx_action_dnd is None or idx_action_dnd not in df.index
+                                    or _sig_ligne_dnd(idx_action_dnd) != action_dnd.get("sig")):
+                                st.warning(
+                                    "\u26a0\ufe0f L'EDT a chang\u00e9 entre-temps : action ignor\u00e9e, "
+                                    "veuillez r\u00e9essayer."
+                                )
+                            elif type_action_dnd == "move":
+                                jour_dest_dnd = str(action_dnd.get("jour"))
+                                horaire_dest_dnd = str(action_dnd.get("horaire"))
+                                if jour_dest_dnd not in jours_list or horaire_dest_dnd not in horaires_list:
+                                    st.warning("\u26a0\ufe0f Cellule de destination inconnue : d\u00e9placement ignor\u00e9.")
+                                else:
+                                    info_avant_dnd = _info_ligne_edt(idx_action_dnd)
+                                    st.session_state["edt_dnd_annuler"] = df.copy()
+                                    try:
+                                        df.loc[idx_action_dnd, "Jours"] = jour_dest_dnd
+                                        df.loc[idx_action_dnd, "Horaire"] = horaire_dest_dnd
+                                        df.loc[idx_action_dnd, "j_norm"] = normalize(jour_dest_dnd)
+                                        df.loc[idx_action_dnd, "h_norm"] = normalize(horaire_dest_dnd)
+                                        _sauvegarder_fichier_edt_source()
+                                        st.session_state["edt_dnd_message"] = (
+                                            f"\u2705 D\u00e9plac\u00e9 : {info_avant_dnd} "
+                                            f"\u2192 {jour_dest_dnd} \u2014 {horaire_dest_dnd}"
+                                        )
+                                        st.rerun()
+                                    except Exception as e_move:
+                                        st.error(f"Erreur de d\u00e9placement : {e_move}")
+                            elif type_action_dnd == "delete":
+                                info_sup_dnd = _info_ligne_edt(idx_action_dnd)
+                                st.session_state["edt_dnd_annuler"] = df.copy()
+                                try:
+                                    df.drop(index=idx_action_dnd, inplace=True)
+                                    df.reset_index(drop=True, inplace=True)
+                                    _sauvegarder_fichier_edt_source()
+                                    # Les indices changent apr\u00e8s suppression : on
+                                    # r\u00e9initialise toutes les actions en cours.
+                                    st.session_state[cle_suppression] = None
+                                    st.session_state[cle_edition] = None
+                                    st.session_state[cle_glisser] = None
+                                    st.session_state["edt_dnd_message"] = (
+                                        f"\U0001F5D1\ufe0f Supprim\u00e9 : {info_sup_dnd}"
+                                    )
+                                    st.rerun()
+                                except Exception as e_sup:
+                                    st.error(f"Erreur de suppression : {e_sup}")
+                            elif type_action_dnd == "edit":
+                                # Purge des anciennes saisies du formulaire d'\u00e9dition
+                                try:
+                                    for cle_widget in list(st.session_state.keys()):
+                                        if str(cle_widget).startswith("edit_"):
+                                            st.session_state.pop(cle_widget, None)
+                                except Exception:
+                                    pass
+                                st.session_state[cle_edition] = idx_action_dnd
+                                st.session_state[cle_glisser] = None
+                                st.session_state[cle_suppression] = None
+                                st.rerun()
+
+                    # --- Annulation de la dernière modification (déplacement / suppression) ---
+                    if st.session_state.get("edt_dnd_annuler") is not None:
+                        if st.button(
+                            "\u21a9\ufe0f Annuler la derni\u00e8re modification (d\u00e9placement ou suppression)",
+                            key="btn_annuler_dnd_edt",
+                            use_container_width=True
+                        ):
+                            df_retour_dnd = st.session_state["edt_dnd_annuler"].copy()
+                            for colonne_technique in ["h_norm", "j_norm", "_type_affichage_admin"]:
+                                if colonne_technique in df_retour_dnd.columns:
+                                    df_retour_dnd = df_retour_dnd.drop(columns=[colonne_technique])
+                            try:
+                                df_retour_dnd.to_excel(NOM_FICHIER_FIXE, index=False)
+                                st.session_state["edt_dnd_annuler"] = None
+                                st.session_state["edt_dnd_message"] = (
+                                    "\u21a9\ufe0f Derni\u00e8re modification annul\u00e9e."
+                                )
+                                st.rerun()
+                            except Exception as e_annul:
+                                st.error(f"Erreur d'annulation : {e_annul}")
+
+                    st.caption(
+                        "\U0001F534 TP \u2022 \U0001F7E6 Cours \u2022 \U0001F7E9 TD \u2014 "
+                        "Glissez la forme vers une autre cellule pour la d\u00e9placer, "
+                        "survolez-la puis cliquez sur \u2715 pour la supprimer directement. "
+                        "Les modifications sont enregistr\u00e9es dans le fichier "
+                        f"`{os.path.basename(NOM_FICHIER_FIXE)}`."
+                    )
+                else:
+                    entetes = st.columns([1.1] + [1] * len(jours_list))
+                    with entetes[0]:
+                        st.markdown("**\u23F0 Horaire**")
+                    for num_jour, jour in enumerate(jours_list, start=1):
+                        with entetes[num_jour]:
+                            st.markdown(f"**{jour}**")
+
+                    for horaire in horaires_affiches:
+                        colonnes = st.columns([1.1] + [1] * len(jours_list))
+                        with colonnes[0]:
+                            st.markdown(
+                                f"<div style='background:#f1f5f9;border:1px solid #94a3b8;"
+                                f"border-radius:6px;padding:8px;text-align:center;"
+                                f"font-weight:600;color:#1e293b;'>{horaire}</div>",
+                                unsafe_allow_html=True
+                            )
+                        for num_jour, jour in enumerate(jours_list, start=1):
+                            with colonnes[num_jour]:
+                                cle_creneau = (normalize(horaire), normalize(jour))
+                                indices_creneau = enseignements_par_creneau.get(cle_creneau, [])
+
+                                # Conteneur repr\u00e9sentant la cellule de l'EDT :
+                                # les widgets (boutons \u00e9diter / glisser / supprimer /
+                                # d\u00e9poser) sont plac\u00e9s \u00e0 l'int\u00e9rieur.
+                                cellule = st.container(border=True)
+
+                                with cellule:
+                                    for idx_creneau in indices_creneau:
+                                        r = df_edt_interactif.loc[idx_creneau]
+                                        code_up = str(r["Code"]).upper()
+                                        couleur = "#1e40af" if "COURS" in code_up else (
+                                            "#166534" if "TD" in code_up else "#991b1b")
+                                        nature = "\U0001F4D8" if "COURS" in code_up else (
+                                            "\U0001F4D7" if "TD" in code_up else "\U0001F534")
+
+                                        est_saisi = (
+                                            st.session_state[cle_glisser] == idx_creneau
+                                        )
+                                        fond_carte = "#fde68a" if est_saisi else "#f8fafc"
+                                        st.markdown(
+                                            f"<div style='border-left:3px solid {couleur};"
+                                            f"padding:4px;margin:2px 0;background:{fond_carte};"
+                                            f"border-radius:4px;'>"
+                                            f"<b>{nature} {r['Enseignements']}</b><br>"
+                                            f"<small>\U0001F464 {r['Enseignants']} | "
+                                            f"\U0001F4CD {r['Lieu']}</small>"
+                                            f"</div>",
+                                            unsafe_allow_html=True
+                                        )
+
+                                        c_b1, c_b2, c_b3 = st.columns(3)
+                                        if c_b1.button(
+                                            "\u270f\ufe0f",
+                                            key=f"btn_cell_edit_{idx_creneau}",
+                                            help="\u00c9diter cette cellule"
+                                        ):
+                                            # Purge des anciennes saisies du formulaire
+                                            # d'\u00e9dition afin que les valeurs actuelles
+                                            # de la cellule soient bien affich\u00e9es.
+                                            try:
+                                                for cle_widget in list(st.session_state.keys()):
+                                                    if str(cle_widget).startswith("edit_"):
+                                                        st.session_state.pop(cle_widget, None)
+                                            except Exception:
+                                                pass
+                                            st.session_state[cle_edition] = idx_creneau
+                                            st.session_state[cle_glisser] = None
+                                            st.session_state[cle_suppression] = None
+                                            st.rerun()
+                                        if c_b2.button(
+                                            "\u270b\ufe0f",
+                                            key=f"btn_cell_drag_{idx_creneau}",
+                                            help="Saisir pour glisser vers une autre cellule "
+                                                 "(cliquer \u00e0 nouveau pour changer d'\u00e9l\u00e9ment)"
+                                        ):
+                                            st.session_state[cle_glisser] = idx_creneau
+                                            st.rerun()
+                                        if c_b3.button(
+                                            "\U0001F5D1\ufe0f",
+                                            key=f"btn_cell_del_{idx_creneau}",
+                                            help="Supprimer cet enseignement"
+                                        ):
+                                            st.session_state[cle_suppression] = idx_creneau
+                                            st.rerun()
+
+                                    if en_glissement:
+                                        # Bouton de d\u00e9p\u00f4t disponible dans chaque
+                                        # cellule (y compris les cellules occup\u00e9es :
+                                        # deux enseignements peuvent coexister dans
+                                        # un m\u00eame cr\u00e9neau), sauf dans la cellule
+                                        # d'origine du glissement (d\u00e9p\u00f4t inutile).
+                                        cellule_est_origine = any(
+                                            st.session_state[cle_glisser] == idx_origine
+                                            for idx_origine in indices_creneau
+                                        )
+                                        if not cellule_est_origine and st.button(
+                                            "\U0001F4CD D\u00e9poser ici",
+                                            key=f"btn_drop_{normalize(horaire)}_{normalize(jour)}",
+                                            use_container_width=True,
+                                            type="primary"
+                                        ):
+                                            idx_deplace = st.session_state[cle_glisser]
+                                            try:
+                                                df.loc[idx_deplace, "Jours"] = jour
+                                                df.loc[idx_deplace, "Horaire"] = horaire
+                                                df.loc[idx_deplace, "j_norm"] = normalize(jour)
+                                                df.loc[idx_deplace, "h_norm"] = normalize(horaire)
+                                                _sauvegarder_fichier_edt_source()
+                                                st.success(
+                                                    f"\u2705 D\u00e9plac\u00e9 vers "
+                                                    f"{jour} \u2014 {horaire}"
+                                                )
+                                                st.session_state[cle_glisser] = None
+                                                st.rerun()
+                                            except Exception as e:
+                                                st.error(f"Erreur de d\u00e9placement : {e}")
+                                    elif not indices_creneau:
+                                        st.markdown(
+                                            "<div style='color:#94a3b8;font-size:12px;"
+                                            "text-align:center;'>&mdash;</div>",
+                                            unsafe_allow_html=True
+                                        )
+
+                    st.caption(
+                        "\u270f\ufe0f \u00c9diter \u2022 \u270b\ufe0f Saisir/Glisser \u2022 "
+                        "\U0001F4CD D\u00e9poser ici \u2022 \U0001F5D1\ufe0f Supprimer \u2014 "
+                        "Les modifications sont enregistr\u00e9es dans le fichier "
+                        f"`{os.path.basename(NOM_FICHIER_FIXE)}`."
+                    )
 
                 # Ajout d'un nouvel enseignement dans une cellule vide
                 st.markdown("##### \u2795 Ajouter un enseignement \u00e0 l'EDT")
