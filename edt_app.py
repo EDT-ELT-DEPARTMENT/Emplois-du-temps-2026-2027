@@ -22430,7 +22430,7 @@ if is_admin:
         # ═══════════════════════════════════════════════════════════════
         
         # Définition locale (sécurité contre NameError)
-        colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+        colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion', 'Département']
         
         # Vérification que df est bien chargé
         if df is None or df.empty:
