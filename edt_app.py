@@ -16997,13 +16997,69 @@ def render_download_hub(df_global, user_data, is_admin):
     profs = sorted([p for p in df_propre["Enseignants"].unique() if p and p != "Non defini"])
     salles = sorted([s for s in df_propre["Lieu"].unique() if s and s != "Non defini"])
 
+    def _hub_selection_departements(df_src, cle):
+        """Liste déroulante des départements (colonne « Département ») : Tous / Un seul / Plusieurs.
+        Retourne (df filtré, départements retenus, suffixe de nom de fichier, signature de la sélection)."""
+        if "Département" not in df_src.columns:
+            st.caption("ℹ️ Colonne « Département » absente : filtre département indisponible.")
+            return df_src, [], "", "all"
+        dept_norm = df_src["Département"].fillna("").astype(str).str.strip().str.upper()
+        liste_dept = sorted(
+            d for d in dept_norm.unique()
+            if d and d not in ("NAN", "NONE", "NON DÉFINI", "NON DEFINI")
+        )
+        if not liste_dept:
+            return df_src, [], "", "all"
+
+        mode_dept = st.radio(
+            "Mode d'affichage des départements :",
+            ["Tous les départements", "Un département", "Plusieurs départements"],
+            horizontal=True,
+            key=f"hub_mode_dept_{cle}"
+        )
+        if mode_dept == "Un département":
+            dept_choisi = st.selectbox(
+                "Choisir le département :",
+                liste_dept,
+                key=f"hub_dept_unique_{cle}"
+            )
+            depts_retenus = [dept_choisi]
+        elif mode_dept == "Plusieurs départements":
+            depts_retenus = st.multiselect(
+                "Choisir les départements (2, 3 ou plus) :",
+                liste_dept,
+                default=liste_dept[:2],
+                key=f"hub_dept_multi_{cle}"
+            )
+            if not depts_retenus:
+                st.warning("⚠️ Aucun département sélectionné : tous les départements sont pris en compte.")
+                depts_retenus = list(liste_dept)
+        else:
+            depts_retenus = list(liste_dept)
+
+        if len(depts_retenus) >= len(liste_dept):
+            return df_src, list(liste_dept), "", "all"
+
+        sig = hashlib.md5("|".join(sorted(depts_retenus)).encode("utf-8")).hexdigest()[:6]
+        noms_sûrs = [re.sub(r"[^\w\-]", "", d) for d in depts_retenus]
+        if len(noms_sûrs) <= 3:
+            suffixe = "_" + "_".join(noms_sûrs)
+        else:
+            suffixe = f"_{len(noms_sûrs)}departements"
+        return df_src[dept_norm.isin(depts_retenus)], depts_retenus, suffixe, sig
+
     col1, col2, col3 = st.columns(3)
 
     with col1:
     
         st.markdown("**🎓 Par Promotion**")
-        sel_promo = st.selectbox("Choisir promotion", ["Toutes"] + promos, key="hub_promo")
-        df_filtre = df_propre.copy()
+        # Filtre par département (liste déroulante) : limite les promotions proposées et les exports « Toutes »
+        df_promo_src, depts_promo, suffixe_dept_promo, sig_dept_promo = _hub_selection_departements(df_propre, "promo")
+        promos_hub = sorted([p for p in df_promo_src["Promotion"].unique() if p and p != "Non defini"])
+        sel_promo = st.selectbox("Choisir promotion", ["Toutes"] + promos_hub,
+                                 key="hub_promo" if sig_dept_promo == "all" else f"hub_promo_{sig_dept_promo}")
+        suffixe_fichier_promo = suffixe_dept_promo if sel_promo == "Toutes" else ""
+        df_filtre = df_promo_src.copy()
         if sel_promo != "Toutes":
             df_filtre = df_filtre[df_filtre["Promotion"] == sel_promo]
         c1, c2, c3 = st.columns(3)
@@ -17023,33 +17079,42 @@ def render_download_hub(df_global, user_data, is_admin):
             if c1.button("📄 Générer PDF Global promotions", use_container_width=True, key="btn_gen_all_pdf_promo"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
-                    pdf_data_all, err_all = generate_edt_toutes_promotions_pdf(df_propre, progress_bar=prog)
+                    pdf_data_all, err_all = generate_edt_toutes_promotions_pdf(df_promo_src, progress_bar=prog)
                     if pdf_data_all:
                         st.session_state['pdf_all_promo_data'] = pdf_data_all
                         st.session_state['pdf_all_promo_ready'] = True
-                        st.success(f"✅ PDF Généré : {len(promos)} promotions")
+                        st.session_state['pdf_all_promo_sig'] = sig_dept_promo
+                        st.success(f"✅ PDF Généré : {len(promos_hub)} promotions")
                         st.rerun()
                     else:
                         st.error(f"❌ Erreur : {err_all}")
             
-            if st.session_state.get('pdf_all_promo_ready') and 'pdf_all_promo_data' in st.session_state:
+            if (st.session_state.get('pdf_all_promo_ready') and 'pdf_all_promo_data' in st.session_state
+                    and st.session_state.get('pdf_all_promo_sig', 'all') == sig_dept_promo):
                 c1.download_button("⬇️ Télecharger PDF Global promotion", st.session_state['pdf_all_promo_data'],
-                                  "EDT_Toutes_Promotions_2027.pdf", "application/pdf",
+                                  f"EDT_Toutes_Promotions{suffixe_dept_promo}_2027.pdf", "application/pdf",
                                   use_container_width=True, key="dp_down_promo")
         
         # HTML et Excel (toujours disponibles)
         html_data = generate_pro_html(df_filtre, f"EDT {sel_promo}", "Faculté de génie Electrique - UDL-SBA")
-        c2.download_button("🌐 HTML", html_data, f"EDT_{sel_promo}_2027.html", "text/html", use_container_width=True, key="dh_promo")
+        c2.download_button("🌐 HTML", html_data, f"EDT_{sel_promo}{suffixe_fichier_promo}_2027.html", "text/html", use_container_width=True, key="dh_promo")
         xlsx_data = generate_pro_excel(df_filtre, f"EDT {sel_promo}")
-        c3.download_button("📊 Excel", xlsx_data, f"EDT_{sel_promo}_2027.xlsx", 
+        c3.download_button("📊 Excel", xlsx_data, f"EDT_{sel_promo}{suffixe_fichier_promo}_2027.xlsx", 
                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="dx_promo")
     
     
     with col2:
         st.markdown("**👤 Par Enseignant**")
-        sel_prof = st.selectbox("Choisir enseignant", ["Tous"] + profs, key="hub_prof")
-        df_filtre_p = df_propre.copy()
+        # Filtre par département (liste déroulante) : limite les enseignants proposés et les exports « Tous »
+        df_prof_src, depts_prof, suffixe_dept_prof, sig_dept_prof = _hub_selection_departements(df_propre, "prof")
+        profs_hub = sorted([p for p in df_prof_src["Enseignants"].unique() if p and p != "Non defini"])
+        sel_prof = st.selectbox("Choisir enseignant", ["Tous"] + profs_hub,
+                                key="hub_prof" if sig_dept_prof == "all" else f"hub_prof_{sig_dept_prof}")
+        suffixe_fichier_prof = suffixe_dept_prof if sel_prof == "Tous" else ""
+        df_filtre_p = df_prof_src.copy()
         if sel_prof != "Tous":
+            # Un enseignant : son emploi du temps complet (tous départements), pour une charge horaire exacte
+            df_filtre_p = df_propre.copy()
             df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
             
             # ═══════════════════════════════════════════════════════
@@ -17151,31 +17216,33 @@ def render_download_hub(df_global, user_data, is_admin):
             if c1.button("📄 Générer PDF Global enseignants", use_container_width=True, key="btn_gen_all_pdf"):
                 with st.spinner("Preparation du fichier global..."):
                     prog = st.progress(0, text="Demarrage...")
-                    pdf_data_all, err_all = generate_edt_tous_enseignants_pdf(df_propre, progress_bar=prog)
+                    pdf_data_all, err_all = generate_edt_tous_enseignants_pdf(df_prof_src, progress_bar=prog)
                     if pdf_data_all:
                         st.session_state['pdf_all_data'] = pdf_data_all
                         st.session_state['pdf_all_ready'] = True
-                        st.success(f"✅ PDF Généré : {len(profs)} enseignants")
+                        st.session_state['pdf_all_prof_sig'] = sig_dept_prof
+                        st.success(f"✅ PDF Généré : {len(profs_hub)} enseignants")
                         st.rerun()
                     else:
                         st.error(f"❌ Erreur : {err_all}")
             
-            if st.session_state.get('pdf_all_ready') and 'pdf_all_data' in st.session_state:
+            if (st.session_state.get('pdf_all_ready') and 'pdf_all_data' in st.session_state
+                    and st.session_state.get('pdf_all_prof_sig', 'all') == sig_dept_prof):
                 c1.download_button("⬇️ Télecharger PDF Global enseignants", st.session_state['pdf_all_data'],
-                                  "EDT_Tous_Enseignants_2027.pdf", "application/pdf",
+                                  f"EDT_Tous_Enseignants{suffixe_dept_prof}_2027.pdf", "application/pdf",
                                   use_container_width=True, key="dp_down")
         
         # HTML et Excel (toujours disponibles)
         html_data_p = generate_pro_html(df_filtre_p, f"EDT {sel_prof}", "Faculté de génie Electrique - UDL-SBA")
         if html_data_p:
-            c2.download_button("🌐 HTML", html_data_p, f"EDT_{sel_prof}_2027.html", 
+            c2.download_button("🌐 HTML", html_data_p, f"EDT_{sel_prof}{suffixe_fichier_prof}_2027.html", 
                               "text/html", use_container_width=True, key="dh")
         else:
             c2.button("🌐 HTML", disabled=True, use_container_width=True, key="dh")
             
         xlsx_data_p = generate_pro_excel(df_filtre_p, f"EDT {sel_prof}")
         if xlsx_data_p:
-            c3.download_button("📊 Excel", xlsx_data_p, f"EDT_{sel_prof}_2027.xlsx", 
+            c3.download_button("📊 Excel", xlsx_data_p, f"EDT_{sel_prof}{suffixe_fichier_prof}_2027.xlsx", 
                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
                               use_container_width=True, key="dx")
         else:
