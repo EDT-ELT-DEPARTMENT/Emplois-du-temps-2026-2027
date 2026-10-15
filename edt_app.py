@@ -88,6 +88,7 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <style>
   * { box-sizing: border-box; }
+  html, body { overflow: hidden; }
   body { margin: 0; font-family: "Source Sans Pro", system-ui, "Segoe UI", Arial, sans-serif; font-size: 13px; color: #1e293b; background: transparent; }
   table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
   th { background: #1e3a8a; color: #fff; padding: 8px 4px; border: 1px solid #1e3a8a; font-size: 13px; }
@@ -95,6 +96,11 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
   td.h { background: #f1f5f9; font-weight: 600; text-align: center; vertical-align: middle; border: 1px solid #94a3b8; color: #1e293b; padding: 6px 4px; }
   td.c { border: 1px solid #cbd5e1; vertical-align: top; padding: 4px; min-height: 58px; height: 58px; background: #ffffff; transition: background .12s; }
   td.c.over { background: #dbeafe; outline: 2px dashed #2563eb; outline-offset: -3px; }
+  td.c.conflit { background: #fecaca; outline: 2px solid #dc2626; outline-offset: -2px; }
+  td.c.conflit.over { background: #fca5a5; outline: 2px dashed #7f1d1d; }
+  .carte.conflit { background: #fee2e2; border-left-color: #dc2626 !important; }
+  .carte.conflit:hover { background: #fecaca; }
+  .alerte { color: #b91c1c; font-weight: 700; font-size: 11px; display: block; }
   .vide { color: #cbd5e1; font-size: 12px; text-align: center; padding-top: 14px; user-select: none; }
   .carte { position: relative; display: flex; gap: 7px; align-items: flex-start; border-left: 3px solid var(--c); background: #f8fafc; border-radius: 4px; padding: 5px 22px 5px 6px; margin: 3px 0; cursor: grab; }
   .carte.dragging { opacity: .35; }
@@ -118,15 +124,19 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
   .legende .tp { background: #dc2626; border-radius: 50%; }
   .legende .cours { background: #2563eb; border-radius: 2px; }
   .legende .td { background: #16a34a; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+  .legende .rouge { background: #fecaca; border: 2px solid #dc2626; border-radius: 2px; }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script>
-  var ARGS = null;
+  var ARGS = null, LAST = null, PENDING = null, lastH = 0, dragId = null;
   function post(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*"); }
   function setValue(v) { post("streamlit:setComponentValue", { value: v, dataType: "json" }); }
-  function fit() { post("streamlit:setFrameHeight", { height: document.documentElement.scrollHeight + 6 }); }
+  function fit(force) {
+    var h = Math.ceil(document.getElementById("root").getBoundingClientRect().height) + 8;   // hauteur du CONTENU (pas de l'iframe)
+    if (force || Math.abs(h - lastH) >= 2) { lastH = h; post("streamlit:setFrameHeight", { height: h }); }
+  }
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   function nonce() { return Date.now() + "-" + Math.random().toString(36).slice(2, 8); }
   function classe(t) { return t === "TP" ? "tp" : (t === "COURS" ? "cours" : (t === "TD" ? "td" : "autre")); }
@@ -134,18 +144,21 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
 
   function carte(it) {
     var c = classe(it.type);
-    return '<div class="carte" draggable="true" data-id="' + esc(it.id) + '" style="--c:' + couleur(it.type) + '">' +
+    var cf = it.conflit ? ' conflit' : '';
+    return '<div class="carte' + cf + '" draggable="true" data-id="' + esc(it.id) + '" style="--c:' + couleur(it.type) + '"' +
+      (it.conflit ? ' title="' + esc(it.conflit_txt || "Chevauchement") + '"' : '') + '>' +
       '<div class="poignee" title="Glisser pour déplacer \u2022 cliquer sur \u2715 pour supprimer">' +
         '<div class="forme ' + c + '"></div><div class="x" data-act="delete" title="Supprimer directement">\u2715</div></div>' +
       '<div class="txt"><b>' + esc(it.titre) + '</b><small>\uD83D\uDC64 ' + esc(it.enseignant) + ' | \uD83D\uDCCD ' + esc(it.lieu) +
-      ' | \uD83C\uDF93 ' + esc(it.promotion) + '</small></div>' +
+      ' | \uD83C\uDF93 ' + esc(it.promotion) + '</small>' +
+      (it.conflit ? '<span class="alerte">\u26A0\uFE0F Chevauchement</span>' : '') + '</div>' +
       '<button class="ed" data-act="edit" title="\u00c9diter cette cellule">\u270F\uFE0F</button></div>';
   }
 
-  function render(a) {
+  function draw(a) {
     ARGS = a;
     var jours = a.jours || [], horaires = a.horaires || [], items = a.items || [];
-    var h = '<div class="legende"><span><i class="tp"></i>TP</span><span><i class="cours"></i>Cours</span><span><i class="td"></i>TD</span>' +
+    var h = '<div class="legende"><span><i class="tp"></i>TP</span><span><i class="cours"></i>Cours</span><span><i class="td"></i>TD</span><span><i class="rouge"></i>Chevauchement</span>' +
             '<span>\u2022 Glissez une forme vers une autre cellule pour la d\u00e9placer \u2022 survolez la forme puis cliquez sur \u2715 pour la supprimer</span></div>';
     h += '<table><thead><tr><th class="h0">\u23F0 Horaire</th>';
     jours.forEach(function (j) { h += '<th>' + esc(j) + '</th>'; });
@@ -153,17 +166,22 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
     horaires.forEach(function (hr) {
       h += '<tr><td class="h">' + esc(hr) + '</td>';
       jours.forEach(function (j) {
-        h += '<td class="c" data-j="' + esc(j) + '" data-h="' + esc(hr) + '">';
-        var n = 0;
-        items.forEach(function (it) { if (it.jour === j && it.horaire === hr) { h += carte(it); n++; } });
-        if (!n) h += '<div class="vide">\u2014</div>';
-        h += '</td>';
+        var n = 0, cell = '', rouge = false;
+        items.forEach(function (it) { if (it.jour === j && it.horaire === hr) { cell += carte(it); n++; if (it.conflit) rouge = true; } });
+        if (!n) cell = '<div class="vide">\u2014</div>';
+        h += '<td class="c' + (rouge ? ' conflit' : '') + '" data-j="' + esc(j) + '" data-h="' + esc(hr) + '">' + cell + '</td>';
       });
       h += '</tr>';
     });
     h += '</tbody></table>';
     document.getElementById("root").innerHTML = h;
-    fit();
+    fit(true);
+  }
+  function render(a) {
+    var s = JSON.stringify(a);
+    if (s === LAST) return;                 // arguments identiques : on ne reconstruit pas le DOM (sinon un glissement en cours est annul\u00e9)
+    if (dragId !== null) { PENDING = a; return; }
+    LAST = s; draw(a);
   }
 
   function itemById(id) { var r = null; (ARGS.items || []).forEach(function (it) { if (String(it.id) === String(id)) r = it; }); return r; }
@@ -174,7 +192,6 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
       if (!nb && !v) { var d = document.createElement("div"); d.className = "vide"; d.innerHTML = "\u2014"; td.appendChild(d); }
     });
   }
-  var dragId = null;
   var root = document.getElementById("root");
   root.addEventListener("dragstart", function (e) {
     var c = e.target.closest ? e.target.closest(".carte") : null;
@@ -187,6 +204,7 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
     dragId = null;
     document.querySelectorAll(".dragging").forEach(function (x) { x.classList.remove("dragging"); });
     document.querySelectorAll("td.over").forEach(function (x) { x.classList.remove("over"); });
+    if (PENDING) { var p = PENDING; PENDING = null; render(p); }
   });
   root.addEventListener("dragover", function (e) {
     var td = e.target.closest ? e.target.closest("td.c") : null;
@@ -208,7 +226,7 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
     if (it.jour === j && it.horaire === hr) { carteEl.classList.remove("dragging"); return; }   // même cellule : rien à faire
     carteEl.classList.remove("dragging"); td.appendChild(carteEl);                                // retour visuel immédiat
     it.jour = j; it.horaire = hr; majVides(); fit();
-    setValue({ action: "move", idx: it.idx, sig: it.sig, jour: j, horaire: hr, nonce: nonce() });
+    LAST = null; setValue({ action: "move", idx: it.idx, sig: it.sig, jour: j, horaire: hr, nonce: nonce() });
   });
   root.addEventListener("click", function (e) {
     var b = e.target.closest ? e.target.closest("[data-act]") : null;
@@ -218,16 +236,16 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
     e.stopPropagation();
     if (b.getAttribute("data-act") === "delete") {
       c.remove(); majVides(); fit();
-      setValue({ action: "delete", idx: it.idx, sig: it.sig, nonce: nonce() });
+      LAST = null; setValue({ action: "delete", idx: it.idx, sig: it.sig, nonce: nonce() });
     } else if (b.getAttribute("data-act") === "edit") {
-      setValue({ action: "edit", idx: it.idx, sig: it.sig, nonce: nonce() });
+      LAST = null; setValue({ action: "edit", idx: it.idx, sig: it.sig, nonce: nonce() });
     }
   });
 
   window.addEventListener("message", function (ev) {
     if (ev.data && ev.data.type === "streamlit:render") render(ev.data.args || {});
   });
-  window.addEventListener("resize", fit);
+  if (window.ResizeObserver) { new ResizeObserver(function () { fit(false); }).observe(document.getElementById("root")); }
   post("streamlit:componentReady", { apiVersion: 1 });
 </script>
 </body>
@@ -264,6 +282,140 @@ def _composant_edt_dnd():
         except Exception as e_comp:
             derniere_erreur = e_comp
     raise RuntimeError(f"Composant glisser-déposer indisponible : {derniere_erreur}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CHEVAUCHEMENTS DE L'EDT : lieu occupé deux fois / enseignant dans deux séances
+# simultanées + propositions de lieux libres sur un créneau
+# ═══════════════════════════════════════════════════════════════════════════
+_LIEUX_NON_CONTROLES_EDT = {"", "NAN", "NONE", "NON DÉFINI", "NON DEFINI", "EAD", "LAB", "LABO"}
+
+
+def _minutes_horaire_edt(horaire):
+    """'9h30 - 11h' -> (570, 660) ; None si l'horaire est illisible."""
+    trouves = re.findall(r"(\d{1,2})\s*h\s*(\d{0,2})", str(horaire))
+    if len(trouves) >= 2:
+        h1, m1 = trouves[0]
+        h2, m2 = trouves[1]
+        debut = int(h1) * 60 + (int(m1) if m1 else 0)
+        fin = int(h2) * 60 + (int(m2) if m2 else 0)
+        if fin > debut:
+            return debut, fin
+    return None
+
+
+def _noms_enseignants_edt(valeur):
+    """'TOLBI + HASSANI' -> {'TOLBI', 'HASSANI'} (noms non définis ignorés)."""
+    noms = {n.strip().upper() for n in re.split(r"\s*(?:\+|/|,|&)\s*", str(valeur)) if n.strip()}
+    return {n for n in noms if n not in ("NAN", "NONE") and not n.startswith(("NON DÉFINI", "NON DEFINI"))}
+
+
+def _lieu_controle_edt(lieu):
+    """Vrai si le lieu est précis (pas « Non défini », « EAD », « Lab »...)."""
+    texte = str(lieu).strip().upper()
+    if texte in _LIEUX_NON_CONTROLES_EDT or texte.startswith("/") or "NON DÉFINI" in texte or "NON DEFINI" in texte:
+        return False
+    return True
+
+
+def _categorie_lieu_edt(lieu):
+    """amphi / labo / salle : sert à proposer d'abord des lieux du même type."""
+    texte = str(lieu).strip().lower()
+    if texte.startswith("amphi"):
+        return "amphi"
+    if texte.startswith(("lab", "cc", "c.c", "salle micro", "atelier")):
+        return "labo"
+    return "salle"
+
+
+def _cle_tri_naturel_edt(texte):
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(texte))]
+
+
+def _detecter_chevauchements_edt(df_all):
+    """Retourne {index_ligne: [ {type, avec, texte}, ... ]} pour toutes les lignes en chevauchement.
+
+    Deux séances qui se recouvrent dans le temps sont en chevauchement si :
+      • « lieu »       : même lieu précis, enseignants différents, enseignements différents ;
+      • « enseignant » : un même enseignant est programmé dans deux endroits différents.
+    Une même séance affichée pour plusieurs promotions (même enseignement et même
+    lieu) n'est PAS un chevauchement.
+    """
+    conflits = {}
+    if df_all is None or len(df_all) == 0:
+        return conflits
+    par_jour = {}
+    for idx, ens, profs, jour, horaire, lieu, promo in zip(
+        df_all.index, df_all["Enseignements"], df_all["Enseignants"], df_all["Jours"],
+        df_all["Horaire"], df_all["Lieu"], df_all["Promotion"]
+    ):
+        plage = _minutes_horaire_edt(horaire)
+        if plage is None:
+            continue
+        par_jour.setdefault(str(jour).strip().lower(), []).append({
+            "idx": idx, "debut": plage[0], "fin": plage[1],
+            "ens": str(ens).strip(), "ens_n": str(ens).strip().upper(),
+            "profs": _noms_enseignants_edt(profs), "profs_txt": str(profs).strip(),
+            "lieu": str(lieu).strip(), "lieu_n": str(lieu).strip().upper(),
+            "lieu_ok": _lieu_controle_edt(lieu),
+            "promo": str(promo).strip(), "jour": str(jour).strip(), "horaire": str(horaire).strip(),
+        })
+
+    def _ajouter(a, b, type_c, texte):
+        conflits.setdefault(a["idx"], []).append({"type": type_c, "avec": b["idx"], "texte": texte})
+
+    for liste in par_jour.values():
+        liste.sort(key=lambda x: x["debut"])
+        for i in range(len(liste)):
+            a = liste[i]
+            for j in range(i + 1, len(liste)):
+                b = liste[j]
+                if b["debut"] >= a["fin"]:
+                    break                                   # triées par début : plus aucun recouvrement possible
+                if a["ens_n"] == b["ens_n"] and a["lieu_n"] == b["lieu_n"]:
+                    continue                                # même séance (ex. cours commun à plusieurs promotions)
+                communs = a["profs"] & b["profs"]
+                meme_lieu = a["lieu_ok"] and a["lieu_n"] == b["lieu_n"]
+                if communs and not meme_lieu:
+                    nom = ", ".join(sorted(communs))
+                    _ajouter(a, b, "enseignant",
+                             f"Enseignant {nom} déjà programmé : {b['ens']} ({b['promo']}, {b['horaire']}, {b['lieu']})")
+                    _ajouter(b, a, "enseignant",
+                             f"Enseignant {nom} déjà programmé : {a['ens']} ({a['promo']}, {a['horaire']}, {a['lieu']})")
+                elif meme_lieu and not communs and a["ens_n"] != b["ens_n"]:
+                    _ajouter(a, b, "lieu",
+                             f"Lieu {a['lieu']} déjà occupé par : {b['ens']} ({b['promo']}, {b['horaire']}, {b['profs_txt']})")
+                    _ajouter(b, a, "lieu",
+                             f"Lieu {b['lieu']} déjà occupé par : {a['ens']} ({a['promo']}, {a['horaire']}, {a['profs_txt']})")
+    return conflits
+
+
+def _lieux_libres_edt(df_all, idx_ligne, jour, horaire, lieu_actuel=""):
+    """Lieux connus et libres sur le créneau (jour, horaire), la ligne idx_ligne étant exclue.
+    Retourne (libres du même type que le lieu actuel, libres d'un autre type)."""
+    plage = _minutes_horaire_edt(horaire)
+    jour_n = str(jour).strip().lower()
+    horaire_n = str(horaire).strip()
+    tous = {}
+    for lieu in df_all["Lieu"].dropna().astype(str):
+        lieu = lieu.strip()
+        if _lieu_controle_edt(lieu):
+            tous.setdefault(lieu.upper(), lieu)
+    occupes = set()
+    for idx, j, h, lieu in zip(df_all.index, df_all["Jours"], df_all["Horaire"], df_all["Lieu"]):
+        if idx == idx_ligne or str(j).strip().lower() != jour_n:
+            continue
+        p = _minutes_horaire_edt(h)
+        if plage is not None and p is not None:
+            if p[0] < plage[1] and plage[0] < p[1]:
+                occupes.add(str(lieu).strip().upper())
+        elif str(h).strip() == horaire_n:
+            occupes.add(str(lieu).strip().upper())
+    libres = [nom for cle, nom in tous.items() if cle not in occupes]
+    cat = _categorie_lieu_edt(lieu_actuel)
+    meme = sorted([l for l in libres if _categorie_lieu_edt(l) == cat], key=_cle_tri_naturel_edt)
+    autres = sorted([l for l in libres if _categorie_lieu_edt(l) != cat], key=_cle_tri_naturel_edt)
+    return meme, autres
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -7344,6 +7496,79 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             )
             html_table = styled.to_html(escape=False)
 
+            # ------------------------------------------------------------
+            # CHEVAUCHEMENTS : lieu occupé deux fois ou enseignant programmé
+            # à deux endroits au même moment (toutes promotions confondues).
+            # Les cellules concernées sont en ROUGE À L'ÉCRAN uniquement :
+            # les exports (HTML, Excel, PDF) ne sont pas modifiés.
+            # ------------------------------------------------------------
+            conflits_edt = _detecter_chevauchements_edt(df)
+            nb_conflits_affiches = sum(1 for i_conf in df_p.index if i_conf in conflits_edt)
+            html_table_ecran = html_table
+            if nb_conflits_affiches:
+                try:
+                    import html as _html_conf
+
+                    def fmt_p_ecran(rows):
+                        items = []
+                        for idx_r, r in rows.iterrows():
+                            code_up = str(r['Code']).upper()
+                            color = '#1e40af' if 'COURS' in code_up else ('#166534' if 'TD' in code_up else '#991b1b')
+                            nat = '📘' if 'COURS' in code_up else ('📗' if 'TD' in code_up else '🔴')
+                            if idx_r in conflits_edt:
+                                info_conf = _html_conf.escape(
+                                    " | ".join(c['texte'] for c in conflits_edt[idx_r][:3]), quote=True)
+                                items.append(
+                                    f"<div title='{info_conf}' style='border-left:3px solid #dc2626;padding:4px;margin:2px 0;background:#fee2e2;border-radius:4px;'>"
+                                    f"<b>{nat} {r['Enseignements']}</b><br>"
+                                    f"<small>👤 {r['Enseignants']} | 📍 {r['Lieu']} | 🎓 {r['Promotion']}</small><br>"
+                                    f"<small style='color:#b91c1c;font-weight:700;'>⚠️ Chevauchement</small>"
+                                    f"</div>"
+                                )
+                            else:
+                                items.append(
+                                    f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;border-radius:4px;'>"
+                                    f"<b>{nat} {r['Enseignements']}</b><br>"
+                                    f"<small>👤 {r['Enseignants']} | 📍 {r['Lieu']} | 🎓 {r['Promotion']}</small>"
+                                    f"</div>"
+                                )
+                        return "".join(items)
+
+                    grid_p_ecran = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_ecran).unstack('j_norm')
+                    grid_p_ecran = grid_p_ecran.reindex(
+                        index=[normalize(h) for h in horaires_list],
+                        columns=[normalize(j) for j in jours_list]
+                    ).fillna("")
+                    grid_p_ecran = grid_p_ecran[grid_p_ecran.any(axis=1)]
+                    grid_p_ecran.index = [map_h.get(i, i) for i in grid_p_ecran.index]
+                    grid_p_ecran.columns = [map_j.get(c, c) for c in grid_p_ecran.columns]
+
+                    cellules_rouges = set()
+                    for i_conf, h_conf, j_conf in zip(df_p.index, df_p['h_norm'], df_p['j_norm']):
+                        if i_conf in conflits_edt:
+                            cellules_rouges.add((map_h.get(h_conf, h_conf), map_j.get(j_conf, j_conf)))
+
+                    def _css_chevauchement(donnees):
+                        css = pd.DataFrame("", index=donnees.index, columns=donnees.columns)
+                        for (h_l, j_l) in cellules_rouges:
+                            if h_l in css.index and j_l in css.columns:
+                                css.loc[h_l, j_l] = "background-color:#fecaca;border:2px solid #dc2626;"
+                        return css
+
+                    styled_ecran = (
+                        grid_p_ecran.style
+                        .set_properties(**{
+                            'text-align': 'center',
+                            'vertical-align': 'middle',
+                            'border': '1px solid #cbd5e1'
+                        })
+                        .set_table_styles(styled.table_styles)
+                        .apply(_css_chevauchement, axis=None)
+                    )
+                    html_table_ecran = styled_ecran.to_html(escape=False)
+                except Exception:
+                    html_table_ecran = html_table
+
             # ============================================================
             # COMPTEURS GROUPES / SOUS-GROUPES (CORRIGÉS)
             # ============================================================
@@ -7742,6 +7967,13 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 #   • Glisser-déposer à la souris (par défaut)
                 #   • Grille à boutons (méthode classique ✏️ ✋ 📍 🗑️)
                 # --------------------------------------------------------
+                message_dnd = st.session_state.pop("edt_dnd_message", None)
+                if message_dnd:
+                    if str(message_dnd).startswith("\u26a0"):
+                        st.warning(message_dnd)
+                    else:
+                        st.success(message_dnd)
+
                 utiliser_dnd_edt = st.checkbox(
                     "\U0001F5B1\ufe0f Glisser-d\u00e9poser \u00e0 la souris "
                     "(\U0001F534 TP \u00b7 \U0001F7E6 Cours \u00b7 \U0001F7E9 TD)",
@@ -7763,10 +7995,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     # Les modifications sont enregistrées dans le fichier source
                     # (NOM_FICHIER_FIXE) comme dans la grille à boutons.
                     # ====================================================
-                    message_dnd = st.session_state.pop("edt_dnd_message", None)
-                    if message_dnd:
-                        st.success(message_dnd)
-
                     # Créneaux affichés : les 6 créneaux standard de 1h30 (pour pouvoir
                     # déposer dans une cellule vide) + tout créneau déjà utilisé.
                     creneaux_standard_dnd = [
@@ -7814,6 +8042,10 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                             "enseignant": str(r_dnd["Enseignants"]),
                             "lieu": str(r_dnd["Lieu"]),
                             "promotion": str(r_dnd["Promotion"]),
+                            "conflit": idx_dnd_item in conflits_edt,
+                            "conflit_txt": " | ".join(
+                                c_dnd["texte"] for c_dnd in conflits_edt.get(idx_dnd_item, [])[:3]
+                            ),
                         })
 
                     action_dnd = None
@@ -7862,10 +8094,23 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                         df.loc[idx_action_dnd, "j_norm"] = normalize(jour_dest_dnd)
                                         df.loc[idx_action_dnd, "h_norm"] = normalize(horaire_dest_dnd)
                                         _sauvegarder_fichier_edt_source()
-                                        st.session_state["edt_dnd_message"] = (
-                                            f"\u2705 D\u00e9plac\u00e9 : {info_avant_dnd} "
-                                            f"\u2192 {jour_dest_dnd} \u2014 {horaire_dest_dnd}"
-                                        )
+                                        conflits_apres_dnd = _detecter_chevauchements_edt(df).get(idx_action_dnd, [])
+                                        if conflits_apres_dnd:
+                                            # Avertissement + propositions de lieux libres (section « Chevauchements »)
+                                            st.session_state["edt_dnd_dernier_deplace"] = idx_action_dnd
+                                            st.session_state["edt_dnd_message"] = (
+                                                f"\u26a0\ufe0f Chevauchement apr\u00e8s le d\u00e9placement vers "
+                                                f"{jour_dest_dnd} \u2014 {horaire_dest_dnd} : "
+                                                + " ; ".join(c_dnd["texte"] for c_dnd in conflits_apres_dnd[:2])
+                                                + ". Choisissez un lieu libre dans la section "
+                                                  "\u00ab Chevauchements \u00bb sous la grille."
+                                            )
+                                        else:
+                                            st.session_state["edt_dnd_dernier_deplace"] = None
+                                            st.session_state["edt_dnd_message"] = (
+                                                f"\u2705 D\u00e9plac\u00e9 : {info_avant_dnd} "
+                                                f"\u2192 {jour_dest_dnd} \u2014 {horaire_dest_dnd}"
+                                            )
                                         st.rerun()
                                     except Exception as e_move:
                                         st.error(f"Erreur de d\u00e9placement : {e_move}")
@@ -7881,6 +8126,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     st.session_state[cle_suppression] = None
                                     st.session_state[cle_edition] = None
                                     st.session_state[cle_glisser] = None
+                                    st.session_state["edt_dnd_dernier_deplace"] = None
                                     st.session_state["edt_dnd_message"] = (
                                         f"\U0001F5D1\ufe0f Supprim\u00e9 : {info_sup_dnd}"
                                     )
@@ -7914,6 +8160,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                             try:
                                 df_retour_dnd.to_excel(NOM_FICHIER_FIXE, index=False)
                                 st.session_state["edt_dnd_annuler"] = None
+                                st.session_state["edt_dnd_dernier_deplace"] = None
                                 st.session_state["edt_dnd_message"] = (
                                     "\u21a9\ufe0f Derni\u00e8re modification annul\u00e9e."
                                 )
@@ -7967,7 +8214,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                         est_saisi = (
                                             st.session_state[cle_glisser] == idx_creneau
                                         )
-                                        fond_carte = "#fde68a" if est_saisi else "#f8fafc"
+                                        fond_carte = "#fde68a" if est_saisi else ("#fecaca" if idx_creneau in conflits_edt else "#f8fafc")
                                         st.markdown(
                                             f"<div style='border-left:3px solid {couleur};"
                                             f"padding:4px;margin:2px 0;background:{fond_carte};"
@@ -8058,6 +8305,97 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                         "Les modifications sont enregistr\u00e9es dans le fichier "
                         f"`{os.path.basename(NOM_FICHIER_FIXE)}`."
                     )
+
+                # ========================================================
+                # CHEVAUCHEMENTS : détail + lieux libres proposés
+                #   Cliquer sur un lieu proposé l'affecte directement à
+                #   l'enseignement (enregistré) : la couleur rouge et
+                #   l'avertissement disparaissent.
+                # ========================================================
+                idx_en_conflit = [i_c for i_c in df_edt_interactif.index if i_c in conflits_edt]
+                dernier_deplace_dnd = st.session_state.get("edt_dnd_dernier_deplace")
+                if dernier_deplace_dnd is not None and dernier_deplace_dnd not in df.index:
+                    dernier_deplace_dnd = None
+                    st.session_state["edt_dnd_dernier_deplace"] = None
+
+                if idx_en_conflit:
+                    st.markdown("##### \u26a0\ufe0f Chevauchements")
+                    st.warning(
+                        f"{len(idx_en_conflit)} enseignement(s) en chevauchement dans l'EDT affich\u00e9 "
+                        f"(cellules en rouge) : lieu d\u00e9j\u00e0 occup\u00e9 ou enseignant d\u00e9j\u00e0 "
+                        f"programm\u00e9 au m\u00eame cr\u00e9neau."
+                    )
+                    idx_en_conflit.sort(key=lambda i_c: (i_c != dernier_deplace_dnd, i_c))
+                    idx_en_conflit_liste = idx_en_conflit[:80]
+                    libelles_conflits = {}
+                    for i_c in idx_en_conflit_liste:
+                        r_c = df.loc[i_c]
+                        libelles_conflits[i_c] = (
+                            f"{r_c['Enseignements']} \u2014 {r_c['Jours']} {r_c['Horaire']} ({r_c['Lieu']})"
+                        )
+                    idx_corriger = st.selectbox(
+                        "Enseignement en chevauchement \u00e0 corriger :",
+                        idx_en_conflit_liste,
+                        format_func=lambda i_c: libelles_conflits.get(i_c, str(i_c)),
+                        key=f"edt_conflit_sel_{dernier_deplace_dnd}"
+                    )
+                    liste_conflits_ligne = conflits_edt.get(idx_corriger, [])
+                    for c_ligne in liste_conflits_ligne:
+                        st.markdown(f"- {c_ligne['texte']}")
+                    types_conflits = {c_ligne["type"] for c_ligne in liste_conflits_ligne}
+
+                    if "lieu" in types_conflits:
+                        r_corr = df.loc[idx_corriger]
+                        libres_meme_type, libres_autres = _lieux_libres_edt(
+                            df, idx_corriger, r_corr["Jours"], r_corr["Horaire"], r_corr["Lieu"]
+                        )
+                        propositions_lieux = (libres_meme_type + libres_autres)[:8]
+                        if propositions_lieux:
+                            st.markdown(
+                                f"**\U0001F4CD Lieux libres \u00e0 ce cr\u00e9neau ({r_corr['Jours']} \u2014 "
+                                f"{r_corr['Horaire']}) \u2014 cliquez pour l'affecter directement :**"
+                            )
+                            colonnes_prop = st.columns(min(len(propositions_lieux), 4))
+                            for k_prop, lieu_prop in enumerate(propositions_lieux):
+                                with colonnes_prop[k_prop % len(colonnes_prop)]:
+                                    if st.button(
+                                        f"\U0001F4CD {lieu_prop}",
+                                        key=f"btn_lieu_prop_{idx_corriger}_{k_prop}",
+                                        use_container_width=True
+                                    ):
+                                        lieu_avant_prop = str(df.loc[idx_corriger, "Lieu"])
+                                        st.session_state["edt_dnd_annuler"] = df.copy()
+                                        try:
+                                            df.loc[idx_corriger, "Lieu"] = lieu_prop
+                                            _sauvegarder_fichier_edt_source()
+                                            reste_conflits = _detecter_chevauchements_edt(df).get(idx_corriger, [])
+                                            st.session_state["edt_dnd_dernier_deplace"] = (
+                                                idx_corriger if reste_conflits else None
+                                            )
+                                            if reste_conflits:
+                                                st.session_state["edt_dnd_message"] = (
+                                                    f"\u26a0\ufe0f Lieu affect\u00e9 ({lieu_avant_prop} \u2192 {lieu_prop}) "
+                                                    f"mais un chevauchement subsiste : "
+                                                    + " ; ".join(c_reste["texte"] for c_reste in reste_conflits[:2])
+                                                )
+                                            else:
+                                                st.session_state["edt_dnd_message"] = (
+                                                    f"\u2705 Lieu affect\u00e9 : {lieu_avant_prop} \u2192 {lieu_prop} "
+                                                    f"\u2014 chevauchement r\u00e9solu."
+                                                )
+                                            st.rerun()
+                                        except Exception as e_lieu:
+                                            st.error(f"Erreur d'affectation du lieu : {e_lieu}")
+                            if not libres_meme_type:
+                                st.caption("Aucun lieu libre du m\u00eame type : lieux d'un autre type propos\u00e9s.")
+                        else:
+                            st.info("Aucun lieu libre trouv\u00e9 \u00e0 ce cr\u00e9neau : d\u00e9placez l'enseignement vers un autre cr\u00e9neau.")
+                    if "enseignant" in types_conflits:
+                        st.info(
+                            "\u2139\ufe0f Conflit d'enseignant : changer le lieu ne le r\u00e9sout pas. "
+                            "D\u00e9placez l'un des deux enseignements vers un autre cr\u00e9neau "
+                            "(glisser-d\u00e9poser) ou utilisez \u00ab Annuler la derni\u00e8re modification \u00bb."
+                        )
 
                 # Ajout d'un nouvel enseignement dans une cellule vide
                 st.markdown("##### \u2795 Ajouter un enseignement \u00e0 l'EDT")
@@ -8656,7 +8994,13 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                         )
 
             else:
-                st.write(iso_header_html_p + html_table, unsafe_allow_html=True)
+                if nb_conflits_affiches:
+                    st.warning(
+                        f"⚠️ {nb_conflits_affiches} enseignement(s) en chevauchement (cellules en rouge) : "
+                        f"lieu déjà occupé ou enseignant déjà programmé au même créneau. "
+                        f"Activez le « ✏️ Mode édition de l'EDT » pour les corriger."
+                    )
+                st.write(iso_header_html_p + html_table_ecran, unsafe_allow_html=True)
 
             # ═══════════════════════════════════════════════════════
             # 2) DONNÉES BRUTES (même structure, sans HTML)
