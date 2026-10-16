@@ -13754,7 +13754,454 @@ td,th{{word-wrap:break-word;}}
             with c2:
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.metric("Total étudiants (Y compris en congé Académique)", len(liste_etudiants))
-            
+
+            # ═════════════════════════════════════════════════════════════
+            # 📊 HISTOGRAMME INTERACTIF DES EFFECTIFS PAR PROMOTION
+            # Clic sur une barre => effectif de la promotion + export Excel détaillé
+            # ═════════════════════════════════════════════════════════════
+            st.markdown("---")
+            st.markdown("### 📊 Répartition des étudiants par promotion")
+            st.caption(
+                "Cliquez directement sur une barre pour afficher l'effectif de la promotion "
+                "et télécharger sa liste détaillée. Les étudiants en congé académique sont inclus."
+            )
+
+            _cols_histo_etu = detecter_colonnes_etudiant(df_etu_edt)
+
+            def _normaliser_entete_histo_etu(valeur):
+                import unicodedata as _ud_histo
+                txt = str(valeur or "").strip().casefold()
+                txt = _ud_histo.normalize("NFKD", txt)
+                txt = "".join(ch for ch in txt if not _ud_histo.combining(ch))
+                return re.sub(r"[^a-z0-9\u0600-\u06ff]+", "", txt)
+
+            _entetes_histo_etu = {
+                _normaliser_entete_histo_etu(c): c for c in df_etu_edt.columns
+            }
+
+            def _trouver_col_histo_etu(aliases, prioritaire=None):
+                if prioritaire in df_etu_edt.columns:
+                    return prioritaire
+                _aliases_norm = [_normaliser_entete_histo_etu(a) for a in aliases]
+                for _a in _aliases_norm:
+                    if _a and _a in _entetes_histo_etu:
+                        return _entetes_histo_etu[_a]
+                # Correspondance partielle prudente en deuxième recours seulement.
+                for _a in sorted(_aliases_norm, key=len, reverse=True):
+                    if len(_a) >= 5:
+                        _cand = [c for n, c in _entetes_histo_etu.items() if _a in n or n in _a]
+                        if len(_cand) == 1:
+                            return _cand[0]
+                return None
+
+            _col_promo_histo = _trouver_col_histo_etu(
+                ["Promotion", "Promo", "Formation", "Niveau", "Année d'étude", "Annee etude"],
+                _cols_histo_etu.get("promotion")
+            )
+
+            _promotion_selectionnee_histo = st.session_state.get("promo_histo_selection_etu", "")
+            _df_histo_etu = df_etu_edt.copy()
+
+            if not _col_promo_histo:
+                st.warning(
+                    "La colonne de promotion n'a pas été reconnue dans le fichier source. "
+                    "Vérifiez l'intitulé de la colonne (ex. « Promotion »)."
+                )
+            else:
+                def _nettoyer_promo_histo_etu(v):
+                    try:
+                        if pd.isna(v):
+                            return "Promotion non renseignée"
+                    except Exception:
+                        pass
+                    _v = str(v).strip()
+                    if _v.casefold() in {"", "nan", "none", "nat", "<na>"}:
+                        return "Promotion non renseignée"
+                    return _v
+
+                _df_histo_etu["__PROMOTION_HISTO__"] = _df_histo_etu[_col_promo_histo].apply(_nettoyer_promo_histo_etu)
+
+                def _cle_tri_promo_histo_etu(valeur):
+                    # Chaque élément a le même type comparable, même si certaines
+                    # promotions commencent par un chiffre et d'autres par une lettre.
+                    return [(0, int(x)) if x.isdigit() else (1, x.casefold())
+                            for x in re.split(r"(\d+)", str(valeur))]
+
+                _effectifs_histo = (
+                    _df_histo_etu.groupby("__PROMOTION_HISTO__", dropna=False)
+                    .size().rename("Effectif").reset_index()
+                )
+                _effectifs_histo = _effectifs_histo.sort_values(
+                    "__PROMOTION_HISTO__", key=lambda serie: serie.map(_cle_tri_promo_histo_etu)
+                ).reset_index(drop=True)
+                _promos_histo = _effectifs_histo["__PROMOTION_HISTO__"].astype(str).tolist()
+                _valeurs_histo = _effectifs_histo["Effectif"].astype(int).tolist()
+
+                try:
+                    import plotly.graph_objects as _go_histo_etu
+                    _palette_histo = [
+                        "#2563EB", "#7C3AED", "#DB2777", "#EA580C", "#059669",
+                        "#0891B2", "#4F46E5", "#CA8A04", "#DC2626", "#0D9488",
+                        "#9333EA", "#0284C7", "#65A30D", "#C026D3", "#D97706",
+                    ]
+                    _couleurs_histo = [_palette_histo[i % len(_palette_histo)] for i in range(len(_promos_histo))]
+                    _fig_histo_etu = _go_histo_etu.Figure(
+                        data=[_go_histo_etu.Bar(
+                            x=_valeurs_histo,
+                            y=_promos_histo,
+                            orientation="h",
+                            marker={
+                                "color": _couleurs_histo,
+                                "line": {"color": "#FFFFFF", "width": 1.2},
+                            },
+                            text=[f"{n:,}".replace(",", " ") for n in _valeurs_histo],
+                            textposition="outside",
+                            textfont={"size": 13, "color": "#0F172A"},
+                            customdata=[[p] for p in _promos_histo],
+                            hovertemplate=(
+                                "<b>Promotion : %{y}</b><br>"
+                                "Nombre d'étudiants : %{x}<extra></extra>"
+                            ),
+                            cliponaxis=False,
+                        )]
+                    )
+                    _fig_histo_etu.update_layout(
+                        title={
+                            "text": f"Effectif par promotion — {_df_histo_etu.shape[0]} étudiants au total",
+                            "x": 0.02, "xanchor": "left",
+                            "font": {"size": 18, "color": "#0F172A"},
+                        },
+                        xaxis={
+                            "title": "Nombre d'étudiants", "rangemode": "tozero",
+                            "showgrid": True, "gridcolor": "#E2E8F0", "zeroline": False,
+                        },
+                        yaxis={
+                            "title": "Promotion", "categoryorder": "array",
+                            "categoryarray": list(reversed(_promos_histo)),
+                            "automargin": True, "tickfont": {"size": 12},
+                        },
+                        plot_bgcolor="#F8FAFC",
+                        paper_bgcolor="white",
+                        margin={"l": 30, "r": 45, "t": 75, "b": 45},
+                        height=max(420, 34 * len(_promos_histo) + 115),
+                        hoverlabel={"bgcolor": "#0F172A", "font": {"color": "white", "size": 12}},
+                        showlegend=False,
+                        clickmode="event+select",
+                        dragmode=False,
+                    )
+
+                    try:
+                        _etat_histo = st.plotly_chart(
+                            _fig_histo_etu,
+                            use_container_width=True,
+                            key="histogramme_interactif_promotions_etudiants",
+                            on_select="rerun",
+                            selection_mode="points",
+                        )
+                    except TypeError:
+                        # Compatibilité avec d'anciennes versions de Streamlit :
+                        # le graphique reste visible et le choix est proposé en dessous.
+                        st.plotly_chart(
+                            _fig_histo_etu, use_container_width=True,
+                            key="histogramme_interactif_promotions_etudiants_compat"
+                        )
+                        _etat_histo = None
+
+                    _points_histo = []
+                    try:
+                        if isinstance(_etat_histo, dict):
+                            _selection_histo = _etat_histo.get("selection", {})
+                            _points_histo = _selection_histo.get("points", []) if isinstance(_selection_histo, dict) else getattr(_selection_histo, "points", [])
+                        elif _etat_histo is not None:
+                            _selection_histo = getattr(_etat_histo, "selection", {})
+                            _points_histo = getattr(_selection_histo, "points", [])
+                    except Exception:
+                        _points_histo = []
+
+                    if _points_histo:
+                        _point_histo = _points_histo[-1]
+                        if isinstance(_point_histo, dict):
+                            _promo_cliquee = _point_histo.get("y") or _point_histo.get("label")
+                            _custom_histo = _point_histo.get("customdata")
+                        else:
+                            _promo_cliquee = getattr(_point_histo, "y", None) or getattr(_point_histo, "label", None)
+                            _custom_histo = getattr(_point_histo, "customdata", None)
+                        if not _promo_cliquee and _custom_histo:
+                            _promo_cliquee = _custom_histo[0] if isinstance(_custom_histo, (list, tuple)) else _custom_histo
+                        if _promo_cliquee is not None and str(_promo_cliquee) in _promos_histo:
+                            _promo_cliquee = str(_promo_cliquee)
+                            # Ne réécraser le choix manuel que lorsqu'une nouvelle barre
+                            # vient réellement d'être sélectionnée. Cela évite qu'un
+                            # ancien point Plotly restaure une ancienne promotion.
+                            _dernier_clic_histo = st.session_state.get("promo_histo_dernier_clic_etu", "")
+                            if _promo_cliquee != _dernier_clic_histo:
+                                st.session_state["promo_histo_selection_etu"] = _promo_cliquee
+                                st.session_state["select_promotion_histogramme_etudiants"] = _promo_cliquee
+                                _promotion_selectionnee_histo = _promo_cliquee
+                            st.session_state["promo_histo_dernier_clic_etu"] = _promo_cliquee
+                    else:
+                        # Une sélection vide indique que la barre a été désélectionnée.
+                        st.session_state["promo_histo_dernier_clic_etu"] = ""
+
+                except ImportError:
+                    st.warning(
+                        "Le graphique interactif nécessite le paquet « plotly ». "
+                        "Ajoutez `plotly` au fichier requirements.txt de l'application."
+                    )
+                    st.bar_chart(_effectifs_histo.set_index("__PROMOTION_HISTO__")["Effectif"])
+                    _promotion_selectionnee_histo = ""
+
+                # Sélecteur complémentaire : utile au clavier ou si la version
+                # installée de Streamlit ne prend pas en charge les clics Plotly.
+                _choix_manuel_histo = st.selectbox(
+                    "Ou sélectionner une promotion dans la liste :",
+                    options=[""] + _promos_histo,
+                    index=(1 + _promos_histo.index(_promotion_selectionnee_histo)
+                           if _promotion_selectionnee_histo in _promos_histo else 0),
+                    key="select_promotion_histogramme_etudiants",
+                )
+                if _choix_manuel_histo and _choix_manuel_histo != _promotion_selectionnee_histo:
+                    st.session_state["promo_histo_selection_etu"] = _choix_manuel_histo
+                    _promotion_selectionnee_histo = _choix_manuel_histo
+
+                if _promotion_selectionnee_histo in _promos_histo:
+                    _df_promo_histo = _df_histo_etu[
+                        _df_histo_etu["__PROMOTION_HISTO__"] == _promotion_selectionnee_histo
+                    ].copy()
+                    _nb_promo_histo = len(_df_promo_histo)
+                    _m1, _m2, _m3 = st.columns([1, 1, 2])
+                    with _m1:
+                        st.metric("🎓 Étudiants de la promotion", f"{_nb_promo_histo:,}".replace(",", " "))
+                    with _m2:
+                        _col_conge_histo = _cols_histo_etu.get("conge_acad")
+                        _nb_conge_histo = 0
+                        if _col_conge_histo and _col_conge_histo in _df_promo_histo.columns:
+                            _nb_conge_histo = int(
+                                _df_promo_histo[_col_conge_histo].astype(str).str.strip().str.upper()
+                                .isin(["OUI", "O", "YES", "1", "VRAI", "TRUE"]).sum()
+                            )
+                        st.metric("En congé académique", _nb_conge_histo)
+                    with _m3:
+                        st.markdown(f"#### 📋 Liste détaillée : **{_promotion_selectionnee_histo}**")
+
+                    # Colonnes exportées dans l'ordre demandé, avec détection tolérante des en-têtes.
+                    _col_nom_fr_histo = _trouver_col_histo_etu(["Nom", "Nom de famille", "Family name"], _cols_histo_etu.get("nom"))
+                    _col_prenom_fr_histo = _trouver_col_histo_etu(["Prénom", "Prenom", "First name"], _cols_histo_etu.get("prenom"))
+                    _col_nom_ar_histo = _trouver_col_histo_etu(
+                        ["اللقب", "لقب", "اللقب بالعربية", "الاسم العائلي", "Nom arabe", "Nom en arabe", "Nom Arabic"],
+                        _cols_histo_etu.get("nom_ar")
+                    )
+                    _col_prenom_ar_histo = _trouver_col_histo_etu(
+                        ["الإسم", "الاسم", "إسم", "اسم", "الإسم بالعربية", "الاسم الشخصي", "Prénom arabe", "Prénom en arabe"],
+                        _cols_histo_etu.get("prenom_ar")
+                    )
+                    _col_mat_etud_histo = _trouver_col_histo_etu(
+                        ["Matricule étudiant", "Matricule etudiant", "Matricule étudiant(e)", "N° étudiant", "Numéro étudiant", "Code étudiant", "Matricule"],
+                        _cols_histo_etu.get("mat_etud")
+                    )
+                    _col_mat_bac_histo = _trouver_col_histo_etu(
+                        ["Matricule bac", "Matricule du bac", "Matricule de bac", "Mat bac", "N° bac"],
+                        _cols_histo_etu.get("mat_bac")
+                    )
+                    _col_email_histo = _trouver_col_histo_etu(
+                        ["Email", "E-mail", "Courriel", "Adresse email", "Adresse mail"], _cols_histo_etu.get("email")
+                    )
+                    _col_tel_histo = _trouver_col_histo_etu(
+                        ["N° de téléphone", "N° de telephone", "Numéro de téléphone", "Numero de telephone", "Téléphone", "Telephone", "Tel", "Mobile"],
+                        _cols_histo_etu.get("telephone")
+                    )
+                    _col_date_histo = _trouver_col_histo_etu(
+                        ["Date de naissance", "Date naissance", "Date naiss", "Naissance", "Birth date"],
+                        _cols_histo_etu.get("date_naiss")
+                    )
+                    _col_lieu_histo = _trouver_col_histo_etu(
+                        ["Lieu de naissance", "Lieu naissance", "Lieu de naiss", "Ville de naissance", "Birthplace"],
+                        _cols_histo_etu.get("lieu_naiss")
+                    )
+
+                    def _texte_export_histo_etu(valeur):
+                        try:
+                            if pd.isna(valeur):
+                                return ""
+                        except Exception:
+                            pass
+                        return str(valeur).strip()
+
+                    def _date_export_histo_etu(valeur):
+                        if valeur is None:
+                            return ""
+                        try:
+                            if pd.isna(valeur):
+                                return ""
+                        except Exception:
+                            pass
+                        if hasattr(valeur, "to_pydatetime"):
+                            valeur = valeur.to_pydatetime()
+                        if isinstance(valeur, datetime):
+                            return valeur.date()
+                        try:
+                            from datetime import date as _date_histo
+                            if isinstance(valeur, _date_histo):
+                                return valeur
+                        except Exception:
+                            pass
+                        _s_date = str(valeur).strip()
+                        if not _s_date:
+                            return ""
+                        try:
+                            _d_date = pd.to_datetime(_s_date, errors="coerce", dayfirst=True)
+                            if not pd.isna(_d_date):
+                                return _d_date.date()
+                        except Exception:
+                            pass
+                        return _s_date
+
+                    def _serie_col_histo(df_source, colonne, convertisseur=_texte_export_histo_etu):
+                        if colonne and colonne in df_source.columns:
+                            return df_source[colonne].map(convertisseur)
+                        return pd.Series([""] * len(df_source), index=df_source.index)
+
+                    _df_export_histo = pd.DataFrame(index=_df_promo_histo.index)
+                    _df_export_histo["Nom (français)"] = _serie_col_histo(_df_promo_histo, _col_nom_fr_histo)
+                    _df_export_histo["Prénom (français)"] = _serie_col_histo(_df_promo_histo, _col_prenom_fr_histo)
+                    _df_export_histo["Nom (arabe)"] = _serie_col_histo(_df_promo_histo, _col_nom_ar_histo)
+                    _df_export_histo["Prénom (arabe)"] = _serie_col_histo(_df_promo_histo, _col_prenom_ar_histo)
+                    _df_export_histo["Matricule étudiant"] = _serie_col_histo(_df_promo_histo, _col_mat_etud_histo)
+                    _df_export_histo["Matricule bac"] = _serie_col_histo(_df_promo_histo, _col_mat_bac_histo)
+                    _df_export_histo["E-mail"] = _serie_col_histo(_df_promo_histo, _col_email_histo)
+                    _df_export_histo["N° de téléphone"] = _serie_col_histo(_df_promo_histo, _col_tel_histo)
+                    _df_export_histo["Date de naissance"] = _serie_col_histo(_df_promo_histo, _col_date_histo, _date_export_histo_etu)
+                    _df_export_histo["Lieu de naissance"] = _serie_col_histo(_df_promo_histo, _col_lieu_histo)
+                    _df_export_histo["Promotion"] = _df_promo_histo["__PROMOTION_HISTO__"].map(_texte_export_histo_etu)
+                    _df_export_histo = _df_export_histo.reset_index(drop=True)
+
+                    # Aperçu des informations qui seront réellement exportées.
+                    st.dataframe(_df_export_histo, use_container_width=True, hide_index=True, height=280)
+
+                    _champs_non_trouves_histo = [
+                        lib for lib, col in [
+                            ("Nom français", _col_nom_fr_histo), ("Prénom français", _col_prenom_fr_histo),
+                            ("Nom arabe", _col_nom_ar_histo), ("Prénom arabe", _col_prenom_ar_histo),
+                            ("Matricule étudiant", _col_mat_etud_histo), ("Matricule bac", _col_mat_bac_histo),
+                            ("E-mail", _col_email_histo), ("Téléphone", _col_tel_histo),
+                            ("Date de naissance", _col_date_histo), ("Lieu de naissance", _col_lieu_histo),
+                        ] if not col
+                    ]
+                    if _champs_non_trouves_histo:
+                        st.caption(
+                            "Colonnes non trouvées dans le fichier source (elles seront laissées vides dans l'export) : "
+                            + ", ".join(_champs_non_trouves_histo)
+                        )
+
+                    try:
+                        from openpyxl.styles import Font as _Font_histo, PatternFill as _PatternFill_histo, Alignment as _Alignment_histo, Border as _Border_histo, Side as _Side_histo
+                        from openpyxl.worksheet.table import Table as _Table_histo, TableStyleInfo as _TableStyleInfo_histo
+                        from openpyxl.utils import get_column_letter as _get_column_letter_histo
+
+                        _buf_excel_histo = io.BytesIO()
+                        with pd.ExcelWriter(_buf_excel_histo, engine="openpyxl") as _writer_histo:
+                            _df_export_histo.to_excel(_writer_histo, sheet_name="Liste etudiants", index=False)
+                            _ws_excel_histo = _writer_histo.sheets["Liste etudiants"]
+                            _ws_excel_histo.sheet_view.showGridLines = False
+                            _ws_excel_histo.freeze_panes = "A2"
+                            _ws_excel_histo.auto_filter.ref = _ws_excel_histo.dimensions
+                            _ws_excel_histo.row_dimensions[1].height = 34
+                            _bordure_histo = _Border_histo(
+                                left=_Side_histo(style="thin", color="D9E2F3"),
+                                right=_Side_histo(style="thin", color="D9E2F3"),
+                                top=_Side_histo(style="thin", color="D9E2F3"),
+                                bottom=_Side_histo(style="thin", color="D9E2F3"),
+                            )
+                            for _cell_histo in _ws_excel_histo[1]:
+                                _cell_histo.fill = _PatternFill_histo("solid", fgColor="17365D")
+                                _cell_histo.font = _Font_histo(name="Calibri", size=11, bold=True, color="FFFFFF")
+                                _cell_histo.alignment = _Alignment_histo(horizontal="center", vertical="center", wrap_text=True)
+                                _cell_histo.border = _bordure_histo
+
+                            _largeurs_fixes_histo = {
+                                "Nom (français)": 26, "Prénom (français)": 26,
+                                "Nom (arabe)": 25, "Prénom (arabe)": 25,
+                                "Matricule étudiant": 22, "Matricule bac": 19,
+                                "E-mail": 34, "N° de téléphone": 20,
+                                "Date de naissance": 20, "Lieu de naissance": 30, "Promotion": 18,
+                            }
+                            for _num_col_histo, _col_cells_histo in enumerate(_ws_excel_histo.columns, start=1):
+                                _nom_entete_histo = str(_col_cells_histo[0].value or "")
+                                _lettre_histo = _get_column_letter_histo(_num_col_histo)
+                                _max_len_histo = max(
+                                    [len(str(c.value)) if c.value is not None else 0 for c in _col_cells_histo] + [len(_nom_entete_histo)]
+                                )
+                                _largeur_histo = _largeurs_fixes_histo.get(_nom_entete_histo, min(max(_max_len_histo + 2, 14), 38))
+                                _ws_excel_histo.column_dimensions[_lettre_histo].width = _largeur_histo
+                                for _cell_histo in _col_cells_histo[1:]:
+                                    _cell_histo.border = _bordure_histo
+                                    _cell_histo.alignment = _Alignment_histo(
+                                        horizontal=("right" if "arabe" in _nom_entete_histo.casefold() else "left"),
+                                        vertical="center", wrap_text=True
+                                    )
+                                    if _nom_entete_histo == "Date de naissance" and _cell_histo.value not in (None, "") and not isinstance(_cell_histo.value, str):
+                                        _cell_histo.number_format = "dd/mm/yyyy"
+                                    if _nom_entete_histo in ("Matricule étudiant", "Matricule bac", "N° de téléphone") and _cell_histo.value not in (None, ""):
+                                        _cell_histo.number_format = "@"
+
+                            # Hauteur de ligne adaptée aux noms ou lieux longs.
+                            for _idx_ligne_histo in range(2, _ws_excel_histo.max_row + 1):
+                                _hauteur_histo = 24
+                                for _idx_col_histo, _col_name_histo in enumerate(_df_export_histo.columns, start=1):
+                                    _val_histo = _ws_excel_histo.cell(_idx_ligne_histo, _idx_col_histo).value
+                                    if _val_histo is not None:
+                                        _largeur_histo = _ws_excel_histo.column_dimensions[_get_column_letter_histo(_idx_col_histo)].width
+                                        _lignes_estimees = max(1, (len(str(_val_histo)) // max(1, int(_largeur_histo))) + 1)
+                                        _hauteur_histo = max(_hauteur_histo, min(18 * _lignes_estimees, 54))
+                                _ws_excel_histo.row_dimensions[_idx_ligne_histo].height = _hauteur_histo
+
+                            if _ws_excel_histo.max_row >= 2:
+                                _table_histo = _Table_histo(displayName="TableEtudiantsPromotion", ref=_ws_excel_histo.dimensions)
+                                _table_histo.tableStyleInfo = _TableStyleInfo_histo(
+                                    name="TableStyleMedium2", showFirstColumn=False,
+                                    showLastColumn=False, showRowStripes=True, showColumnStripes=False
+                                )
+                                _ws_excel_histo.add_table(_table_histo)
+
+                            _ws_resume_histo = _writer_histo.book.create_sheet("Récapitulatif")
+                            _ws_resume_histo.sheet_view.showGridLines = False
+                            _ws_resume_histo["A1"] = "LISTE DES ÉTUDIANTS — RÉCAPITULATIF"
+                            _ws_resume_histo["A1"].font = _Font_histo(size=15, bold=True, color="FFFFFF")
+                            _ws_resume_histo["A1"].fill = _PatternFill_histo("solid", fgColor="17365D")
+                            _ws_resume_histo["A1"].alignment = _Alignment_histo(vertical="center", wrap_text=True)
+                            _ws_resume_histo.merge_cells("A1:B1")
+                            _ws_resume_histo.row_dimensions[1].height = 32
+                            _resume_lignes_histo = [
+                                ("Promotion", _promotion_selectionnee_histo),
+                                ("Nombre total d'étudiants (congés académiques inclus)", _nb_promo_histo),
+                                ("Étudiants en congé académique", _nb_conge_histo),
+                                ("Date de génération", datetime.now().strftime("%d/%m/%Y à %H:%M")),
+                            ]
+                            for _r_histo, (_lib_histo, _v_histo) in enumerate(_resume_lignes_histo, start=3):
+                                _ws_resume_histo.cell(_r_histo, 1, _lib_histo)
+                                _ws_resume_histo.cell(_r_histo, 2, _v_histo)
+                                _ws_resume_histo.cell(_r_histo, 1).font = _Font_histo(bold=True, color="17365D")
+                                for _c_histo in (_ws_resume_histo.cell(_r_histo, 1), _ws_resume_histo.cell(_r_histo, 2)):
+                                    _c_histo.alignment = _Alignment_histo(vertical="center", wrap_text=True)
+                                    _c_histo.border = _bordure_histo
+                            _ws_resume_histo.column_dimensions["A"].width = 48
+                            _ws_resume_histo.column_dimensions["B"].width = 34
+                            _ws_resume_histo.freeze_panes = "A3"
+                        _buf_excel_histo.seek(0)
+                        _nom_promo_fichier = re.sub(r"[^A-Za-z0-9_-]+", "_", _promotion_selectionnee_histo).strip("_") or "promotion"
+                        st.download_button(
+                            label=f"📥 Télécharger la liste Excel complète — {_promotion_selectionnee_histo} ({_nb_promo_histo} étudiants)",
+                            data=_buf_excel_histo.getvalue(),
+                            file_name=f"Etudiants_{_nom_promo_fichier}_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key="telecharger_excel_promotion_histogramme_etu",
+                        )
+                    except Exception as _err_excel_histo:
+                        st.error(f"Erreur pendant la création du fichier Excel : {str(_err_excel_histo)[:250]}")
+                else:
+                    st.info("👆 Cliquez sur une barre de l'histogramme, ou choisissez une promotion dans la liste, pour afficher l'effectif et préparer le fichier Excel.")
+
             # ═════════════════════════════════════════════════════════════
             # 🛠️ ÉDITION DU FICHIER SOURCE DES ÉTUDIANTS (ADMIN UNIQUEMENT)
             #   - changer le Groupe / Sous groupe d'un étudiant
