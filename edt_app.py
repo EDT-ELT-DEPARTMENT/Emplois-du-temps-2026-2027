@@ -102,9 +102,12 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
   .carte.conflit:hover { background: #fecaca; }
   .alerte { color: #b91c1c; font-weight: 700; font-size: 11px; display: block; }
   .vide { color: #cbd5e1; font-size: 12px; text-align: center; padding-top: 14px; user-select: none; }
-  .carte { position: relative; display: flex; gap: 7px; align-items: flex-start; border-left: 3px solid var(--c); background: #f8fafc; border-radius: 4px; padding: 5px 22px 5px 6px; margin: 3px 0; cursor: grab; }
-  .carte.dragging { opacity: .35; }
+  .carte { position: relative; display: flex; gap: 7px; align-items: flex-start; border-left: 3px solid var(--c); background: #f8fafc; border-radius: 4px; padding: 5px 22px 5px 6px; margin: 3px 0; cursor: grab; touch-action: none; user-select: none; }
+  .carte.dragging { opacity: .22; }
   .carte:hover { background: #eef2ff; box-shadow: 0 1px 4px rgba(15,23,42,.18); }
+  .carte.ghost { position: fixed; z-index: 99999; pointer-events: none; opacity: .94; margin: 0; box-shadow: 0 8px 22px rgba(15,23,42,.28); transform: translate(-8px,-8px); cursor: grabbing; }
+  td.c { transition: background .08s ease; }
+  #root { width: 100%; }
   .poignee { position: relative; flex: 0 0 20px; width: 20px; height: 20px; margin-top: 1px; cursor: grab; }
   .forme { position: absolute; inset: 1px; transition: transform .12s; }
   .poignee:hover .forme { transform: scale(1.2); }
@@ -130,14 +133,33 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
 <body>
 <div id="root"></div>
 <script>
-  var ARGS = null, LAST = null, PENDING = null, lastH = 0, dragId = null;
-  function post(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*"); }
-  function setValue(v) { post("streamlit:setComponentValue", { value: v, dataType: "json" }); }
-  function fit(force) {
-    var h = Math.ceil(document.getElementById("root").getBoundingClientRect().height) + 8;   // hauteur du CONTENU (pas de l'iframe)
-    if (force || Math.abs(h - lastH) >= 2) { lastH = h; post("streamlit:setFrameHeight", { height: h }); }
+  var ARGS = null, LAST = null, PENDING = null, lastH = 0;
+  var dragState = null, fitQueued = false;
+
+  function post(type, data) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
   }
-  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function setValue(v) { post("streamlit:setComponentValue", { value: v, dataType: "json" }); }
+  function fit() {
+    if (fitQueued) return;
+    fitQueued = true;
+    window.requestAnimationFrame(function () {
+      fitQueued = false;
+      var rootEl = document.getElementById("root");
+      if (!rootEl) return;
+      var h = Math.ceil(Math.max(rootEl.scrollHeight, rootEl.getBoundingClientRect().height)) + 8;
+      // Ne pas renvoyer la hauteur à chaque rendu : cela provoquait des
+      // redimensionnements répétés de l'iframe et un effet de clignotement.
+      if (lastH === 0 || Math.abs(h - lastH) >= 4) {
+        lastH = h;
+        post("streamlit:setFrameHeight", { height: h });
+      }
+    });
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
   function nonce() { return Date.now() + "-" + Math.random().toString(36).slice(2, 8); }
   function classe(t) { return t === "TP" ? "tp" : (t === "COURS" ? "cours" : (t === "TD" ? "td" : "autre")); }
   function couleur(t) { return t === "TP" ? "#991b1b" : (t === "COURS" ? "#1e40af" : (t === "TD" ? "#166534" : "#475569")); }
@@ -145,89 +167,182 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
   function carte(it) {
     var c = classe(it.type);
     var cf = it.conflit ? ' conflit' : '';
-    return '<div class="carte' + cf + '" draggable="true" data-id="' + esc(it.id) + '" style="--c:' + couleur(it.type) + '"' +
+    return '<div class="carte' + cf + '" data-id="' + esc(it.id) + '" style="--c:' + couleur(it.type) + '"' +
       (it.conflit ? ' title="' + esc(it.conflit_txt || "Chevauchement") + '"' : '') + '>' +
-      '<div class="poignee" title="Glisser pour déplacer \u2022 cliquer sur \u2715 pour supprimer">' +
-        '<div class="forme ' + c + '"></div><div class="x" data-act="delete" title="Supprimer directement">\u2715</div></div>' +
-      '<div class="txt"><b>' + esc(it.titre) + '</b><small>\uD83D\uDC64 ' + esc(it.enseignant) + ' | \uD83D\uDCCD ' + esc(it.lieu) +
-      ' | \uD83C\uDF93 ' + esc(it.promotion) + '</small>' +
-      (it.conflit ? '<span class="alerte">\u26A0\uFE0F Chevauchement</span>' : '') + '</div>' +
-      '<button class="ed" data-act="edit" title="\u00c9diter cette cellule">\u270F\uFE0F</button></div>';
+      '<div class="poignee" title="Glisser pour déplacer • cliquer sur ✕ pour supprimer">' +
+        '<div class="forme ' + c + '"></div><div class="x" data-act="delete" title="Supprimer directement">✕</div></div>' +
+      '<div class="txt"><b>' + esc(it.titre) + '</b><small>👤 ' + esc(it.enseignant) + ' | 📍 ' + esc(it.lieu) +
+      ' | 🎓 ' + esc(it.promotion) + '</small>' +
+      (it.conflit ? '<span class="alerte">⚠️ Chevauchement</span>' : '') + '</div>' +
+      '<button class="ed" data-act="edit" title="Éditer cette cellule">✏️</button></div>';
   }
 
+  function cleCellule(j, h) { return String(j) + "\u001f" + String(h); }
   function draw(a) {
-    ARGS = a;
-    var jours = a.jours || [], horaires = a.horaires || [], items = a.items || [];
-    var h = '<div class="legende"><span><i class="tp"></i>TP</span><span><i class="cours"></i>Cours</span><span><i class="td"></i>TD</span><span><i class="rouge"></i>Chevauchement</span>' +
-            '<span>\u2022 Glissez une forme vers une autre cellule pour la d\u00e9placer \u2022 survolez la forme puis cliquez sur \u2715 pour la supprimer</span></div>';
-    h += '<table><thead><tr><th class="h0">\u23F0 Horaire</th>';
-    jours.forEach(function (j) { h += '<th>' + esc(j) + '</th>'; });
-    h += '</tr></thead><tbody>';
-    horaires.forEach(function (hr) {
-      h += '<tr><td class="h">' + esc(hr) + '</td>';
-      jours.forEach(function (j) {
-        var n = 0, cell = '', rouge = false;
-        items.forEach(function (it) { if (it.jour === j && it.horaire === hr) { cell += carte(it); n++; if (it.conflit) rouge = true; } });
-        if (!n) cell = '<div class="vide">\u2014</div>';
-        h += '<td class="c' + (rouge ? ' conflit' : '') + '" data-j="' + esc(j) + '" data-h="' + esc(hr) + '">' + cell + '</td>';
-      });
-      h += '</tr>';
+    ARGS = a || {};
+    var jours = ARGS.jours || [], horaires = ARGS.horaires || [], items = ARGS.items || [];
+    // Indexation en une passe : évite de reparcourir tous les enseignements
+    // pour chacune des cellules de la grille.
+    var buckets = Object.create(null);
+    items.forEach(function (it) {
+      var k = cleCellule(it.jour, it.horaire);
+      if (!buckets[k]) buckets[k] = [];
+      buckets[k].push(it);
     });
-    h += '</tbody></table>';
-    document.getElementById("root").innerHTML = h;
-    fit(true);
-  }
-  function render(a) {
-    var s = JSON.stringify(a);
-    if (s === LAST) return;                 // arguments identiques : on ne reconstruit pas le DOM (sinon un glissement en cours est annul\u00e9)
-    if (dragId !== null) { PENDING = a; return; }
-    LAST = s; draw(a);
+
+    var html = '<div class="legende"><span><i class="tp"></i>TP</span><span><i class="cours"></i>Cours</span>' +
+      '<span><i class="td"></i>TD</span><span><i class="rouge"></i>Chevauchement</span>' +
+      '<span>Glissez une carte vers une autre cellule. ✕ supprime ; ✏️ édite.</span></div>';
+    html += '<table><thead><tr><th class="h0">⏰ Horaire</th>';
+    jours.forEach(function (j) { html += '<th>' + esc(j) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    horaires.forEach(function (hr) {
+      html += '<tr><td class="h">' + esc(hr) + '</td>';
+      jours.forEach(function (j) {
+        var cellItems = buckets[cleCellule(j, hr)] || [];
+        var rouge = false, content = '';
+        for (var i = 0; i < cellItems.length; i++) {
+          content += carte(cellItems[i]);
+          if (cellItems[i].conflit) rouge = true;
+        }
+        if (!cellItems.length) content = '<div class="vide">—</div>';
+        html += '<td class="c' + (rouge ? ' conflit' : '') + '" data-j="' + esc(j) + '" data-h="' + esc(hr) + '">' + content + '</td>';
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById("root").innerHTML = html;
+    fit();
   }
 
-  function itemById(id) { var r = null; (ARGS.items || []).forEach(function (it) { if (String(it.id) === String(id)) r = it; }); return r; }
+  function render(a) {
+    a = a || {};
+    var s = JSON.stringify(a);
+    if (s === LAST) return;
+    // Ne jamais reconstruire le tableau pendant le mouvement du pointeur.
+    if (dragState && dragState.active) { PENDING = a; return; }
+    LAST = s;
+    draw(a);
+  }
+  function itemById(id) {
+    var result = null;
+    ((ARGS && ARGS.items) || []).some(function (it) {
+      if (String(it.id) === String(id)) { result = it; return true; }
+      return false;
+    });
+    return result;
+  }
   function majVides() {
-    document.querySelectorAll("td.c").forEach(function (td) {
+    document.querySelectorAll("#root td.c").forEach(function (td) {
       var v = td.querySelector(".vide"), nb = td.querySelectorAll(".carte").length;
       if (nb && v) v.remove();
-      if (!nb && !v) { var d = document.createElement("div"); d.className = "vide"; d.innerHTML = "\u2014"; td.appendChild(d); }
+      if (!nb && !v) { var d = document.createElement("div"); d.className = "vide"; d.textContent = "—"; td.appendChild(d); }
     });
   }
+  function nettoyerSurbrillance() {
+    document.querySelectorAll("#root td.c.over").forEach(function (td) { td.classList.remove("over"); });
+  }
+  function libererDrag(etat) {
+    if (!etat) return;
+    if (etat.ghost && etat.ghost.parentNode) etat.ghost.parentNode.removeChild(etat.ghost);
+    if (etat.card) etat.card.classList.remove("dragging");
+    nettoyerSurbrillance();
+  }
+
   var root = document.getElementById("root");
-  root.addEventListener("dragstart", function (e) {
-    var c = e.target.closest ? e.target.closest(".carte") : null;
-    if (!c) return;
-    dragId = c.getAttribute("data-id");
-    e.dataTransfer.setData("text/plain", dragId); e.dataTransfer.effectAllowed = "move";
-    setTimeout(function () { c.classList.add("dragging"); }, 0);
+  // Pointer events sont plus fiables que le glisser-déposer HTML5 à l'intérieur
+  // d'une iframe Streamlit : le relâchement est suivi même si la carte est survolée.
+  root.addEventListener("pointerdown", function (e) {
+    if (e.button !== 0) return;
+    var actionButton = e.target.closest ? e.target.closest("[data-act]") : null;
+    if (actionButton) return;
+    var card = e.target.closest ? e.target.closest(".carte") : null;
+    if (!card) return;
+    dragState = {
+      id: card.getAttribute("data-id"), card: card,
+      x: e.clientX, y: e.clientY, active: false, target: null,
+      ghost: null, pointerId: e.pointerId
+    };
+    try { card.setPointerCapture(e.pointerId); } catch (_) {}
   });
-  root.addEventListener("dragend", function () {
-    dragId = null;
-    document.querySelectorAll(".dragging").forEach(function (x) { x.classList.remove("dragging"); });
-    document.querySelectorAll("td.over").forEach(function (x) { x.classList.remove("over"); });
-    if (PENDING) { var p = PENDING; PENDING = null; render(p); }
+
+  window.addEventListener("pointermove", function (e) {
+    var d = dragState;
+    if (!d || e.pointerId !== d.pointerId) return;
+    if (!d.active && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
+    if (!d.active) {
+      d.active = true;
+      d.card.classList.add("dragging");
+      d.ghost = d.card.cloneNode(true);
+      d.ghost.classList.add("ghost");
+      d.ghost.classList.remove("dragging");
+      d.ghost.style.width = Math.max(180, d.card.getBoundingClientRect().width) + "px";
+      document.body.appendChild(d.ghost);
+    }
+    if (e.cancelable) e.preventDefault();
+    if (d.ghost) { d.ghost.style.left = e.clientX + "px"; d.ghost.style.top = e.clientY + "px"; }
+    var under = document.elementFromPoint(e.clientX, e.clientY);
+    var td = under && under.closest ? under.closest("td.c") : null;
+    if (td && root.contains(td)) {
+      if (d.target !== td) {
+        if (d.target) d.target.classList.remove("over");
+        d.target = td;
+        td.classList.add("over");
+      }
+    } else {
+      if (d.target) d.target.classList.remove("over");
+      d.target = null;
+    }
+  }, { passive: false });
+
+  window.addEventListener("pointerup", function (e) {
+    var d = dragState;
+    if (!d || e.pointerId !== d.pointerId) return;
+    dragState = null;
+    libererDrag(d);
+    if (!d.active) {
+      // Un clic simple reste un clic et déclenche les boutons ✕ / ✏️ normalement.
+      if (PENDING) { var pSimple = PENDING; PENDING = null; render(pSimple); }
+      return;
+    }
+    var destination = d.target;
+    if (!destination) {
+      if (PENDING) { var pNoDrop = PENDING; PENDING = null; render(pNoDrop); }
+      fit();
+      return;
+    }
+    var it = itemById(d.id);
+    if (!it) {
+      if (PENDING) { var pMissing = PENDING; PENDING = null; render(pMissing); }
+      return;
+    }
+    var jour = destination.getAttribute("data-j");
+    var horaire = destination.getAttribute("data-h");
+    if (it.jour === jour && it.horaire === horaire) {
+      if (PENDING) { var pSame = PENDING; PENDING = null; render(pSame); }
+      return;
+    }
+    var vide = destination.querySelector(".vide");
+    if (vide) vide.remove();
+    destination.appendChild(d.card);
+    it.jour = jour;
+    it.horaire = horaire;
+    majVides();
+    fit();
+    // Le nonce distingue deux déplacements identiques consécutifs côté Python.
+    // Conserver LAST pendant le retour Streamlit : les arguments peuvent
+    // être temporairement anciens. La grille optimiste ne doit pas clignoter
+    // ni revenir à son ancienne cellule avant que les nouvelles données arrivent.
+    PENDING = null;
+    setValue({ action: "move", idx: it.idx, sig: it.sig, jour: jour, horaire: horaire, nonce: nonce() });
   });
-  root.addEventListener("dragover", function (e) {
-    var td = e.target.closest ? e.target.closest("td.c") : null;
-    if (!td || dragId === null) return;
-    e.preventDefault(); e.dataTransfer.dropEffect = "move"; td.classList.add("over");
+
+  window.addEventListener("pointercancel", function (e) {
+    if (!dragState || e.pointerId !== dragState.pointerId) return;
+    var d = dragState; dragState = null; libererDrag(d);
+    if (PENDING) { var pc = PENDING; PENDING = null; render(pc); }
   });
-  root.addEventListener("dragleave", function (e) {
-    var td = e.target.closest ? e.target.closest("td.c") : null;
-    if (td && !td.contains(e.relatedTarget)) td.classList.remove("over");
-  });
-  root.addEventListener("drop", function (e) {
-    var td = e.target.closest ? e.target.closest("td.c") : null;
-    if (!td || dragId === null) return;
-    e.preventDefault(); td.classList.remove("over");
-    var it = itemById(dragId); var carteEl = root.querySelector('.carte[data-id="' + dragId + '"]');
-    dragId = null;
-    if (!it || !carteEl) return;
-    var j = td.getAttribute("data-j"), hr = td.getAttribute("data-h");
-    if (it.jour === j && it.horaire === hr) { carteEl.classList.remove("dragging"); return; }   // même cellule : rien à faire
-    carteEl.classList.remove("dragging"); td.appendChild(carteEl);                                // retour visuel immédiat
-    it.jour = j; it.horaire = hr; majVides(); fit();
-    LAST = null; setValue({ action: "move", idx: it.idx, sig: it.sig, jour: j, horaire: hr, nonce: nonce() });
-  });
+
   root.addEventListener("click", function (e) {
     var b = e.target.closest ? e.target.closest("[data-act]") : null;
     if (!b) return;
@@ -236,16 +351,19 @@ _EDT_DND_HTML = r"""<!DOCTYPE html>
     e.stopPropagation();
     if (b.getAttribute("data-act") === "delete") {
       c.remove(); majVides(); fit();
-      LAST = null; setValue({ action: "delete", idx: it.idx, sig: it.sig, nonce: nonce() });
+      setValue({ action: "delete", idx: it.idx, sig: it.sig, nonce: nonce() });
     } else if (b.getAttribute("data-act") === "edit") {
-      LAST = null; setValue({ action: "edit", idx: it.idx, sig: it.sig, nonce: nonce() });
+      setValue({ action: "edit", idx: it.idx, sig: it.sig, nonce: nonce() });
     }
   });
 
   window.addEventListener("message", function (ev) {
     if (ev.data && ev.data.type === "streamlit:render") render(ev.data.args || {});
   });
-  if (window.ResizeObserver) { new ResizeObserver(function () { fit(false); }).observe(document.getElementById("root")); }
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function () { fit(); });
+    ro.observe(document.getElementById("root"));
+  }
   post("streamlit:componentReady", { apiVersion: 1 });
 </script>
 </body>
@@ -8083,37 +8201,58 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                             elif type_action_dnd == "move":
                                 jour_dest_dnd = str(action_dnd.get("jour"))
                                 horaire_dest_dnd = str(action_dnd.get("horaire"))
-                                if jour_dest_dnd not in jours_list or horaire_dest_dnd not in horaires_list:
+                                if jour_dest_dnd not in jours_list or horaire_dest_dnd not in horaires_dnd:
                                     st.warning("\u26a0\ufe0f Cellule de destination inconnue : d\u00e9placement ignor\u00e9.")
                                 else:
-                                    info_avant_dnd = _info_ligne_edt(idx_action_dnd)
-                                    st.session_state["edt_dnd_annuler"] = df.copy()
-                                    try:
-                                        df.loc[idx_action_dnd, "Jours"] = jour_dest_dnd
-                                        df.loc[idx_action_dnd, "Horaire"] = horaire_dest_dnd
-                                        df.loc[idx_action_dnd, "j_norm"] = normalize(jour_dest_dnd)
-                                        df.loc[idx_action_dnd, "h_norm"] = normalize(horaire_dest_dnd)
-                                        _sauvegarder_fichier_edt_source()
-                                        conflits_apres_dnd = _detecter_chevauchements_edt(df).get(idx_action_dnd, [])
-                                        if conflits_apres_dnd:
-                                            # Avertissement + propositions de lieux libres (section « Chevauchements »)
-                                            st.session_state["edt_dnd_dernier_deplace"] = idx_action_dnd
-                                            st.session_state["edt_dnd_message"] = (
-                                                f"\u26a0\ufe0f Chevauchement apr\u00e8s le d\u00e9placement vers "
-                                                f"{jour_dest_dnd} \u2014 {horaire_dest_dnd} : "
-                                                + " ; ".join(c_dnd["texte"] for c_dnd in conflits_apres_dnd[:2])
-                                                + ". Choisissez un lieu libre dans la section "
-                                                  "\u00ab Chevauchements \u00bb sous la grille."
-                                            )
-                                        else:
-                                            st.session_state["edt_dnd_dernier_deplace"] = None
-                                            st.session_state["edt_dnd_message"] = (
-                                                f"\u2705 D\u00e9plac\u00e9 : {info_avant_dnd} "
-                                                f"\u2192 {jour_dest_dnd} \u2014 {horaire_dest_dnd}"
-                                            )
-                                        st.rerun()
-                                    except Exception as e_move:
-                                        st.error(f"Erreur de d\u00e9placement : {e_move}")
+                                    # Une séance doit conserver exactement sa durée :
+                                    # ne pas autoriser le dépôt d'un créneau de 1 h 30
+                                    # sur un créneau de 1 h (ou inversement).
+                                    plage_source_dnd = _minutes_horaire_edt(df.loc[idx_action_dnd, "Horaire"])
+                                    plage_dest_dnd = _minutes_horaire_edt(horaire_dest_dnd)
+                                    if plage_source_dnd is None or plage_dest_dnd is None:
+                                        st.warning(
+                                            "\u26a0\ufe0f Durée impossible à vérifier pour ce créneau : "
+                                            "déplacement annulé afin de préserver le volume horaire."
+                                        )
+                                    elif (plage_source_dnd[1] - plage_source_dnd[0]) != (plage_dest_dnd[1] - plage_dest_dnd[0]):
+                                        duree_source_dnd = plage_source_dnd[1] - plage_source_dnd[0]
+                                        duree_dest_dnd = plage_dest_dnd[1] - plage_dest_dnd[0]
+                                        st.warning(
+                                            "\u26a0\ufe0f Déplacement refusé : la séance doit conserver sa durée. "
+                                            f"Durée actuelle : {duree_source_dnd // 60} h "
+                                            f"{duree_source_dnd % 60:02d} ; durée du créneau cible : "
+                                            f"{duree_dest_dnd // 60} h {duree_dest_dnd % 60:02d}. "
+                                            "Choisissez un créneau de même durée."
+                                        )
+                                    else:
+                                        info_avant_dnd = _info_ligne_edt(idx_action_dnd)
+                                        st.session_state["edt_dnd_annuler"] = df.copy()
+                                        try:
+                                            df.loc[idx_action_dnd, "Jours"] = jour_dest_dnd
+                                            df.loc[idx_action_dnd, "Horaire"] = horaire_dest_dnd
+                                            df.loc[idx_action_dnd, "j_norm"] = normalize(jour_dest_dnd)
+                                            df.loc[idx_action_dnd, "h_norm"] = normalize(horaire_dest_dnd)
+                                            _sauvegarder_fichier_edt_source()
+                                            conflits_apres_dnd = _detecter_chevauchements_edt(df).get(idx_action_dnd, [])
+                                            if conflits_apres_dnd:
+                                                # Avertissement + propositions de lieux libres (section « Chevauchements »)
+                                                st.session_state["edt_dnd_dernier_deplace"] = idx_action_dnd
+                                                st.session_state["edt_dnd_message"] = (
+                                                    f"\u26a0\ufe0f Chevauchement apr\u00e8s le d\u00e9placement vers "
+                                                    f"{jour_dest_dnd} \u2014 {horaire_dest_dnd} : "
+                                                    + " ; ".join(c_dnd["texte"] for c_dnd in conflits_apres_dnd[:2])
+                                                    + ". Choisissez un lieu libre dans la section "
+                                                      "\u00ab Chevauchements \u00bb sous la grille."
+                                                )
+                                            else:
+                                                st.session_state["edt_dnd_dernier_deplace"] = None
+                                                st.session_state["edt_dnd_message"] = (
+                                                    f"\u2705 D\u00e9plac\u00e9 : {info_avant_dnd} "
+                                                    f"\u2192 {jour_dest_dnd} \u2014 {horaire_dest_dnd}"
+                                                )
+                                            st.rerun()
+                                        except Exception as e_move:
+                                            st.error(f"Erreur de d\u00e9placement : {e_move}")
                             elif type_action_dnd == "delete":
                                 info_sup_dnd = _info_ligne_edt(idx_action_dnd)
                                 st.session_state["edt_dnd_annuler"] = df.copy()
