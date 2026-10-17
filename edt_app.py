@@ -26003,6 +26003,37 @@ def _edt_grp_construire_element(promo, groupe, sous_groupe, grilles, nb_etudiant
     }
 
 
+def _edt_grp_departements_disponibles(df_edt):
+    """Départements présents dans le fichier EDT (colonne « Département »)."""
+    if df_edt is None or df_edt.empty or "Département" not in df_edt.columns:
+        return []
+    valeurs = df_edt["Département"].fillna("").astype(str).str.strip().str.upper()
+    return sorted(d for d in valeurs.unique() if d and d not in ("NAN", "NONE", "NON DÉFINI", "NON DEFINI"))
+
+
+def _edt_grp_filtrer_departements(df_edt, departements):
+    """Ne garde que les enseignements des départements choisis (liste vide = aucun filtre)."""
+    if df_edt is None or df_edt.empty or not departements or "Département" not in df_edt.columns:
+        return df_edt
+    valeurs = df_edt["Département"].fillna("").astype(str).str.strip().str.upper()
+    return df_edt[valeurs.isin([str(d).strip().upper() for d in departements])].copy()
+
+
+def _edt_grp_promos_par_departement(df_edt, promos_etu, fonction_mapping, departements):
+    """Promotions (noms du fichier étudiants) ayant au moins un enseignement dans les
+    départements choisis — même correspondance de promotion que _edt_grp_seances_promotion."""
+    df_f = _edt_grp_filtrer_departements(df_edt, departements)
+    if df_f is None or df_f.empty or "Promotion" not in df_f.columns:
+        return []
+    promos_edt = df_f["Promotion"].dropna().unique()
+    promos_edt_mappees = {fonction_mapping(p) for p in promos_edt}
+    promos_edt_directes = {str(p).strip().upper() for p in promos_edt}
+    return [
+        p for p in promos_etu
+        if fonction_mapping(p) in promos_edt_mappees or str(p).strip().upper() in promos_edt_directes
+    ]
+
+
 # =============================================================================
 # RÉPERTOIRE EDT INDIVIDUEL ÉTUDIANT — PAR GROUPE & SOUS-GROUPE
 # =============================================================================
@@ -27157,20 +27188,90 @@ tr:nth-child(even){{background-color:#f8fafc;}}
     st.markdown("---")
     st.markdown("#### 🗂️ Télécharger tous les EDT — un seul fichier (par groupe et sous-groupe)")
 
+    # ── Filtre par département : le fichier global ne contient que les enseignements
+    #    du ou des départements choisis (liste déroulante : tous / un / plusieurs) ──
+    depts_edt_dispo = _edt_grp_departements_disponibles(df_edt_rep)
+    departements_globaux = []          # liste vide = tous les départements (aucun filtre)
+    if depts_edt_dispo:
+        mode_dept_global = st.radio(
+            "Mode d'affichage des départements :",
+            ["Tous les départements", "Un département", "Plusieurs départements"],
+            horizontal=True,
+            key="edt_grp_dept_mode"
+        )
+        if mode_dept_global == "Un département":
+            dept_unique_global = st.selectbox(
+                "Choisir le département :",
+                depts_edt_dispo,
+                key="edt_grp_dept_unique"
+            )
+            departements_globaux = [dept_unique_global]
+        elif mode_dept_global == "Plusieurs départements":
+            departements_globaux = st.multiselect(
+                "Choisir les départements (2, 3 ou plus) :",
+                depts_edt_dispo,
+                default=depts_edt_dispo[:2],
+                key="edt_grp_dept_multi"
+            )
+            if not departements_globaux:
+                st.warning("⚠️ Aucun département sélectionné : tous les départements sont pris en compte.")
+        if len(departements_globaux) >= len(depts_edt_dispo):
+            departements_globaux = []  # tous sélectionnés = aucun filtre
+    else:
+        st.caption("ℹ️ Colonne « Département » absente du fichier EDT : filtre par département indisponible.")
+
+    sig_dept_global = hashlib.md5("|".join(sorted(departements_globaux)).encode("utf-8")).hexdigest()[:6]
+    if departements_globaux:
+        _noms_dept_sur = [re.sub(r"[^\w\-]", "", d) for d in departements_globaux]
+        suffixe_dept_global = (
+            "_" + "_".join(_noms_dept_sur) if len(_noms_dept_sur) <= 3
+            else f"_{len(_noms_dept_sur)}departements"
+        )
+        promos_dept_dispo = _edt_grp_promos_par_departement(
+            df_edt_rep, promos_etu_dispo, mapper_promotion, departements_globaux
+        )
+        st.caption(
+            f"🏛️ Le fichier global ne contiendra que les enseignements du département : "
+            f"**{', '.join(departements_globaux)}** ({len(promos_dept_dispo)} promotion(s) concernée(s))."
+        )
+    else:
+        suffixe_dept_global = ""
+        promos_dept_dispo = list(promos_etu_dispo)
+
     portee_globale = st.radio(
         "Portée du fichier global :",
-        ["Promotion sélectionnée", "Toutes les promotions"],
+        ["Promotion sélectionnée", "Une ou plusieurs promotions", "Toutes les promotions"],
         horizontal=True,
         key="edt_grp_portee_globale"
     )
 
+    promos_multi_globales = []
+    if portee_globale == "Une ou plusieurs promotions":
+        promos_multi_globales = st.multiselect(
+            "🎓 Promotions (une ou plusieurs) :",
+            promos_dept_dispo,
+            default=[],
+            key=f"edt_grp_promos_multi_{sig_dept_global}",
+            help="Seules les promotions ayant des enseignements dans le ou les départements "
+                 "choisis sont proposées."
+        )
+
     if portee_globale == "Promotion sélectionnée" and not promo_grp_choisie:
         st.info("ℹ️ Choisissez une promotion ci-dessus pour générer tous ses EDT (groupes et sous-groupes).")
+    elif portee_globale == "Une ou plusieurs promotions" and not promos_multi_globales:
+        st.info("ℹ️ Choisissez une ou plusieurs promotions pour générer leurs EDT (groupes et sous-groupes).")
+    elif portee_globale == "Toutes les promotions" and not promos_dept_dispo:
+        st.warning("⚠️ Aucune promotion ne contient d'enseignement du ou des départements sélectionnés.")
     else:
         promos_cibles_grp = (
-            [promo_grp_sel] if portee_globale == "Promotion sélectionnée" else list(promos_etu_dispo)
+            [promo_grp_sel] if portee_globale == "Promotion sélectionnée"
+            else list(promos_multi_globales) if portee_globale == "Une ou plusieurs promotions"
+            else list(promos_dept_dispo)
         )
-        signature_globale = f"{portee_globale}|{'|'.join(promos_cibles_grp)}"
+        signature_globale = (
+            f"{portee_globale}|{'|'.join(promos_cibles_grp)}|"
+            f"{'+'.join(sorted(departements_globaux)) or 'TOUS'}"
+        )
 
         if st.button(
             "⚙️ Générer tous les EDT (Excel + HTML + PDF)",
@@ -27192,9 +27293,15 @@ tr:nth-child(even){{background-color:#f8fafc;}}
                 ].copy()
                 combos_cible = _edt_grp_combinaisons(df_etu_cible, col_groupe_grp, col_sous_groupe_grp)
                 df_edt_cible = _edt_grp_seances_promotion(df_edt_rep, promo_cible, mapper_promotion)
+                # Uniquement les enseignements du ou des départements sélectionnés
+                df_edt_cible = _edt_grp_filtrer_departements(df_edt_cible, departements_globaux)
 
                 if df_edt_cible.empty:
-                    ignores_globaux.append(f"{promo_cible} (aucun enseignement dans le fichier EDT)")
+                    ignores_globaux.append(
+                        f"{promo_cible} (aucun enseignement du département {', '.join(departements_globaux)})"
+                        if departements_globaux
+                        else f"{promo_cible} (aucun enseignement dans le fichier EDT)"
+                    )
                     continue
                 if not combos_cible:
                     ignores_globaux.append(f"{promo_cible} (aucun groupe/sous-groupe renseigné)")
@@ -27214,7 +27321,7 @@ tr:nth-child(even){{background-color:#f8fafc;}}
                         _edt_grp_construire_element(
                             promo_cible, combo_cible["groupe"], combo_cible["sous_groupe"],
                             grilles_cible, combo_cible["nb_etudiants"],
-                            portee_globale == "Toutes les promotions"
+                            portee_globale != "Promotion sélectionnée"
                         )
                     )
 
@@ -27224,20 +27331,27 @@ tr:nth-child(even){{background-color:#f8fafc;}}
                 st.session_state.pop("edt_grp_fichiers_globaux", None)
                 st.warning("⚠️ Aucun EDT à exporter pour cette sélection.")
             else:
-                titre_global = (
-                    f"EDT par groupe et sous-groupe — {promo_grp_sel}"
-                    if portee_globale == "Promotion sélectionnée"
-                    else "EDT par groupe et sous-groupe — Toutes les promotions"
-                )
+                if portee_globale == "Promotion sélectionnée":
+                    titre_global = f"EDT par groupe et sous-groupe — {promo_grp_sel}"
+                    base_nom_global = f"EDT_Tous_Groupes_{promo_grp_sel}"
+                elif portee_globale == "Une ou plusieurs promotions":
+                    titre_global = f"EDT par groupe et sous-groupe — {', '.join(promos_cibles_grp)}"
+                    base_nom_global = (
+                        "EDT_Tous_Groupes_" + "_".join(promos_cibles_grp)
+                        if len(promos_cibles_grp) <= 3
+                        else f"EDT_Tous_Groupes_{len(promos_cibles_grp)}_Promotions"
+                    )
+                else:
+                    titre_global = "EDT par groupe et sous-groupe — Toutes les promotions"
+                    base_nom_global = "EDT_Tous_Groupes_Toutes_Promotions"
+                if departements_globaux:
+                    titre_global += f" — Département {', '.join(departements_globaux)}"
+                    base_nom_global += suffixe_dept_global
                 fichiers_globaux = {
                     "signature": signature_globale,
                     "nb_edt": len(elements_globaux),
                     "ignores": ignores_globaux,
-                    "nom_base": _edt_grp_nom_fichier(
-                        f"EDT_Tous_Groupes_{promo_grp_sel}"
-                        if portee_globale == "Promotion sélectionnée"
-                        else "EDT_Tous_Groupes_Toutes_Promotions"
-                    ),
+                    "nom_base": _edt_grp_nom_fichier(base_nom_global),
                     "xlsx": None, "html": None, "pdf": None,
                     "erreurs": {},
                 }
