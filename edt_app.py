@@ -1527,6 +1527,228 @@ def detecter_colonnes_etudiant(df):
     return mapping
 
 
+# =============================================================================
+# NOUVEAU : GÉNÉRATION D'UN ZIP CONTENANT UN FICHIER EXCEL PAR PROMOTION
+# Chaque classeur contient : Nom, Prénom, Groupe et Sous-groupe.
+# Les étudiants sont triés par ordre alphabétique et le fichier est mis en forme.
+# =============================================================================
+def _normaliser_entete_export_liste_etu(valeur):
+    """Normalise un intitulé de colonne pour une détection exacte et robuste."""
+    import unicodedata
+    texte = "" if valeur is None else str(valeur).strip().casefold()
+    texte = unicodedata.normalize("NFKD", texte)
+    texte = "".join(car for car in texte if not unicodedata.combining(car))
+    return re.sub(r"[^a-z0-9]+", "", texte)
+
+
+def _colonne_exacte_export_liste_etu(df_source, alias):
+    """Retourne uniquement une colonne dont le nom correspond exactement à un alias normalisé."""
+    alias_normalises = {_normaliser_entete_export_liste_etu(a) for a in alias}
+    for colonne in df_source.columns:
+        if _normaliser_entete_export_liste_etu(colonne) in alias_normalises:
+            return colonne
+    return None
+
+
+@st.cache_data(show_spinner=False, max_entries=2)
+def creer_zip_listes_etudiants_par_promotion(
+    df_source,
+    colonne_promotion,
+    colonne_nom,
+    colonne_prenom,
+    colonne_groupe,
+    colonne_sous_groupe,
+):
+    """Crée un ZIP contenant un classeur Excel coloré et trié pour chaque promotion."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    import unicodedata
+
+    if df_source is None or df_source.empty:
+        raise ValueError("La liste source des étudiants est vide.")
+    if not colonne_promotion or colonne_promotion not in df_source.columns:
+        raise ValueError("La colonne « Promotion » est absente du fichier source.")
+
+    def valeur_propre(valeur):
+        try:
+            if pd.isna(valeur):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        if isinstance(valeur, float) and valeur.is_integer():
+            return str(int(valeur))
+        return str(valeur).strip()
+
+    def cle_alpha(valeur):
+        texte = unicodedata.normalize("NFKD", valeur_propre(valeur)).casefold()
+        return "".join(car for car in texte if not unicodedata.combining(car))
+
+    def nom_fichier_sain(nom):
+        # Évite les caractères interdits dans les noms de fichiers Windows.
+        nom = re.sub(r'[\\/:*?"<>|]+', "_", str(nom)).strip().rstrip(".")
+        nom = re.sub(r"\s+", " ", nom)
+        return nom or "Promotion non renseignée"
+
+    df = df_source.copy()
+    col_promo_interne = "__PROMOTION_ZIP_LISTES__"
+    df[col_promo_interne] = df[colonne_promotion].map(
+        lambda valeur: valeur_propre(valeur) or "Promotion non renseignée"
+    )
+
+    promotions = sorted(
+        df[col_promo_interne].drop_duplicates().tolist(),
+        key=lambda valeur: cle_alpha(valeur),
+    )
+    if not promotions:
+        raise ValueError("Aucune promotion n'a été trouvée dans le fichier source.")
+
+    zip_buffer = io.BytesIO()
+    noms_fichiers_crees = set()
+
+    # Palette professionnelle : bleu foncé, bleu clair et alternance de lignes.
+    couleur_titre = "17365D"
+    couleur_sous_titre = "D9EAF7"
+    couleur_entete = "1F4E78"
+    couleur_ligne_a = "FFFFFF"
+    couleur_ligne_b = "EAF3F8"
+    couleur_bordure = "C7D6E2"
+    bordure_fine = Side(style="thin", color=couleur_bordure)
+    bordure = Border(
+        left=bordure_fine,
+        right=bordure_fine,
+        top=bordure_fine,
+        bottom=bordure_fine,
+    )
+    entetes = ["Nom", "Prénom", "Groupe", "Sous-groupe"]
+
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        for promotion in promotions:
+            df_promo = df.loc[df[col_promo_interne] == promotion].copy()
+
+            def prendre_colonne(nom_colonne):
+                if nom_colonne and nom_colonne in df_promo.columns:
+                    return df_promo[nom_colonne].map(valeur_propre)
+                return pd.Series([""] * len(df_promo), index=df_promo.index, dtype="object")
+
+            export = pd.DataFrame({
+                "Nom": prendre_colonne(colonne_nom),
+                "Prénom": prendre_colonne(colonne_prenom),
+                "Groupe": prendre_colonne(colonne_groupe),
+                "Sous-groupe": prendre_colonne(colonne_sous_groupe),
+            }, index=df_promo.index)
+
+            # Tri alphabétique insensible à la casse et aux accents français.
+            export["__tri_nom__"] = export["Nom"].map(cle_alpha)
+            export["__tri_prenom__"] = export["Prénom"].map(cle_alpha)
+            export = export.sort_values(
+                by=["__tri_nom__", "__tri_prenom__"],
+                kind="mergesort",
+            ).drop(columns=["__tri_nom__", "__tri_prenom__"]).reset_index(drop=True)
+
+            classeur = Workbook()
+            feuille = classeur.active
+            feuille.title = "Liste étudiants"
+            feuille.sheet_view.showGridLines = False
+            feuille.freeze_panes = "A5"
+
+            # Titre de la feuille et effectif.
+            feuille.merge_cells("A1:D1")
+            cellule_titre = feuille["A1"]
+            cellule_titre.value = f"LISTE DES ÉTUDIANTS — {promotion}"
+            cellule_titre.fill = PatternFill("solid", fgColor=couleur_titre)
+            cellule_titre.font = Font(name="Arial", size=15, bold=True, color="FFFFFF")
+            cellule_titre.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            feuille.row_dimensions[1].height = 32
+
+            feuille.merge_cells("A2:D2")
+            cellule_info = feuille["A2"]
+            cellule_info.value = f"Promotion : {promotion}    |    Effectif : {len(export)} étudiant(s)"
+            cellule_info.fill = PatternFill("solid", fgColor=couleur_sous_titre)
+            cellule_info.font = Font(name="Arial", size=11, bold=True, color=couleur_titre)
+            cellule_info.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            feuille.row_dimensions[2].height = 24
+
+            # Ligne vide pour aérer la présentation.
+            feuille.row_dimensions[3].height = 8
+
+            # En-têtes colorés.
+            for numero_colonne, entete in enumerate(entetes, start=1):
+                cellule = feuille.cell(row=4, column=numero_colonne, value=entete)
+                cellule.fill = PatternFill("solid", fgColor=couleur_entete)
+                cellule.font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+                cellule.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cellule.border = bordure
+            feuille.row_dimensions[4].height = 26
+
+            # Données : lignes alternées, texte lisible et cellules adaptées.
+            for numero_ligne, valeurs in enumerate(export.itertuples(index=False, name=None), start=5):
+                longueurs_ligne = []
+                for numero_colonne, valeur in enumerate(valeurs, start=1):
+                    texte = valeur_propre(valeur)
+                    cellule = feuille.cell(row=numero_ligne, column=numero_colonne, value=texte)
+                    cellule.fill = PatternFill(
+                        "solid",
+                        fgColor=couleur_ligne_a if numero_ligne % 2 else couleur_ligne_b,
+                    )
+                    cellule.font = Font(name="Arial", size=10, color="172B4D")
+                    cellule.alignment = Alignment(
+                        horizontal="left" if numero_colonne <= 2 else "center",
+                        vertical="center",
+                        wrap_text=True,
+                    )
+                    cellule.border = bordure
+                    longueurs_ligne.append(len(texte))
+                # Hauteur accrue lorsque le nom ou prénom est particulièrement long.
+                feuille.row_dimensions[numero_ligne].height = 30 if max(longueurs_ligne or [0]) > 24 else 22
+
+            # Largeurs ajustées au contenu, avec plafonds pour éviter des colonnes excessives.
+            limites_largeur = {1: (16, 34), 2: (16, 34), 3: (13, 20), 4: (15, 22)}
+            for numero_colonne, entete in enumerate(entetes, start=1):
+                longueur_max = len(entete)
+                for cellule in feuille.iter_rows(
+                    min_row=5,
+                    max_row=max(5, feuille.max_row),
+                    min_col=numero_colonne,
+                    max_col=numero_colonne,
+                ):
+                    valeur = cellule[0].value
+                    longueur_max = max(longueur_max, len(str(valeur or "")))
+                minimum, maximum = limites_largeur[numero_colonne]
+                feuille.column_dimensions[get_column_letter(numero_colonne)].width = min(
+                    maximum, max(minimum, longueur_max + 3)
+                )
+
+            derniere_ligne = max(4, feuille.max_row)
+            feuille.auto_filter.ref = f"A4:D{derniere_ligne}"
+            feuille.sheet_properties.pageSetUpPr.fitToPage = True
+            feuille.page_setup.fitToWidth = 1
+            feuille.page_setup.fitToHeight = 0
+            feuille.page_setup.orientation = "landscape"
+            feuille.page_margins.left = 0.25
+            feuille.page_margins.right = 0.25
+            feuille.page_margins.top = 0.5
+            feuille.page_margins.bottom = 0.5
+            feuille.print_title_rows = "1:4"
+            feuille.sheet_properties.pageSetUpPr.autoPageBreaks = False
+
+            classeur_buffer = io.BytesIO()
+            classeur.save(classeur_buffer)
+            classeur_buffer.seek(0)
+
+            base_nom = f"Liste des étudiants_{nom_fichier_sain(promotion)}.xlsx"
+            nom_archive = base_nom
+            compteur_doublon = 2
+            while nom_archive.casefold() in noms_fichiers_crees:
+                nom_archive = f"Liste des étudiants_{nom_fichier_sain(promotion)}_{compteur_doublon}.xlsx"
+                compteur_doublon += 1
+            noms_fichiers_crees.add(nom_archive.casefold())
+            archive.writestr(nom_archive, classeur_buffer.getvalue())
+
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue()
+
+
 def format_date_naissance(val):
     """Formate une date de naissance quelle que soit son type d'origine (Excel, string, Timestamp...)."""
     if pd.isna(val):
@@ -14900,6 +15122,88 @@ td,th{{word-wrap:break-word;}}
 
             # ✨ Boutons de téléchargement Excel (AVANT les congés)
             st.markdown("### 📥 Télécharger les Listes")
+
+            # ═══════════════════════════════════════════════════════════════
+            # NOUVEAU BOUTON : TOUTES LES LISTES PAR PROMOTION DANS UN ZIP
+            # Un classeur Excel séparé par promotion, trié par nom/prénom.
+            # ═══════════════════════════════════════════════════════════════
+            _mapping_zip_etu = detecter_colonnes_etudiant(df_etu_edt)
+            _col_promo_zip = _colonne_exacte_export_liste_etu(
+                df_etu_edt, ["promotion", "promo", "formation", "niveau"]
+            ) or _mapping_zip_etu.get("promotion")
+            _col_nom_zip = _colonne_exacte_export_liste_etu(
+                df_etu_edt, ["nom", "lastname", "familyname", "nomdefamille"]
+            )
+            _col_prenom_zip = _colonne_exacte_export_liste_etu(
+                df_etu_edt, ["prenom", "firstname", "givenname"]
+            )
+            _col_groupe_zip = _colonne_exacte_export_liste_etu(
+                df_etu_edt, ["groupe", "grp", "group", "section"]
+            )
+            _col_sous_groupe_zip = _colonne_exacte_export_liste_etu(
+                df_etu_edt, ["sousgroupe", "sousgrp", "subgroup"]
+            )
+
+            # Repli sur le mapping déjà utilisé dans l'application, sans confondre
+            # « Groupe » avec « Groupe sanguin ».
+            if not _col_nom_zip:
+                _candidate_nom_zip = _mapping_zip_etu.get("nom")
+                if _candidate_nom_zip and _normaliser_entete_export_liste_etu(_candidate_nom_zip) != "nomcomplet":
+                    _col_nom_zip = _candidate_nom_zip
+                elif "Nom_Complet" in df_etu_edt.columns:
+                    _col_nom_zip = "Nom_Complet"
+            if not _col_prenom_zip:
+                _candidate_prenom_zip = _mapping_zip_etu.get("prenom")
+                if _candidate_prenom_zip and _normaliser_entete_export_liste_etu(_candidate_prenom_zip) not in {"nomcomplet", "nom"}:
+                    _col_prenom_zip = _candidate_prenom_zip
+            if not _col_groupe_zip:
+                _candidate_groupe_zip = _mapping_zip_etu.get("groupe")
+                if _candidate_groupe_zip and _normaliser_entete_export_liste_etu(_candidate_groupe_zip) != "groupesanguin":
+                    _col_groupe_zip = _candidate_groupe_zip
+            if not _col_sous_groupe_zip:
+                _col_sous_groupe_zip = _mapping_zip_etu.get("sous_groupe")
+
+            _colonnes_obligatoires_manquantes_zip = []
+            if not _col_nom_zip:
+                _colonnes_obligatoires_manquantes_zip.append("Nom")
+            if not _col_prenom_zip:
+                _colonnes_obligatoires_manquantes_zip.append("Prénom")
+            if not _col_groupe_zip:
+                _colonnes_obligatoires_manquantes_zip.append("Groupe")
+            if not _col_sous_groupe_zip:
+                _colonnes_obligatoires_manquantes_zip.append("Sous-groupe")
+
+            if _colonnes_obligatoires_manquantes_zip:
+                st.caption(
+                    "ℹ️ Certaines colonnes demandées ne sont pas identifiées dans le fichier source : "
+                    + ", ".join(_colonnes_obligatoires_manquantes_zip)
+                    + ". Les colonnes correspondantes resteront vides dans les listes exportées."
+                )
+
+            if _col_promo_zip:
+                try:
+                    _zip_listes_toutes_promos = creer_zip_listes_etudiants_par_promotion(
+                        df_etu_edt,
+                        _col_promo_zip,
+                        _col_nom_zip,
+                        _col_prenom_zip,
+                        _col_groupe_zip,
+                        _col_sous_groupe_zip,
+                    )
+                    st.download_button(
+                        label="📦 Télécharger toutes les promotions (Excel séparés dans un ZIP)",
+                        data=_zip_listes_toutes_promos,
+                        file_name="Listes des étudiants_Toutes les promotions.zip",
+                        mime="application/zip",
+                        use_container_width=True,
+                        key="dl_toutes_listes_etudiants_promotions_zip",
+                        help="Un fichier Excel par promotion, nommé « Liste des étudiants_Nom de la Promotion.xlsx », trié alphabétiquement et mis en forme.",
+                    )
+                except Exception as _err_zip_liste_etu:
+                    st.error(f"❌ Impossible de préparer le ZIP des listes par promotion : {str(_err_zip_liste_etu)[:250]}")
+            else:
+                st.warning("⚠️ La colonne « Promotion » n'a pas été trouvée : création du ZIP impossible.")
+
             db1, db2, db3, db4, db5 = st.columns(5)
             
             cols_map_temp = detecter_colonnes_etudiant(df_etu_edt)
