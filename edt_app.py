@@ -23438,24 +23438,194 @@ if is_admin:
     if "emails_saisis" not in st.session_state:
         st.session_state["emails_saisis"] = {}
 
-    # --- PRÉPARATION DES DONNÉES ---
+    # --- PRÉPARATION DES DONNÉES : ENSEIGNANT + DÉPARTEMENT + TÉLÉPHONE + EMAIL ---
+    # La source prioritaire est le DataFrame de l'EDT / espace éditeur (df).
+    # Lorsqu'un champ contact n'existe pas dans l'EDT, on utilise le répertoire
+    # des contacts déjà chargé par la plateforme comme solution de repli.
+    import unicodedata
+
+    def _envoi_valeur_propre(valeur, defaut=""):
+        try:
+            if pd.isna(valeur):
+                return defaut
+        except Exception:
+            pass
+        texte = str(valeur).strip()
+        if texte.lower() in {"", "nan", "none", "null", "nat", "non défini", "non defini"}:
+            return defaut
+        return texte
+
+    def _envoi_cle_nom(valeur):
+        texte = _envoi_valeur_propre(valeur, "").upper()
+        texte = unicodedata.normalize("NFKD", texte)
+        texte = "".join(c for c in texte if not unicodedata.combining(c))
+        return re.sub(r"[^A-Z0-9]+", "", texte)
+
+    def _envoi_colonne(frame, alias):
+        if frame is None or not isinstance(frame, pd.DataFrame) or frame.empty:
+            return None
+        def _norm_col(col):
+            texte = unicodedata.normalize("NFKD", str(col)).upper().strip()
+            texte = "".join(c for c in texte if not unicodedata.combining(c))
+            return re.sub(r"[^A-Z0-9]+", "", texte)
+        index = {_norm_col(c): c for c in frame.columns}
+        for candidate in alias:
+            cle = _norm_col(candidate)
+            if cle in index:
+                return index[cle]
+        return None
+
+    _alias_enseignant = ["Enseignants", "Enseignant", "Nom complet", "Nom de l'enseignant", "NOM"]
+    _alias_departement = [
+        "Département d'affiliation", "Departement d'affiliation", "Département de rattachement",
+        "Département d'appartenance", "Département", "Departement", "Department", "Dept",
+        "Faculté / Département", "Structure de rattachement"
+    ]
+    _alias_email = ["Email", "E-mail", "E_mail", "Courriel", "Adresse email", "Adresse e-mail", "Mail"]
+    _alias_telephone = [
+        "N°/TEL", "N° de téléphone", "Numéro de téléphone", "Téléphone", "Telephone",
+        "Tel", "Mobile", "Téléphone professionnel", "Contact"
+    ]
+
+    # Index construit en premier à partir des données d'enseignement effectivement chargées.
+    _infos_edt_par_nom = {}
+    if isinstance(df, pd.DataFrame) and not df.empty:
+        _col_ens_edt = _envoi_colonne(df, _alias_enseignant)
+        _col_dept_edt = _envoi_colonne(df, _alias_departement)
+        _col_email_edt = _envoi_colonne(df, _alias_email)
+        _col_tel_edt = _envoi_colonne(df, _alias_telephone)
+        if _col_ens_edt:
+            for _, _ligne_edt in df.iterrows():
+                _nom_edt = _envoi_valeur_propre(_ligne_edt.get(_col_ens_edt, ""))
+                if not _nom_edt:
+                    continue
+                _info = {
+                    "Département d'affiliation": _envoi_valeur_propre(_ligne_edt.get(_col_dept_edt, "")) if _col_dept_edt else "",
+                    "Téléphone": _envoi_valeur_propre(_ligne_edt.get(_col_tel_edt, "")) if _col_tel_edt else "",
+                    "Email": _envoi_valeur_propre(_ligne_edt.get(_col_email_edt, "")) if _col_email_edt else "",
+                }
+                _cles_ligne = {_envoi_cle_nom(_nom_edt)}
+                # Une cellule peut contenir plusieurs enseignants séparés par +, /, virgule ou &.
+                for _partie_nom in re.split(r"\s*(?:\+|/|,|&|\bet\b)\s*", _nom_edt, flags=re.IGNORECASE):
+                    if _envoi_cle_nom(_partie_nom):
+                        _cles_ligne.add(_envoi_cle_nom(_partie_nom))
+                for _cle_nom in _cles_ligne:
+                    if not _cle_nom:
+                        continue
+                    _precedent = _infos_edt_par_nom.setdefault(_cle_nom, {
+                        "Départements": set(), "Téléphone": "", "Email": ""
+                    })
+                    if _info["Département d'affiliation"]:
+                        _precedent["Départements"].add(_info["Département d'affiliation"])
+                    if _info["Téléphone"] and not _precedent["Téléphone"]:
+                        _precedent["Téléphone"] = _info["Téléphone"]
+                    if _info["Email"] and not _precedent["Email"]:
+                        _precedent["Email"] = _info["Email"]
+
+    # Index de secours du fichier du personnel (NOM / PRÉNOM / Email / N°/TEL).
+    _infos_contacts_par_nom = {}
+    if isinstance(df_contacts, pd.DataFrame) and not df_contacts.empty:
+        _col_nom_contact = _envoi_colonne(df_contacts, ["NOM", "Nom", "Enseignant", "Nom complet"])
+        _col_prenom_contact = _envoi_colonne(df_contacts, ["PRÉNOM", "PRENOM", "Prénom", "Prenom"])
+        _col_dept_contact = _envoi_colonne(df_contacts, _alias_departement)
+        _col_email_contact = _envoi_colonne(df_contacts, _alias_email)
+        _col_tel_contact = _envoi_colonne(df_contacts, _alias_telephone)
+        if _col_nom_contact:
+            for _, _ligne_contact in df_contacts.iterrows():
+                _nom_contact = _envoi_valeur_propre(_ligne_contact.get(_col_nom_contact, ""))
+                _prenom_contact = _envoi_valeur_propre(_ligne_contact.get(_col_prenom_contact, "")) if _col_prenom_contact else ""
+                if not _nom_contact:
+                    continue
+                _nom_complet_contact = f"{_nom_contact} {_prenom_contact}".strip()
+                _info_contact = {
+                    "Département d'affiliation": _envoi_valeur_propre(_ligne_contact.get(_col_dept_contact, "")) if _col_dept_contact else "",
+                    "Téléphone": _envoi_valeur_propre(_ligne_contact.get(_col_tel_contact, "")) if _col_tel_contact else "",
+                    "Email": _envoi_valeur_propre(_ligne_contact.get(_col_email_contact, "")) if _col_email_contact else "",
+                }
+                for _nom_candidat in {_nom_contact, _nom_complet_contact}:
+                    _cle_candidat = _envoi_cle_nom(_nom_candidat)
+                    if _cle_candidat:
+                        _dest = _infos_contacts_par_nom.setdefault(_cle_candidat, {})
+                        for _champ in ("Département d'affiliation", "Téléphone", "Email"):
+                            if _info_contact[_champ] and not _dest.get(_champ):
+                                _dest[_champ] = _info_contact[_champ]
+
+    def _envoi_lookup_repertoire(dictionnaire, nom_enseignant):
+        """Recherche d'abord le nom complet normalisé, puis le premier nom (fallback historique)."""
+        if not isinstance(dictionnaire, dict):
+            return ""
+        cle_complete = _envoi_cle_nom(nom_enseignant)
+        for cle, valeur in dictionnaire.items():
+            if _envoi_cle_nom(cle) == cle_complete and cle_complete:
+                propre = _envoi_valeur_propre(valeur)
+                if propre:
+                    return propre
+        premier = str(nom_enseignant or "").strip().upper().split(" ")[0] if str(nom_enseignant or "").strip() else ""
+        for cle, valeur in dictionnaire.items():
+            if _envoi_cle_nom(cle) == _envoi_cle_nom(premier) and premier:
+                propre = _envoi_valeur_propre(valeur)
+                if propre:
+                    return propre
+        return ""
+
     donnees_finales = []
-    if df is not None:
-        for ens in sorted(df["Enseignants"].unique()):
-            email = repertoire_source.get(str(ens).strip().upper(), "Non communiquée")
-            # Email écrit à la main dans le tableau : prioritaire, l'état devient alors « ✅ Prêt »
+    if isinstance(df, pd.DataFrame) and not df.empty and "Enseignants" in df.columns:
+        _enseignants_uniques = []
+        for _valeur_ens in df["Enseignants"].dropna().astype(str).unique().tolist():
+            _valeur_ens = _valeur_ens.strip()
+            if _valeur_ens and _valeur_ens.lower() not in {"nan", "none", "non défini", "non defini"}:
+                _enseignants_uniques.append(_valeur_ens)
+
+        for ens in sorted(set(_enseignants_uniques), key=lambda x: _envoi_cle_nom(x)):
+            _cle_ens = _envoi_cle_nom(ens)
+            _info_edt = _infos_edt_par_nom.get(_cle_ens, {})
+            _info_contact = _infos_contacts_par_nom.get(_cle_ens, {})
+
+            _depts = _info_edt.get("Départements", set())
+            departement = " / ".join(sorted(str(x).strip() for x in _depts if str(x).strip()))
+            if not departement:
+                departement = _envoi_valeur_propre(_info_contact.get("Département d'affiliation", "")) or "Non renseigné"
+
+            telephone = (
+                _envoi_valeur_propre(_info_edt.get("Téléphone", ""))
+                or _envoi_valeur_propre(_info_contact.get("Téléphone", ""))
+                or _envoi_lookup_repertoire(repertoire_telephones, ens)
+                or "Non renseigné"
+            )
+
+            email = (
+                _envoi_valeur_propre(_info_edt.get("Email", ""))
+                or _envoi_valeur_propre(_info_contact.get("Email", ""))
+                or _envoi_lookup_repertoire(repertoire_source, ens)
+                or "Non communiquée"
+            )
+            # Conserver la priorité aux adresses saisies manuellement dans cette interface.
             email_saisi = st.session_state["emails_saisis"].get(str(ens).strip().upper())
             if email_saisi:
                 email = email_saisi
+
+            email_valide = bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", str(email or "")))
             donnees_finales.append({
                 "Enseignant": ens,
+                "Département d'affiliation": departement,
+                "Téléphone": telephone,
                 "Email": email,
-                "État d'envoi": "✅ Prêt" if email != "Non communiquée" else "❌ Adresse non communiquée"
+                "État d'envoi": "✅ Prêt" if email_valide else "❌ Adresse non communiquée"
             })
     
-    mode_envoi = st.radio("Choisir le mode d'envoi :", 
-                          ["Un par un (Individuel)", "Sélection groupée (Multi-choix)", "Par Promotion (Automatique)"], 
-                          horizontal=True)
+    mode_envoi = st.radio(
+        "Choisir le mode d'envoi :",
+        [
+            "Un par un (Individuel)",
+            "Sélection groupée (Multi-choix)",
+            "Par Promotion (Automatique)",
+            "Par département (Automatique)",
+            "Plusieurs départements",
+            "Tous les départements",
+        ],
+        horizontal=False,
+        key="mode_envoi_personnalise_v2",
+    )
     
     # --- LOGIQUE DE FILTRAGE COMMUNE ---
     col_f1, col_f2 = st.columns(2)
@@ -23483,7 +23653,7 @@ if is_admin:
             use_container_width=True,
             hide_index=True,
             key=f"editeur_emails_{cle}_{signature}",
-            disabled=["Enseignant", "État d'envoi"],
+            disabled=["Enseignant", "Département d'affiliation", "Téléphone", "État d'envoi"],
             column_config={
                 "Email": st.column_config.TextColumn(
                     "Email",
@@ -23491,11 +23661,11 @@ if is_admin:
                 )
             }
         )
-        st.caption("✏️ Double-cliquez sur une cellule de la colonne Email pour écrire l'adresse : l'état passe automatiquement à « ✅ Prêt ».")
+        st.caption("📋 Département d’affiliation et téléphone proviennent en priorité des données EDT / espace éditeur. ✏️ Double-cliquez sur une cellule Email pour modifier l’adresse ; un email valide fait passer l’état à « ✅ Prêt ».")
 
         def _vide(x):
             x = "" if pd.isna(x) else str(x).strip()
-            return "" if x in ("Non communiquée", "nan", "None") else x
+            return "" if x in ("Non communiquée", "Non renseigné", "nan", "None", "null") else x
 
         modifie = False
         for i in range(len(df_tab)):
@@ -23527,7 +23697,7 @@ if is_admin:
             df_x.to_excel(writer_x, index=False, sheet_name='Envois')
             ws_x = writer_x.sheets['Envois']
             for i_x, col_x in enumerate(df_x.columns):
-                largeur_x = max(df_x[col_x].astype(str).map(len).max(), len(col_x)) + 2
+                largeur_x = min(max(int(df_x[col_x].fillna("").astype(str).map(len).max()), len(str(col_x))) + 2, 48)
                 ws_x.set_column(i_x, i_x, largeur_x)
         buffer_x.seek(0)
         st.download_button(
@@ -23948,7 +24118,7 @@ if is_admin:
         if selection:
             st.write(f"🔍 **Prévisualisation de la sélection ({len(selection)}) :**")
             donnees_previsu = [e for e in enseignants_filtres if e["Enseignant"] in selection]
-            df_previsu = pd.DataFrame(donnees_previsu)[["Enseignant", "Email", "État d'envoi"]]
+            df_previsu = pd.DataFrame(donnees_previsu)[["Enseignant", "Département d'affiliation", "Téléphone", "Email", "État d'envoi"]]
             tableau_emails_editable(df_previsu.to_dict("records"), "groupee")
             bouton_excel_tableau(df_previsu.to_dict("records"), "Gestion_envois_selection_S1_2027.xlsx", "groupee")
         
@@ -23968,7 +24138,7 @@ if is_admin:
         st.write(f"### 📋 Contrôle : {choix_promo}")
         if liste_promo:
             df_export = pd.DataFrame(liste_promo)
-            colonnes_export = ["Enseignant", "Email"]
+            colonnes_export = ["Enseignant", "Département d'affiliation", "Téléphone", "Email", "État d'envoi"]
             df_download = df_export[colonnes_export].drop_duplicates()
     
             nb_ok = sum(1 for e in liste_promo if "@" in str(e["Email"]))
@@ -23982,7 +24152,7 @@ if is_admin:
                 df_download.to_excel(writer, index=False, sheet_name='Liste_Emails')
                 worksheet = writer.sheets['Liste_Emails']
                 for i, col in enumerate(df_download.columns):
-                    column_len = max(df_download[col].astype(str).map(len).max(), len(col)) + 2
+                    column_len = min(max(int(df_download[col].fillna("").astype(str).map(len).max()), len(str(col))) + 2, 48)
                     worksheet.set_column(i, i, column_len)
             buffer.seek(0)
     
@@ -24005,7 +24175,172 @@ if is_admin:
     
         else:
             st.info("Aucun enseignant trouvé pour cette promotion.")
-    
+
+    # =============================================================================
+    # NOUVEAUX MODES D'ENVOI : UN DÉPARTEMENT / PLUSIEURS / TOUS
+    # Les départements sont récupérés à partir des données déjà préparées
+    # depuis l'EDT et l'espace éditeur. Les filtres de statut restent actifs,
+    # mais la recherche d'un enseignant individuel ne limite pas ces modes.
+    # =============================================================================
+    def _envoi_departements_ligne(info_enseignant):
+        """Retourne les départements d'une ligne, ou Non renseigné si absent."""
+        brut = _envoi_valeur_propre(
+            info_enseignant.get("Département d'affiliation", ""), ""
+        )
+        if not brut:
+            return ["Non renseigné"]
+        # Plusieurs départements sont affichés avec le séparateur « / ».
+        morceaux = [p.strip() for p in re.split(r"\s+/\s+", brut) if p.strip()]
+        return morceaux or ["Non renseigné"]
+
+    _departements_index = {}
+    for _info_enseignant in donnees_finales:
+        for _dept in _envoi_departements_ligne(_info_enseignant):
+            _cle_dept = _envoi_cle_nom(_dept)
+            if _cle_dept:
+                _departements_index.setdefault(_cle_dept, _dept)
+    departements_disponibles = sorted(
+        _departements_index.values(), key=lambda x: _envoi_cle_nom(x)
+    )
+
+    # Applique le filtre de statut, mais ignore le filtre du nom individuel :
+    # les opérations par département doivent pouvoir couvrir tout le service.
+    base_enseignants_departements = [
+        e for e in donnees_finales
+        if choix_statut == "TOUS" or e["État d'envoi"] == choix_statut
+    ]
+
+    def _envoi_filtrer_par_departements(lignes, departements_selectionnes):
+        """Sélectionne l'union des enseignants rattachés aux départements choisis."""
+        cles_recherchees = {
+            _envoi_cle_nom(d) for d in (departements_selectionnes or [])
+            if _envoi_cle_nom(d)
+        }
+        if not cles_recherchees:
+            return []
+        resultat = []
+        deja_vus = set()
+        for ligne in lignes:
+            cles_ligne = {
+                _envoi_cle_nom(d) for d in _envoi_departements_ligne(ligne)
+                if _envoi_cle_nom(d)
+            }
+            nom_cle = _envoi_cle_nom(ligne.get("Enseignant", ""))
+            if cles_ligne.intersection(cles_recherchees) and nom_cle not in deja_vus:
+                resultat.append(ligne)
+                deja_vus.add(nom_cle)
+        return resultat
+
+    def _afficher_envoi_departement(lignes, cle_mode, label_cible, nom_fichier):
+        """Affiche la liste, l'export Excel, puis le bouton d'envoi sécurisé."""
+        if not lignes:
+            st.info("Aucun enseignant ne correspond à cette sélection et au filtre de statut actuel.")
+            return
+
+        df_liste_dept = pd.DataFrame(lignes)
+        colonnes_visibles_dept = [
+            c for c in [
+                "Enseignant", "Département d'affiliation", "Téléphone", "Email", "État d'envoi"
+            ] if c in df_liste_dept.columns
+        ]
+        lignes_affichees = df_liste_dept[colonnes_visibles_dept].to_dict("records")
+        nb_emails_valides = sum(
+            1 for e in lignes_affichees
+            if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", str(e.get("Email", "")))
+        )
+        col_metric1, col_metric2 = st.columns(2)
+        with col_metric1:
+            st.metric("👥 Enseignants concernés", len(lignes_affichees))
+        with col_metric2:
+            st.metric("📧 Emails valides", f"{nb_emails_valides} / {len(lignes_affichees)}")
+
+        tableau_emails_editable(lignes_affichees, cle_mode)
+        bouton_excel_tableau(lignes_affichees, nom_fichier, cle_mode)
+
+        if st.button(
+            f"🚀 ENVOYER AUX DESTINATAIRES — {label_cible}",
+            type="primary",
+            use_container_width=True,
+            key=f"bouton_envoyer_{cle_mode}",
+        ):
+            destinataires_valides = [
+                e for e in lignes
+                if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", str(e.get("Email", "")))
+            ]
+            if destinataires_valides:
+                envoyer_emails(destinataires_valides, label_cible)
+            else:
+                st.error("Aucune adresse email valide dans cette sélection. Vérifiez la colonne Email.")
+
+    if mode_envoi == "Par département (Automatique)":
+        if departements_disponibles:
+            choix_departement = st.selectbox(
+                "🏢 Sélectionner le département :",
+                departements_disponibles,
+                key="envoi_departement_unique",
+            )
+            liste_departement = _envoi_filtrer_par_departements(
+                base_enseignants_departements, [choix_departement]
+            )
+            st.markdown(f"### 📋 Envoi pour le département : {choix_departement}")
+            _afficher_envoi_departement(
+                liste_departement,
+                "departement_unique",
+                choix_departement,
+                "Emails_Departement_" + re.sub(r"[^A-Za-z0-9_-]+", "_", choix_departement) + "_S1_2027.xlsx",
+            )
+        else:
+            st.warning("Aucun département n'est disponible dans les données chargées.")
+
+    elif mode_envoi == "Plusieurs départements":
+        if departements_disponibles:
+            choix_departements_multiples = st.multiselect(
+                "🏢 Sélectionner un ou plusieurs départements :",
+                departements_disponibles,
+                key="envoi_departements_multiples",
+                help="Un enseignant est retenu s'il est associé à au moins un des départements sélectionnés.",
+            )
+            if choix_departements_multiples:
+                liste_departements_multiples = _envoi_filtrer_par_departements(
+                    base_enseignants_departements, choix_departements_multiples
+                )
+                etiquette_multi = ", ".join(choix_departements_multiples)
+                st.markdown(
+                    f"### 📋 Envoi pour {len(choix_departements_multiples)} département(s)"
+                )
+                _afficher_envoi_departement(
+                    liste_departements_multiples,
+                    "departements_multiples",
+                    etiquette_multi,
+                    "Emails_Plusieurs_Departements_S1_2027.xlsx",
+                )
+            else:
+                st.info("Sélectionnez au moins un département pour afficher les destinataires.")
+        else:
+            st.warning("Aucun département n'est disponible dans les données chargées.")
+
+    elif mode_envoi == "Tous les départements":
+        # Ce mode inclut tous les départements et également les enseignants
+        # pour lesquels le département n'est pas renseigné, afin de ne laisser
+        # personne de côté. Le filtre de statut choisi reste appliqué.
+        liste_tous_departements = list(base_enseignants_departements)
+        nb_departements_detectes = len({
+            _envoi_cle_nom(dep)
+            for ligne in liste_tous_departements
+            for dep in _envoi_departements_ligne(ligne)
+            if _envoi_cle_nom(dep) and _envoi_cle_nom(dep) != _envoi_cle_nom("Non renseigné")
+        })
+        st.markdown("### 📋 Envoi à tous les départements")
+        st.caption(
+            f"{nb_departements_detectes} département(s) reconnu(s). "
+            "Les enseignants sans département renseigné restent inclus dans la liste globale."
+        )
+        _afficher_envoi_departement(
+            liste_tous_departements,
+            "tous_departements",
+            "Tous les départements",
+            "Emails_Tous_les_Departements_S1_2027.xlsx",
+        )
     
     # =============================================================================
     # SECTION COURRIER OFFICIEL : MULTI-EXPÉDITEURS (CHEF / ADJOINT / SEC)
