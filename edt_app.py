@@ -10633,6 +10633,321 @@ td{{word-wrap:break-word;}}
                 )
 
                 # ========================================================
+                # RÉSOLUTION DES CHEVAUCHEMENTS PAR LIEU — AFFECTATION EN LIGNE
+                # --------------------------------------------------------
+                # Pour chaque créneau rouge, proposer TOUS les lieux libres
+                # au même jour et au même horaire. Le choix d'un nouveau
+                # lieu met à jour Supabase (edt_data), puis le fichier Excel
+                # source local utilisé par cette vue.
+                # ========================================================
+                _flash_lieu = st.session_state.pop("flash_lieu_resolution_chev", None)
+                if _flash_lieu:
+                    st.success(_flash_lieu)
+
+                _conflits_a_resoudre_lieu = []
+                for (_jour_res, _horaire_res), _groupe_res in cellules_chev.items():
+                    _est_conflit_res, _, _ = _analyser_cellule_chev(_groupe_res)
+                    if _est_conflit_res:
+                        _conflits_a_resoudre_lieu.append((_jour_res, _horaire_res, _groupe_res))
+
+                if _conflits_a_resoudre_lieu:
+                    st.markdown("#### 🛠️ Résoudre les chevauchements — tous les lieux libres")
+                    st.caption(
+                        "Pour chaque créneau en conflit, sélectionnez l'enseignement à déplacer, "
+                        "puis choisissez un lieu libre. La liste est globale : elle inclut tous les "
+                        "lieux recensés dans l'EDT et exclut ceux occupés à ce jour et à cet horaire, "
+                        "en tenant compte du chevauchement réel des durées. Le choix est enregistré "
+                        "automatiquement dans la base en ligne `edt_data`."
+                    )
+
+                    _version_resolution_lieu = int(
+                        st.session_state.get("version_resolution_lieu_chev", 0)
+                    )
+
+                    def _normaliser_valeur_match_edt_en_ligne(valeur):
+                        """Normalise une valeur pour retrouver la ligne locale dans edt_data."""
+                        try:
+                            if pd.isna(valeur):
+                                return ""
+                        except (TypeError, ValueError):
+                            pass
+                        texte = str(valeur).replace("\u00a0", " ").strip()
+                        texte = texte.replace("–", "-").replace("—", "-")
+                        texte = re.sub(r"\s+", " ", texte).casefold()
+                        if texte in {"", "nan", "none", "<na>", "non défini", "non defini"}:
+                            return ""
+                        return texte
+
+                    def _meme_valeur_ligne_edt(colonne, valeur_cloud, valeur_locale):
+                        """Compare heure/jour sans être sensible aux espaces de leur libellé."""
+                        if colonne in {"Horaire", "Jours"}:
+                            def _norm_hj(v):
+                                try:
+                                    if pd.isna(v):
+                                        return ""
+                                except (TypeError, ValueError):
+                                    pass
+                                t = str(v).strip().casefold().replace("–", "-").replace("—", "-")
+                                t = re.sub(r"[\s-]+", "", t).replace(":00", "").replace("h00", "h")
+                                if t in {"", "nan", "none", "<na>", "non défini", "non defini"}:
+                                    return ""
+                                return t
+                            return _norm_hj(valeur_cloud) == _norm_hj(valeur_locale)
+                        return (
+                            _normaliser_valeur_match_edt_en_ligne(valeur_cloud)
+                            == _normaliser_valeur_match_edt_en_ligne(valeur_locale)
+                        )
+
+                    def _enregistrer_nouveau_lieu_en_ligne(idx_ligne_source, nouveau_lieu):
+                        """Vérifie que le lieu est libre, met à jour Supabase et le fichier local."""
+                        if supabase_edt is None:
+                            raise RuntimeError(
+                                "Connexion Supabase indisponible : aucun changement n'a été enregistré."
+                            )
+                        if idx_ligne_source not in df.index:
+                            raise RuntimeError("La ligne EDT sélectionnée n'existe plus. Actualisez la page.")
+
+                        ligne_avant = df.loc[idx_ligne_source].copy()
+                        jour_source = str(ligne_avant.get("Jours", "")).strip()
+                        horaire_source = str(ligne_avant.get("Horaire", "")).strip()
+                        ancien_lieu = str(ligne_avant.get("Lieu", "")).strip()
+
+                        # Recalcul des disponibilités à l'instant du choix : on retire
+                        # seulement la séance à déplacer, puis on contrôle le créneau réel.
+                        df_sans_seance = df.drop(index=idx_ligne_source).copy()
+                        _, _libres_actuels, _tous_lieux_actuels = _lieux_libres(
+                            df_sans_seance, [horaire_source], [jour_source]
+                        )
+                        lieux_disponibles_reels = _libres_actuels.get(
+                            (jour_source, horaire_source), []
+                        )
+                        if nouveau_lieu not in lieux_disponibles_reels:
+                            raise RuntimeError(
+                                f"Le lieu « {nouveau_lieu} » n'est plus libre le {jour_source} "
+                                f"au créneau {horaire_source}. La liste a été recalculée ; "
+                                "choisissez un autre lieu."
+                            )
+
+                        colonnes_cle_edt = [
+                            "Enseignements", "Code", "Enseignants", "Horaire",
+                            "Jours", "Lieu", "Promotion"
+                        ]
+                        for colonne in colonnes_cle_edt:
+                            if colonne not in df.columns:
+                                raise RuntimeError(
+                                    f"Colonne locale requise absente : « {colonne} »."
+                                )
+
+                        # Lecture de la ligne source en ligne et appariement sur les
+                        # sept champs métier avant toute mise à jour.
+                        try:
+                            reponse_edt_cloud = supabase_edt.table("edt_data").select("*").execute()
+                            lignes_edt_cloud = reponse_edt_cloud.data or []
+                        except Exception as erreur_cloud:
+                            raise RuntimeError(
+                                f"Impossible de lire la base en ligne edt_data : {erreur_cloud}"
+                            ) from erreur_cloud
+
+                        correspondances_cloud = []
+                        for ligne_cloud in lignes_edt_cloud:
+                            est_meme_ligne = True
+                            for colonne in colonnes_cle_edt:
+                                if not _meme_valeur_ligne_edt(
+                                    colonne,
+                                    ligne_cloud.get(colonne),
+                                    ligne_avant.get(colonne),
+                                ):
+                                    est_meme_ligne = False
+                                    break
+                            if est_meme_ligne:
+                                correspondances_cloud.append(ligne_cloud)
+
+                        if not correspondances_cloud:
+                            raise RuntimeError(
+                                "La séance correspondante n'a pas été retrouvée dans la base en ligne. "
+                                "Aucun changement local n'a été effectué ; rechargez l'EDT puis réessayez."
+                            )
+
+                        ligne_cloud_cible = correspondances_cloud[0]
+                        try:
+                            if ligne_cloud_cible.get("id") is not None:
+                                # L'identifiant évite de modifier d'autres lignes similaires.
+                                supabase_edt.table("edt_data").update({
+                                    "Lieu": str(nouveau_lieu)
+                                }).eq("id", ligne_cloud_cible["id"]).execute()
+                            else:
+                                # Repli pour un schéma sans identifiant : n'autoriser que
+                                # l'appariement unique, sinon le ciblage serait ambigu.
+                                if len(correspondances_cloud) != 1:
+                                    raise RuntimeError(
+                                        "Plusieurs lignes identiques sont présentes en ligne et aucun identifiant "
+                                        "unique n'est disponible. Mise à jour automatique annulée par sécurité."
+                                    )
+                                requete_update = supabase_edt.table("edt_data").update({
+                                    "Lieu": str(nouveau_lieu)
+                                })
+                                for colonne in colonnes_cle_edt:
+                                    valeur_cloud = ligne_cloud_cible.get(colonne)
+                                    if valeur_cloud is None:
+                                        requete_update = requete_update.is_(colonne, "null")
+                                    else:
+                                        requete_update = requete_update.eq(colonne, valeur_cloud)
+                                requete_update.execute()
+                        except Exception as erreur_update:
+                            raise RuntimeError(
+                                f"Échec de l'enregistrement dans la base en ligne edt_data : {erreur_update}"
+                            ) from erreur_update
+
+                        # Une fois la base en ligne mise à jour, actualiser le DataFrame
+                        # et le classeur utilisé par la vue locale, sans colonnes techniques.
+                        df.loc[idx_ligne_source, "Lieu"] = str(nouveau_lieu)
+                        chemin_excel_source = str(
+                            globals().get("NOM_FICHIER_FIXE") or globals().get("FILE_EDT") or ""
+                        ).strip()
+                        sauvegarde_locale_ok = False
+                        erreur_sauvegarde_locale = None
+                        if chemin_excel_source:
+                            try:
+                                if not os.path.isabs(chemin_excel_source):
+                                    chemin_excel_source = str(Path(_BASE_DIR) / chemin_excel_source)
+                                df_a_sauvegarder = df.copy()
+                                for colonne_technique in (
+                                    "h_norm", "j_norm", "_type_affichage_admin"
+                                ):
+                                    if colonne_technique in df_a_sauvegarder.columns:
+                                        df_a_sauvegarder = df_a_sauvegarder.drop(
+                                            columns=[colonne_technique]
+                                        )
+                                df_a_sauvegarder.to_excel(chemin_excel_source, index=False)
+                                sauvegarde_locale_ok = True
+                            except Exception as erreur_locale:
+                                erreur_sauvegarde_locale = erreur_locale
+
+                        return ancien_lieu, sauvegarde_locale_ok, erreur_sauvegarde_locale
+
+                    for _numero_conflit, (_jour_conflit, _horaire_conflit, _groupe_conflit) in enumerate(
+                        _conflits_a_resoudre_lieu, start=1
+                    ):
+                        with st.container(border=True):
+                            st.markdown(
+                                f"**🔴 Conflit {_numero_conflit} — {_jour_conflit} | {_horaire_conflit} | "
+                                f"Lieu : {lieu_chevauchement}**"
+                            )
+                            _indices_seances_conflit = list(_groupe_conflit.index)
+                            _libelles_seances_conflit = {}
+                            for _idx_seance, _ligne_seance in _groupe_conflit.iterrows():
+                                _libelles_seances_conflit[_idx_seance] = (
+                                    f"{_ligne_seance.get('Enseignements', 'Enseignement')} — "
+                                    f"{_ligne_seance.get('Enseignants', 'Enseignant')} — "
+                                    f"Promotion {_ligne_seance.get('Promotion', 'Non définie')}"
+                                )
+
+                            _cle_widget_seance = (
+                                f"seance_a_deplacer_lieu_{_numero_conflit}_{_version_resolution_lieu}_"
+                                f"{re.sub(r'[^A-Za-z0-9]+', '_', str(lieu_chevauchement))[:24]}"
+                            )
+                            _idx_a_deplacer = st.selectbox(
+                                "Enseignement à déplacer :",
+                                options=_indices_seances_conflit,
+                                format_func=lambda _idx: _libelles_seances_conflit.get(_idx, str(_idx)),
+                                key=_cle_widget_seance,
+                            )
+                            _ligne_a_deplacer = df.loc[_idx_a_deplacer]
+                            _jour_reel = str(_ligne_a_deplacer.get("Jours", _jour_conflit)).strip()
+                            _horaire_reel = str(_ligne_a_deplacer.get("Horaire", _horaire_conflit)).strip()
+
+                            # Liste globale des lieux réellement disponibles, toutes catégories
+                            # confondues (salles, amphis, laboratoires, etc.) et sans plafond.
+                            _df_sans_seance = df.drop(index=_idx_a_deplacer).copy()
+                            _, _disponibilites_res, _tous_lieux_res = _lieux_libres(
+                                _df_sans_seance, [_horaire_reel], [_jour_reel]
+                            )
+                            _lieux_disponibles_res = _disponibilites_res.get(
+                                (_jour_reel, _horaire_reel), []
+                            )
+                            _lieux_disponibles_res = sorted(
+                                {str(_lieu).strip() for _lieu in _lieux_disponibles_res if str(_lieu).strip()},
+                                key=lambda _v: _v.casefold(),
+                            )
+
+                            if not _lieux_disponibles_res:
+                                st.warning(
+                                    f"Aucun autre lieu libre n'a été identifié pour {_jour_reel} — "
+                                    f"{_horaire_reel}. Aucun changement n'a été effectué."
+                                )
+                            else:
+                                st.caption(
+                                    f"{len(_lieux_disponibles_res)} lieu(x) libre(s) au même jour et au même horaire : "
+                                    + " · ".join(_lieux_disponibles_res)
+                                )
+                                _placeholder_lieu_res = "— Sélectionner un lieu libre —"
+                                _cle_widget_lieu_dest = (
+                                    f"nouveau_lieu_conflit_{_idx_a_deplacer}_{_version_resolution_lieu}"
+                                )
+                                _lieu_dest_selectionne = st.selectbox(
+                                    "🏢 Nouveau lieu (enregistrement automatique en ligne) :",
+                                    options=[_placeholder_lieu_res] + _lieux_disponibles_res,
+                                    index=0,
+                                    key=_cle_widget_lieu_dest,
+                                    help=(
+                                        "Dès qu'un lieu libre est sélectionné, il est enregistré dans la table "
+                                        "Supabase edt_data et dans le fichier Excel source local."
+                                    ),
+                                )
+                                if _lieu_dest_selectionne != _placeholder_lieu_res:
+                                    _signature_tentative_lieu = (
+                                        f"{_version_resolution_lieu}|{_idx_a_deplacer}|{_lieu_dest_selectionne}"
+                                    )
+                                    if st.session_state.get("derniere_tentative_lieu_chev") != _signature_tentative_lieu:
+                                        st.session_state["derniere_tentative_lieu_chev"] = _signature_tentative_lieu
+                                        try:
+                                            _ancien_lieu_sauve, _local_ok_lieu, _err_local_lieu = (
+                                                _enregistrer_nouveau_lieu_en_ligne(
+                                                    _idx_a_deplacer, _lieu_dest_selectionne
+                                                )
+                                            )
+                                            _message_lieu = (
+                                                f"Lieu changé de « {_ancien_lieu_sauve} » à "
+                                                f"« {_lieu_dest_selectionne} » le {_jour_reel}, "
+                                                f"créneau {_horaire_reel}. Mise à jour en ligne effectuée."
+                                            )
+                                            if _local_ok_lieu:
+                                                _message_lieu += " Fichier Excel source local synchronisé."
+                                            elif _err_local_lieu is not None:
+                                                _message_lieu += (
+                                                    " Attention : la base en ligne est à jour, mais le fichier local "
+                                                    f"n'a pas pu être écrit ({_err_local_lieu})."
+                                                )
+                                            st.session_state["flash_lieu_resolution_chev"] = _message_lieu
+                                            st.session_state["version_resolution_lieu_chev"] = (
+                                                _version_resolution_lieu + 1
+                                            )
+                                            st.session_state.pop("erreur_lieu_resolution_chev", None)
+                                            st.rerun()
+                                        except Exception as _erreur_resolution_lieu:
+                                            st.session_state["erreur_lieu_resolution_chev"] = (
+                                                _signature_tentative_lieu, str(_erreur_resolution_lieu)
+                                            )
+                                            st.error(
+                                                "❌ Le lieu n'a pas été affecté : "
+                                                f"{_erreur_resolution_lieu}"
+                                            )
+                                    else:
+                                        _erreur_stockee_lieu = st.session_state.get(
+                                            "erreur_lieu_resolution_chev"
+                                        )
+                                        if _erreur_stockee_lieu and _erreur_stockee_lieu[0] == _signature_tentative_lieu:
+                                            st.error(f"❌ {_erreur_stockee_lieu[1]}")
+                                            if st.button(
+                                                "🔁 Réessayer l'enregistrement en ligne",
+                                                key=f"retry_lieu_chev_{_idx_a_deplacer}_{_version_resolution_lieu}",
+                                                use_container_width=True,
+                                            ):
+                                                st.session_state.pop("derniere_tentative_lieu_chev", None)
+                                                st.session_state.pop("erreur_lieu_resolution_chev", None)
+                                                st.rerun()
+
+                # ========================================================
                 # EXPORTS — EXCEL, HTML, PDF (très visibles et colorés)
                 # ========================================================
                 st.markdown("#### 📥 Exporter ce tableau")
@@ -15367,79 +15682,113 @@ td,th{{word-wrap:break-word;}}
                     
                     if not df_actifs.empty:
                         # ═══ LISTE DÉROULANTE : Toutes ou une promotion spécifique ═══
-                        promos_list = sorted(df_actifs[cols_map_temp['promotion']].dropna().astype(str).unique())
+                        promos_list = sorted(
+                            [p for p in df_actifs[cols_map_temp['promotion']].dropna().astype(str).unique() if str(p).strip()],
+                            key=lambda p: _normaliser_entete_export_liste_etu(p)
+                        )
+                        _option_zip_toutes_promotions = "📦 Toutes les promotions — pack ZIP (tous statuts)"
                         promo_choix = st.selectbox(
                             "🎓 Promotion :",
-                            options=["Toutes"] + promos_list,
+                            options=["Toutes", _option_zip_toutes_promotions] + promos_list,
                             key="sel_promo_dl_actifs"
                         )
-                        
-                        # Filtrer selon le choix
-                        if promo_choix != "Toutes":
-                            df_export = df_actifs[df_actifs[cols_map_temp['promotion']].astype(str) == promo_choix].copy()
-                            nom_fichier = f"Liste_Actifs_{promo_choix}_{datetime.now().strftime('%d_%m_%Y')}.xlsx"
-                            sheet_principal = str(promo_choix)[:31]
-                            label_btn = f"💾 Télécharger {promo_choix} ({len(df_export)} étudiants)"
+
+                        if promo_choix == _option_zip_toutes_promotions:
+                            # Le pack ZIP est volontairement basé sur la source complète :
+                            # toutes les promotions et tous les statuts sont conservés.
+                            try:
+                                _zip_depuis_select_promo = creer_zip_listes_etudiants_par_promotion(
+                                    df_etu_edt,
+                                    _col_promo_zip or cols_map_temp.get('promotion'),
+                                    _col_nom_zip or cols_map_temp.get('nom'),
+                                    _col_prenom_zip or cols_map_temp.get('prenom'),
+                                    _col_groupe_zip or cols_map_temp.get('groupe'),
+                                    _col_sous_groupe_zip or cols_map_temp.get('sous_groupe'),
+                                )
+                                st.download_button(
+                                    label=f"📦 Télécharger toutes les listes en ZIP ({len(df_etu_edt)} étudiants)",
+                                    data=_zip_depuis_select_promo,
+                                    file_name="Listes des étudiants_Toutes les promotions.zip",
+                                    mime="application/zip",
+                                    use_container_width=True,
+                                    key="dl_toutes_listes_etudiants_promotions_zip_depuis_select_promo",
+                                    help=(
+                                        "Un classeur Excel coloré par promotion, noms et prénoms triés "
+                                        "alphabétiquement, cellules ajustées au contenu."
+                                    ),
+                                )
+                            except Exception as _erreur_zip_depuis_promo:
+                                st.error(
+                                    "❌ Impossible de préparer le pack ZIP : "
+                                    f"{str(_erreur_zip_depuis_promo)[:250]}"
+                                )
                         else:
-                            df_export = df_actifs.copy()
-                            nom_fichier = f"Liste_Actifs_Toutes_Promotions_{datetime.now().strftime('%d_%m_%Y')}.xlsx"
-                            sheet_principal = "Tous_Actifs"
-                            label_btn = f"💾 Télécharger Toutes ({len(df_export)} étudiants)"
+                            # Filtrer selon le choix
+                            if promo_choix != "Toutes":
+                                df_export = df_actifs[df_actifs[cols_map_temp['promotion']].astype(str) == promo_choix].copy()
+                                nom_fichier = f"Liste_Actifs_{promo_choix}_{datetime.now().strftime('%d_%m_%Y')}.xlsx"
+                                sheet_principal = str(promo_choix)[:31]
+                                label_btn = f"💾 Télécharger {promo_choix} ({len(df_export)} étudiants)"
+                            else:
+                                df_export = df_actifs.copy()
+                                nom_fichier = f"Liste_Actifs_Toutes_Promotions_{datetime.now().strftime('%d_%m_%Y')}.xlsx"
+                                sheet_principal = "Tous_Actifs"
+                                label_btn = f"💾 Télécharger Toutes ({len(df_export)} étudiants)"
                         
-                        # Colonnes à exporter
-                        colonnes_export4 = [c for c in [
-                            'Nom_Complet', 
-                            cols_map_temp.get('promotion', ''), 
-                            cols_map_temp.get('mat_etud', ''), 
-                            cols_map_temp.get('mat_bac', ''),
-                            cols_map_temp.get('groupe', ''),
-                            cols_map_temp.get('sous_groupe', '')
-                        ] if c and c in df_export.columns]
+                            # Colonnes à exporter
+                            colonnes_export4 = [c for c in [
+                                'Nom_Complet', 
+                                cols_map_temp.get('promotion', ''), 
+                                cols_map_temp.get('mat_etud', ''), 
+                                cols_map_temp.get('mat_bac', ''),
+                                cols_map_temp.get('groupe', ''),
+                                cols_map_temp.get('sous_groupe', '')
+                            ] if c and c in df_export.columns]
                         
-                        if not colonnes_export4:
-                            colonnes_export4 = df_export.columns.tolist()[:6]
-                        colonnes_export4 = _ajouter_colonnes_contact(colonnes_export4, df_export)
+                            if not colonnes_export4:
+                                colonnes_export4 = df_export.columns.tolist()[:6]
+                            colonnes_export4 = _ajouter_colonnes_contact(colonnes_export4, df_export)
                         
-                        try:
-                            excel_buffer4 = io.BytesIO()
-                            with pd.ExcelWriter(excel_buffer4, engine='openpyxl') as writer:
-                                if promo_choix == "Toutes":
-                                    # Onglet 1 : Tous les actifs regroupés
-                                    df_export_sorted = df_export.sort_values(
-                                        by=[cols_map_temp['promotion'], 'Nom_Complet'] 
-                                        if cols_map_temp['promotion'] in df_export.columns else ['Nom_Complet']
-                                    )
-                                    df_export_sorted[colonnes_export4].to_excel(
-                                        writer, sheet_name='Tous_Actifs', index=False
-                                    )
-                                    # Onglets séparés : un par promotion
-                                    if cols_map_temp.get('promotion'):
-                                        promo_col = cols_map_temp['promotion']
-                                        for promo in sorted(df_export[promo_col].dropna().unique()):
-                                            df_promo = df_export[df_export[promo_col] == promo].sort_values('Nom_Complet')
-                                            sheet_name = str(promo)[:31]  # Excel limite à 31 caractères
-                                            df_promo[colonnes_export4].to_excel(
-                                                writer, sheet_name=sheet_name, index=False
-                                            )
-                                else:
-                                    # Une seule promotion sélectionnée
-                                    df_export_sorted = df_export.sort_values('Nom_Complet')
-                                    df_export_sorted[colonnes_export4].to_excel(
-                                        writer, sheet_name=sheet_principal, index=False
-                                    )
+                            try:
+                                excel_buffer4 = io.BytesIO()
+                                with pd.ExcelWriter(excel_buffer4, engine='openpyxl') as writer:
+                                    if promo_choix == "Toutes":
+                                        # Onglet 1 : Tous les actifs regroupés
+                                        df_export_sorted = df_export.sort_values(
+                                            by=[cols_map_temp['promotion'], 'Nom_Complet'] 
+                                            if cols_map_temp['promotion'] in df_export.columns else ['Nom_Complet']
+                                        )
+                                        df_export_sorted[colonnes_export4].to_excel(
+                                            writer, sheet_name='Tous_Actifs', index=False
+                                        )
+                                        # Onglets séparés : un par promotion
+                                        if cols_map_temp.get('promotion'):
+                                            promo_col = cols_map_temp['promotion']
+                                            for promo in sorted(df_export[promo_col].dropna().unique()):
+                                                df_promo = df_export[df_export[promo_col] == promo].sort_values('Nom_Complet')
+                                                sheet_name = str(promo)[:31]  # Excel limite à 31 caractères
+                                                df_promo[colonnes_export4].to_excel(
+                                                    writer, sheet_name=sheet_name, index=False
+                                                )
+                                    else:
+                                        # Une seule promotion sélectionnée
+                                        df_export_sorted = df_export.sort_values('Nom_Complet')
+                                        df_export_sorted[colonnes_export4].to_excel(
+                                            writer, sheet_name=sheet_principal, index=False
+                                        )
                             
-                            excel_buffer4.seek(0)
+                                excel_buffer4.seek(0)
                             
-                            st.download_button(
-                                label=label_btn,
-                                data=excel_buffer4,
-                                file_name=nom_fichier,
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                use_container_width=True,
-                                key=f"dl_actifs_{promo_choix.replace(' ', '_').replace('/', '_')}"
-                            )
-                        except Exception as e:
-                            st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
+                                st.download_button(
+                                    label=label_btn,
+                                    data=excel_buffer4,
+                                    file_name=nom_fichier,
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True,
+                                    key=f"dl_actifs_{promo_choix.replace(' ', '_').replace('/', '_')}"
+                                )
+                            except Exception as e:
+                                st.error(f"❌ Erreur génération Excel: {str(e)[:100]}")
                     else:
                         st.caption("❌ Aucun étudiant actif")
                 else:
