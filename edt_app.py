@@ -28099,6 +28099,126 @@ if df_contacts is not None and not df_contacts.empty:
     if 'N°/TEL' in df_rep.columns:
         df_rep['N°/TEL'] = df_rep['N°/TEL'].astype(str).str.replace(r'[^\d]', '', regex=True).replace('', '—')
 
+    # ── NOUVELLE COLONNE : l'enseignant est-il affecté à au moins un EDT ? ──
+    # La source prioritaire est le DataFrame « df » chargé depuis edt_data
+    # (Supabase). En cas d'indisponibilité/vide, on essaie le fichier EDT local.
+    import unicodedata
+
+    def _normaliser_nom_charge_edt(valeur):
+        texte = "" if valeur is None else str(valeur).strip().upper()
+        texte = unicodedata.normalize("NFKD", texte)
+        texte = "".join(car for car in texte if not unicodedata.combining(car))
+        texte = re.sub(r"[^A-Z0-9]+", " ", texte)
+        return re.sub(r"\s+", " ", texte).strip()
+
+    _df_edt_charge = globals().get("df")
+    _edt_charge_verifiable = (
+        isinstance(_df_edt_charge, pd.DataFrame)
+        and not _df_edt_charge.empty
+        and "Enseignants" in _df_edt_charge.columns
+    )
+    _source_edt_charge = "données EDT en ligne"
+
+    if not _edt_charge_verifiable:
+        _chemins_edt_repli = []
+        for _chemin_possible in (
+            globals().get("FILE_EDT"),
+            globals().get("NOM_FICHIER_FIXE"),
+            str(Path(__file__).parent.resolve() / "dataEDT-ELT-S1-2027.xlsx"),
+        ):
+            if _chemin_possible and _chemin_possible not in _chemins_edt_repli:
+                _chemins_edt_repli.append(_chemin_possible)
+
+        for _chemin_edt_repli in _chemins_edt_repli:
+            try:
+                if os.path.isfile(_chemin_edt_repli):
+                    _df_edt_candidat = pd.read_excel(_chemin_edt_repli)
+                    _df_edt_candidat.columns = [str(c).strip() for c in _df_edt_candidat.columns]
+                    if "Enseignants" in _df_edt_candidat.columns and not _df_edt_candidat.empty:
+                        _df_edt_charge = _df_edt_candidat
+                        _edt_charge_verifiable = True
+                        _source_edt_charge = Path(_chemin_edt_repli).name
+                        break
+            except Exception:
+                continue
+
+    _segments_enseignants_edt = []
+    _noms_planifies_normalises = set()
+    if _edt_charge_verifiable:
+        for _valeur_enseignants_edt in _df_edt_charge["Enseignants"].fillna("").astype(str):
+            _valeur_enseignants_edt = _valeur_enseignants_edt.strip()
+            if not _valeur_enseignants_edt or _valeur_enseignants_edt.casefold() in {
+                "nan", "none", "non defini", "non défini", "-"
+            }:
+                continue
+            # Plusieurs enseignants peuvent être séparés par +, /, ;, virgule, &, ou « et ».
+            _morceaux_enseignants = re.split(
+                r"\s*(?:\+|/|;|\||,|&|\bET\b)\s*",
+                _valeur_enseignants_edt,
+                flags=re.IGNORECASE
+            )
+            for _morceau_enseignant in _morceaux_enseignants:
+                _nom_edt_normalise = _normaliser_nom_charge_edt(_morceau_enseignant)
+                if _nom_edt_normalise and _nom_edt_normalise not in {
+                    "NAN", "NONE", "NON DEFINI", "NON DEFINIE", "-"
+                }:
+                    _segments_enseignants_edt.append(_nom_edt_normalise)
+                    _noms_planifies_normalises.add(_nom_edt_normalise)
+
+    def _enseignant_est_charge_edt(ligne_personnel):
+        if not _edt_charge_verifiable:
+            return "Non vérifiable"
+
+        _valeur_nom_personnel = ligne_personnel.get("NOM", "")
+        _valeur_prenom_personnel = ligne_personnel.get("PRÉNOM", ligne_personnel.get("PRENOM", ""))
+        _nom_personnel = (
+            "" if pd.isna(_valeur_nom_personnel) else str(_valeur_nom_personnel).strip()
+        )
+        _prenom_personnel = (
+            "" if pd.isna(_valeur_prenom_personnel) else str(_valeur_prenom_personnel).strip()
+        )
+        _nom_n = _normaliser_nom_charge_edt(_nom_personnel)
+        _prenom_n = _normaliser_nom_charge_edt(_prenom_personnel)
+
+        _candidats_nom_complet = set()
+        if _nom_n and _nom_n not in {"NAN", "NONE", "-"}:
+            _candidats_nom_complet.add(_nom_n)
+        if _prenom_n and _prenom_n not in {"NAN", "NONE", "-", "NON DEFINI"}:
+            if _nom_n:
+                _candidats_nom_complet.add(_normaliser_nom_charge_edt(f"{_nom_personnel} {_prenom_personnel}"))
+                _candidats_nom_complet.add(_normaliser_nom_charge_edt(f"{_prenom_personnel} {_nom_personnel}"))
+
+        _candidats_nom_complet.discard("")
+        _alias_noms = set()
+        # Lorsque l'EDT n'indique que le nom de famille, comparer aussi le
+        # premier mot de NOM. Cela permet de reconnaître les anciens EDT
+        # qui affichent uniquement le nom usuel de l'enseignant.
+        if _nom_n:
+            _mots_nom = _nom_n.split()
+            if _mots_nom:
+                _alias_noms.add(_mots_nom[0])
+
+        for _segment_planifie in _segments_enseignants_edt:
+            if _segment_planifie in _candidats_nom_complet:
+                return "Oui"
+
+            # Recherche du nom complet en tant que groupe de mots délimité.
+            for _candidat_complet in _candidats_nom_complet:
+                if re.search(r"(?:^| )" + re.escape(_candidat_complet) + r"(?: |$)", _segment_planifie):
+                    return "Oui"
+
+            # Fallback pour les lignes EDT où le seul nom est utilisé.
+            _mots_segment = set(_segment_planifie.split())
+            if any(_alias and _alias in _mots_segment for _alias in _alias_noms):
+                return "Oui"
+
+        return "Non"
+
+    if _edt_charge_verifiable:
+        df_rep["Chargé dans l'EDT"] = df_rep.apply(_enseignant_est_charge_edt, axis=1)
+    else:
+        df_rep["Chargé dans l'EDT"] = "Non vérifiable"
+
     # ── Compteurs par statut ──
     mask_perm = df_rep['Qualité'].str.contains('PERMANENT', case=False, na=False)
     mask_vac  = df_rep['Qualité'].str.contains('VACATAIRE', case=False, na=False)
@@ -28209,7 +28329,7 @@ if df_contacts is not None and not df_contacts.empty:
 
     # ── Tableau détaillé filtré ──
     with st.expander(f"🔍 Consulter le répertoire détaillé — {len(df_filtre_rep)} résultat(s)", expanded=True):
-        cols_to_show = ['NOM', 'PRÉNOM', 'Qualité', 'Grade', 'Email', 'N°/TEL']
+        cols_to_show = ['NOM', 'PRÉNOM', 'Qualité', 'Grade', 'Email', 'N°/TEL', "Chargé dans l'EDT"]
         cols_available = [c for c in cols_to_show if c in df_filtre_rep.columns]
         
         # Recherche textuelle additionnelle
@@ -28272,6 +28392,214 @@ if df_contacts is not None and not df_contacts.empty:
         use_container_width=True,
         key=f"dl_repertoire_{filtre_actif}_admin"
     )
+
+    # ── NOUVEL EXPORT ADMINISTRATIF AU FORMAT DEMANDÉ ──
+    # Conserve l'export précédent et ajoute un fichier administratif avec
+    # NOM, PRÉNOM, Qualité, Grade, Email, N°/TEL, Département et le statut EDT.
+    import unicodedata
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    def _normaliser_entete_personnel_export(valeur):
+        texte = "" if valeur is None else str(valeur).strip().casefold()
+        texte = unicodedata.normalize("NFKD", texte)
+        texte = "".join(car for car in texte if not unicodedata.combining(car))
+        return re.sub(r"[^a-z0-9]+", "", texte)
+
+    _alias_personnel_export = {
+        "NOM": ["nom", "nom de famille", "lastname", "surname"],
+        "PRÉNOM": ["prenom", "prénom", "firstname", "given name"],
+        "Qualité": ["qualite", "qualité", "quality"],
+        "Grade": ["grade", "rang"],
+        "Email": ["email", "e-mail", "mail", "courriel", "adresse mail"],
+        "N°/TEL": [
+            "n°/tel", "n tel", "n° de telephone", "numero de telephone",
+            "numéro de téléphone", "telephone", "téléphone", "tel", "mobile", "phone"
+        ],
+        # On privilégie explicitement le département d'affiliation/rattachement
+        # avant une éventuelle colonne générique « Département ».
+        "Département": [
+            "departement d'affiliation", "département d'affiliation",
+            "departement de rattachement", "département de rattachement",
+            "departement d'appartenance", "département d'appartenance",
+            "departement", "département", "dept", "department"
+        ],
+        "Chargé dans l'EDT": [
+            "chargé dans l'edt", "charge dans l'edt",
+            "enseignant affecte edt", "enseignant affecté edt",
+            "presence emploi du temps", "présence emploi du temps"
+        ],
+    }
+
+    _colonnes_norm_personnel = {
+        _normaliser_entete_personnel_export(col): col
+        for col in df_filtre_rep.columns
+    }
+
+    def _trouver_colonne_personnel_export(nom_cible):
+        for alias in _alias_personnel_export[nom_cible]:
+            cle_alias = _normaliser_entete_personnel_export(alias)
+            if cle_alias in _colonnes_norm_personnel:
+                return _colonnes_norm_personnel[cle_alias]
+        return None
+
+    _valeurs_manquantes_personnel = {
+        "NOM": "",
+        "PRÉNOM": "",
+        "Qualité": "Non défini",
+        "Grade": "N/A",
+        "Email": "",
+        "N°/TEL": "",
+        "Département": "Non renseigné",
+        "Chargé dans l'EDT": "Non vérifiable",
+    }
+
+    _colonnes_personnel_export = [
+        "NOM", "PRÉNOM", "Qualité", "Grade", "Email", "N°/TEL",
+        "Département", "Chargé dans l'EDT"
+    ]
+    _df_personnel_export = pd.DataFrame(index=df_filtre_rep.index)
+    _departement_source_trouve = False
+
+    for _nom_col_export in _colonnes_personnel_export:
+        _col_source_export = _trouver_colonne_personnel_export(_nom_col_export)
+        if _col_source_export is not None:
+            _df_personnel_export[_nom_col_export] = df_filtre_rep[_col_source_export]
+            if _nom_col_export == "Département":
+                _departement_source_trouve = True
+        else:
+            _df_personnel_export[_nom_col_export] = _valeurs_manquantes_personnel[_nom_col_export]
+
+    # Nettoyage sans convertir les numéros en nombres : les zéros initiaux
+    # et le format du téléphone doivent être préservés dans Excel.
+    for _col_export in _colonnes_personnel_export:
+        _df_personnel_export[_col_export] = (
+            _df_personnel_export[_col_export]
+            .where(_df_personnel_export[_col_export].notna(), "")
+            .astype(str)
+            .str.strip()
+            .replace({"nan": "", "None": "", "NaT": ""})
+        )
+
+    _df_personnel_export = _df_personnel_export.sort_values(
+        by=["NOM", "PRÉNOM"],
+        key=lambda serie: serie.astype(str).str.casefold(),
+        kind="mergesort"
+    ).reset_index(drop=True)
+
+    _buffer_personnel_export = io.BytesIO()
+    with pd.ExcelWriter(_buffer_personnel_export, engine="openpyxl") as _writer_personnel:
+        _nom_feuille_personnel = "Personnel enseignant"
+        _df_personnel_export.to_excel(
+            _writer_personnel,
+            index=False,
+            sheet_name=_nom_feuille_personnel
+        )
+        _ws_personnel = _writer_personnel.sheets[_nom_feuille_personnel]
+        _ws_personnel.freeze_panes = "A2"
+        _ws_personnel.auto_filter.ref = _ws_personnel.dimensions
+        _ws_personnel.sheet_view.showGridLines = False
+        _ws_personnel.row_dimensions[1].height = 30
+
+        _remplissage_entete_personnel = PatternFill(
+            fill_type="solid", fgColor="1E3A8A"
+        )
+        _police_entete_personnel = Font(
+            name="Arial", size=11, bold=True, color="FFFFFF"
+        )
+        _remplissage_ligne_paire_personnel = PatternFill(
+            fill_type="solid", fgColor="EAF2F8"
+        )
+        _remplissage_ligne_impaire_personnel = PatternFill(
+            fill_type="solid", fgColor="FFFFFF"
+        )
+        _bordure_personnel = Border(
+            left=Side(style="thin", color="CBD5E1"),
+            right=Side(style="thin", color="CBD5E1"),
+            top=Side(style="thin", color="CBD5E1"),
+            bottom=Side(style="thin", color="CBD5E1"),
+        )
+
+        for _cellule in _ws_personnel[1]:
+            _cellule.fill = _remplissage_entete_personnel
+            _cellule.font = _police_entete_personnel
+            _cellule.alignment = Alignment(
+                horizontal="center", vertical="center", wrap_text=True
+            )
+            _cellule.border = _bordure_personnel
+
+        for _ligne_excel in range(2, _ws_personnel.max_row + 1):
+            _ws_personnel.row_dimensions[_ligne_excel].height = 22
+            _remplissage_ligne = (
+                _remplissage_ligne_paire_personnel
+                if _ligne_excel % 2 == 0
+                else _remplissage_ligne_impaire_personnel
+            )
+            for _col_excel in range(1, _ws_personnel.max_column + 1):
+                _cellule = _ws_personnel.cell(_ligne_excel, _col_excel)
+                _cellule.fill = _remplissage_ligne
+                _cellule.border = _bordure_personnel
+                _cellule.alignment = Alignment(
+                    horizontal="left", vertical="center", wrap_text=True
+                )
+                _cellule.number_format = "@"
+
+        # Largeurs adaptées au contenu de chaque colonne, avec limites pratiques.
+        _largeurs_max_personnel = {
+            "NOM": 38,
+            "PRÉNOM": 30,
+            "Qualité": 20,
+            "Grade": 16,
+            "Email": 42,
+            "N°/TEL": 22,
+            "Département": 30,
+            "Chargé dans l'EDT": 24,
+        }
+        for _indice_colonne, _nom_colonne in enumerate(_colonnes_personnel_export, start=1):
+            _longueur_max = len(_nom_colonne)
+            for _ligne_excel in range(2, _ws_personnel.max_row + 1):
+                _valeur_cellule = _ws_personnel.cell(_ligne_excel, _indice_colonne).value
+                _longueur_max = max(
+                    _longueur_max,
+                    len(str(_valeur_cellule)) if _valeur_cellule is not None else 0
+                )
+            _largeur = min(
+                max(_longueur_max + 3, 14),
+                _largeurs_max_personnel.get(_nom_colonne, 35)
+            )
+            _ws_personnel.column_dimensions[get_column_letter(_indice_colonne)].width = _largeur
+
+    _buffer_personnel_export.seek(0)
+
+    st.download_button(
+        label=f"📥 Télécharger le répertoire au format administratif ({len(_df_personnel_export)} lignes)",
+        data=_buffer_personnel_export.getvalue(),
+        file_name=f"Repertoire_Personnel_Enseignant_{filtre_actif}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="dl_repertoire_personnel_format_administratif"
+    )
+
+    if not _departement_source_trouve:
+        st.info(
+            "ℹ️ La colonne « Département » n'a pas été trouvée dans la source du répertoire. "
+            "Elle est ajoutée avec la valeur « Non renseigné ». Renseignez le département "
+            "d'affiliation dans le fichier source pour qu'il soit repris automatiquement."
+        )
+    if not _edt_charge_verifiable:
+        st.warning(
+            "⚠️ Le statut « Chargé dans l'EDT » n'a pas pu être vérifié : "
+            "la colonne « Enseignants » n'est disponible ni dans les données EDT en ligne "
+            "ni dans le fichier EDT local. Les lignes sont marquées « Non vérifiable » "
+            "afin de ne pas classer à tort les enseignants comme non affectés."
+        )
+    else:
+        _nb_oui_edt = int((df_rep["Chargé dans l'EDT"] == "Oui").sum())
+        _nb_non_edt = int((df_rep["Chargé dans l'EDT"] == "Non").sum())
+        st.caption(
+            f"📅 Vérification EDT via **{_source_edt_charge}** : "
+            f"{_nb_oui_edt} enseignant(s) affecté(s), { _nb_non_edt } sans affectation repérée."
+        )
 # ═════════════════════════════════════════════════════════════════════════════
 # >>> TABLEAU DE BORD RÉPERTOIRE ÉTUDIANTS (ADMIN UNIQUEMENT) <<<
 # ═════════════════════════════════════════════════════════════════════════════
