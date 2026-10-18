@@ -28137,6 +28137,223 @@ if df_contacts is not None and not df_contacts.empty:
     else:
         df_rep["Département d'affiliation"] = "Non renseigné"
 
+    # ═══════════════════════════════════════════════════════════════════
+    # CORRECTIF : compléter le département d'affiliation à partir des
+    # données EDT de l'espace éditeur (df_admin), de Supabase (df), puis
+    # du fichier Excel EDT local. La colonne « Département » du fichier
+    # EDT est la source de secours lorsque le fichier Personnel ne porte
+    # pas cette information.
+    # ═══════════════════════════════════════════════════════════════════
+    _MARQUEURS_DEPT_ABSENT = {
+        "", "NAN", "NONE", "NAT", "-", "—", "N/A", "NA",
+        "NON RENSEIGNE", "NON RENSEIGNÉ", "NON DEFINI", "NON DÉFINI",
+        "A COMPLETER", "À COMPLÉTER", "INCONNU", "NULL"
+    }
+
+    def _valeur_departement_repertoire_valide(valeur):
+        try:
+            if valeur is None or pd.isna(valeur):
+                return False
+        except Exception:
+            if valeur is None:
+                return False
+        texte = str(valeur).strip()
+        if not texte:
+            return False
+        cle = unicodedata.normalize("NFKD", texte.upper())
+        cle = "".join(ch for ch in cle if not unicodedata.combining(ch))
+        cle = re.sub(r"\s+", " ", cle).strip()
+        return cle not in _MARQUEURS_DEPT_ABSENT
+
+    def _normaliser_nom_pour_departement(valeur):
+        try:
+            if valeur is None or pd.isna(valeur):
+                return ""
+        except Exception:
+            if valeur is None:
+                return ""
+        texte = str(valeur).strip().upper()
+        texte = unicodedata.normalize("NFKD", texte)
+        texte = "".join(ch for ch in texte if not unicodedata.combining(ch))
+        texte = re.sub(r"[^A-Z0-9]+", " ", texte)
+        return re.sub(r"\s+", " ", texte).strip()
+
+    def _trouver_colonne_normalisee_departement(df_source, alias):
+        if not isinstance(df_source, pd.DataFrame) or df_source.empty:
+            return None
+        colonnes_normalisees = {
+            _normaliser_entete_departement_repertoire(col): col
+            for col in df_source.columns
+        }
+        for nom_alias in alias:
+            cle_alias = _normaliser_entete_departement_repertoire(nom_alias)
+            if cle_alias in colonnes_normalisees:
+                return colonnes_normalisees[cle_alias]
+        return None
+
+    _alias_colonne_edt_enseignants_departement = [
+        "Enseignants", "Enseignant", "Nom enseignant", "Nom de l'enseignant",
+        "Noms des enseignants", "Personnel enseignant", "Professeur", "Professeurs"
+    ]
+    _alias_colonne_edt_departement = [
+        "Département d'affiliation", "Département de rattachement",
+        "Département", "Departement", "Department", "Dept", "Affectation",
+        "Structure", "Structure de rattachement", "Faculté / Département"
+    ]
+
+    def _construire_index_enseignant_departement(df_source):
+        """Construit {nom enseignant normalisé: {départements}} à partir d'un EDT."""
+        if not isinstance(df_source, pd.DataFrame) or df_source.empty:
+            return {}
+        col_enseignants = _trouver_colonne_normalisee_departement(
+            df_source, _alias_colonne_edt_enseignants_departement
+        )
+        col_departement = _trouver_colonne_normalisee_departement(
+            df_source, _alias_colonne_edt_departement
+        )
+        if not col_enseignants or not col_departement:
+            return {}
+
+        index_departement = {}
+        for valeur_enseignants, valeur_departement in zip(
+            df_source[col_enseignants], df_source[col_departement]
+        ):
+            if not _valeur_departement_repertoire_valide(valeur_departement):
+                continue
+            departement = re.sub(r"\s+", " ", str(valeur_departement).strip())
+            texte_enseignants = "" if valeur_enseignants is None else str(valeur_enseignants).strip()
+            if not texte_enseignants or texte_enseignants.casefold() in {
+                "nan", "none", "non défini", "non defini", "-", "—"
+            }:
+                continue
+
+            # Les EDT peuvent inscrire plusieurs enseignants dans une même cellule.
+            segments = re.split(
+                r"\s*(?:\+|/|;|\||,|&|\bET\b)\s*",
+                texte_enseignants,
+                flags=re.IGNORECASE
+            )
+            for segment in segments:
+                nom_normalise = _normaliser_nom_pour_departement(segment)
+                if not nom_normalise or nom_normalise in {
+                    "NAN", "NONE", "NON DEFINI", "NON DEFINIE", "-", "—"
+                }:
+                    continue
+                index_departement.setdefault(nom_normalise, set()).add(departement)
+        return index_departement
+
+    # Priorité : données de l'éditeur actif, données EDT chargées en ligne,
+    # puis fichiers EDT locaux. Une source de rang inférieur complète les
+    # informations absentes mais ne remplace pas les données déjà obtenues.
+    _sources_edt_pour_departement = []
+    _df_admin_departement = st.session_state.get("df_admin") if hasattr(st, "session_state") else None
+    if isinstance(_df_admin_departement, pd.DataFrame) and not _df_admin_departement.empty:
+        _sources_edt_pour_departement.append(("espace éditeur", _df_admin_departement))
+
+    _df_edt_ligne_departement = globals().get("df")
+    if isinstance(_df_edt_ligne_departement, pd.DataFrame) and not _df_edt_ligne_departement.empty:
+        _sources_edt_pour_departement.append(("données EDT en ligne", _df_edt_ligne_departement))
+
+    _chemins_sources_edt_departement = []
+    for _chemin_departement in (
+        globals().get("NOM_FICHIER_FIXE"),
+        globals().get("FILE_EDT"),
+        str(Path(__file__).parent.resolve() / "dataEDT-ELT-S1-2027.xlsx"),
+    ):
+        if _chemin_departement:
+            _chemin_departement = str(_chemin_departement)
+            if _chemin_departement not in _chemins_sources_edt_departement:
+                _chemins_sources_edt_departement.append(_chemin_departement)
+
+    for _chemin_departement in _chemins_sources_edt_departement:
+        try:
+            if not os.path.isfile(_chemin_departement):
+                continue
+            _df_source_local_departement = pd.read_excel(_chemin_departement)
+            _df_source_local_departement.columns = [
+                str(col).strip() for col in _df_source_local_departement.columns
+            ]
+            if not _df_source_local_departement.empty:
+                _sources_edt_pour_departement.append(
+                    (Path(_chemin_departement).name, _df_source_local_departement)
+                )
+        except Exception:
+            continue
+
+    _index_sources_edt_departement = []
+    for _nom_source_departement, _df_source_departement in _sources_edt_pour_departement:
+        _index_departement = _construire_index_enseignant_departement(_df_source_departement)
+        if _index_departement:
+            _index_sources_edt_departement.append(
+                (_nom_source_departement, _index_departement)
+            )
+
+    def _departements_depuis_index_edt(ligne_personnel, index_departement):
+        """Recherche les départements à partir du nom/prénom du répertoire."""
+        nom = ligne_personnel.get("NOM", "")
+        prenom = ligne_personnel.get("PRÉNOM", ligne_personnel.get("PRENOM", ""))
+        nom = "" if nom is None or pd.isna(nom) else str(nom).strip()
+        prenom = "" if prenom is None or pd.isna(prenom) else str(prenom).strip()
+
+        prenom_norm = _normaliser_nom_pour_departement(prenom)
+        prenom_invalide = prenom_norm in {"", "-", "NAN", "NONE", "NON DEFINI", "NON DEFINIE"}
+        candidats = []
+        nom_norm = _normaliser_nom_pour_departement(nom)
+        if nom_norm and nom_norm not in {"NAN", "NONE", "-", "NON DEFINI"}:
+            candidats.append(nom_norm)
+        if not prenom_invalide and nom_norm:
+            candidats.extend([
+                _normaliser_nom_pour_departement(f"{nom} {prenom}"),
+                _normaliser_nom_pour_departement(f"{prenom} {nom}"),
+            ])
+        candidats = sorted({c for c in candidats if c}, key=len, reverse=True)
+
+        # Correspondance exacte d'abord : évite les faux positifs sur les homonymes.
+        for candidat in candidats:
+            if candidat in index_departement:
+                return set(index_departement[candidat])
+
+        # Certains EDT ajoutent des précisions au nom (titre, indication entre parenthèses).
+        # On n'accepte cette correspondance partielle que pour un nom suffisamment distinctif.
+        for candidat in candidats:
+            if len(candidat) < 6:
+                continue
+            correspondances = set()
+            for nom_edt_normalise, departements_edt in index_departement.items():
+                if (
+                    re.search(r"(?:^| )" + re.escape(candidat) + r"(?: |$)", nom_edt_normalise)
+                    or re.search(r"(?:^| )" + re.escape(nom_edt_normalise) + r"(?: |$)", candidat)
+                ):
+                    correspondances.update(departements_edt)
+            if correspondances:
+                return correspondances
+        return set()
+
+    _nb_departements_completes_depuis_edt = 0
+    for _idx_personnel, _ligne_personnel in df_rep.iterrows():
+        _departement_actuel = _ligne_personnel.get("Département d'affiliation", "")
+        if _valeur_departement_repertoire_valide(_departement_actuel):
+            continue
+
+        for _nom_source_departement, _index_departement_source in _index_sources_edt_departement:
+            _departements_trouves = _departements_depuis_index_edt(
+                _ligne_personnel, _index_departement_source
+            )
+            if _departements_trouves:
+                _departements_tries = sorted(
+                    _departements_trouves,
+                    key=lambda v: _normaliser_nom_pour_departement(v)
+                )
+                df_rep.at[_idx_personnel, "Département d'affiliation"] = " / ".join(_departements_tries)
+                _nb_departements_completes_depuis_edt += 1
+                break  # la source de priorité la plus haute trouvée est utilisée
+
+    # N'avertir que si aucune affiliation fiable n'a été trouvée, ni dans le
+    # répertoire du personnel, ni dans les données de l'espace éditeur / EDT.
+    _departement_affiliation_source_trouve = bool(
+        df_rep["Département d'affiliation"].map(_valeur_departement_repertoire_valide).any()
+    )
+
     df_rep['Qualité'] = df_rep['Qualité'].fillna('Non défini').astype(str)
     df_rep['Grade']   = df_rep['Grade'].fillna('N/A').astype(str) if 'Grade' in df_rep.columns else 'N/A'
     df_rep['Email']   = df_rep['Email'].fillna('—').astype(str) if 'Email' in df_rep.columns else '—'
@@ -28631,9 +28848,15 @@ if df_contacts is not None and not df_contacts.empty:
 
     if not _departement_source_trouve:
         st.info(
-            "ℹ️ La colonne « Département d'affiliation » n'a pas été trouvée dans la source du répertoire. "
-            "Elle est ajoutée avec la valeur « Non renseigné ». Renseignez le département "
-            "d'affiliation dans le fichier source pour qu'il soit repris automatiquement."
+            "ℹ️ Aucun département d'affiliation exploitable n'a été trouvé ni dans le répertoire du personnel, "
+            "ni dans les données de l'espace éditeur / EDT (colonne « Département »). "
+            "Vérifiez que le fichier importé contient les colonnes « Enseignants » et « Département », "
+            "et que le nom de l'enseignant correspond à celui du répertoire."
+        )
+    if _nb_departements_completes_depuis_edt:
+        st.caption(
+            f"🏷️ Département d'affiliation complété depuis les données de l'espace éditeur / EDT "
+            f"pour {_nb_departements_completes_depuis_edt} enseignant(s)."
         )
     if not _edt_charge_verifiable:
         st.warning(
