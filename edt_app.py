@@ -28092,6 +28092,51 @@ if df_contacts is not None and not df_contacts.empty:
 
     # ── Préparation des données ──
     df_rep = df_contacts.copy()
+
+    # ── COLONNE EXPLICITE : Département d'affiliation ──
+    # On recherche d'abord les en-têtes les plus précis dans le fichier source,
+    # puis les variantes usuelles. Si aucune source ne porte le département,
+    # on l'indique clairement sans inventer de valeur.
+    import unicodedata
+
+    def _normaliser_entete_departement_repertoire(valeur):
+        texte = "" if valeur is None else str(valeur).strip().casefold()
+        texte = unicodedata.normalize("NFKD", texte)
+        texte = "".join(car for car in texte if not unicodedata.combining(car))
+        return re.sub(r"[^a-z0-9]+", "", texte)
+
+    _alias_departement_affiliation = [
+        "Département d'affiliation", "Departement d affiliation",
+        "Département de rattachement", "Departement de rattachement",
+        "Département d'appartenance", "Departement d appartenance",
+        "Département d'affectation", "Departement d affectation",
+        "Département", "Departement", "Département d'origine",
+        "Département d origine", "Faculté / Département", "Department",
+        "Dept", "Affectation", "Structure de rattachement",
+    ]
+    _colonnes_departement_normalisees = {
+        _normaliser_entete_departement_repertoire(col): col
+        for col in df_contacts.columns
+    }
+    _colonne_source_departement_affiliation = None
+    for _alias_dept in _alias_departement_affiliation:
+        _cle_dept = _normaliser_entete_departement_repertoire(_alias_dept)
+        if _cle_dept in _colonnes_departement_normalisees:
+            _colonne_source_departement_affiliation = _colonnes_departement_normalisees[_cle_dept]
+            break
+
+    _departement_affiliation_source_trouve = _colonne_source_departement_affiliation is not None
+    if _departement_affiliation_source_trouve:
+        df_rep["Département d'affiliation"] = (
+            df_rep[_colonne_source_departement_affiliation]
+            .where(df_rep[_colonne_source_departement_affiliation].notna(), "")
+            .astype(str).str.strip()
+            .replace({"nan": "", "None": "", "NaT": ""})
+        )
+        df_rep["Département d'affiliation"] = df_rep["Département d'affiliation"].replace("", "Non renseigné")
+    else:
+        df_rep["Département d'affiliation"] = "Non renseigné"
+
     df_rep['Qualité'] = df_rep['Qualité'].fillna('Non défini').astype(str)
     df_rep['Grade']   = df_rep['Grade'].fillna('N/A').astype(str) if 'Grade' in df_rep.columns else 'N/A'
     df_rep['Email']   = df_rep['Email'].fillna('—').astype(str) if 'Email' in df_rep.columns else '—'
@@ -28329,7 +28374,10 @@ if df_contacts is not None and not df_contacts.empty:
 
     # ── Tableau détaillé filtré ──
     with st.expander(f"🔍 Consulter le répertoire détaillé — {len(df_filtre_rep)} résultat(s)", expanded=True):
-        cols_to_show = ['NOM', 'PRÉNOM', 'Qualité', 'Grade', 'Email', 'N°/TEL', "Chargé dans l'EDT"]
+        cols_to_show = [
+            'NOM', 'PRÉNOM', 'Qualité', 'Grade', 'Email', 'N°/TEL',
+            "Chargé dans l'EDT", "Département d'affiliation"
+        ]
         cols_available = [c for c in cols_to_show if c in df_filtre_rep.columns]
         
         # Recherche textuelle additionnelle
@@ -28418,11 +28466,13 @@ if df_contacts is not None and not df_contacts.empty:
         ],
         # On privilégie explicitement le département d'affiliation/rattachement
         # avant une éventuelle colonne générique « Département ».
-        "Département": [
+        "Département d'affiliation": [
             "departement d'affiliation", "département d'affiliation",
             "departement de rattachement", "département de rattachement",
             "departement d'appartenance", "département d'appartenance",
-            "departement", "département", "dept", "department"
+            "departement d'affectation", "département d'affectation",
+            "departement", "département", "dept", "department",
+            "structure de rattachement", "affectation"
         ],
         "Chargé dans l'EDT": [
             "chargé dans l'edt", "charge dans l'edt",
@@ -28450,23 +28500,22 @@ if df_contacts is not None and not df_contacts.empty:
         "Grade": "N/A",
         "Email": "",
         "N°/TEL": "",
-        "Département": "Non renseigné",
+        "Département d'affiliation": "Non renseigné",
         "Chargé dans l'EDT": "Non vérifiable",
     }
 
+    # Le département d'affiliation est conservé comme dernière colonne, comme demandé.
     _colonnes_personnel_export = [
         "NOM", "PRÉNOM", "Qualité", "Grade", "Email", "N°/TEL",
-        "Département", "Chargé dans l'EDT"
+        "Chargé dans l'EDT", "Département d'affiliation"
     ]
     _df_personnel_export = pd.DataFrame(index=df_filtre_rep.index)
-    _departement_source_trouve = False
+    _departement_source_trouve = _departement_affiliation_source_trouve
 
     for _nom_col_export in _colonnes_personnel_export:
         _col_source_export = _trouver_colonne_personnel_export(_nom_col_export)
         if _col_source_export is not None:
             _df_personnel_export[_nom_col_export] = df_filtre_rep[_col_source_export]
-            if _nom_col_export == "Département":
-                _departement_source_trouve = True
         else:
             _df_personnel_export[_nom_col_export] = _valeurs_manquantes_personnel[_nom_col_export]
 
@@ -28552,7 +28601,7 @@ if df_contacts is not None and not df_contacts.empty:
             "Grade": 16,
             "Email": 42,
             "N°/TEL": 22,
-            "Département": 30,
+            "Département d'affiliation": 34,
             "Chargé dans l'EDT": 24,
         }
         for _indice_colonne, _nom_colonne in enumerate(_colonnes_personnel_export, start=1):
@@ -28582,7 +28631,7 @@ if df_contacts is not None and not df_contacts.empty:
 
     if not _departement_source_trouve:
         st.info(
-            "ℹ️ La colonne « Département » n'a pas été trouvée dans la source du répertoire. "
+            "ℹ️ La colonne « Département d'affiliation » n'a pas été trouvée dans la source du répertoire. "
             "Elle est ajoutée avec la valeur « Non renseigné ». Renseignez le département "
             "d'affiliation dans le fichier source pour qu'il soit repris automatiquement."
         )
