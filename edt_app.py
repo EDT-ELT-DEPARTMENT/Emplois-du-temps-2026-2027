@@ -17535,6 +17535,328 @@ def generate_pro_excel(df_source, title, sheet_name="Donnees"):
     buffer.seek(0)
     return buffer.getvalue()
 
+def _edt_cle_normalisee_qualite(valeur):
+    """Normalise un nom pour rapprocher l'EDT du répertoire du personnel."""
+    import unicodedata
+    if valeur is None:
+        return ""
+    try:
+        if pd.isna(valeur):
+            return ""
+    except Exception:
+        pass
+    texte = unicodedata.normalize("NFKD", str(valeur).strip().upper())
+    texte = "".join(c for c in texte if not unicodedata.combining(c))
+    return re.sub(r"[^A-Z0-9]+", "", texte)
+
+
+def _qualite_edt_enseignant(nom_enseignant):
+    """Retourne la qualité (Permanent/Vacataire) depuis le répertoire chargé par la plateforme."""
+    qualites = globals().get("repertoire_qualites", {}) or {}
+    noms_complets = globals().get("repertoire_noms_complets", {}) or {}
+    if not nom_enseignant:
+        return "Non renseignée"
+
+    index = {}
+    for cle, valeur in qualites.items():
+        cle_n = _edt_cle_normalisee_qualite(cle)
+        val = str(valeur or "").strip()
+        if cle_n and val and val.lower() not in ("nan", "none", "non defini", "non défini"):
+            index.setdefault(cle_n, val)
+
+    texte = str(nom_enseignant).strip()
+    texte_n = _edt_cle_normalisee_qualite(texte)
+    if texte_n in index:
+        return index[texte_n]
+
+    # Lorsqu'une cellule contient plusieurs enseignants, on essaie chaque nom séparément.
+    parties = [x.strip() for x in re.split(r"\s*(?:\+|/|,|;|&|\bet\b)\s*", texte, flags=re.IGNORECASE) if x.strip()]
+    for partie in parties:
+        cle = _edt_cle_normalisee_qualite(partie)
+        if cle in index:
+            return index[cle]
+
+    # Correspondance souple sur nom complet seulement si elle est unique.
+    candidats = []
+    for cle, val in index.items():
+        if len(cle) >= 5 and texte_n and (cle in texte_n or texte_n in cle):
+            candidats.append(val)
+    candidats_uniques = list(dict.fromkeys(candidats))
+    if len(candidats_uniques) == 1:
+        return candidats_uniques[0]
+
+    # Dernier recours : rechercher le nom/prénom dans le fichier de contacts, s'il est chargé.
+    contacts = globals().get("df_contacts")
+    if isinstance(contacts, pd.DataFrame) and not contacts.empty:
+        colonnes = {str(c).strip().casefold(): c for c in contacts.columns}
+        col_nom = colonnes.get("nom")
+        col_prenom = colonnes.get("prénom") or colonnes.get("prenom")
+        col_qualite = colonnes.get("qualité") or colonnes.get("qualite")
+        if col_nom and col_qualite:
+            for _, ligne in contacts.iterrows():
+                nom = str(ligne.get(col_nom, "") or "").strip()
+                prenom = str(ligne.get(col_prenom, "") or "").strip() if col_prenom else ""
+                complet = _edt_cle_normalisee_qualite(f"{nom} {prenom}")
+                nom_n = _edt_cle_normalisee_qualite(nom)
+                if texte_n and (texte_n == complet or texte_n == nom_n):
+                    val = str(ligne.get(col_qualite, "") or "").strip()
+                    if val and val.lower() not in ("nan", "none"):
+                        return val
+
+    return "Non renseignée"
+
+
+def _edt_departement_enseignant(df_enseignant, nom_enseignant):
+    """Déduit le département depuis les lignes EDT de l'enseignant, s'il est disponible."""
+    if isinstance(df_enseignant, pd.DataFrame) and "Département" in df_enseignant.columns:
+        valeurs = [str(v).strip() for v in df_enseignant["Département"].dropna().unique()
+                   if str(v).strip() and str(v).strip().lower() not in ("nan", "none", "non renseigné", "non defini", "non défini")]
+        if valeurs:
+            return " / ".join(sorted(dict.fromkeys(valeurs)))
+    return "Non renseigné"
+
+
+def _edt_norm_grille_excel(valeur):
+    if valeur is None or str(valeur).strip().lower() in ("non defini", "non défini", "nan", "none", ""):
+        return "vide"
+    return str(valeur).strip().lower().replace(" ", "").replace("-", "").replace("–", "").replace(":00", "").replace("h00", "h")
+
+
+def _edt_construire_grille_excel(df_enseignant):
+    """Construit la même grille Jour × Horaire que les PDF individuels PPER.03."""
+    jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+    horaires_ordre = [
+        "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h",
+        "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h",
+        "12h30 - 14h", "13h - 14h30", "14h - 15h", "14h - 15h30",
+        "14h - 16h", "15h - 16h", "15h30 - 17h"
+    ]
+    map_j = {_edt_norm_grille_excel(j): j for j in jours_ordre}
+    map_h = {_edt_norm_grille_excel(h): h for h in horaires_ordre}
+    if df_enseignant is None or df_enseignant.empty:
+        return pd.DataFrame(index=jours_ordre, columns=horaires_ordre).fillna("")
+
+    df = df_enseignant.copy()
+    if "Jours" not in df.columns or "Horaire" not in df.columns:
+        return pd.DataFrame(index=jours_ordre, columns=horaires_ordre).fillna("")
+    df["_Jours_Norm"] = df["Jours"].apply(_edt_norm_grille_excel)
+    df["_Horaire_Norm"] = df["Horaire"].apply(_edt_norm_grille_excel)
+
+    def format_cell(rows):
+        items = []
+        for _, ligne in rows.iterrows():
+            code = str(ligne.get("Code", "")).upper()
+            if "COURS" in code:
+                prefixe = "[C]"
+            elif "TD" in code:
+                prefixe = "[T]"
+            else:
+                prefixe = "[P]"
+            enseignement = str(ligne.get("Enseignements", "") or "").strip()
+            if not enseignement:
+                enseignement = str(ligne.get("Code", "") or "").strip()
+            if re.match(r"^(COURS|TD|TP)\b", enseignement.upper()):
+                titre_cellule = enseignement
+            else:
+                titre_cellule = f"{prefixe} {enseignement}".strip()
+            promo = str(ligne.get("Promotion", "") or "").strip()
+            lieu = str(ligne.get("Lieu", "") or "").strip()
+            details = []
+            # Même ordre d'information que dans le PDF individuel : enseignement, lieu, promotion.
+            if lieu:
+                details.append(f"{lieu}")
+            if promo:
+                details.append(f"{promo}")
+            items.append("\n".join([titre_cellule] + details))
+        return "\n\n".join(items)
+
+    grouped = df.groupby(["_Jours_Norm", "_Horaire_Norm"], dropna=False).apply(format_cell)
+    if grouped.empty:
+        return pd.DataFrame(index=jours_ordre, columns=horaires_ordre).fillna("")
+    grid = grouped.unstack(fill_value="")
+    jours_present = [_edt_norm_grille_excel(j) for j in jours_ordre if _edt_norm_grille_excel(j) in grid.index]
+    horaires_present = [_edt_norm_grille_excel(h) for h in horaires_ordre if _edt_norm_grille_excel(h) in grid.columns]
+    if not jours_present or not horaires_present:
+        return pd.DataFrame(index=["Aucun"], columns=["Aucun"]).fillna("Aucun cours")
+    grid = grid.reindex(index=jours_present, columns=horaires_present).fillna("")
+    grid.index = [map_j.get(j, j) for j in grid.index]
+    grid.columns = [map_h.get(h, h) for h in grid.columns]
+    return grid
+
+
+def _edt_nom_feuille_excel(nom, deja_utilises):
+    texte = re.sub(r"[\\/*?:\[\]]", "_", str(nom)).strip().strip("'") or "Enseignant"
+    texte = texte[:31]
+    base = texte
+    compteur = 2
+    while texte.casefold() in {x.casefold() for x in deja_utilises}:
+        suffixe = f"_{compteur}"
+        texte = base[:31-len(suffixe)] + suffixe
+        compteur += 1
+    deja_utilises.add(texte)
+    return texte
+
+
+def _edt_ecrire_grille_excel(writer, df_enseignant, nom_enseignant, sheet_name, title=None):
+    """Ecrit une grille Excel colorée, avec cellules ajustées au texte et mise en page paysage."""
+    grid = _edt_construire_grille_excel(df_enseignant)
+    workbook = writer.book
+    ws = workbook.add_worksheet(sheet_name)
+    writer.sheets[sheet_name] = ws
+    n_cols = max(1, len(grid.columns) + 1)
+
+    title_fmt = workbook.add_format({"bold": True, "font_size": 15, "font_color": "#1E3A8A", "align": "center", "valign": "vcenter", "border": 1, "bg_color": "#EAF2FF"})
+    meta_fmt = workbook.add_format({"bold": True, "font_size": 10, "font_color": "#334155", "align": "center", "valign": "vcenter", "text_wrap": True, "border": 1, "bg_color": "#F1F5F9"})
+    header_fmt = workbook.add_format({"bold": True, "font_size": 9, "font_color": "white", "bg_color": "#1E3A8A", "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True})
+    day_fmt = workbook.add_format({"bold": True, "font_size": 9, "font_color": "#1E293B", "bg_color": "#E2E8F0", "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True})
+    cell_base = {"font_size": 9, "border": 1, "valign": "top", "text_wrap": True, "align": "left"}
+    cell_formats = {
+        "cours": workbook.add_format(dict(cell_base, bg_color="#DFECFF")),
+        "td": workbook.add_format(dict(cell_base, bg_color="#E5F8E9")),
+        "tp": workbook.add_format(dict(cell_base, bg_color="#FFE7E7")),
+        "autre": workbook.add_format(dict(cell_base, bg_color="#FFFFFF")),
+        "vide": workbook.add_format(dict(cell_base, bg_color="#F8FAFC")),
+    }
+
+    nom_qualite = _qualite_edt_enseignant(nom_enseignant)
+    departement = _edt_departement_enseignant(df_enseignant, nom_enseignant)
+    titre = title or f"EMPLOI DU TEMPS INDIVIDUEL - {str(nom_enseignant).upper()}"
+    ws.merge_range(0, 0, 0, n_cols - 1, titre, title_fmt)
+    meta = f"Qualité : {nom_qualite} | Département : {departement} | Semestre 01 - département d'Électrotechnique - FGE/UDL-SBA"
+    ws.merge_range(1, 0, 1, n_cols - 1, meta, meta_fmt)
+    ws.set_row(0, 28)
+    ws.set_row(1, 30)
+    ws.set_row(2, 6)
+
+    ws.write(3, 0, "JOUR", header_fmt)
+    for j, horaire in enumerate(grid.columns, start=1):
+        ws.write(3, j, str(horaire), header_fmt)
+    ws.set_row(3, 28)
+    ws.set_column(0, 0, 16)
+
+    for row_idx, (jour, row) in enumerate(grid.iterrows(), start=4):
+        ws.write(row_idx, 0, str(jour), day_fmt)
+        hauteur_estimee = 36
+        for col_idx, val in enumerate(row, start=1):
+            texte = "" if val is None else str(val)
+            maj = texte.upper()
+            if not texte.strip():
+                fmt = cell_formats["vide"]
+            elif "COURS" in maj or "[C]" in maj:
+                fmt = cell_formats["cours"]
+            elif "TD" in maj or "[T]" in maj:
+                fmt = cell_formats["td"]
+            elif "TP" in maj or "[P]" in maj:
+                fmt = cell_formats["tp"]
+            else:
+                fmt = cell_formats["autre"]
+            ws.write(row_idx, col_idx, texte, fmt)
+            nb_lignes = 0
+            for ligne_texte in texte.split("\n"):
+                # largeur cible provisoire; les colonnes sont limitées pour garder une grille imprimable.
+                nb_lignes += max(1, math.ceil(len(ligne_texte) / 24)) if ligne_texte else 1
+            hauteur_estimee = max(hauteur_estimee, min(220, nb_lignes * 13 + 10))
+        ws.set_row(row_idx, min(220, hauteur_estimee))
+
+    # Largeur personnalisée par créneau, en conservant la géométrie d'une grille EDT.
+    for col_idx, horaire in enumerate(grid.columns, start=1):
+        max_len = len(str(horaire))
+        for val in grid[horaire].astype(str).tolist():
+            for ligne_texte in val.split("\n"):
+                max_len = max(max_len, min(len(ligne_texte), 48))
+        ws.set_column(col_idx, col_idx, max(17, min(32, max_len * 0.78 + 3)))
+
+    ws.freeze_panes(4, 1)
+    if len(grid) > 0 and len(grid.columns) > 0:
+        ws.autofilter(3, 0, 3 + len(grid), len(grid.columns))
+    ws.set_landscape()
+    ws.set_paper(9)  # A4
+    ws.fit_to_pages(1, 0)
+    ws.center_horizontally()
+    ws.repeat_rows(0, 3)
+    ws.set_margins(0.25, 0.25, 0.35, 0.35)
+    ws.print_area(0, 0, 3 + len(grid), len(grid.columns))
+    return {"enseignant": nom_enseignant, "qualite": nom_qualite, "departement": departement, "feuille": sheet_name, "seances": len(df_enseignant)}
+
+
+def generate_edt_grille_excel_individuel(df_source, nom_enseignant):
+    """Exporte l'EDT d'un seul enseignant au format grille identique au PDF individuel."""
+    try:
+        if df_source is None or df_source.empty:
+            return None
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+            sheet = _edt_nom_feuille_excel(str(nom_enseignant), set())
+            _edt_ecrire_grille_excel(writer, df_source, nom_enseignant, sheet)
+        buffer.seek(0)
+        return buffer.getvalue()
+    except Exception as exc:
+        print(f"[EDT Excel individuel] {exc}")
+        return None
+
+
+def generate_edt_grilles_excel_global(df_source, progress_bar=None):
+    """Exporte tous les EDT individuels dans un classeur Excel : une grille PPER.03 par feuille."""
+    try:
+        if df_source is None or df_source.empty or "Enseignants" not in df_source.columns:
+            return None, "Aucune donnée enseignant à exporter"
+        enseignants = sorted({str(e).strip() for e in df_source["Enseignants"].dropna().unique()
+                              if str(e).strip() and str(e).strip().lower() not in ("nan", "none", "non defini", "non défini")})
+        if not enseignants:
+            return None, "Aucun enseignant trouvé"
+        buffer = io.BytesIO()
+        details = []
+        used_sheets = set()
+        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+            index = writer.book.add_worksheet("Index")
+            writer.sheets["Index"] = index
+            fmt_titre = writer.book.add_format({"bold": True, "font_size": 15, "font_color": "white", "bg_color": "#1E3A8A", "align": "center", "valign": "vcenter", "border": 1})
+            fmt_entete = writer.book.add_format({"bold": True, "font_color": "white", "bg_color": "#2563EB", "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True})
+            fmt_cell = writer.book.add_format({"border": 1, "valign": "vcenter", "text_wrap": True})
+            fmt_alt = writer.book.add_format({"border": 1, "valign": "vcenter", "text_wrap": True, "bg_color": "#EFF6FF"})
+            index.merge_range(0, 0, 0, 4, "INDEX DES EMPLOIS DU TEMPS INDIVIDUELS", fmt_titre)
+            index.set_row(0, 28)
+            entetes = ["Enseignant", "Qualité", "Département", "Nombre de lignes EDT", "Feuille Excel"]
+            for ci, h in enumerate(entetes):
+                index.write(2, ci, h, fmt_entete)
+            for pos, ens in enumerate(enseignants):
+                if progress_bar is not None:
+                    try:
+                        progress_bar.progress((pos + 1) / len(enseignants), text=f"Préparation Excel : {ens} ({pos + 1}/{len(enseignants)})")
+                    except Exception:
+                        pass
+                df_ens = df_source[df_source["Enseignants"].astype(str).str.strip() == ens].copy()
+                feuille = _edt_nom_feuille_excel(ens, used_sheets)
+                detail = _edt_ecrire_grille_excel(writer, df_ens, ens, feuille)
+                details.append(detail)
+                r = pos + 3
+                fmt = fmt_alt if pos % 2 else fmt_cell
+                for ci, val in enumerate([ens, detail["qualite"], detail["departement"], len(df_ens), feuille]):
+                    index.write(r, ci, val, fmt)
+                index.write_url(r, 4, f"internal:'{feuille}'!A1", fmt, string=feuille)
+            for ci, width in enumerate([32, 20, 28, 20, 32]):
+                index.set_column(ci, ci, width)
+            index.freeze_panes(3, 0)
+            index.autofilter(2, 0, 2 + len(details), 4)
+            index.set_landscape()
+            index.fit_to_pages(1, 0)
+            index.repeat_rows(0, 2)
+        buffer.seek(0)
+        if progress_bar is not None:
+            try:
+                progress_bar.empty()
+            except Exception:
+                pass
+        return buffer.getvalue(), None
+    except Exception as exc:
+        if progress_bar is not None:
+            try:
+                progress_bar.empty()
+            except Exception:
+                pass
+        return None, str(exc)
+
+
 def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     """Généré un PDF individuel avec en-tete PPER.03 centree et texte infos aligne a gauche."""
     try:
@@ -17656,7 +17978,7 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
                 "Code : PPER.03",
                 "Révision : 00",
                 "Date : 16/05/2026",
-                f"Pages : {self.page_no()}/{{nb}}"
+                "Pages : {nb}/{nb}"
             ]
             for i, info in enumerate(infos):
                 self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
@@ -17682,7 +18004,10 @@ def generate_edt_individuel_pdf_classique(df_source, nom_enseignant):
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
-    pdf.ln(3)
+    pdf.set_font("Arial", "B", 8)
+    qualite_pdf = _qualite_edt_enseignant(nom_enseignant)
+    pdf.cell(0, 5, sanitize_for_pdf(f"Qualité : {qualite_pdf}"), 0, 1, "C")
+    pdf.ln(2)
         
     if grid.empty:
         pdf.set_font("Arial", "", 10)
@@ -17917,7 +18242,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
                     "Code : PPER.03",
                     "Revision : 00",
                     "Date : 16/05/2026",
-                    f"Pages : {self.page_no()}/{total_pages}"
+                    f"Pages : {total_pages}/{total_pages}"
                 ]
                 for i, info in enumerate(infos):
                     self.set_xy(X_INFO + 1.5, Y0 + 0.5 + i * line_h)
@@ -17940,7 +18265,9 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
             pdf.cell(0, 8, sanitize_for_pdf(f"EMPLOI DU TEMPS - {str(ens).upper()}"), 0, 1, "C")
             pdf.set_font("Arial", "I", 8)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 5, sanitize_for_pdf("Semestre 01 - département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
+            qualite_pdf = _qualite_edt_enseignant(ens)
+            departement_pdf = _edt_departement_enseignant(df[df['Enseignants'] == ens], ens)
+            pdf.cell(0, 5, sanitize_for_pdf(f"Qualité : {qualite_pdf} | Département : {departement_pdf} | Semestre 01 - département d'Electrotechnique - FGE/UDL-SBA"), 0, 1, "C")
             pdf.ln(2)
 
         def draw_table_header(pdf, grid, col_jour_w, col_h_w):
@@ -19239,13 +19566,36 @@ def render_download_hub(df_global, user_data, is_admin):
         else:
             c2.button("🌐 HTML", disabled=True, use_container_width=True, key="dh")
             
-        xlsx_data_p = generate_pro_excel(df_filtre_p, f"EDT {sel_prof}")
-        if xlsx_data_p:
-            c3.download_button("📊 Excel", xlsx_data_p, f"EDT_{sel_prof}{suffixe_fichier_prof}_2027.xlsx", 
-                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
-                              use_container_width=True, key="dx")
+        # Excel sous forme de grille Jour × Horaire, identique dans sa structure au PDF PPER.03.
+        # Mode individuel : une feuille-grille pour l'enseignant choisi.
+        # Mode global : un classeur avec une feuille-grille par enseignant + un index.
+        if sel_prof != "Tous":
+            xlsx_data_p = generate_edt_grille_excel_individuel(df_filtre_p, sel_prof)
+            nom_excel_prof = f"EDT_{re.sub(r'[^A-Za-z0-9_-]+', '_', str(sel_prof)).strip('_')}_2027.xlsx"
         else:
-            c3.button("📊 Excel", disabled=True, use_container_width=True, key="dx")                
+            if st.button("🧮 Préparer Excel Global (grilles par enseignant)", use_container_width=True, key="btn_gen_all_excel_prof"):
+                with st.spinner("Préparation du classeur Excel avec une grille par enseignant..."):
+                    prog_excel = st.progress(0, text="Préparation des grilles...")
+                    excel_global_data, excel_global_err = generate_edt_grilles_excel_global(df_prof_src, progress_bar=prog_excel)
+                    if excel_global_data:
+                        st.session_state["excel_all_prof_data"] = excel_global_data
+                        st.session_state["excel_all_prof_sig"] = sig_dept_prof
+                        st.success("✅ Classeur Excel global prêt : une grille par enseignant.")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Erreur de génération Excel : {excel_global_err}")
+            xlsx_data_p = None
+            if (st.session_state.get("excel_all_prof_sig", "all") == sig_dept_prof
+                    and st.session_state.get("excel_all_prof_data")):
+                xlsx_data_p = st.session_state["excel_all_prof_data"]
+            nom_excel_prof = f"EDT_Tous_Enseignants{suffixe_dept_prof}_2027.xlsx"
+
+        if xlsx_data_p:
+            c3.download_button("📊 Excel — Grille", xlsx_data_p, nom_excel_prof,
+                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                              use_container_width=True, key="dx")
+        elif sel_prof != "Tous":
+            c3.button("📊 Excel — Grille", disabled=True, use_container_width=True, key="dx")
             
     
     with col3:
@@ -19796,6 +20146,7 @@ if os.path.exists(NOM_FICHIER_CONTACTS):
         for _, row in df_contacts.iterrows():
             nom_brut = str(row.get('NOM', '')).strip().upper()
             prenom_brut = str(row.get('PRÉNOM', '')).strip().capitalize()
+            nom_complet = f"{nom_brut} {prenom_brut}".strip()
             email_brut = str(row.get('Email', '')).strip()
             qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
             grade_brut = str(row.get('Grade', 'N/A')).strip()
@@ -19806,7 +20157,6 @@ if os.path.exists(NOM_FICHIER_CONTACTS):
                 repertoire_telephones[nom_complet.upper()] = tel_nettoye
 
             if nom_brut:
-                nom_complet = f"{nom_brut} {prenom_brut}".strip()
                 
                 # Stockage par NOM SEUL (clé principale)
                 if email_brut and email_brut.lower() != 'nan':
