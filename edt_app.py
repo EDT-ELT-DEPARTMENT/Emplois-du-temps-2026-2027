@@ -6097,6 +6097,21 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
 
+            # Département(s) des enseignants sélectionnés, récupéré(s)
+            # directement depuis les lignes du fichier EDT chargé en ligne.
+            departements_enseignants_affiches = []
+            if "Département" in df_f_complet.columns:
+                _depts_ens = df_f_complet["Département"].fillna("").astype(str).str.strip()
+                departements_enseignants_affiches = sorted({
+                    d for d in _depts_ens
+                    if d and d.casefold() not in {"nan", "none", "non renseigné", "non défini"}
+                }, key=lambda x: x.casefold())
+            texte_departements_enseignants = (
+                " / ".join(departements_enseignants_affiches)
+                if departements_enseignants_affiches else "Département non renseigné dans l'EDT"
+            )
+            st.caption(f"🏢 Département(s) d'affiliation : **{texte_departements_enseignants}**")
+
             # La charge horaire porte TOUJOURS sur l'ensemble des
             # enseignements (Cours+TD+TP) des enseignants sélectionnés,
             # indépendamment du filtre d'affichage choisi ci-dessus.
@@ -6146,10 +6161,17 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     ligne_enseignant = (
                         f"<br><small>👤 {r['Enseignants']}</small>" if plusieurs_enseignants_admin else ""
                     )
+                    _dept_ligne_aff = str(r.get("Département", "") or "").strip()
+                    if _dept_ligne_aff.casefold() in {"nan", "none"}:
+                        _dept_ligne_aff = ""
+                    ligne_departement = (
+                        f"<br><small>🏢 Département : {_dept_ligne_aff}</small>"
+                        if _dept_ligne_aff else "<br><small>🏢 Département : non renseigné</small>"
+                    )
                     items.append(
                         f"<div style='border-left:3px solid {color};padding:4px;margin:2px 0;background:#f8fafc;border-radius:4px;'>"
                         f"<b>{nat} {r['Enseignements']}</b>{ligne_enseignant}<br>"
-                        f"<small>📍 {r['Lieu']} | 🎓 {r['Promotion']}</small>"
+                        f"<small>📍 {r['Lieu']} | 🎓 {r['Promotion']}</small>{ligne_departement}"
                         f"</div>"
                     )
                 return "".join(items)
@@ -6199,6 +6221,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             <div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:15px;border-radius:8px 8px 0 0;margin-bottom:0;text-align:center;">
                 <h2 style="margin:0;font-size:18px;">📊 EMPLOI DU TEMPS — ENSEIGNANT{"S" if plusieurs_enseignants_admin else ""}</h2>
                 <p style="margin:5px 0 0 0;opacity:0.9;font-size:13px;">{cible} | Semestre 01 — 2026-2027</p>
+                <p style="margin:5px 0 0 0;opacity:0.95;font-size:12px;">🏢 Département(s) : {texte_departements_enseignants}</p>
                 <div style="display:flex;justify-content:center;gap:20px;margin-top:10px;font-size:11px;opacity:0.85;">
                     <span>📋 Code : PPER.03</span>
                     <span>🔄 Révision : 00</span>
@@ -6235,7 +6258,13 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     else:
                         entete_enseignement = f"{nat} – {nom_ens_txt}"
                     ligne_enseignant_txt = f" | 👤 {r['Enseignants']}" if plusieurs_enseignants_admin else ""
-                    items.append(f"{entete_enseignement}\n📍 {r['Lieu']} | 🎓 {r['Promotion']}{ligne_enseignant_txt}")
+                    _dept_texte_aff = str(r.get("Département", "") or "").strip()
+                    if _dept_texte_aff.casefold() in {"nan", "none"}:
+                        _dept_texte_aff = "Non renseigné"
+                    items.append(
+                        f"{entete_enseignement}\n📍 {r['Lieu']} | 🎓 {r['Promotion']}"
+                        f"\n🏢 Département : {_dept_texte_aff}{ligne_enseignant_txt}"
+                    )
                 return "\n────────\n".join(items)
 
             grid_text_e = df_f.groupby(['h_norm', 'j_norm']).apply(fmt_e_text).unstack('j_norm')
@@ -6287,6 +6316,12 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 ws['A3'].font = Font(bold=True, size=10, color='334155')
                 ws['A3'].alignment = Alignment(horizontal='center', vertical='center')
                 ws.row_dimensions[3].height = 20
+
+                ws.merge_cells('A4:F4')
+                ws['A4'] = f"Département(s) d'affiliation : {texte_departements_enseignants}"
+                ws['A4'].font = Font(bold=True, size=10, color='1E40AF')
+                ws['A4'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                ws.row_dimensions[4].height = 22
 
                 ws.column_dimensions['A'].width = 18
 
@@ -6432,6 +6467,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             elements_e = []
             elements_e.append(Paragraph(f"📊 EMPLOI DU TEMPS — ENSEIGNANT{'S' if plusieurs_enseignants_admin else ''}", title_style_e))
             elements_e.append(Paragraph(f"<b>{cible}</b> | Semestre 01 — 2026-2027", iso_style_e))
+            elements_e.append(Paragraph(f"Département(s) d'affiliation : {texte_departements_enseignants}", iso_style_e))
             elements_e.append(Paragraph(f"📋 Code : PPER.03 &nbsp;&nbsp;|&nbsp;&nbsp; 🔄 Révision : 00 &nbsp;&nbsp;|&nbsp;&nbsp; 📅 Date : {datetime.now().strftime('%d/%m/%Y')}", iso_style_e))
             elements_e.append(Spacer(1, 8*mm))
             elements_e.append(table_e)
@@ -6487,6 +6523,143 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 f"EDT_Ens_{noms_fichiers_enseignants_admin}.pdf",
                 "application/pdf"
             )
+
+            # ═══════════════════════════════════════════════════════
+            # 📦 ZIP DES EDT INDIVIDUELS — un PDF par enseignant sélectionné
+            # Les emplois du temps sont générés depuis toutes les lignes du
+            # fichier EDT pour chaque enseignant, indépendamment du filtre
+            # d'affichage Cours/TD/TP appliqué à la grille collective.
+            # ═══════════════════════════════════════════════════════
+            def _nom_fichier_edt_individuel_zip(nom):
+                nom = re.sub(r'[<>:"/\\|?*]+', " ", str(nom or "")).strip()
+                nom = re.sub(r"\s+", " ", nom)
+                return f"{nom or 'Enseignant'}_EDT individule-2026-2027.pdf"
+
+            def _generer_pdf_edt_individuel_zip(nom_enseignant_zip, df_source_zip):
+                """Retourne les octets d'un PDF EDT individuel pour un enseignant."""
+                import html as _html_zip
+                from reportlab.lib import colors as _colors_zip
+                from reportlab.lib.pagesizes import landscape as _landscape_zip, A4 as _A4_zip
+                from reportlab.platypus import SimpleDocTemplate as _DocZip, Table as _TableZip, TableStyle as _StyleZip, Paragraph as _ParaZip, Spacer as _SpacerZip
+                from reportlab.lib.styles import getSampleStyleSheet as _stylesZip, ParagraphStyle as _ParagraphStyleZip
+                from reportlab.lib.units import mm as _mm_zip
+
+                nom_re = re.escape(str(nom_enseignant_zip).strip())
+                df_personne_zip = df_source_zip[
+                    df_source_zip["Enseignants"].fillna("").astype(str).str.contains(
+                        nom_re, case=False, regex=True, na=False
+                    )
+                ].copy()
+                if df_personne_zip.empty:
+                    return None, "Aucune séance trouvée"
+
+                jours_pdf_zip = list(jours_list)
+                horaires_pdf_zip = list(horaires_list)
+                for _h_pdf in df_personne_zip.get("Horaire", pd.Series(dtype=str)).fillna("").astype(str).unique():
+                    if _h_pdf.strip() and normalize(_h_pdf) not in {normalize(x) for x in horaires_pdf_zip}:
+                        horaires_pdf_zip.append(_h_pdf.strip())
+                horaires_pdf_zip = sorted(
+                    horaires_pdf_zip,
+                    key=lambda x: (_minutes_horaire_edt(x) or (10**9, 10**9,))[0]
+                )
+
+                cellules_pdf_zip = {}
+                for _, _r_pdf in df_personne_zip.iterrows():
+                    _jour_pdf = str(_r_pdf.get("Jours", "")).strip()
+                    _horaire_pdf = str(_r_pdf.get("Horaire", "")).strip()
+                    _jour_key_pdf = normalize(_jour_pdf)
+                    _horaire_key_pdf = normalize(_horaire_pdf)
+                    if not _jour_pdf or not _horaire_pdf:
+                        continue
+                    _code_pdf = str(_r_pdf.get("Code", "")).upper()
+                    _nature_pdf = "COURS" if "COURS" in _code_pdf else ("TD" if "TD" in _code_pdf else ("TP" if "TP" in _code_pdf else "ENSEIGNEMENT"))
+                    _dept_pdf = str(_r_pdf.get("Département", "") or "").strip()
+                    if _dept_pdf.casefold() in {"nan", "none"}:
+                        _dept_pdf = "Non renseigné"
+                    _texte_cellule_pdf = (
+                        f"<b>{_html_zip.escape(_nature_pdf)} — {_html_zip.escape(str(_r_pdf.get('Enseignements', '')))}</b><br/>"
+                        f"Enseignant : {_html_zip.escape(str(_r_pdf.get('Enseignants', '')))}<br/>"
+                        f"Lieu : {_html_zip.escape(str(_r_pdf.get('Lieu', '')))}<br/>"
+                        f"Promotion : {_html_zip.escape(str(_r_pdf.get('Promotion', '')))}<br/>"
+                        f"Département : {_html_zip.escape(_dept_pdf)}"
+                    )
+                    cellules_pdf_zip.setdefault((_horaire_key_pdf, _jour_key_pdf), []).append(_texte_cellule_pdf)
+
+                df_pdf_rows_zip = [[_ParaZip("<b>Horaire</b>", _ParagraphStyleZip("zipHeader", parent=_stylesZip()["Normal"], fontName="Helvetica-Bold", fontSize=8, alignment=1))]
+                                   + [_ParaZip(f"<b>{_html_zip.escape(j)}</b>", _ParagraphStyleZip(f"zipDay{idx}", parent=_stylesZip()["Normal"], fontName="Helvetica-Bold", fontSize=8, alignment=1)) for idx, j in enumerate(jours_pdf_zip)]]
+                _style_cell_zip = _ParagraphStyleZip("zipCell", parent=_stylesZip()["Normal"], fontName="Helvetica", fontSize=7, leading=9, alignment=1, wordWrap="CJK")
+                _style_time_zip = _ParagraphStyleZip("zipTime", parent=_stylesZip()["Normal"], fontName="Helvetica-Bold", fontSize=8, alignment=1)
+                for _h_pdf in horaires_pdf_zip:
+                    _row_pdf = [_ParaZip(_html_zip.escape(_h_pdf), _style_time_zip)]
+                    for _j_pdf in jours_pdf_zip:
+                        _items_pdf = cellules_pdf_zip.get((normalize(_h_pdf), normalize(_j_pdf)), [])
+                        _row_pdf.append(_ParaZip("<br/><br/>────────<br/><br/>".join(_items_pdf), _style_cell_zip) if _items_pdf else "")
+                    df_pdf_rows_zip.append(_row_pdf)
+
+                buffer_pdf_zip = io.BytesIO()
+                doc_pdf_zip = _DocZip(
+                    buffer_pdf_zip, pagesize=_landscape_zip(_A4_zip),
+                    rightMargin=8*_mm_zip, leftMargin=8*_mm_zip,
+                    topMargin=10*_mm_zip, bottomMargin=8*_mm_zip
+                )
+                styles_pdf_zip = _stylesZip()
+                titre_pdf_zip = _ParagraphStyleZip("zipTitle", parent=styles_pdf_zip["Title"], fontName="Helvetica-Bold", fontSize=14, leading=17, textColor=_colors_zip.HexColor("#1E3A8A"), alignment=1, spaceAfter=4)
+                meta_pdf_zip = _ParagraphStyleZip("zipMeta", parent=styles_pdf_zip["Normal"], fontName="Helvetica", fontSize=9, leading=11, alignment=1, textColor=_colors_zip.HexColor("#334155"), spaceAfter=3)
+                _dept_pdf_uniques = sorted({str(v).strip() for v in df_personne_zip.get("Département", pd.Series(dtype=str)).dropna() if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}})
+                _dept_pdf_label = " / ".join(_dept_pdf_uniques) if _dept_pdf_uniques else "Non renseigné dans l'EDT"
+                elements_pdf_zip = [
+                    _ParaZip("EMPLOI DU TEMPS INDIVIDUEL — 2026-2027", titre_pdf_zip),
+                    _ParaZip(f"<b>{_html_zip.escape(str(nom_enseignant_zip))}</b>", meta_pdf_zip),
+                    _ParaZip(f"Département d'affiliation : {_html_zip.escape(_dept_pdf_label)} | Généré le {datetime.now().strftime('%d/%m/%Y')}", meta_pdf_zip),
+                    _SpacerZip(1, 3*_mm_zip),
+                ]
+                _page_width_zip = _landscape_zip(_A4_zip)[0] - 16*_mm_zip
+                _w_time_zip = 25*_mm_zip
+                _w_day_zip = (_page_width_zip - _w_time_zip) / max(1, len(jours_pdf_zip))
+                table_pdf_zip = _TableZip(df_pdf_rows_zip, colWidths=[_w_time_zip] + [_w_day_zip]*len(jours_pdf_zip), repeatRows=1, splitByRow=1, splitInRow=1)
+                table_pdf_zip.setStyle(_StyleZip([
+                    ("GRID", (0, 0), (-1, -1), 0.45, _colors_zip.HexColor("#94A3B8")),
+                    ("BACKGROUND", (0, 0), (-1, 0), _colors_zip.HexColor("#1E3A8A")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), _colors_zip.white),
+                    ("BACKGROUND", (0, 1), (0, -1), _colors_zip.HexColor("#E2E8F0")),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]))
+                elements_pdf_zip.append(table_pdf_zip)
+                doc_pdf_zip.build(elements_pdf_zip)
+                return buffer_pdf_zip.getvalue(), None
+
+            zip_edt_individuels_buffer = io.BytesIO()
+            nb_pdf_edt_individuels = 0
+            erreurs_pdf_edt_individuels = []
+            with zipfile.ZipFile(zip_edt_individuels_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_edt_individuels:
+                # Crée un fichier par sélection distincte, avec l'emploi du
+                # temps individuel complet depuis le DataFrame source global.
+                for _nom_ens_zip in enseignants_selectionnes:
+                    _octets_pdf_ens, _erreur_pdf_ens = _generer_pdf_edt_individuel_zip(_nom_ens_zip, df)
+                    if _octets_pdf_ens:
+                        zip_edt_individuels.writestr(_nom_fichier_edt_individuel_zip(_nom_ens_zip), _octets_pdf_ens)
+                        nb_pdf_edt_individuels += 1
+                    else:
+                        erreurs_pdf_edt_individuels.append(f"{_nom_ens_zip} : {_erreur_pdf_ens or 'génération impossible'}")
+
+            if nb_pdf_edt_individuels:
+                st.download_button(
+                    f"📦 Télécharger les EDT individuels en ZIP ({nb_pdf_edt_individuels})",
+                    data=zip_edt_individuels_buffer.getvalue(),
+                    file_name="EDT_individuels_2026-2027.zip",
+                    mime="application/zip",
+                    key="telecharger_zip_edt_individuels_admin"
+                )
+                st.caption("Chaque PDF porte le nom « Nom complet_EDT individule-2026-2027.pdf » et contient le département d'affiliation.")
+            if erreurs_pdf_edt_individuels:
+                with st.expander("⚠️ Enseignants non exportés"):
+                    for _msg_pdf_ens in erreurs_pdf_edt_individuels:
+                        st.warning(_msg_pdf_ens)
 
             # ═══════════════════════════════════════════════════════
             # ✏️ MODE ÉDITION DE L'EDT (cellules actives, multi-sélection,
