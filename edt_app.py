@@ -6014,7 +6014,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             # ------------------------------------------------------------
             # On complète la liste des horaires de cette vue avec tous les
             # créneaux d'une heure : 8h - 9h, 9h - 10h, 10h - 11h, 11h - 12h,
-            # 12h - 13h, 13h - 14h, 14h - 15h, 15h - 16h, 16h - 17h.
+            # 12h - 13h, 13h - 14h, 14h - 15h, 14h - 16h, 15h - 16h, 16h - 17h.
             # Ainsi les séances placées sur ces créneaux s'affichent dans l'EDT
             # de l'enseignant, et ces créneaux sont proposés dans la liste
             # « ⏰ Horaire » du mode édition. Liste triée chronologiquement ;
@@ -6033,7 +6033,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
 
             _creneaux_une_heure_ens_adm = [
                 "8h - 9h", "9h - 10h", "10h - 11h", "11h - 12h", "12h - 13h",
-                "13h - 14h", "14h - 15h", "15h - 16h", "16h - 17h"
+                "13h - 14h", "14h - 15h", "14h - 16h", "15h - 16h", "16h - 17h"
             ]
             _deja_ens_adm = {normalize(h) for h in horaires_list}
             horaires_list = sorted(
