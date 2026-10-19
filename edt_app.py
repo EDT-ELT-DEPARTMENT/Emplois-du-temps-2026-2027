@@ -7344,6 +7344,59 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     df_p["h_norm"].isin({normalize(h) for h in creneaux_choisis})
                 ].copy()
 
+            # ============================================================
+            # MODE D'AFFICHAGE DES JOURS : SEMAINE / JOUR UNIQUE
+            # Présentation de l'EDT en grille ou en lignes.
+            # Le filtre s'applique à la vue et aux exports de cette promotion.
+            # ============================================================
+            st.markdown("### 🗓️ Mode d'affichage des jours")
+            _col_mode_jours_promo, _col_format_jours_promo = st.columns(2)
+            with _col_mode_jours_promo:
+                mode_jours_promo = st.radio(
+                    "Jours à afficher :",
+                    ["Semaine complète", "Une seule journée"],
+                    horizontal=True,
+                    key=f"mode_jours_promotion_admin_{_sig_promos_matieres}"
+                )
+            with _col_format_jours_promo:
+                mode_format_jours_promo = st.radio(
+                    "Présentation :",
+                    ["Grille", "Lignes"],
+                    horizontal=True,
+                    key=f"mode_format_jours_promotion_admin_{_sig_promos_matieres}"
+                )
+
+            if mode_jours_promo == "Une seule journée":
+                _ordre_jours_promo = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+                _jours_presentes_df_p = {
+                    str(j).strip().casefold()
+                    for j in df_p.get("Jours", pd.Series(dtype=str)).dropna().astype(str)
+                    if str(j).strip() and str(j).strip().casefold() not in {"nan", "none", "non défini"}
+                }
+                _jours_options_promo = [j for j in _ordre_jours_promo if j.casefold() in _jours_presentes_df_p]
+                if not _jours_options_promo:
+                    _jours_options_promo = _ordre_jours_promo
+                _jour_promo_choisi = st.selectbox(
+                    "📅 Choisir la journée à afficher :",
+                    _jours_options_promo,
+                    key=f"jour_unique_promotion_admin_{_sig_promos_matieres}"
+                )
+                _masque_jour_promo = df_p["Jours"].astype(str).str.strip().str.casefold() == _jour_promo_choisi.casefold()
+                df_p = df_p.loc[_masque_jour_promo].copy()
+                st.caption(f"📅 Affichage limité à la journée **{_jour_promo_choisi}** — {len(df_p)} enseignement(s).")
+            else:
+                _jour_promo_choisi = None
+                st.caption("📅 Affichage de la semaine complète.")
+
+            _jours_a_afficher_promo = (
+                [normalize(_jour_promo_choisi)]
+                if _jour_promo_choisi
+                else [normalize(j) for j in jours_list]
+            )
+
+            if mode_edition_edt_promo and mode_format_jours_promo == "Lignes":
+                st.info("ℹ️ Le mode édition interactif nécessite la présentation « Grille ». Avec « Lignes », l'emploi du temps est affiché en lecture seule.")
+
             libelle_promotions = " + ".join(promotions_selectionnees)
 
             # ============================================================
@@ -7853,7 +7906,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             grid_p = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p).unstack('j_norm')
             grid_p = grid_p.reindex(
                 index=[normalize(h) for h in horaires_list],
-                columns=[normalize(j) for j in jours_list]
+                columns=_jours_a_afficher_promo
             ).fillna("")
             grid_p = grid_p[grid_p.any(axis=1)]
             grid_p.index = [map_h.get(i, i) for i in grid_p.index]
@@ -7932,7 +7985,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     grid_p_ecran = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_ecran).unstack('j_norm')
                     grid_p_ecran = grid_p_ecran.reindex(
                         index=[normalize(h) for h in horaires_list],
-                        columns=[normalize(j) for j in jours_list]
+                        columns=_jours_a_afficher_promo
                     ).fillna("")
                     grid_p_ecran = grid_p_ecran[grid_p_ecran.any(axis=1)]
                     grid_p_ecran.index = [map_h.get(i, i) for i in grid_p_ecran.index]
@@ -8013,7 +8066,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 </div>
             </div>
             """
-            if mode_edition_edt_promo:
+            if mode_edition_edt_promo and mode_format_jours_promo == "Grille":
                 # ========================================================
                 # GRILLE EDT INTERACTIVE (MODE ÉDITION)
                 # ========================================================
@@ -9395,7 +9448,38 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                         f"lieu déjà occupé ou enseignant déjà programmé au même créneau. "
                         f"Activez le « ✏️ Mode édition de l'EDT » pour les corriger."
                     )
-                st.write(iso_header_html_p + html_table_ecran, unsafe_allow_html=True)
+                if mode_format_jours_promo == "Lignes":
+                    st.markdown(iso_header_html_p, unsafe_allow_html=True)
+                    colonnes_affichage_lignes_promo = [
+                        c for c in ["Jours", "Horaire", "Enseignements", "Code", "Enseignants", "Lieu", "Promotion"]
+                        if c in df_p.columns
+                    ]
+                    if df_p.empty:
+                        st.info("ℹ️ Aucun enseignement ne correspond aux filtres sélectionnés pour cette journée.")
+                    else:
+                        _df_lignes_affichage_promo = df_p[colonnes_affichage_lignes_promo].copy()
+                        _ordre_jours_tris_promo = {j: i for i, j in enumerate(["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"])}
+                        _df_lignes_affichage_promo["_ordre_jour_temp"] = _df_lignes_affichage_promo["Jours"].map(_ordre_jours_tris_promo).fillna(99)
+                        _df_lignes_affichage_promo["_ordre_horaire_temp"] = _df_lignes_affichage_promo["Horaire"].apply(_cle_tri_creneau)
+                        _df_lignes_affichage_promo = _df_lignes_affichage_promo.sort_values(
+                            ["_ordre_jour_temp", "_ordre_horaire_temp", "Enseignements"], kind="stable"
+                        ).drop(columns=["_ordre_jour_temp", "_ordre_horaire_temp"])
+                        st.dataframe(
+                            _df_lignes_affichage_promo,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Jours": st.column_config.TextColumn("📅 Jour", width="small"),
+                                "Horaire": st.column_config.TextColumn("🕒 Horaire", width="small"),
+                                "Enseignements": st.column_config.TextColumn("📚 Enseignement", width="large"),
+                                "Code": st.column_config.TextColumn("Type", width="small"),
+                                "Enseignants": st.column_config.TextColumn("👤 Enseignant(s)", width="medium"),
+                                "Lieu": st.column_config.TextColumn("📍 Lieu", width="small"),
+                                "Promotion": st.column_config.TextColumn("🎓 Promotion", width="small"),
+                            }
+                        )
+                else:
+                    st.write(iso_header_html_p + html_table_ecran, unsafe_allow_html=True)
 
             # ═══════════════════════════════════════════════════════
             # 2) DONNÉES BRUTES (même structure, sans HTML)
@@ -9427,7 +9511,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             grid_text = df_p.groupby(['h_norm', 'j_norm']).apply(fmt_p_text).unstack('j_norm')
             grid_text = grid_text.reindex(
                 index=[normalize(h) for h in horaires_list],
-                columns=[normalize(j) for j in jours_list]
+                columns=_jours_a_afficher_promo
             ).fillna("")
             grid_text = grid_text[grid_text.any(axis=1)]
             grid_text.index = [map_h.get(i, i) for i in grid_text.index]
@@ -19433,6 +19517,75 @@ def render_download_hub(df_global, user_data, is_admin):
         st.markdown("**👤 Par Enseignant**")
         # Filtre par département (liste déroulante) : limite les enseignants proposés et les exports « Tous »
         df_prof_src, depts_prof, suffixe_dept_prof, sig_dept_prof = _hub_selection_departements(df_propre, "prof")
+
+        # ═══════════════════════════════════════════════════════
+        # AFFICHEURS NUMÉRIQUES : PERMANENTS / VACATAIRES
+        # Calculés après le filtre département, à partir des enseignants
+        # réellement présents dans les données EDT de cette sélection.
+        # Les qualités proviennent du répertoire du personnel déjà chargé.
+        # ═══════════════════════════════════════════════════════
+        _qualites_source_hub = globals().get("repertoire_qualites", {}) or {}
+        _df_contacts_hub = globals().get("df_contacts")
+
+        def _cle_nom_enseignant_hub(valeur):
+            import unicodedata
+            texte = str(valeur or "").strip().upper()
+            texte = unicodedata.normalize("NFKD", texte).encode("ASCII", "ignore").decode("ASCII")
+            return re.sub(r"[^A-Z0-9]", "", texte)
+
+        def _qualite_enseignant_hub(nom_enseignant):
+            """Retrouve la qualité par clé exacte puis, en repli, dans le fichier contacts."""
+            nom_brut = str(nom_enseignant or "").strip()
+            if not nom_brut:
+                return ""
+            cle_nom = _cle_nom_enseignant_hub(nom_brut)
+            qualite_trouvee = ""
+            for cle, valeur in _qualites_source_hub.items():
+                if _cle_nom_enseignant_hub(cle) == cle_nom:
+                    qualite_trouvee = str(valeur or "").strip()
+                    if qualite_trouvee and qualite_trouvee.casefold() not in {"nan", "none", "non défini", "non renseigne", "non renseigné"}:
+                        return qualite_trouvee
+            if isinstance(_df_contacts_hub, pd.DataFrame) and not _df_contacts_hub.empty:
+                colonnes_contacts_hub = {str(c).strip().casefold(): c for c in _df_contacts_hub.columns}
+                col_nom_hub = next((colonnes_contacts_hub[k] for k in ("nom", "enseignant", "nom complet", "nom et prénom") if k in colonnes_contacts_hub), None)
+                col_qualite_hub = next((colonnes_contacts_hub[k] for k in ("qualité", "qualite", "statut") if k in colonnes_contacts_hub), None)
+                if col_nom_hub and col_qualite_hub:
+                    for _, _ligne_contact_hub in _df_contacts_hub.iterrows():
+                        if _cle_nom_enseignant_hub(_ligne_contact_hub.get(col_nom_hub, "")) == cle_nom:
+                            valeur_qualite_hub = str(_ligne_contact_hub.get(col_qualite_hub, "") or "").strip()
+                            if valeur_qualite_hub.casefold() not in {"", "nan", "none", "non défini", "non renseigné"}:
+                                return valeur_qualite_hub
+            return qualite_trouvee
+
+        # Une cellule EDT peut contenir un seul enseignant ou plusieurs noms.
+        # On sépare les noms composés uniquement sur des séparateurs de liste courants.
+        _enseignants_uniques_hub = set()
+        if "Enseignants" in df_prof_src.columns:
+            for _cellule_enseignants_hub in df_prof_src["Enseignants"].dropna().astype(str):
+                for _nom_hub in re.split(r"\s*(?:\+|/|,|&|\bet\b)\s*", _cellule_enseignants_hub, flags=re.IGNORECASE):
+                    _nom_hub = _nom_hub.strip()
+                    if _nom_hub and _nom_hub.casefold() not in {"nan", "none", "non défini", "non defini"}:
+                        _enseignants_uniques_hub.add(_nom_hub)
+
+        _nb_permanents_hub = 0
+        _nb_vacataires_hub = 0
+        _nb_qualite_inconnue_hub = 0
+        for _nom_hub in _enseignants_uniques_hub:
+            _qualite_hub = _qualite_enseignant_hub(_nom_hub).casefold()
+            if "perman" in _qualite_hub:
+                _nb_permanents_hub += 1
+            elif "vacatair" in _qualite_hub:
+                _nb_vacataires_hub += 1
+            else:
+                _nb_qualite_inconnue_hub += 1
+
+        _metric_perm, _metric_vac, _metric_total = st.columns(3)
+        _metric_perm.metric("👨‍🏫 Enseignants permanents", _nb_permanents_hub)
+        _metric_vac.metric("🧑‍🏫 Enseignants vacataires", _nb_vacataires_hub)
+        _metric_total.metric("👥 Total des enseignants", len(_enseignants_uniques_hub))
+        if _nb_qualite_inconnue_hub:
+            st.caption(f"ℹ️ Qualité non reconnue pour {_nb_qualite_inconnue_hub} enseignant(s) : leur qualité doit être renseignée dans le répertoire du personnel.")
+
         profs_hub = sorted([p for p in df_prof_src["Enseignants"].unique() if p and p != "Non defini"])
         sel_prof = st.selectbox("Choisir enseignant", ["Tous"] + profs_hub,
                                 key="hub_prof" if sig_dept_prof == "all" else f"hub_prof_{sig_dept_prof}")
