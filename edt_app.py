@@ -24295,6 +24295,7 @@ if is_admin:
             "Un par un (Individuel)",
             "Sélection groupée (Multi-choix)",
             "Par Promotion (Automatique)",
+            "Étudiants — EDT individuel (promotion/groupe/sous-groupe)",
             "Par département (Automatique)",
             "Plusieurs départements",
             "Tous les départements",
@@ -24304,18 +24305,27 @@ if is_admin:
     )
     
     # --- LOGIQUE DE FILTRAGE COMMUNE ---
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        liste_noms = ["TOUS"] + [d["Enseignant"] for d in donnees_finales]
-        choix_enseignant = st.selectbox("🔍 Chercher un nom :", liste_noms)
-    with col_f2:
-        choix_statut = st.selectbox("📊 Filtrer par statut :", ["TOUS", "✅ Prêt", "❌ Adresse non communiquée"])
-    
-    enseignants_filtres = [
-        e for e in donnees_finales 
-        if (choix_enseignant == "TOUS" or e["Enseignant"] == choix_enseignant) and
-           (choix_statut == "TOUS" or e["État d'envoi"] == choix_statut)
-    ]
+    MODE_ENVOI_ETUDIANTS_EDT = "Étudiants — EDT individuel (promotion/groupe/sous-groupe)"
+    if mode_envoi == MODE_ENVOI_ETUDIANTS_EDT:
+        # Ces variables sont définies pour préserver le fonctionnement des modes
+        # d'envoi du personnel et des départements, sans afficher leurs filtres aux étudiants.
+        choix_enseignant = "TOUS"
+        choix_statut = "TOUS"
+        enseignants_filtres = []
+    else:
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            liste_noms = ["TOUS"] + [d["Enseignant"] for d in donnees_finales]
+            choix_enseignant = st.selectbox("🔍 Chercher un nom :", liste_noms)
+        with col_f2:
+            choix_statut = st.selectbox("📊 Filtrer par statut :", ["TOUS", "✅ Prêt", "❌ Adresse non communiquée"])
+
+        enseignants_filtres = [
+            e for e in donnees_finales
+            if (choix_enseignant == "TOUS" or e["Enseignant"] == choix_enseignant) and
+               (choix_statut == "TOUS" or e["État d'envoi"] == choix_statut)
+        ]
+
     # =============================================================================
     # TABLEAU ÉDITABLE (colonne Email) + EXPORT EXCEL DU TABLEAU
     # =============================================================================
@@ -24774,6 +24784,249 @@ if is_admin:
     
     
     # =============================================================================
+    # ENVOI D'EDT INDIVIDUELS AUX ÉTUDIANTS — PROMOTION / GROUPE / SOUS-GROUPE
+    # =============================================================================
+    def _envoi_etudiant_nettoyer(valeur):
+        return _envoi_valeur_propre(valeur, "")
+
+    def _envoi_etudiant_promotion_norm(valeur):
+        valeur = _envoi_etudiant_nettoyer(valeur)
+        if not valeur:
+            return ""
+        try:
+            return str(mapper_promotion(valeur)).strip().upper()
+        except Exception:
+            return _envoi_cle_nom(valeur)
+
+    def _envoi_etudiant_groupe_norm(valeur):
+        valeur = _envoi_etudiant_nettoyer(valeur).upper()
+        if not valeur:
+            return ""
+        m = re.search(r"(?:GROUPE|GRP|G)\s*[-:]?\s*0*(\d+)\s*$", valeur)
+        if m:
+            return f"G{int(m.group(1))}"
+        if re.fullmatch(r"0*\d+", valeur):
+            return f"G{int(valeur)}"
+        return re.sub(r"\s+", "", valeur)
+
+    def _envoi_etudiant_sous_groupe_norm(valeur):
+        valeur = _envoi_etudiant_nettoyer(valeur).upper()
+        if not valeur:
+            return ""
+        m = re.search(r"SG\s*[-:]?\s*0*(\d+)\s*$", valeur)
+        if m:
+            return f"SG{int(m.group(1))}"
+        if re.fullmatch(r"0*\d+", valeur):
+            return f"SG{int(valeur)}"
+        return re.sub(r"\s+", "", valeur)
+
+    def _envoi_etudiant_colonne_email(frame):
+        """Choisit la colonne de courriel la plus renseignée, sans supposer son intitulé exact."""
+        alias_email_etu = [
+            "Email", "E-mail institutionnel", "E-mail", "E_mail", "Courriel",
+            "Adresse email", "Adresse e-mail", "Adresse mail", "Mail",
+            "Email étudiant", "Email etudiant", "Courriel institutionnel"
+        ]
+        candidates = []
+        for alias in alias_email_etu:
+            col = _envoi_colonne(frame, [alias])
+            if col and col not in candidates:
+                candidates.append(col)
+        if not candidates:
+            return None
+        def nb_emails_valides(col):
+            return int(frame[col].map(lambda x: bool(re.match(
+                r"^[^@\s]+@[^@\s]+\.[^@\s]+$", _envoi_etudiant_nettoyer(x)
+            ))).sum())
+        return max(candidates, key=lambda c: (nb_emails_valides(c), -candidates.index(c)))
+
+    def _envoi_etudiant_edt_individuel(df_edt_source, promo_etudiant, groupe_etudiant, sous_groupe_etudiant):
+        """Même règle que la vue EDT Individuel Étudiant : cours communs/restrictifs,
+        TD du groupe et TP du sous-groupe. Retourne uniquement l'EDT du destinataire."""
+        colonnes_sortie = [
+            "Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu",
+            "Promotion", "Département"
+        ]
+        if not isinstance(df_edt_source, pd.DataFrame) or df_edt_source.empty:
+            return pd.DataFrame(columns=colonnes_sortie)
+        if "Promotion" not in df_edt_source.columns or "Enseignements" not in df_edt_source.columns:
+            return pd.DataFrame(columns=colonnes_sortie)
+
+        df_base = df_edt_source.copy()
+        for c in colonnes_sortie:
+            if c not in df_base.columns:
+                df_base[c] = ""
+        promo_norm = _envoi_etudiant_promotion_norm(promo_etudiant)
+        df_base["__promo_norm_envoi"] = df_base["Promotion"].map(_envoi_etudiant_promotion_norm)
+        df_promo = df_base[df_base["__promo_norm_envoi"] == promo_norm].copy()
+        if df_promo.empty:
+            # Repli de correspondance exacte, après suppression des espaces/casse.
+            cle_promo = _envoi_cle_nom(promo_etudiant)
+            df_promo = df_base[
+                df_base["Promotion"].map(_envoi_cle_nom) == cle_promo
+            ].copy()
+        if df_promo.empty:
+            return pd.DataFrame(columns=colonnes_sortie)
+
+        groupe_norm = _envoi_etudiant_groupe_norm(groupe_etudiant)
+        sous_groupe_norm = _envoi_etudiant_sous_groupe_norm(sous_groupe_etudiant)
+        inclus = []
+        for _, ligne in df_promo.iterrows():
+            titre = _envoi_etudiant_nettoyer(ligne.get("Enseignements", ""))
+            code = _envoi_etudiant_nettoyer(ligne.get("Code", "")) or titre
+            code_up = code.upper()
+            titre_up = titre.upper()
+            est_cours = "COURS" in code_up
+            est_td = (not est_cours) and ("TD" in code_up)
+
+            if est_cours:
+                m = re.search(r"\(([^)]*)\)\s*$", titre_up)
+                groupes_cours = set()
+                if m:
+                    groupes_cours = {f"G{int(n)}" for n in re.findall(r"G\s*[-]?\s*0*(\d+)", m.group(1))}
+                garder = (not groupes_cours) or (bool(groupe_norm) and groupe_norm in groupes_cours)
+            elif est_td:
+                m = re.search(r"(?<![A-Z])G[\s\-]?0*(\d+)\s*$", titre_up)
+                groupe_td = f"G{int(m.group(1))}" if m else ""
+                garder = (not groupe_td) or (bool(groupe_norm) and groupe_td == groupe_norm)
+            else:
+                sous_groupes_tp = {
+                    f"SG{int(n)}" for n in re.findall(r"SG[\s\-]?0*(\d+)", titre_up)
+                }
+                garder = (not sous_groupes_tp) or (
+                    bool(sous_groupe_norm) and sous_groupe_norm in sous_groupes_tp
+                )
+            if garder:
+                inclus.append(ligne)
+
+        if not inclus:
+            return pd.DataFrame(columns=colonnes_sortie)
+        resultat = pd.DataFrame(inclus)
+        jours_ordre = {j.casefold(): i for i, j in enumerate(
+            ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+        )}
+        def _minute_debut_envoi(valeur):
+            m = re.search(r"(\d{1,2})\s*h\s*(\d{0,2})", str(valeur or ""), re.I)
+            return int(m.group(1))*60 + int(m.group(2) or 0) if m else 10**8
+        resultat["__jour_ordre_envoi"] = resultat["Jours"].map(
+            lambda x: jours_ordre.get(str(x).strip().casefold(), 99)
+        )
+        resultat["__heure_ordre_envoi"] = resultat["Horaire"].map(_minute_debut_envoi)
+        resultat = resultat.sort_values(
+            ["__jour_ordre_envoi", "__heure_ordre_envoi", "Enseignements"], kind="stable"
+        ).drop(columns=["__jour_ordre_envoi", "__heure_ordre_envoi", "__promo_norm_envoi"], errors="ignore")
+        return resultat.reindex(columns=colonnes_sortie).fillna("").reset_index(drop=True)
+
+    def _envoi_etudiant_generer_excel(info_etudiant, df_edt_personnel):
+        """Prépare un Excel personnalisé contenant seulement l'EDT de cet étudiant."""
+        colonnes = [c for c in [
+            "Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion", "Département"
+        ] if c in df_edt_personnel.columns]
+        planning = df_edt_personnel[colonnes].copy()
+        tampon = io.BytesIO()
+        with pd.ExcelWriter(tampon, engine="xlsxwriter") as writer:
+            planning.to_excel(writer, index=False, sheet_name="Mon EDT", startrow=5)
+            workbook = writer.book
+            ws = writer.sheets["Mon EDT"]
+            titre_fmt = workbook.add_format({"bold": True, "font_size": 16, "font_color": "white", "bg_color": "#1E3A8A", "align": "center", "valign": "vcenter"})
+            info_fmt = workbook.add_format({"bold": True, "font_color": "#1E3A8A"})
+            header_fmt = workbook.add_format({"bold": True, "font_color": "white", "bg_color": "#2563EB", "border": 1, "text_wrap": True, "valign": "vcenter"})
+            ws.merge_range(0, 0, 0, max(len(colonnes)-1, 0), "EMPLOI DU TEMPS INDIVIDUEL — UDL-SBA", titre_fmt)
+            ws.write(1, 0, "Étudiant :", info_fmt)
+            ws.write(1, 1, str(info_etudiant.get("Nom complet", "")))
+            ws.write(2, 0, "Promotion :", info_fmt)
+            ws.write(2, 1, str(info_etudiant.get("Promotion", "")))
+            ws.write(3, 0, "Groupe / Sous-groupe :", info_fmt)
+            ws.write(3, 1, f"{info_etudiant.get('Groupe', '') or 'Non renseigné'} / {info_etudiant.get('Sous groupe', '') or 'Non renseigné'}")
+            ws.write(4, 0, "Séances affichées :", info_fmt)
+            ws.write(4, 1, len(planning))
+            for i, col in enumerate(colonnes):
+                ws.write(5, i, col, header_fmt)
+                valeurs = planning[col].fillna("").astype(str).tolist()
+                largeur = min(max([len(str(col))] + [len(v) for v in valeurs] + [14]) + 2, 42)
+                ws.set_column(i, i, largeur)
+            ws.set_row(0, 26)
+            ws.set_row(5, 30)
+            ws.freeze_panes(6, 0)
+            if len(planning):
+                ws.autofilter(5, 0, 5 + len(planning), max(len(colonnes)-1, 0))
+        tampon.seek(0)
+        return tampon.getvalue()
+
+    def _envoi_etudiant_expedier(liste_prete):
+        """Envoie chaque pièce jointe à une seule adresse : celle de l'étudiant concerné."""
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.base import MIMEBase
+        from email import encoders
+        import html as html_envoi
+
+        serveur = None
+        nb_ok = 0
+        erreurs = []
+        barre = st.progress(0)
+        etat = st.empty()
+        try:
+            serveur = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
+            serveur.starttls()
+            serveur.login(EMAIL_EXPEDITEUR, SECRET_APP)
+            for i, info in enumerate(liste_prete, 1):
+                nom = str(info.get("Nom complet", "Étudiant")).strip() or "Étudiant"
+                email = str(info.get("Email", "")).strip()
+                planning = info.get("Planning")
+                etat.info(f"Envoi de l'EDT individuel : {nom} ({i}/{len(liste_prete)})")
+                try:
+                    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+                        raise ValueError("adresse email absente ou invalide")
+                    if not isinstance(planning, pd.DataFrame) or planning.empty:
+                        raise ValueError("aucun créneau personnel à joindre")
+                    msg = MIMEMultipart()
+                    msg["From"] = f"Département d'Électrotechnique UDL-SBA <{EMAIL_EXPEDITEUR}>"
+                    msg["To"] = email  # une seule adresse par message, jamais de liste collective
+                    msg["Subject"] = f"Votre emploi du temps individuel — {info.get('Promotion', '')} — S1 2026-2027"
+                    tableau_html = planning.to_html(index=False, border=1, justify="center")
+                    corps = f"""<html><body style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.6">
+                    <div style="max-width:780px;margin:auto;border:1px solid #dbeafe;border-radius:12px;overflow:hidden">
+                    <div style="background:#1e3a8a;color:white;padding:18px"><h2 style="margin:0">Votre emploi du temps individuel</h2><p style="margin:6px 0 0">Université Djillali Liabès — FGE / UDL-SBA</p></div>
+                    <div style="padding:20px"><p>Bonjour <b>{html_envoi.escape(nom)}</b>,</p>
+                    <p>Veuillez trouver en pièce jointe votre emploi du temps individuel, calculé à partir de votre promotion, de votre groupe et de votre sous-groupe.</p>
+                    <p><b>Promotion :</b> {html_envoi.escape(str(info.get('Promotion', '')))}<br>
+                    <b>Groupe :</b> {html_envoi.escape(str(info.get('Groupe', '') or 'Non renseigné'))}<br>
+                    <b>Sous-groupe :</b> {html_envoi.escape(str(info.get('Sous groupe', '') or 'Non renseigné'))}<br>
+                    <b>Nombre de séances :</b> {len(planning)}</p>
+                    {tableau_html}<p>Cordialement,<br><b>Département d'Électrotechnique — Faculté de Génie Électrique</b><br>Université Djillali Liabès de Sidi Bel Abbès</p></div></div></body></html>"""
+                    msg.attach(MIMEText(corps, "html", "utf-8"))
+                    excel_bytes = _envoi_etudiant_generer_excel(info, planning)
+                    part = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    part.set_payload(excel_bytes)
+                    encoders.encode_base64(part)
+                    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", nom).strip("_") or "Etudiant"
+                    safe_promo = re.sub(r"[^A-Za-z0-9_-]+", "_", str(info.get("Promotion", "Promotion"))).strip("_") or "Promotion"
+                    part.add_header("Content-Disposition", f'attachment; filename="EDT_Individuel_{safe_promo}_{safe_name}.xlsx"')
+                    msg.attach(part)
+                    serveur.send_message(msg)
+                    nb_ok += 1
+                except Exception as exc_dest:
+                    erreurs.append(f"{nom} ({email or 'sans email'}) : {str(exc_dest)[:180]}")
+                barre.progress(i / max(len(liste_prete), 1))
+            etat.success(f"Envoi terminé : {nb_ok} message(s) envoyé(s) individuellement sur {len(liste_prete)} prévu(s).")
+        except Exception as exc_smtp:
+            st.error(f"Connexion SMTP impossible : {str(exc_smtp)[:250]}")
+        finally:
+            if serveur is not None:
+                try:
+                    serveur.quit()
+                except Exception:
+                    pass
+        if erreurs:
+            with st.expander(f"⚠️ Détails des envois non aboutis ({len(erreurs)})"):
+                for err in erreurs:
+                    st.write(f"- {err}")
+        if nb_ok:
+            st.balloons()
+        return nb_ok, erreurs
+
+    # =============================================================================
     # AFFICHAGE SELON LE MODE
     # =============================================================================
     if mode_envoi == "Un par un (Individuel)":
@@ -24851,6 +25104,210 @@ if is_admin:
     
         else:
             st.info("Aucun enseignant trouvé pour cette promotion.")
+
+    elif mode_envoi == MODE_ENVOI_ETUDIANTS_EDT:
+        st.markdown("### 🎓 Envoi des EDT individuels aux étudiants")
+        st.caption(
+            "Chaque étudiant recevra un message séparé à sa propre adresse. "
+            "La pièce jointe contiendra uniquement les séances communes à sa promotion, "
+            "les TD de son groupe et les TP de son sous-groupe."
+        )
+        fichier_etudiants_charge = st.file_uploader(
+            "📄 Fichier source des étudiants (facultatif si le fichier est déjà sur le serveur)",
+            type=["xlsx", "xls"],
+            key="upload_source_etudiants_envoi_edt_individuel",
+            help="Le fichier doit contenir Promotion, Groupe, Sous groupe et une colonne email (Email, E-mail institutionnel, Courriel...)."
+        )
+        df_etudiants_envoi = pd.DataFrame()
+        source_etudiants_libelle = ""
+        try:
+            if fichier_etudiants_charge is not None:
+                df_etudiants_envoi = lire_excel_robuste(fichier_etudiants_charge)
+                source_etudiants_libelle = fichier_etudiants_charge.name
+            elif os.path.exists(FILE_ETUDIANTS):
+                df_etudiants_envoi = lire_excel_robuste(FILE_ETUDIANTS)
+                source_etudiants_libelle = os.path.basename(FILE_ETUDIANTS)
+            else:
+                st.warning(
+                    f"Le fichier source **{os.path.basename(FILE_ETUDIANTS)}** est absent du serveur. "
+                    "Téléversez le fichier étudiant ci-dessus pour continuer."
+                )
+        except Exception as exc_lecture_etu:
+            st.error(f"Impossible de lire le fichier des étudiants : {str(exc_lecture_etu)[:250]}")
+
+        if isinstance(df_etudiants_envoi, pd.DataFrame) and not df_etudiants_envoi.empty:
+            df_etudiants_envoi = df_etudiants_envoi.copy()
+            df_etudiants_envoi.columns = [str(c).strip() for c in df_etudiants_envoi.columns]
+            st.caption(f"Source des coordonnées : **{source_etudiants_libelle}** — {len(df_etudiants_envoi):,} ligne(s).")
+            col_promo_etu_envoi = _envoi_colonne(df_etudiants_envoi, ["Promotion", "Promo"])
+            col_groupe_etu_envoi = _envoi_colonne(df_etudiants_envoi, ["Groupe", "Groupe TD", "Section"])
+            col_sg_etu_envoi = _envoi_colonne(df_etudiants_envoi, ["Sous groupe", "Sous-groupe", "Sous groupe TP", "SousGrp", "SG"])
+            col_nom_etu_envoi = _envoi_colonne(df_etudiants_envoi, ["Nom", "NOM", "Nom de famille"])
+            col_prenom_etu_envoi = _envoi_colonne(df_etudiants_envoi, ["Prénom", "Prenom", "PRENOM"])
+            col_email_etu_envoi = _envoi_etudiant_colonne_email(df_etudiants_envoi)
+
+            colonnes_obligatoires_etu = {
+                "Promotion": col_promo_etu_envoi,
+                "Groupe": col_groupe_etu_envoi,
+                "Sous groupe": col_sg_etu_envoi,
+                "Nom": col_nom_etu_envoi,
+                "Prénom": col_prenom_etu_envoi,
+            }
+            manquantes_etu = [nom_col for nom_col, col_src in colonnes_obligatoires_etu.items() if not col_src]
+            if manquantes_etu:
+                st.error("Colonnes indispensables introuvables dans le fichier étudiant : " + ", ".join(manquantes_etu) + ".")
+            if not col_email_etu_envoi:
+                st.error(
+                    "Aucune colonne d'adresse email n'a été détectée dans le fichier source. "
+                    "Vérifiez qu'il contient une colonne telle que **Email** ou **E-mail institutionnel**, "
+                    "puis téléversez cette version du classeur. Aucun email ne sera envoyé sans adresse source."
+                )
+
+            if col_promo_etu_envoi and col_groupe_etu_envoi and col_sg_etu_envoi and col_nom_etu_envoi and col_prenom_etu_envoi:
+                promotions_etudiants_dispo = sorted({
+                    _envoi_etudiant_nettoyer(v)
+                    for v in df_etudiants_envoi[col_promo_etu_envoi].tolist()
+                    if _envoi_etudiant_nettoyer(v)
+                }, key=lambda x: x.casefold())
+                if not promotions_etudiants_dispo:
+                    st.warning("Aucune promotion n'a été trouvée dans le fichier source des étudiants.")
+                elif isinstance(df, pd.DataFrame) and not df.empty:
+                    promo_etu_courante = st.selectbox(
+                        "🎓 Promotion des étudiants à traiter :",
+                        promotions_etudiants_dispo,
+                        key="envoi_etu_promo_source_sel"
+                    )
+                    df_etu_promo_envoi = df_etudiants_envoi[
+                        df_etudiants_envoi[col_promo_etu_envoi].map(_envoi_etudiant_promotion_norm)
+                        == _envoi_etudiant_promotion_norm(promo_etu_courante)
+                    ].copy()
+                    # Repli strict sur le libellé exact si le mapping de promotion ne trouve rien.
+                    if df_etu_promo_envoi.empty:
+                        df_etu_promo_envoi = df_etudiants_envoi[
+                            df_etudiants_envoi[col_promo_etu_envoi].map(_envoi_cle_nom)
+                            == _envoi_cle_nom(promo_etu_courante)
+                        ].copy()
+
+                    groupes_etudiants_dispo = sorted({
+                        _envoi_etudiant_nettoyer(v)
+                        for v in df_etu_promo_envoi[col_groupe_etu_envoi].tolist()
+                        if _envoi_etudiant_nettoyer(v)
+                    }, key=lambda x: x.casefold())
+                    col_g_sel, col_sg_sel = st.columns(2)
+                    with col_g_sel:
+                        groupe_etu_courant = st.selectbox(
+                            "👥 Groupe à traiter :",
+                            ["Tous les groupes"] + groupes_etudiants_dispo,
+                            key="envoi_etu_groupe_source_sel"
+                        )
+                    if groupe_etu_courant != "Tous les groupes":
+                        _df_etu_pour_sg = df_etu_promo_envoi[
+                            df_etu_promo_envoi[col_groupe_etu_envoi].map(_envoi_etudiant_groupe_norm)
+                            == _envoi_etudiant_groupe_norm(groupe_etu_courant)
+                        ]
+                    else:
+                        _df_etu_pour_sg = df_etu_promo_envoi
+                    sous_groupes_etudiants_dispo = sorted({
+                        _envoi_etudiant_nettoyer(v)
+                        for v in _df_etu_pour_sg[col_sg_etu_envoi].tolist()
+                        if _envoi_etudiant_nettoyer(v)
+                    }, key=lambda x: x.casefold())
+                    with col_sg_sel:
+                        sous_groupe_etu_courant = st.selectbox(
+                            "🧩 Sous-groupe à traiter :",
+                            ["Tous les sous-groupes"] + sous_groupes_etudiants_dispo,
+                            key="envoi_etu_sous_groupe_source_sel"
+                        )
+
+                    df_etu_selection_envoi = df_etu_promo_envoi.copy()
+                    if groupe_etu_courant != "Tous les groupes":
+                        df_etu_selection_envoi = df_etu_selection_envoi[
+                            df_etu_selection_envoi[col_groupe_etu_envoi].map(_envoi_etudiant_groupe_norm)
+                            == _envoi_etudiant_groupe_norm(groupe_etu_courant)
+                        ]
+                    if sous_groupe_etu_courant != "Tous les sous-groupes":
+                        df_etu_selection_envoi = df_etu_selection_envoi[
+                            df_etu_selection_envoi[col_sg_etu_envoi].map(_envoi_etudiant_sous_groupe_norm)
+                            == _envoi_etudiant_sous_groupe_norm(sous_groupe_etu_courant)
+                        ]
+
+                    plans_etudiants_envoi = []
+                    recap_etudiants_envoi = []
+                    for idx_source_etu, row_etu_envoi in df_etu_selection_envoi.iterrows():
+                        nom_etu_envoi = _envoi_etudiant_nettoyer(row_etu_envoi.get(col_nom_etu_envoi, ""))
+                        prenom_etu_envoi = _envoi_etudiant_nettoyer(row_etu_envoi.get(col_prenom_etu_envoi, ""))
+                        nom_complet_etu_envoi = f"{nom_etu_envoi} {prenom_etu_envoi}".strip() or f"Étudiant ligne {idx_source_etu + 2}"
+                        email_etu_envoi = _envoi_etudiant_nettoyer(row_etu_envoi.get(col_email_etu_envoi, "")) if col_email_etu_envoi else ""
+                        promo_row_etu = _envoi_etudiant_nettoyer(row_etu_envoi.get(col_promo_etu_envoi, ""))
+                        groupe_row_etu = _envoi_etudiant_nettoyer(row_etu_envoi.get(col_groupe_etu_envoi, ""))
+                        sg_row_etu = _envoi_etudiant_nettoyer(row_etu_envoi.get(col_sg_etu_envoi, ""))
+                        planning_etu = _envoi_etudiant_edt_individuel(df, promo_row_etu, groupe_row_etu, sg_row_etu)
+                        valide_email_etu = bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_etu_envoi))
+                        if not valide_email_etu:
+                            etat_etu_envoi = "❌ Email absent/invalide"
+                        elif planning_etu.empty:
+                            etat_etu_envoi = "⚠️ Aucun créneau EDT trouvé"
+                        else:
+                            etat_etu_envoi = "✅ Prêt à envoyer"
+                        infos_etu_envoi = {
+                            "Nom complet": nom_complet_etu_envoi,
+                            "Nom": nom_etu_envoi,
+                            "Prénom": prenom_etu_envoi,
+                            "Promotion": promo_row_etu,
+                            "Groupe": groupe_row_etu,
+                            "Sous groupe": sg_row_etu,
+                            "Email": email_etu_envoi,
+                            "Nombre de séances": len(planning_etu),
+                            "État": etat_etu_envoi,
+                            "Planning": planning_etu,
+                        }
+                        plans_etudiants_envoi.append(infos_etu_envoi)
+                        recap_etudiants_envoi.append({
+                            "Nom": nom_etu_envoi,
+                            "Prénom": prenom_etu_envoi,
+                            "Promotion": promo_row_etu,
+                            "Groupe": groupe_row_etu,
+                            "Sous groupe": sg_row_etu,
+                            "Email": email_etu_envoi,
+                            "Nombre de séances": len(planning_etu),
+                            "État": etat_etu_envoi,
+                        })
+
+                    nb_email_valides_etu = sum(1 for r in plans_etudiants_envoi if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", str(r.get("Email", ""))))
+                    plans_prets_etu = [r for r in plans_etudiants_envoi if r["État"] == "✅ Prêt à envoyer"]
+                    nb_sans_edt_etu = sum(1 for r in plans_etudiants_envoi if r["Nombre de séances"] == 0)
+                    met1, met2, met3 = st.columns(3)
+                    met1.metric("👥 Étudiants sélectionnés", len(plans_etudiants_envoi))
+                    met2.metric("📧 Emails valides", f"{nb_email_valides_etu} / {len(plans_etudiants_envoi)}")
+                    met3.metric("📅 EDT individuels prêts", len(plans_prets_etu))
+                    st.dataframe(pd.DataFrame(recap_etudiants_envoi), use_container_width=True, hide_index=True)
+
+                    if nb_sans_edt_etu:
+                        st.warning(
+                            f"{nb_sans_edt_etu} étudiant(s) n'ont aucun créneau EDT correspondant à la promotion/groupe/sous-groupe. "
+                            "Ils ne seront pas envoyés. Vérifiez les codes de promotion et les suffixes G… / SG… dans les intitulés."
+                        )
+                    if col_email_etu_envoi is None:
+                        st.info("Le récapitulatif est disponible, mais l'envoi est bloqué tant qu'une colonne email valide n'est pas fournie.")
+                    elif plans_prets_etu:
+                        confirmer_envoi_etu = st.checkbox(
+                            f"Je confirme l'envoi de {len(plans_prets_etu)} messages séparés, chacun avec l'EDT de son seul destinataire.",
+                            key="confirm_envoi_edt_individuels_etudiants"
+                        )
+                        if st.button(
+                            f"📨 Envoyer les EDT individuels ({len(plans_prets_etu)} étudiant(s))",
+                            type="primary",
+                            use_container_width=True,
+                            key="bouton_envoi_edt_individuels_etudiants",
+                        ):
+                            if not confirmer_envoi_etu:
+                                st.warning("Cochez la confirmation ci-dessus avant de lancer l'envoi.")
+                            else:
+                                _envoi_etudiant_expedier(plans_prets_etu)
+                    else:
+                        st.info("Aucun étudiant prêt à recevoir son EDT : vérifiez les emails et la correspondance promotion/groupe/sous-groupe.")
+                else:
+                    st.error("Le DataFrame des emplois du temps chargé dans la plateforme est vide ou ne contient pas les promotions.")
 
     # =============================================================================
     # NOUVEAUX MODES D'ENVOI : UN DÉPARTEMENT / PLUSIEURS / TOUS
