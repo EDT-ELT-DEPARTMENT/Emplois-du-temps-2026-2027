@@ -24840,9 +24840,53 @@ if is_admin:
             ))).sum())
         return max(candidates, key=lambda c: (nb_emails_valides(c), -candidates.index(c)))
 
-    def _envoi_etudiant_edt_individuel(df_edt_source, promo_etudiant, groupe_etudiant, sous_groupe_etudiant):
-        """Même règle que la vue EDT Individuel Étudiant : cours communs/restrictifs,
-        TD du groupe et TP du sous-groupe. Retourne uniquement l'EDT du destinataire."""
+    def _envoi_etudiant_departement_norm(valeur):
+        """Ramène le département étudiant et celui de l'EDT au même code.
+
+        Exemples : « Département d’Electrotechnique » -> ELT ; TLC reste TLC.
+        Ne déduit jamais ELT à partir du seul nom de promotion.
+        """
+        texte = _envoi_etudiant_nettoyer(valeur).upper()
+        texte = unicodedata.normalize("NFKD", texte)
+        texte = "".join(c for c in texte if not unicodedata.combining(c))
+        compact = re.sub(r"[^A-Z0-9]+", "", texte)
+        if compact in {"ELT", "DEPTELT", "ELECTROTECHNIQUE"} or "ELECTROTECHNIQUE" in compact:
+            return "ELT"
+        if compact in {"TLC", "DEPTTLC", "TELECOMMUNICATION", "TELECOMMUNICATIONS"} or "TELECOMMUNICATION" in compact:
+            return "TLC"
+        if compact in {"ELN", "DEPTELN", "ELECTRONIQUE"} or "ELECTRONIQUE" in compact:
+            return "ELN"
+        if compact in {"AUTO", "AUTOMATIQUE"} or "AUTOMATIQUE" in compact:
+            return "AUTO"
+        return compact
+
+    def _envoi_etudiant_promotion_exacte(df_source, promotion):
+        """Préférence absolue au libellé exact pour ne jamais fusionner ING2 et ING2TLC.
+
+        Les alias historiques via mapper_promotion ne sont utilisés qu'en dernier recours
+        lorsque le libellé exact n'existe pas dans l'EDT.
+        """
+        if df_source is None or df_source.empty or "Promotion" not in df_source.columns:
+            return df_source.iloc[0:0].copy() if isinstance(df_source, pd.DataFrame) else pd.DataFrame()
+        cle_exacte = _envoi_cle_nom(promotion)
+        masque_exact = df_source["Promotion"].map(_envoi_cle_nom) == cle_exacte
+        exact = df_source.loc[masque_exact].copy()
+        if not exact.empty:
+            return exact
+        cible_mappee = _envoi_etudiant_promotion_norm(promotion)
+        mappees = df_source["Promotion"].map(_envoi_etudiant_promotion_norm) == cible_mappee
+        return df_source.loc[mappees].copy()
+
+    def _envoi_etudiant_edt_individuel(
+        df_edt_source, promo_etudiant, groupe_etudiant, sous_groupe_etudiant,
+        departement_etudiant=""
+    ):
+        """Retourne strictement l'EDT du département, de la promotion, du groupe et du sous-groupe de l'étudiant.
+
+        L'ordre de filtrage est volontairement strict : promotion exacte d'abord, puis département.
+        Cela empêche qu'une promotion préfixée (ex. ING2TLC) soit jointe à ING2/ELT.
+        Les enseignements sans suffixe de groupe restent communs à la promotion ET au département.
+        """
         colonnes_sortie = [
             "Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu",
             "Promotion", "Département"
@@ -24853,18 +24897,31 @@ if is_admin:
             return pd.DataFrame(columns=colonnes_sortie)
 
         df_base = df_edt_source.copy()
+        dept_col_source = _envoi_colonne(
+            df_base, ["Département", "Departement", "Department", "Dept"]
+        )
+        if dept_col_source and dept_col_source != "Département":
+            df_base["Département"] = df_base[dept_col_source]
         for c in colonnes_sortie:
             if c not in df_base.columns:
                 df_base[c] = ""
-        promo_norm = _envoi_etudiant_promotion_norm(promo_etudiant)
-        df_base["__promo_norm_envoi"] = df_base["Promotion"].map(_envoi_etudiant_promotion_norm)
-        df_promo = df_base[df_base["__promo_norm_envoi"] == promo_norm].copy()
+
+        # Ne pas passer directement par mapper_promotion : celui-ci peut rapprocher
+        # ING2 et ING2TLC. Une correspondance d'alias n'est acceptée que si aucun
+        # libellé exact n'existe, et le département reste alors un filtre obligatoire.
+        df_promo = _envoi_etudiant_promotion_exacte(df_base, promo_etudiant)
         if df_promo.empty:
-            # Repli de correspondance exacte, après suppression des espaces/casse.
-            cle_promo = _envoi_cle_nom(promo_etudiant)
-            df_promo = df_base[
-                df_base["Promotion"].map(_envoi_cle_nom) == cle_promo
-            ].copy()
+            return pd.DataFrame(columns=colonnes_sortie)
+
+        dept_cible = _envoi_etudiant_departement_norm(departement_etudiant)
+        dept_col_presente = bool(dept_col_source)
+        # Échec fermé : le nouvel envoi exige le rattachement étudiant ET la colonne
+        # Département de l'EDT. En cas de donnée manquante/inconnue, aucun EDT n'est joint.
+        if not dept_cible or not dept_col_presente:
+            return pd.DataFrame(columns=colonnes_sortie)
+        df_promo = df_promo[
+            df_promo["Département"].map(_envoi_etudiant_departement_norm) == dept_cible
+        ].copy()
         if df_promo.empty:
             return pd.DataFrame(columns=colonnes_sortie)
 
@@ -24876,8 +24933,9 @@ if is_admin:
             code = _envoi_etudiant_nettoyer(ligne.get("Code", "")) or titre
             code_up = code.upper()
             titre_up = titre.upper()
-            est_cours = "COURS" in code_up
-            est_td = (not est_cours) and ("TD" in code_up)
+            est_cours = "COURS" in code_up or code_up.strip() in {"C", "CM", "MAGISTRAL"}
+            est_td = (not est_cours) and ("TD" in code_up or "TRAVAUX DIRIGES" in code_up)
+            est_tp = (not est_cours and not est_td) and ("TP" in code_up or "TRAVAUX PRATIQUES" in code_up)
 
             if est_cours:
                 m = re.search(r"\(([^)]*)\)\s*$", titre_up)
@@ -24889,19 +24947,23 @@ if is_admin:
                 m = re.search(r"(?<![A-Z])G[\s\-]?0*(\d+)\s*$", titre_up)
                 groupe_td = f"G{int(m.group(1))}" if m else ""
                 garder = (not groupe_td) or (bool(groupe_norm) and groupe_td == groupe_norm)
-            else:
+            elif est_tp:
                 sous_groupes_tp = {
                     f"SG{int(n)}" for n in re.findall(r"SG[\s\-]?0*(\d+)", titre_up)
                 }
                 garder = (not sous_groupes_tp) or (
                     bool(sous_groupe_norm) and sous_groupe_norm in sous_groupes_tp
                 )
+            else:
+                # Une ligne de type inconnu, sans tag de groupe/sous-groupe, est commune
+                # uniquement dans le périmètre promotion + département déjà filtré.
+                garder = not re.search(r"(?:SG[\s\-]?\d+|(?<![A-Z])G[\s\-]?\d+)\s*$", titre_up)
             if garder:
                 inclus.append(ligne)
 
         if not inclus:
             return pd.DataFrame(columns=colonnes_sortie)
-        resultat = pd.DataFrame(inclus)
+        resultat = pd.DataFrame(inclus).copy()
         jours_ordre = {j.casefold(): i for i, j in enumerate(
             ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
         )}
@@ -24918,38 +24980,150 @@ if is_admin:
         return resultat.reindex(columns=colonnes_sortie).fillna("").reset_index(drop=True)
 
     def _envoi_etudiant_generer_excel(info_etudiant, df_edt_personnel):
-        """Prépare un Excel personnalisé contenant seulement l'EDT de cet étudiant."""
-        colonnes = [c for c in [
-            "Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion", "Département"
-        ] if c in df_edt_personnel.columns]
-        planning = df_edt_personnel[colonnes].copy()
+        """Génère un Excel individuel en grille (jour x créneau), coloré par nature, avec feuille détail."""
+        jours_ordre_complets = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+        planning = df_edt_personnel.copy().fillna("")
+        colonnes_detail = ["Jours", "Horaire", "Code", "Enseignements", "Enseignants", "Lieu", "Promotion", "Département"]
+        for col in colonnes_detail:
+            if col not in planning.columns:
+                planning[col] = ""
         tampon = io.BytesIO()
         with pd.ExcelWriter(tampon, engine="xlsxwriter") as writer:
-            planning.to_excel(writer, index=False, sheet_name="Mon EDT", startrow=5)
             workbook = writer.book
-            ws = writer.sheets["Mon EDT"]
-            titre_fmt = workbook.add_format({"bold": True, "font_size": 16, "font_color": "white", "bg_color": "#1E3A8A", "align": "center", "valign": "vcenter"})
-            info_fmt = workbook.add_format({"bold": True, "font_color": "#1E3A8A"})
-            header_fmt = workbook.add_format({"bold": True, "font_color": "white", "bg_color": "#2563EB", "border": 1, "text_wrap": True, "valign": "vcenter"})
-            ws.merge_range(0, 0, 0, max(len(colonnes)-1, 0), "EMPLOI DU TEMPS INDIVIDUEL — UDL-SBA", titre_fmt)
-            ws.write(1, 0, "Étudiant :", info_fmt)
-            ws.write(1, 1, str(info_etudiant.get("Nom complet", "")))
-            ws.write(2, 0, "Promotion :", info_fmt)
-            ws.write(2, 1, str(info_etudiant.get("Promotion", "")))
-            ws.write(3, 0, "Groupe / Sous-groupe :", info_fmt)
-            ws.write(3, 1, f"{info_etudiant.get('Groupe', '') or 'Non renseigné'} / {info_etudiant.get('Sous groupe', '') or 'Non renseigné'}")
-            ws.write(4, 0, "Séances affichées :", info_fmt)
-            ws.write(4, 1, len(planning))
-            for i, col in enumerate(colonnes):
-                ws.write(5, i, col, header_fmt)
-                valeurs = planning[col].fillna("").astype(str).tolist()
-                largeur = min(max([len(str(col))] + [len(v) for v in valeurs] + [14]) + 2, 42)
-                ws.set_column(i, i, largeur)
-            ws.set_row(0, 26)
-            ws.set_row(5, 30)
-            ws.freeze_panes(6, 0)
-            if len(planning):
-                ws.autofilter(5, 0, 5 + len(planning), max(len(colonnes)-1, 0))
+            ws = workbook.add_worksheet("EDT en grille")
+            writer.sheets["EDT en grille"] = ws
+            detail = workbook.add_worksheet("Détail des séances")
+            writer.sheets["Détail des séances"] = detail
+
+            title_fmt = workbook.add_format({"bold": True, "font_size": 16, "font_color": "white", "bg_color": "#1E3A8A", "align": "center", "valign": "vcenter", "border": 1})
+            subtitle_fmt = workbook.add_format({"font_size": 10, "font_color": "#334155", "bg_color": "#EFF6FF", "valign": "vcenter", "text_wrap": True, "border": 1})
+            info_label_fmt = workbook.add_format({"bold": True, "font_color": "#1E3A8A", "bg_color": "#DBEAFE", "border": 1, "valign": "vcenter"})
+            info_value_fmt = workbook.add_format({"font_color": "#0F172A", "border": 1, "valign": "vcenter", "text_wrap": True})
+            header_fmt = workbook.add_format({"bold": True, "font_color": "white", "bg_color": "#1D4ED8", "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True})
+            day_fmt = workbook.add_format({"bold": True, "font_color": "white", "bg_color": "#0F766E", "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True})
+            cell_base = {"border": 1, "valign": "top", "text_wrap": True, "font_size": 9}
+            cell_cours = workbook.add_format({**cell_base, "bg_color": "#DBEAFE", "font_color": "#1E3A8A"})
+            cell_td = workbook.add_format({**cell_base, "bg_color": "#DCFCE7", "font_color": "#166534"})
+            cell_tp = workbook.add_format({**cell_base, "bg_color": "#FEE2E2", "font_color": "#991B1B"})
+            cell_mixte = workbook.add_format({**cell_base, "bg_color": "#FEF3C7", "font_color": "#92400E"})
+            cell_empty = workbook.add_format({"border": 1, "bg_color": "#F8FAFC"})
+            legend_fmt = workbook.add_format({"bold": True, "border": 1, "align": "center", "valign": "vcenter"})
+            legend_cours = workbook.add_format({"bold": True, "border": 1, "align": "center", "bg_color": "#DBEAFE", "font_color": "#1E3A8A"})
+            legend_td = workbook.add_format({"bold": True, "border": 1, "align": "center", "bg_color": "#DCFCE7", "font_color": "#166534"})
+            legend_tp = workbook.add_format({"bold": True, "border": 1, "align": "center", "bg_color": "#FEE2E2", "font_color": "#991B1B"})
+
+            days_in_data = {str(x).strip().casefold(): str(x).strip() for x in planning["Jours"].tolist() if str(x).strip()}
+            days = [d for d in jours_ordre_complets if d.casefold() in days_in_data]
+            for d in days_in_data.values():
+                if d.casefold() not in {x.casefold() for x in days}:
+                    days.append(d)
+            def _min_horaire(x):
+                m = re.search(r"(\d{1,2})\s*h\s*(\d{0,2})", str(x or ""), re.I)
+                return int(m.group(1))*60 + int(m.group(2) or 0) if m else 10**8
+            hours = sorted({str(x).strip() for x in planning["Horaire"].tolist() if str(x).strip()}, key=lambda x: (_min_horaire(x), x.casefold()))
+            n_cols = max(2, len(hours) + 1)
+            ws.merge_range(0, 0, 0, n_cols-1, "EMPLOI DU TEMPS INDIVIDUEL — UDL-SBA", title_fmt)
+            ws.set_row(0, 30)
+            ws.merge_range(1, 0, 1, n_cols-1, "Faculté de Génie Électrique · Emploi du temps filtré par promotion, département, groupe et sous-groupe", subtitle_fmt)
+            ws.set_row(1, 24)
+            ws.write(2, 0, "Étudiant", info_label_fmt)
+            ws.merge_range(2, 1, 2, n_cols-1, str(info_etudiant.get("Nom complet", "")), info_value_fmt)
+            ws.write(3, 0, "Promotion / Département", info_label_fmt)
+            ws.merge_range(3, 1, 3, n_cols-1, f"{info_etudiant.get('Promotion', '')} / {info_etudiant.get('Département / Structure', info_etudiant.get('Département', 'Non renseigné'))}", info_value_fmt)
+            ws.write(4, 0, "Groupe / Sous-groupe", info_label_fmt)
+            ws.merge_range(4, 1, 4, n_cols-1, f"{info_etudiant.get('Groupe', '') or 'Non renseigné'} / {info_etudiant.get('Sous groupe', '') or 'Non renseigné'} · {len(planning)} séance(s)", info_value_fmt)
+            # Légende de couleurs.
+            ws.write(5, 0, "LÉGENDE", legend_fmt)
+            if n_cols > 1:
+                ws.write(5, 1, "COURS", legend_cours)
+            if n_cols > 2:
+                ws.write(5, 2, "TD", legend_td)
+            if n_cols > 3:
+                ws.write(5, 3, "TP", legend_tp)
+            if len(hours) == 0:
+                ws.merge_range(7, 0, 7, n_cols-1, "Aucun créneau trouvé pour cet étudiant.", subtitle_fmt)
+            else:
+                ws.write(6, 0, "JOUR / HORAIRE", header_fmt)
+                for c, hr in enumerate(hours, 1):
+                    ws.write(6, c, hr, header_fmt)
+                ws.set_row(6, 32)
+                for r, day in enumerate(days, 7):
+                    ws.write(r, 0, day, day_fmt)
+                    for c, hr in enumerate(hours, 1):
+                        matches = planning[
+                            (planning["Jours"].astype(str).str.strip().str.casefold() == day.casefold()) &
+                            (planning["Horaire"].astype(str).str.strip() == hr)
+                        ]
+                        if matches.empty:
+                            ws.write_blank(r, c, None, cell_empty)
+                            continue
+                        blocks, kinds = [], set()
+                        for _, row in matches.iterrows():
+                            code = str(row.get("Code", "")).strip().upper()
+                            name = str(row.get("Enseignements", "")).strip()
+                            if "COURS" in code or code in {"C", "CM", "MAGISTRAL"}:
+                                kind, label = "COURS", "COURS"
+                            elif "TD" in code:
+                                kind, label = "TD", "TD"
+                            elif "TP" in code:
+                                kind, label = "TP", "TP"
+                            else:
+                                kind, label = "AUTRE", code or "SÉANCE"
+                            kinds.add(kind)
+                            teacher = str(row.get("Enseignants", "")).strip()
+                            place = str(row.get("Lieu", "")).strip()
+                            promo = str(row.get("Promotion", "")).strip()
+                            dept = str(row.get("Département", "")).strip()
+                            block = f"[{label}] {name}"
+                            if teacher:
+                                block += f"\nEnseignant : {teacher}"
+                            if place:
+                                block += f"\nLieu : {place}"
+                            if promo or dept:
+                                block += f"\n{promo}" + (f" · {dept}" if dept else "")
+                            blocks.append(block)
+                        fmt = cell_mixte if len(kinds) > 1 else (cell_cours if "COURS" in kinds else cell_td if "TD" in kinds else cell_tp if "TP" in kinds else cell_empty)
+                        ws.write(r, c, "\n\n".join(blocks), fmt)
+                    ws.set_row(r, min(120, max(58, 20 + 42 * max(1, max((planning[(planning["Jours"].astype(str).str.strip().str.casefold() == day.casefold()) & (planning["Horaire"].astype(str).str.strip() == hr)].shape[0] for hr in hours), default=1)))))
+            ws.set_column(0, 0, 20)
+            for c in range(1, n_cols):
+                ws.set_column(c, c, 30)
+            ws.freeze_panes(7, 1)
+            ws.hide_gridlines(2)
+            ws.set_landscape()
+            ws.fit_to_pages(1, 1)
+            ws.repeat_rows(6)
+            ws.set_margins(0.25, 0.25, 0.35, 0.35)
+
+            # Deuxième feuille tabulaire, colorée elle aussi, pour retrouver/filtrer une séance.
+            detail_headers = ["Jours", "Horaire", "Type", "Enseignements", "Enseignants", "Lieu", "Promotion", "Département"]
+            detail_data = planning.copy()
+            def _type_ligne(row):
+                code = str(row.get("Code", "")).strip().upper()
+                if "COURS" in code or code in {"C", "CM", "MAGISTRAL"}:
+                    return "COURS"
+                if "TD" in code:
+                    return "TD"
+                if "TP" in code:
+                    return "TP"
+                return "AUTRE"
+            detail_data["Type"] = detail_data.apply(_type_ligne, axis=1)
+            detail.merge_range(0, 0, 0, len(detail_headers)-1, "DÉTAIL DES SÉANCES — EDT INDIVIDUEL", title_fmt)
+            detail.write_row(2, 0, detail_headers, header_fmt)
+            fmt_by_type = {"COURS": cell_cours, "TD": cell_td, "TP": cell_tp, "AUTRE": cell_empty}
+            for ridx, (_, row) in enumerate(detail_data.iterrows(), 3):
+                vals = [row.get(c, "") for c in detail_headers]
+                fmt = fmt_by_type.get(row.get("Type", "AUTRE"), cell_empty)
+                for cidx, val in enumerate(vals):
+                    detail.write(ridx, cidx, "" if pd.isna(val) else str(val), fmt)
+                detail.set_row(ridx, 36)
+            for cidx, h in enumerate(detail_headers):
+                width = min(max([len(h)] + [len(str(v)) for v in detail_data[h].fillna("").tolist()] + [14]) + 2, 38)
+                detail.set_column(cidx, cidx, width)
+            detail.freeze_panes(3, 0)
+            detail.autofilter(2, 0, max(2, 2 + len(detail_data)), len(detail_headers)-1)
+            detail.hide_gridlines(2)
+
         tampon.seek(0)
         return tampon.getvalue()
 
@@ -24960,6 +25134,54 @@ if is_admin:
         from email.mime.base import MIMEBase
         from email import encoders
         import html as html_envoi
+
+        def _envoi_etudiant_grille_html(planning):
+            """Construit une vraie grille HTML pour le corps du courriel (jour x horaire)."""
+            if not isinstance(planning, pd.DataFrame) or planning.empty:
+                return "<p>Aucun créneau à afficher.</p>"
+            jours_reference = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+            jours_existants = {str(v).strip().casefold(): str(v).strip() for v in planning["Jours"].tolist() if str(v).strip()}
+            jours = [j for j in jours_reference if j.casefold() in jours_existants]
+            jours.extend(v for v in jours_existants.values() if v.casefold() not in {j.casefold() for j in jours})
+            def _debut_minute_html(v):
+                m = re.search(r"(\d{1,2})\s*h\s*(\d{0,2})", str(v or ""), re.I)
+                return int(m.group(1))*60 + int(m.group(2) or 0) if m else 10**8
+            horaires = sorted({str(v).strip() for v in planning["Horaire"].tolist() if str(v).strip()}, key=lambda v: (_debut_minute_html(v), v.casefold()))
+            header = '<tr><th style="background:#1d4ed8;color:#fff;border:1px solid #93c5fd;padding:9px">Jour / Horaire</th>'
+            header += ''.join(f'<th style="background:#1d4ed8;color:#fff;border:1px solid #93c5fd;padding:9px;min-width:120px">{html_envoi.escape(h)}</th>' for h in horaires) + '</tr>'
+            body_rows = []
+            for day in jours:
+                cells = [f'<th style="background:#0f766e;color:#fff;border:1px solid #99f6e4;padding:8px">{html_envoi.escape(day)}</th>']
+                for hr in horaires:
+                    slot = planning[
+                        (planning["Jours"].astype(str).str.strip().str.casefold() == day.casefold()) &
+                        (planning["Horaire"].astype(str).str.strip() == hr)
+                    ]
+                    if slot.empty:
+                        cells.append('<td style="background:#f8fafc;border:1px solid #cbd5e1;padding:7px">&nbsp;</td>')
+                        continue
+                    blocks, kinds = [], set()
+                    for _, row in slot.iterrows():
+                        code = str(row.get("Code", "")).strip().upper()
+                        if "COURS" in code or code in {"C", "CM", "MAGISTRAL"}:
+                            kind, bg, fg = "COURS", "#dbeafe", "#1e3a8a"
+                        elif "TD" in code:
+                            kind, bg, fg = "TD", "#dcfce7", "#166534"
+                        elif "TP" in code:
+                            kind, bg, fg = "TP", "#fee2e2", "#991b1b"
+                        else:
+                            kind, bg, fg = "AUTRE", "#f1f5f9", "#334155"
+                        kinds.add(kind)
+                        nom_ens = html_envoi.escape(str(row.get("Enseignements", "")))
+                        prof = html_envoi.escape(str(row.get("Enseignants", "")))
+                        lieu = html_envoi.escape(str(row.get("Lieu", "")))
+                        promo = html_envoi.escape(str(row.get("Promotion", "")))
+                        dept = html_envoi.escape(str(row.get("Département", "")))
+                        blocks.append(f'<div style="padding:6px;margin:2px 0;background:{bg};color:{fg};border-left:4px solid {fg};border-radius:4px"><b>[{kind}] {nom_ens}</b><br><span style="font-size:12px">{prof}<br>{lieu}<br>{promo} {("· " + dept) if dept else ""}</span></div>')
+                    fill = "#fef3c7" if len(kinds) > 1 else "#ffffff"
+                    cells.append(f'<td style="vertical-align:top;background:{fill};border:1px solid #cbd5e1;padding:5px">{"".join(blocks)}</td>')
+                body_rows.append('<tr>' + ''.join(cells) + '</tr>')
+            return '<div style="overflow-x:auto"><table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:12px">' + header + ''.join(body_rows) + '</table></div>'
 
         serveur = None
         nb_ok = 0
@@ -24984,13 +25206,14 @@ if is_admin:
                     msg["From"] = f"Département d'Électrotechnique UDL-SBA <{EMAIL_EXPEDITEUR}>"
                     msg["To"] = email  # une seule adresse par message, jamais de liste collective
                     msg["Subject"] = f"Votre emploi du temps individuel — {info.get('Promotion', '')} — S1 2026-2027"
-                    tableau_html = planning.to_html(index=False, border=1, justify="center")
+                    tableau_html = _envoi_etudiant_grille_html(planning)
                     corps = f"""<html><body style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.6">
                     <div style="max-width:780px;margin:auto;border:1px solid #dbeafe;border-radius:12px;overflow:hidden">
                     <div style="background:#1e3a8a;color:white;padding:18px"><h2 style="margin:0">Votre emploi du temps individuel</h2><p style="margin:6px 0 0">Université Djillali Liabès — FGE / UDL-SBA</p></div>
                     <div style="padding:20px"><p>Bonjour <b>{html_envoi.escape(nom)}</b>,</p>
                     <p>Veuillez trouver en pièce jointe votre emploi du temps individuel, calculé à partir de votre promotion, de votre groupe et de votre sous-groupe.</p>
                     <p><b>Promotion :</b> {html_envoi.escape(str(info.get('Promotion', '')))}<br>
+                    <b>Département :</b> {html_envoi.escape(str(info.get('Département / Structure', info.get('Département', 'Non renseigné')) or 'Non renseigné'))}<br>
                     <b>Groupe :</b> {html_envoi.escape(str(info.get('Groupe', '') or 'Non renseigné'))}<br>
                     <b>Sous-groupe :</b> {html_envoi.escape(str(info.get('Sous groupe', '') or 'Non renseigné'))}<br>
                     <b>Nombre de séances :</b> {len(planning)}</p>
@@ -25109,14 +25332,14 @@ if is_admin:
         st.markdown("### 🎓 Envoi des EDT individuels aux étudiants")
         st.caption(
             "Chaque étudiant recevra un message séparé à sa propre adresse. "
-            "La pièce jointe contiendra uniquement les séances communes à sa promotion, "
-            "les TD de son groupe et les TP de son sous-groupe."
+            "La pièce jointe contiendra uniquement les séances du département de rattachement et de la promotion exacte de l'étudiant, "
+            "les TD de son groupe et les TP de son sous-groupe. L'emploi du temps Excel est présenté en grille colorée, avec un onglet de détail."
         )
         fichier_etudiants_charge = st.file_uploader(
             "📄 Fichier source des étudiants (facultatif si le fichier est déjà sur le serveur)",
             type=["xlsx", "xls"],
             key="upload_source_etudiants_envoi_edt_individuel",
-            help="Le fichier doit contenir Promotion, Groupe, Sous groupe et une colonne email (Email, E-mail institutionnel, Courriel...)."
+            help="Le fichier doit contenir Promotion, Structure/Département, Groupe, Sous groupe et une colonne email (Email, E-mail institutionnel, Courriel...)."
         )
         df_etudiants_envoi = pd.DataFrame()
         source_etudiants_libelle = ""
@@ -25145,6 +25368,13 @@ if is_admin:
             col_nom_etu_envoi = _envoi_colonne(df_etudiants_envoi, ["Nom", "NOM", "Nom de famille"])
             col_prenom_etu_envoi = _envoi_colonne(df_etudiants_envoi, ["Prénom", "Prenom", "PRENOM"])
             col_email_etu_envoi = _envoi_etudiant_colonne_email(df_etudiants_envoi)
+            # Le fichier des étudiants utilise généralement « Structure » pour
+            # le département d'affiliation (ex. Département d'Electrotechnique).
+            col_dept_etu_envoi = _envoi_colonne(
+                df_etudiants_envoi,
+                ["Département", "Département d'affiliation", "Département de rattachement",
+                 "Structure", "Structure de rattachement", "Faculté / Département", "Département d'appartenance"]
+            )
 
             colonnes_obligatoires_etu = {
                 "Promotion": col_promo_etu_envoi,
@@ -25152,6 +25382,7 @@ if is_admin:
                 "Sous groupe": col_sg_etu_envoi,
                 "Nom": col_nom_etu_envoi,
                 "Prénom": col_prenom_etu_envoi,
+                "Département / Structure": col_dept_etu_envoi,
             }
             manquantes_etu = [nom_col for nom_col, col_src in colonnes_obligatoires_etu.items() if not col_src]
             if manquantes_etu:
@@ -25163,7 +25394,7 @@ if is_admin:
                     "puis téléversez cette version du classeur. Aucun email ne sera envoyé sans adresse source."
                 )
 
-            if col_promo_etu_envoi and col_groupe_etu_envoi and col_sg_etu_envoi and col_nom_etu_envoi and col_prenom_etu_envoi:
+            if col_promo_etu_envoi and col_groupe_etu_envoi and col_sg_etu_envoi and col_nom_etu_envoi and col_prenom_etu_envoi and col_dept_etu_envoi:
                 promotions_etudiants_dispo = sorted({
                     _envoi_etudiant_nettoyer(v)
                     for v in df_etudiants_envoi[col_promo_etu_envoi].tolist()
@@ -25177,15 +25408,19 @@ if is_admin:
                         promotions_etudiants_dispo,
                         key="envoi_etu_promo_source_sel"
                     )
-                    df_etu_promo_envoi = df_etudiants_envoi[
-                        df_etudiants_envoi[col_promo_etu_envoi].map(_envoi_etudiant_promotion_norm)
-                        == _envoi_etudiant_promotion_norm(promo_etu_courante)
-                    ].copy()
-                    # Repli strict sur le libellé exact si le mapping de promotion ne trouve rien.
+                    # Priorité au libellé exact : ne pas fusionner ING2 avec ING2TLC
+                    # si mapper_promotion traite ces promotions comme des alias.
+                    _masque_promo_exact_etu = (
+                        df_etudiants_envoi[col_promo_etu_envoi].map(_envoi_cle_nom)
+                        == _envoi_cle_nom(promo_etu_courante)
+                    )
+                    df_etu_promo_envoi = df_etudiants_envoi.loc[_masque_promo_exact_etu].copy()
+                    # Repli historique pour les promotions réellement absentes à l'identique
+                    # du fichier EDT (ex. libellé étudiant MCIL1 / libellé EDT L1MCIL).
                     if df_etu_promo_envoi.empty:
                         df_etu_promo_envoi = df_etudiants_envoi[
-                            df_etudiants_envoi[col_promo_etu_envoi].map(_envoi_cle_nom)
-                            == _envoi_cle_nom(promo_etu_courante)
+                            df_etudiants_envoi[col_promo_etu_envoi].map(_envoi_etudiant_promotion_norm)
+                            == _envoi_etudiant_promotion_norm(promo_etu_courante)
                         ].copy()
 
                     groupes_etudiants_dispo = sorted({
@@ -25241,7 +25476,10 @@ if is_admin:
                         promo_row_etu = _envoi_etudiant_nettoyer(row_etu_envoi.get(col_promo_etu_envoi, ""))
                         groupe_row_etu = _envoi_etudiant_nettoyer(row_etu_envoi.get(col_groupe_etu_envoi, ""))
                         sg_row_etu = _envoi_etudiant_nettoyer(row_etu_envoi.get(col_sg_etu_envoi, ""))
-                        planning_etu = _envoi_etudiant_edt_individuel(df, promo_row_etu, groupe_row_etu, sg_row_etu)
+                        dept_row_etu = _envoi_etudiant_nettoyer(row_etu_envoi.get(col_dept_etu_envoi, "")) if col_dept_etu_envoi else ""
+                        planning_etu = _envoi_etudiant_edt_individuel(
+                            df, promo_row_etu, groupe_row_etu, sg_row_etu, dept_row_etu
+                        )
                         valide_email_etu = bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_etu_envoi))
                         if not valide_email_etu:
                             etat_etu_envoi = "❌ Email absent/invalide"
@@ -25254,6 +25492,7 @@ if is_admin:
                             "Nom": nom_etu_envoi,
                             "Prénom": prenom_etu_envoi,
                             "Promotion": promo_row_etu,
+                            "Département / Structure": dept_row_etu,
                             "Groupe": groupe_row_etu,
                             "Sous groupe": sg_row_etu,
                             "Email": email_etu_envoi,
@@ -25266,6 +25505,7 @@ if is_admin:
                             "Nom": nom_etu_envoi,
                             "Prénom": prenom_etu_envoi,
                             "Promotion": promo_row_etu,
+                            "Département / Structure": dept_row_etu,
                             "Groupe": groupe_row_etu,
                             "Sous groupe": sg_row_etu,
                             "Email": email_etu_envoi,
