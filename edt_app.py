@@ -25329,9 +25329,10 @@ if is_admin:
             st.info("Aucun enseignant trouvé pour cette promotion.")
 
     elif mode_envoi == MODE_ENVOI_ETUDIANTS_EDT:
-        st.markdown("### 🎓 Envoi des EDT individuels aux étudiants")
+        st.markdown("### 🎓 Envoi des EDT individuels aux étudiants et délégués de promotion")
         st.caption(
-            "Chaque étudiant recevra un message séparé à sa propre adresse. "
+            "Vous pouvez envoyer à tous les étudiants d'une promotion/groupe/sous-groupe, ou choisir un ou plusieurs délégués de promotion. "
+            "Chaque destinataire reçoit un message séparé à sa propre adresse. "
             "La pièce jointe contiendra uniquement les séances du département de rattachement et de la promotion exacte de l'étudiant, "
             "les TD de son groupe et les TP de son sous-groupe. L'emploi du temps Excel est présenté en grille colorée, avec un onglet de détail."
         )
@@ -25367,6 +25368,10 @@ if is_admin:
             col_sg_etu_envoi = _envoi_colonne(df_etudiants_envoi, ["Sous groupe", "Sous-groupe", "Sous groupe TP", "SousGrp", "SG"])
             col_nom_etu_envoi = _envoi_colonne(df_etudiants_envoi, ["Nom", "NOM", "Nom de famille"])
             col_prenom_etu_envoi = _envoi_colonne(df_etudiants_envoi, ["Prénom", "Prenom", "PRENOM"])
+            col_mat_etu_envoi = _envoi_colonne(
+                df_etudiants_envoi,
+                ["Mat. Etudiant", "Matricule étudiant", "Matricule etudiant", "Matricule", "Matricule Étudiant"]
+            )
             col_email_etu_envoi = _envoi_etudiant_colonne_email(df_etudiants_envoi)
             # Le fichier des étudiants utilise généralement « Structure » pour
             # le département d'affiliation (ex. Département d'Electrotechnique).
@@ -25423,48 +25428,101 @@ if is_admin:
                             == _envoi_etudiant_promotion_norm(promo_etu_courante)
                         ].copy()
 
-                    groupes_etudiants_dispo = sorted({
-                        _envoi_etudiant_nettoyer(v)
-                        for v in df_etu_promo_envoi[col_groupe_etu_envoi].tolist()
-                        if _envoi_etudiant_nettoyer(v)
-                    }, key=lambda x: x.casefold())
-                    col_g_sel, col_sg_sel = st.columns(2)
-                    with col_g_sel:
-                        groupe_etu_courant = st.selectbox(
-                            "👥 Groupe à traiter :",
-                            ["Tous les groupes"] + groupes_etudiants_dispo,
-                            key="envoi_etu_groupe_source_sel"
-                        )
-                    if groupe_etu_courant != "Tous les groupes":
-                        _df_etu_pour_sg = df_etu_promo_envoi[
-                            df_etu_promo_envoi[col_groupe_etu_envoi].map(_envoi_etudiant_groupe_norm)
-                            == _envoi_etudiant_groupe_norm(groupe_etu_courant)
-                        ]
-                    else:
-                        _df_etu_pour_sg = df_etu_promo_envoi
-                    sous_groupes_etudiants_dispo = sorted({
-                        _envoi_etudiant_nettoyer(v)
-                        for v in _df_etu_pour_sg[col_sg_etu_envoi].tolist()
-                        if _envoi_etudiant_nettoyer(v)
-                    }, key=lambda x: x.casefold())
-                    with col_sg_sel:
-                        sous_groupe_etu_courant = st.selectbox(
-                            "🧩 Sous-groupe à traiter :",
-                            ["Tous les sous-groupes"] + sous_groupes_etudiants_dispo,
-                            key="envoi_etu_sous_groupe_source_sel"
-                        )
+                    mode_cible_etudiant = st.radio(
+                        "📬 Qui doit recevoir l’EDT ?",
+                        [
+                            "Tous les étudiants selon promotion / groupe / sous-groupe",
+                            "Délégué(s) de promotion — choisir un ou plusieurs étudiants"
+                        ],
+                        horizontal=False,
+                        key="mode_cible_edt_etudiants_personnalise",
+                        help="En mode délégué, sélectionnez une ou plusieurs personnes précises dans la promotion. Chaque personne reçoit un email séparé avec uniquement son propre EDT."
+                    )
 
-                    df_etu_selection_envoi = df_etu_promo_envoi.copy()
-                    if groupe_etu_courant != "Tous les groupes":
-                        df_etu_selection_envoi = df_etu_selection_envoi[
-                            df_etu_selection_envoi[col_groupe_etu_envoi].map(_envoi_etudiant_groupe_norm)
-                            == _envoi_etudiant_groupe_norm(groupe_etu_courant)
-                        ]
-                    if sous_groupe_etu_courant != "Tous les sous-groupes":
-                        df_etu_selection_envoi = df_etu_selection_envoi[
-                            df_etu_selection_envoi[col_sg_etu_envoi].map(_envoi_etudiant_sous_groupe_norm)
-                            == _envoi_etudiant_sous_groupe_norm(sous_groupe_etu_courant)
-                        ]
+                    if mode_cible_etudiant == "Délégué(s) de promotion — choisir un ou plusieurs étudiants":
+                        st.info(
+                            "🎓 **Mode délégué(s) de promotion** : choisissez un seul étudiant ou plusieurs étudiants. "
+                            "Le message et la pièce jointe sont générés séparément pour chacun, avec son département, "
+                            "sa promotion exacte, son groupe et son sous-groupe."
+                        )
+                        options_delegues = {}
+                        for idx_delegue, ligne_delegue in df_etu_promo_envoi.iterrows():
+                            nom_delegue = _envoi_etudiant_nettoyer(ligne_delegue.get(col_nom_etu_envoi, ""))
+                            prenom_delegue = _envoi_etudiant_nettoyer(ligne_delegue.get(col_prenom_etu_envoi, ""))
+                            promo_delegue = _envoi_etudiant_nettoyer(ligne_delegue.get(col_promo_etu_envoi, ""))
+                            groupe_delegue = _envoi_etudiant_nettoyer(ligne_delegue.get(col_groupe_etu_envoi, ""))
+                            sg_delegue = _envoi_etudiant_nettoyer(ligne_delegue.get(col_sg_etu_envoi, ""))
+                            dept_delegue = _envoi_etudiant_nettoyer(ligne_delegue.get(col_dept_etu_envoi, "")) if col_dept_etu_envoi else ""
+                            email_delegue = _envoi_etudiant_nettoyer(ligne_delegue.get(col_email_etu_envoi, "")) if col_email_etu_envoi else ""
+                            mat_delegue = _envoi_etudiant_nettoyer(ligne_delegue.get(col_mat_etu_envoi, "")) if col_mat_etu_envoi else ""
+                            nom_complet_delegue = f"{nom_delegue} {prenom_delegue}".strip() or "Étudiant sans nom"
+                            identifiant_delegue = f"Mat. {mat_delegue}" if mat_delegue else f"Ligne {idx_delegue + 2}"
+                            label_delegue = (
+                                f"{nom_complet_delegue} · {promo_delegue} · {groupe_delegue or 'Groupe ?'} · "
+                                f"{sg_delegue or 'Sous-groupe ?'} · {dept_delegue or 'Département ?'} · "
+                                f"{email_delegue or 'Email absent'} · {identifiant_delegue}"
+                            )
+                            # Le matricule/numéro de ligne rend l'étiquette unique, même en cas d'homonymes.
+                            if label_delegue in options_delegues:
+                                label_delegue += f" · ligne source {idx_delegue + 2}"
+                            options_delegues[label_delegue] = idx_delegue
+
+                        labels_delegues_selectionnes = st.multiselect(
+                            "🎓 Sélectionner le ou les délégués de promotion :",
+                            options=list(options_delegues.keys()),
+                            default=[],
+                            key=f"selection_delegues_edt_individuel_{_envoi_cle_nom(promo_etu_courante)}",
+                            help="Choisissez une personne pour un envoi individuel, ou plusieurs pour plusieurs emails individuels. Le matricule, le groupe, le sous-groupe et l'email sont indiqués pour éviter les homonymes."
+                        )
+                        indices_delegues = [options_delegues[label] for label in labels_delegues_selectionnes]
+                        df_etu_selection_envoi = df_etu_promo_envoi.loc[indices_delegues].copy() if indices_delegues else df_etu_promo_envoi.iloc[0:0].copy()
+                        if labels_delegues_selectionnes:
+                            st.caption(f"{len(labels_delegues_selectionnes)} étudiant(s) choisi(s) comme délégué(s). Aucun autre étudiant de la promotion ne recevra de message.")
+                        else:
+                            st.warning("Sélectionnez au moins un délégué pour préparer l'envoi individuel.")
+                    else:
+                        groupes_etudiants_dispo = sorted({
+                            _envoi_etudiant_nettoyer(v)
+                            for v in df_etu_promo_envoi[col_groupe_etu_envoi].tolist()
+                            if _envoi_etudiant_nettoyer(v)
+                        }, key=lambda x: x.casefold())
+                        col_g_sel, col_sg_sel = st.columns(2)
+                        with col_g_sel:
+                            groupe_etu_courant = st.selectbox(
+                                "👥 Groupe à traiter :",
+                                ["Tous les groupes"] + groupes_etudiants_dispo,
+                                key="envoi_etu_groupe_source_sel"
+                            )
+                        if groupe_etu_courant != "Tous les groupes":
+                            _df_etu_pour_sg = df_etu_promo_envoi[
+                                df_etu_promo_envoi[col_groupe_etu_envoi].map(_envoi_etudiant_groupe_norm)
+                                == _envoi_etudiant_groupe_norm(groupe_etu_courant)
+                            ]
+                        else:
+                            _df_etu_pour_sg = df_etu_promo_envoi
+                        sous_groupes_etudiants_dispo = sorted({
+                            _envoi_etudiant_nettoyer(v)
+                            for v in _df_etu_pour_sg[col_sg_etu_envoi].tolist()
+                            if _envoi_etudiant_nettoyer(v)
+                        }, key=lambda x: x.casefold())
+                        with col_sg_sel:
+                            sous_groupe_etu_courant = st.selectbox(
+                                "🧩 Sous-groupe à traiter :",
+                                ["Tous les sous-groupes"] + sous_groupes_etudiants_dispo,
+                                key="envoi_etu_sous_groupe_source_sel"
+                            )
+
+                        df_etu_selection_envoi = df_etu_promo_envoi.copy()
+                        if groupe_etu_courant != "Tous les groupes":
+                            df_etu_selection_envoi = df_etu_selection_envoi[
+                                df_etu_selection_envoi[col_groupe_etu_envoi].map(_envoi_etudiant_groupe_norm)
+                                == _envoi_etudiant_groupe_norm(groupe_etu_courant)
+                            ]
+                        if sous_groupe_etu_courant != "Tous les sous-groupes":
+                            df_etu_selection_envoi = df_etu_selection_envoi[
+                                df_etu_selection_envoi[col_sg_etu_envoi].map(_envoi_etudiant_sous_groupe_norm)
+                                == _envoi_etudiant_sous_groupe_norm(sous_groupe_etu_courant)
+                            ]
 
                     plans_etudiants_envoi = []
                     recap_etudiants_envoi = []
@@ -25530,12 +25588,24 @@ if is_admin:
                     if col_email_etu_envoi is None:
                         st.info("Le récapitulatif est disponible, mais l'envoi est bloqué tant qu'une colonne email valide n'est pas fournie.")
                     elif plans_prets_etu:
+                        # Une confirmation différente est exigée si la liste des destinataires change,
+                        # pour éviter qu'une confirmation précédente s'applique à d'autres étudiants.
+                        _signature_destinataires_etu = hashlib.sha256(
+                            "|".join(
+                                f"{r.get('Email','')}::{r.get('Promotion','')}::{r.get('Groupe','')}::{r.get('Sous groupe','')}"
+                                for r in plans_prets_etu
+                            ).encode("utf-8")
+                        ).hexdigest()[:12]
                         confirmer_envoi_etu = st.checkbox(
                             f"Je confirme l'envoi de {len(plans_prets_etu)} messages séparés, chacun avec l'EDT de son seul destinataire.",
-                            key="confirm_envoi_edt_individuels_etudiants"
+                            key=f"confirm_envoi_edt_individuels_etudiants_{_signature_destinataires_etu}"
                         )
+                        if mode_cible_etudiant.startswith("Délégué"):
+                            libelle_bouton_envoi_etu = f"📨 Envoyer l’EDT aux délégué(s) sélectionné(s) ({len(plans_prets_etu)})"
+                        else:
+                            libelle_bouton_envoi_etu = f"📨 Envoyer les EDT individuels ({len(plans_prets_etu)} étudiant(s))"
                         if st.button(
-                            f"📨 Envoyer les EDT individuels ({len(plans_prets_etu)} étudiant(s))",
+                            libelle_bouton_envoi_etu,
                             type="primary",
                             use_container_width=True,
                             key="bouton_envoi_edt_individuels_etudiants",
