@@ -6242,7 +6242,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             seuil = _seuil_charge_enseignant(enseignants_selectionnes[0]) if len(enseignants_selectionnes) == 1 else 7.0
             charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
             delta = charge_eq - seuil
-            h_sup = delta * 1.5
+            # L’écart de charge Eq/h se lit directement en heures : 6.0 vs 7.0 = déficit de 1h, sans nouveau facteur ×1.5.
+            h_sup = delta
             h_sup_formattee = _formater_heures_minutes(h_sup, signe_zero="")
 
             st.markdown(f"### 📊 Charge Horaire : {cible}")
@@ -6272,7 +6273,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     _nc, _ntd, _ntp = _compter_natures_par_cellule(_df_multi, ["j_norm", "h_norm"])
                     _ceq = (_nc * 1.5) + _ntd + _ntp
                     _seuil = _seuil_charge_enseignant(_ens_multi)
-                    _hs = (_ceq - _seuil) * 1.5
+                    _hs = _ceq - _seuil
                     bilan_multi.append({
                         "Enseignant": _ens_multi,
                         "Cours": _nc, "TD": _ntd, "TP": _ntp,
@@ -13234,7 +13235,8 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         seuil = _seuil_charge_enseignant(cible)
         charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
         delta = charge_eq - seuil
-        h_sup = delta * 1.5
+        # L’écart à la charge statutaire est exprimé directement en heures.
+        h_sup = delta
         h_sup_formattee = _formater_heures_minutes(h_sup)
 
         c1, c2, c3, c4 = st.columns(4)
@@ -19764,7 +19766,8 @@ def render_download_hub(df_global, user_data, is_admin):
             charge_eq = round((nb_cours * 1.5) + (nb_td * 1.0) + (nb_tp * 1.0), 2)
             SEUIL_REGLEMENTAIRE = _seuil_charge_enseignant(sel_prof)  # 7.0 standard, 3.5 si poste supérieur
             delta = round(charge_eq - SEUIL_REGLEMENTAIRE, 2)
-            heures_sup_reelles = delta * 1.5
+            # La différence de charge équivalente est le résultat horaire (pas de facteur ×1.5 supplémentaire).
+            heures_sup_reelles = delta
             heures_sup_formattees = _formater_heures_minutes(heures_sup_reelles)
 
             # Style conditionnel
@@ -21332,7 +21335,8 @@ if is_admin:
                 seuil_enseignant = SEUIL_POSTE_SUP_EQUIVALENT if est_poste_sup else CHARGE_STATUTAIRE_EQUIVALENT
                 decharge_eq = DECHARGE_POSTE_SUP_EQUIVALENT if est_poste_sup else 0.0
                 delta_eq = charge_eq - seuil_enseignant
-                heures_sup = delta_eq * 1.5
+                # Charge Eq/h 6.0 face au seuil 7.0 => déficit de 1h00.
+                heures_sup = delta_eq
                 heures_sup_hmin = _formater_heures_minutes(heures_sup)
 
                 # Département d'affiliation depuis le répertoire du personnel ; si absent,
@@ -21963,7 +21967,8 @@ if df is not None:
             delta_eq = charge_totale_eq - seuil_obligatoire
             
             # Calcul de la valeur brute en heures pour l'affichage
-            h_sup = delta_eq * 1.5
+            # L’écart au seuil équivalent-cours est directement exprimé en heures.
+            h_sup = delta_eq
             
             # --- LOGIQUE DE CONVERSION EN HEURES ET MINUTES ---
             h_sup_formattee = _formater_heures_minutes(h_sup)
@@ -22075,7 +22080,7 @@ if df is not None:
                         # Charge standard = 7 eq/h ; poste supérieur = seuil 3.5 eq/h.
                         s_oblig = _seuil_charge_enseignant(p)
                         c_eq = (n_co * 1.5) + (n_td + n_tp)
-                        b_h = (c_eq - s_oblig) * 1.5
+                        b_h = c_eq - s_oblig
                         c_eff = (n_co + n_td + n_tp) * 1.5
                         depts_intervention = sorted({str(v).strip() for v in df_p.get("Département", pd.Series(dtype=str)).dropna().tolist() if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}}, key=str.casefold)
                         promos_intervention = sorted({str(v).strip() for v in df_p.get("Promotion", pd.Series(dtype=str)).dropna().tolist() if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}}, key=str.casefold)
@@ -23710,7 +23715,8 @@ if df is not None:
             seuil_obligatoire = _seuil_charge_enseignant(cible)
             charge_totale_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
             delta_eq = charge_totale_eq - seuil_obligatoire
-            h_sup = delta_eq * 1.5
+            # L’écart au seuil équivalent-cours est directement exprimé en heures.
+            h_sup = delta_eq
         
             h_sup_formattee = _formater_heures_minutes(h_sup)
             charge_effective = (nb_cours + nb_td + nb_tp) * 1.5
