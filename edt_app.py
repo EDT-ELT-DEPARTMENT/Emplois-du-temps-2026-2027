@@ -2,6 +2,7 @@
 # IMPORTS UNIFIES
 # =============================================================================
 import urllib.parse
+import unicodedata
 import streamlit as st
 
 # Dénomination officielle
