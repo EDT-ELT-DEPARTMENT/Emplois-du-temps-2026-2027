@@ -1043,6 +1043,117 @@ NOM_FICHIER_CONTACTS = FILE_ENS
 # ============================================================
 FICHIER_DEMANDES_LOCAL = str(_BASE_DIR / "demandes_edt_locales.json")
 
+# =============================================================================
+# RÈGLES DE CHARGE STATUTAIRE ET POSTES SUPÉRIEURS (persistants)
+# =============================================================================
+CHARGE_STATUTAIRE_EQUIVALENT = 7.0
+DECHARGE_POSTE_SUP_EQUIVALENT = 3.5
+SEUIL_POSTE_SUP_EQUIVALENT = CHARGE_STATUTAIRE_EQUIVALENT - DECHARGE_POSTE_SUP_EQUIVALENT  # 3.5 eq/h
+TABLE_POSTES_SUPERIEURS = "enseignants_postes_superieurs"
+FICHIER_POSTES_SUPERIEURS_LOCAL = Path(__file__).resolve().parent / "enseignants_postes_superieurs.json"
+
+
+def _cle_enseignant_poste(valeur):
+    """Clé stable (accents/espaces/casse ignorés) pour identifier le même enseignant."""
+    txt = "" if valeur is None else str(valeur).strip()
+    txt = unicodedata.normalize("NFKD", txt)
+    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", txt).strip().upper()
+
+
+def _formater_heures_minutes(valeur, signe_zero=""):
+    """Convertit une durée décimale en chaîne signée, ex. -0.75 -> -0h45."""
+    try:
+        minutes_totales = int(round(float(valeur) * 60))
+    except (TypeError, ValueError):
+        minutes_totales = 0
+    signe = "+" if minutes_totales > 0 else ("-" if minutes_totales < 0 else signe_zero)
+    heures, minutes = divmod(abs(minutes_totales), 60)
+    return f"{signe}{heures}h{minutes:02d}"
+
+
+def _client_persistant_postes_superieurs():
+    """Utilise le secret service-role dédié si configuré, sinon le client existant."""
+    try:
+        url = st.secrets.get("SUPABASE_URL", "")
+        cle_service = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        if url and cle_service and create_client:
+            return create_client(url, cle_service)
+    except Exception:
+        pass
+    return globals().get("supabase") or globals().get("supabase_edt")
+
+
+def _charger_postes_superieurs():
+    """Retourne (noms actifs, source, erreur éventuelle)."""
+    erreur_db = ""
+    client = _client_persistant_postes_superieurs()
+    if client is not None:
+        try:
+            rep = client.table(TABLE_POSTES_SUPERIEURS).select("enseignant,poste_superieur").eq("poste_superieur", True).execute()
+            noms = {str(r.get("enseignant", "")).strip() for r in (rep.data or []) if str(r.get("enseignant", "")).strip()}
+            return noms, "Supabase", ""
+        except Exception as exc:
+            erreur_db = str(exc)[:250]
+    try:
+        if FICHIER_POSTES_SUPERIEURS_LOCAL.exists():
+            contenu = json.loads(FICHIER_POSTES_SUPERIEURS_LOCAL.read_text(encoding="utf-8"))
+            if isinstance(contenu, dict):
+                return {str(n).strip() for n in contenu.get("enseignants", []) if str(n).strip()}, "fichier local", erreur_db
+    except Exception as exc:
+        erreur_db = (erreur_db + " | " + str(exc))[:250]
+    return set(), "non configuré", erreur_db
+
+
+def _sauvegarder_postes_superieurs(selection, tous_enseignants):
+    """Sauvegarde l'état de chaque enseignant ; Supabase est le stockage permanent."""
+    selection_cles = {_cle_enseignant_poste(n) for n in (selection or [])}
+    options_uniques = {str(n).strip() for n in (tous_enseignants or []) if str(n).strip()}
+    payload = [{
+        "enseignant": nom,
+        "poste_superieur": _cle_enseignant_poste(nom) in selection_cles,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    } for nom in sorted(options_uniques, key=str.casefold)]
+    erreur_db = ""
+    client = _client_persistant_postes_superieurs()
+    if client is not None:
+        try:
+            if payload:
+                client.table(TABLE_POSTES_SUPERIEURS).upsert(payload, on_conflict="enseignant").execute()
+            # JSON de secours pour restauration manuelle ; la base reste la source fiable.
+            FICHIER_POSTES_SUPERIEURS_LOCAL.write_text(
+                json.dumps({"enseignants": sorted(selection or [], key=str.casefold), "mis_a_jour": datetime.now().isoformat()}, ensure_ascii=False, indent=2),
+                encoding="utf-8"
+            )
+            return True, "Supabase", ""
+        except Exception as exc:
+            erreur_db = str(exc)[:300]
+    try:
+        FICHIER_POSTES_SUPERIEURS_LOCAL.write_text(
+            json.dumps({"enseignants": sorted(selection or [], key=str.casefold), "mis_a_jour": datetime.now().isoformat()}, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+    except Exception as exc:
+        erreur_db = (erreur_db + " | sauvegarde locale impossible : " + str(exc))[:300]
+    return False, "fichier local", erreur_db
+
+
+def _est_poste_superieur(enseignant):
+    """Vrai si l'enseignant est dans la liste persistante des postes supérieurs."""
+    selection_session = st.session_state.get("postes_superieurs_selection_bilan")
+    if selection_session is not None:
+        actifs = {_cle_enseignant_poste(n) for n in selection_session}
+    else:
+        noms, _source, _err = _charger_postes_superieurs()
+        actifs = {_cle_enseignant_poste(n) for n in noms}
+    return _cle_enseignant_poste(enseignant) in actifs
+
+
+def _seuil_charge_enseignant(enseignant):
+    """7 eq/h au standard ; réduction automatique de 3.5 eq/h pour poste supérieur."""
+    return SEUIL_POSTE_SUP_EQUIVALENT if _est_poste_superieur(enseignant) else CHARGE_STATUTAIRE_EQUIVALENT
+
+
 HORAIRES_LIST = [
     "8h - 9h30", "9h30 - 11h", "11h - 12h30", "12h30 - 14h", "14h - 15h","14h - 15h30","15h - 16h", "15h30 - 17h"
 ]
@@ -5970,9 +6081,11 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             "👥 EDT par Groupe (TD/TP)"
         ], horizontal=True)
     
-        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
+        # Le poste supérieur n'est plus coché ponctuellement : il est déterminé
+        # automatiquement depuis la liste enregistrée par l'administrateur.
+        poste_sup = False
     elif portail == "👤 Mon Espace Enseignant":
-        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)", key="poste_sup_ens")
+        poste_sup = _est_poste_superieur(user.get("nom_officiel", ""))
 
     # --- LOGIQUE PRINCIPALE SELON LE PORTAIL SÉLECTIONNÉ ---
     
@@ -6080,6 +6193,14 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     st.stop()
 
             cible = ", ".join(enseignants_selectionnes)
+            if len(enseignants_selectionnes) == 1:
+                poste_sup = _est_poste_superieur(enseignants_selectionnes[0])
+                seuil_individuel = _seuil_charge_enseignant(enseignants_selectionnes[0])
+                etat_poste_sup = "Oui — décharge de 3h30 (seuil 3.5 eq/h)" if poste_sup else "Non — seuil standard 7.0 eq/h"
+                st.caption(f"🎖️ Poste supérieur enregistré : **{etat_poste_sup}**")
+            else:
+                poste_sup = False
+                st.caption("ℹ️ Plusieurs enseignants sélectionnés : les heures supplémentaires/déficits sont calculés séparément dans le bilan global, avec le seuil propre à chaque enseignant.")
 
             filtre_type_enseignant_admin = st.selectbox(
                 "Type d'enseignement à afficher :",
@@ -6117,10 +6238,11 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             # indépendamment du filtre d'affichage choisi ci-dessus.
             nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f_complet, ['j_norm', 'h_norm'])
             _afficher_erreur_chevauchement_natures(df_f_complet, ['j_norm', 'h_norm'], cible)
-            seuil = 3.0 if poste_sup else 6.0
+            seuil = _seuil_charge_enseignant(enseignants_selectionnes[0]) if len(enseignants_selectionnes) == 1 else 7.0
             charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
             delta = charge_eq - seuil
             h_sup = delta * 1.5
+            h_sup_formattee = _formater_heures_minutes(h_sup, signe_zero="")
 
             st.markdown(f"### 📊 Charge Horaire : {cible}")
             c1, c2, c3, c4 = st.columns(4)
@@ -6129,12 +6251,37 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             c3.metric("🔴 TP", nb_tp)
             c4.metric("Charge Eq/h", f"{charge_eq:.1f}")
 
-            if h_sup > 0:
-                st.success(f"✅ Heures supplémentaires : +{h_sup:.1f}h")
-            elif h_sup < 0:
-                st.warning(f"⚠️ Déficit : {h_sup:.1f}h")
+            if len(enseignants_selectionnes) == 1:
+                if h_sup > 0:
+                    st.success(f"✅ Heures supplémentaires : {h_sup_formattee} ({h_sup:.2f} h)")
+                elif h_sup < 0:
+                    st.warning(f"⚠️ Déficit : {h_sup_formattee} ({h_sup:.2f} h)")
+                else:
+                    st.info("⚖️ Seuil exact : 0h00")
             else:
-                st.info("⚖️ Seuil exact")
+                bilan_multi = []
+                for _ens_multi in enseignants_selectionnes:
+                    _df_multi = df[df["Enseignants"].astype(str).str.contains(re.escape(str(_ens_multi)), case=False, na=False, regex=True)].copy()
+                    if _df_multi.empty:
+                        continue
+                    if "j_norm" not in _df_multi.columns:
+                        _df_multi["j_norm"] = _df_multi["Jours"].apply(normalize)
+                    if "h_norm" not in _df_multi.columns:
+                        _df_multi["h_norm"] = _df_multi["Horaire"].apply(normalize)
+                    _nc, _ntd, _ntp = _compter_natures_par_cellule(_df_multi, ["j_norm", "h_norm"])
+                    _ceq = (_nc * 1.5) + _ntd + _ntp
+                    _seuil = _seuil_charge_enseignant(_ens_multi)
+                    _hs = (_ceq - _seuil) * 1.5
+                    bilan_multi.append({
+                        "Enseignant": _ens_multi,
+                        "Cours": _nc, "TD": _ntd, "TP": _ntp,
+                        "Charge Eq/h": round(_ceq, 2),
+                        "Seuil appliqué (eq/h)": _seuil,
+                        "Heures sup/déficit": _formater_heures_minutes(_hs),
+                    })
+                if bilan_multi:
+                    st.markdown("#### 📊 Calcul individuel des enseignants sélectionnés")
+                    st.dataframe(pd.DataFrame(bilan_multi), use_container_width=True, hide_index=True)
 
             # Application du filtre de type CHOISI, pour l'affichage de la
             # grille et les exports (Excel/HTML/PDF) uniquement.
@@ -13055,6 +13202,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
             
     elif portail == "👤 Mon Espace Enseignant":
         cible = user['nom_officiel']
+        poste_sup = _est_poste_superieur(cible)
         nom_aff = repertoire_noms_complets.get(cible.strip().upper(), cible)
         
         # ═══════════════════════════════════════════════════════
@@ -13082,9 +13230,11 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
         nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
         _afficher_erreur_chevauchement_natures(df_f, ['j_norm', 'h_norm'], cible)
-        seuil = 3.0 if poste_sup else 6.0
+        seuil = _seuil_charge_enseignant(cible)
         charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
         delta = charge_eq - seuil
+        h_sup = delta * 1.5
+        h_sup_formattee = _formater_heures_minutes(h_sup)
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("📘 Cours", nb_cours)
@@ -13093,11 +13243,11 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         c4.metric("Équivalent", f"{charge_eq:.1f} eq/h")
 
         if delta > 0:
-            st.success(f"✅ Heures supplémentaires : +{delta * 1.5:.1f}h")
+            st.success(f"✅ Heures supplémentaires : {h_sup_formattee} ({h_sup:.2f} h)")
         elif delta < 0:
-            st.warning(f"⚠️ Déficit horaire : {delta * 1.5:.1f}h")
+            st.warning(f"⚠️ Déficit horaire : {h_sup_formattee} ({h_sup:.2f} h)")
         else:
-            st.info("⚖️ Seuil réglementaire atteint")
+            st.info("⚖️ Seuil réglementaire atteint : 0h00")
 
         st.divider()
         st.markdown("### 📅 Mon Emploi du Temps")
@@ -19611,28 +19761,29 @@ def render_download_hub(df_global, user_data, is_admin):
             # Calcul de la charge équivalente
             # 1h Cours = 1.5 eq/h  |  1h TD/TP = 1.0 eq/h
             charge_eq = round((nb_cours * 1.5) + (nb_td * 1.0) + (nb_tp * 1.0), 2)
-            SEUIL_REGLEMENTAIRE = 6.0  # 6 heures équivalent/semaine
-
+            SEUIL_REGLEMENTAIRE = _seuil_charge_enseignant(sel_prof)  # 7.0 standard, 3.5 si poste supérieur
             delta = round(charge_eq - SEUIL_REGLEMENTAIRE, 2)
+            heures_sup_reelles = delta * 1.5
+            heures_sup_formattees = _formater_heures_minutes(heures_sup_reelles)
 
             # Style conditionnel
             if delta > 0:
                 statut_label = "Heures Supplémentaires"
                 statut_color = "#22c55e"  # vert
                 statut_bg = "#f0fdf4"
-                delta_str = f"+{delta} eq/h"
+                delta_str = f"+{delta} eq/h — {heures_sup_formattees}"
                 emoji = "✅"
             elif delta < 0:
                 statut_label = "Déficit Horaire"
                 statut_color = "#ef4444"  # rouge
                 statut_bg = "#fef2f2"
-                delta_str = f"{delta} eq/h"
+                delta_str = f"{delta} eq/h — {heures_sup_formattees}"
                 emoji = "⚠️"
             else:
                 statut_label = "Charge Exacte"
                 statut_color = "#3b82f6"  # bleu
                 statut_bg = "#eff6ff"
-                delta_str = "0 eq/h"
+                delta_str = "0 eq/h — 0h00"
                 emoji = "⚖️"
 
             st.markdown(f"""
@@ -19672,7 +19823,7 @@ def render_download_hub(df_global, user_data, is_admin):
                     {emoji} {statut_label} : {delta_str}
                 </div>
                 <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
-                    Règle : 1h Cours = 1.5 eq/h | 1h TD/TP = 1.0 eq/h | Seuil = 6.0 eq/h/semaine
+                    Règle : 1h Cours = 1.5 eq/h | 1h TD/TP = 1.0 eq/h | Seuil standard = 7.0 eq/h/semaine ; poste supérieur = 3.5 eq/h
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -20281,6 +20432,7 @@ repertoire_grades = {}
 repertoire_source = {}        # Email par nom de famille
 repertoire_noms_complets = {} # Affichage "NOM Prénom"
 repertoire_telephones = {}
+repertoire_departements_affiliation = {}
 df_contacts = None
 
 NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
@@ -20295,6 +20447,16 @@ if os.path.exists(NOM_FICHIER_CONTACTS):
     try:
         df_contacts = pd.read_excel(NOM_FICHIER_CONTACTS)
         df_contacts.columns = [str(c).strip() for c in df_contacts.columns]
+        _cols_aff_norm = {}
+        for _col_aff in df_contacts.columns:
+            _txt_aff = unicodedata.normalize("NFKD", str(_col_aff)).encode("ascii", "ignore").decode("ascii").lower()
+            _txt_aff = re.sub(r"[^a-z0-9]+", " ", _txt_aff).strip()
+            _cols_aff_norm[_txt_aff] = _col_aff
+        _aliases_aff = {
+            "departement d affiliation", "departement affiliation", "departement de rattachement",
+            "departement", "structure d affiliation", "structure", "affiliation"
+        }
+        _col_departement_affiliation = next((v for k, v in _cols_aff_norm.items() if k in _aliases_aff), None)
         
         for _, row in df_contacts.iterrows():
             nom_brut = str(row.get('NOM', '')).strip().upper()
@@ -20304,6 +20466,9 @@ if os.path.exists(NOM_FICHIER_CONTACTS):
             qualite_brute = str(row.get('Qualité', 'Non défini')).strip()
             grade_brut = str(row.get('Grade', 'N/A')).strip()
             tel_brut = str(row.get('N°/TEL', '')).strip()
+            _dept_aff_brut = str(row.get(_col_departement_affiliation, '')).strip() if _col_departement_affiliation else ""
+            if _dept_aff_brut.lower() in {"nan", "none", "non renseigné", "non renseigne", "non défini", "non defini"}:
+                _dept_aff_brut = ""
             tel_nettoye = ''.join([c for c in tel_brut if c.isdigit()])
             if tel_nettoye and tel_nettoye.lower() != 'nan':
                 repertoire_telephones[nom_brut] = tel_nettoye
@@ -20317,6 +20482,9 @@ if os.path.exists(NOM_FICHIER_CONTACTS):
                 repertoire_noms_complets[nom_brut] = nom_complet
                 repertoire_qualites[nom_brut] = qualite_brute
                 repertoire_grades[nom_brut] = grade_brut
+                if _dept_aff_brut:
+                    repertoire_departements_affiliation[nom_brut] = _dept_aff_brut
+                    repertoire_departements_affiliation[nom_complet.upper()] = _dept_aff_brut
                 
                 # Stockage aussi par NOM COMPLET (fallback)
                 repertoire_noms_complets[nom_complet.upper()] = nom_complet
@@ -21067,15 +21235,55 @@ if is_admin:
             </div>
         """, unsafe_allow_html=True)
 
-        # Option poste supérieur pour le calcul du seuil
-        poste_sup_bilan = st.checkbox("🎖️ Poste Supérieur (Décharge 3h / Seuil 3.0 eq/h)", 
-                                      value=False, key="poste_sup_bilan_global")
+        st.markdown("#### 🎖️ Gestion permanente des postes supérieurs")
+        st.caption("Charge statutaire standard : 7.0 eq/h. Pour les enseignants choisis ci-dessous, la décharge est automatiquement de 3.5 eq/h : seuil de service = 3.5 eq/h.")
+        enseignants_liste_ui = sorted([
+            str(e).strip() for e in df["Enseignants"].dropna().unique()
+            if str(e).strip() and str(e).strip().casefold() not in {"nan", "none", "non defini", "non défini"}
+        ], key=str.casefold)
+        postes_enregistres, source_postes, erreur_postes = _charger_postes_superieurs()
+        if "postes_superieurs_selection_bilan" not in st.session_state:
+            cles_enregistrees = {_cle_enseignant_poste(n) for n in postes_enregistres}
+            st.session_state["postes_superieurs_selection_bilan"] = [
+                n for n in enseignants_liste_ui if _cle_enseignant_poste(n) in cles_enregistrees
+            ]
+        # Remove deleted/inactive names from the current selector without erasing the DB.
+        st.session_state["postes_superieurs_selection_bilan"] = [
+            n for n in st.session_state["postes_superieurs_selection_bilan"]
+            if _cle_enseignant_poste(n) in {_cle_enseignant_poste(x) for x in enseignants_liste_ui}
+        ]
+        postes_sup_choisis = st.multiselect(
+            "Enseignants ayant un poste supérieur (décharge automatique de 3.5 eq/h)",
+            options=enseignants_liste_ui,
+            key="postes_superieurs_selection_bilan",
+            help="Sélectionnez un ou plusieurs enseignants ; leur seuil individuel devient 3.5 eq/h. Les autres restent à 7.0 eq/h."
+        )
+        col_poste_btn, col_poste_status = st.columns([1, 2])
+        with col_poste_btn:
+            sauvegarder_postes = st.button("💾 Enregistrer la liste", key="save_postes_superieurs_bilan", use_container_width=True)
+        with col_poste_status:
+            if source_postes == "Supabase":
+                st.success(f"Liste chargée depuis Supabase : {len(postes_enregistres)} enseignant(s) avec poste supérieur.")
+            elif source_postes == "fichier local":
+                st.warning("Liste chargée depuis le fichier local. Pour une conservation permanente sur Streamlit Cloud, configurez la table Supabase comme indiqué dans le fichier SQL fourni.")
+            else:
+                st.info("Aucune liste enregistrée trouvée ; sélectionnez les enseignants, puis cliquez sur Enregistrer la liste.")
+        if sauvegarder_postes:
+            ok_sauvegarde, source_sauvegarde, err_sauvegarde = _sauvegarder_postes_superieurs(postes_sup_choisis, enseignants_liste_ui)
+            if ok_sauvegarde:
+                st.success(f"✅ Liste enregistrée durablement dans Supabase : {len(postes_sup_choisis)} enseignant(s) avec décharge de 3.5 eq/h.")
+            else:
+                st.warning("⚠️ La liste a été sauvegardée dans le fichier local uniquement ; la conservation après redémarrage du serveur n'est pas garantie. Créez la table depuis SQL_POSTES_SUPERIEURS.sql et configurez SUPABASE_SERVICE_ROLE_KEY dans les secrets Streamlit.")
+                if err_sauvegarde:
+                    st.caption(f"Détail de la base : {err_sauvegarde}")
+
+        # La sélection courante est appliquée enseignant par enseignant lors du calcul.
+        postes_sup_cles = {_cle_enseignant_poste(n) for n in postes_sup_choisis}
 
         if st.button("📊 Générer le Bilan Excel Complet", use_container_width=True, type="primary"):
             import io
             from collections import defaultdict
 
-            seuil = 3.0 if poste_sup_bilan else 6.0
             enseignants_liste = sorted([e for e in df['Enseignants'].unique() 
                                        if e and str(e).strip() not in ["", "nan", "None", "Non defini", "Non défini"]])
 
@@ -21116,21 +21324,39 @@ if is_admin:
                     f"{c['jour']} {c['horaire']} ({' + '.join(c['natures'])})" for c in chev_ens
                 )
 
-                # Formule identique : Cours x 1.5 ; TD et TP x 1 ; HS = (charge - seuil) x 1.5
+                # Charge statutaire : 7 eq/h ; poste supérieur : décharge 3.5 eq/h, seuil 3.5.
                 charge_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
-                delta_eq = charge_eq - seuil
-                heures_sup = delta_eq * 1.5
-
-                # Infos répertoire
                 nom_key = str(ens).strip().upper()
+                est_poste_sup = _cle_enseignant_poste(ens) in postes_sup_cles
+                seuil_enseignant = SEUIL_POSTE_SUP_EQUIVALENT if est_poste_sup else CHARGE_STATUTAIRE_EQUIVALENT
+                decharge_eq = DECHARGE_POSTE_SUP_EQUIVALENT if est_poste_sup else 0.0
+                delta_eq = charge_eq - seuil_enseignant
+                heures_sup = delta_eq * 1.5
+                heures_sup_hmin = _formater_heures_minutes(heures_sup)
+
+                # Département d'affiliation depuis le répertoire du personnel ; si absent,
+                # repli sur le(s) département(s) dans lesquels l'EDT montre des interventions.
                 nom_complet = repertoire_noms_complets.get(nom_key, ens)
                 grade = repertoire_grades.get(nom_key, "N/A")
                 qualite = repertoire_qualites.get(nom_key, "N/A")
                 email = repertoire_source.get(nom_key, "Non communiqué")
                 telephone = repertoire_telephones.get(nom_key, "N/A")
+                dept_affiliation = repertoire_departements_affiliation.get(nom_key, "")
+                if not dept_affiliation:
+                    dept_affiliation = repertoire_departements_affiliation.get(_cle_enseignant_poste(nom_complet), "")
+                depts_intervention = sorted({str(v).strip() for v in df_ens.get("Département", pd.Series(dtype=str)).dropna().tolist()
+                                              if str(v).strip() and str(v).strip().casefold() not in {"nan", "none", "non défini", "non defini"}}, key=str.casefold)
+                promotions_intervention = sorted({str(v).strip() for v in df_ens.get("Promotion", pd.Series(dtype=str)).dropna().tolist()
+                                                  if str(v).strip() and str(v).strip().casefold() not in {"nan", "none", "non défini", "non defini"}}, key=str.casefold)
+                if not dept_affiliation:
+                    dept_affiliation = " / ".join(depts_intervention) if depts_intervention else "Non renseigné"
 
                 bilan_data.append({
                     "Nom Complet": nom_complet,
+                    "Département d'affiliation": dept_affiliation,
+                    "Promotion(s) d'intervention": " / ".join(promotions_intervention) if promotions_intervention else "Non renseignée",
+                    "Poste supérieur": "Oui" if est_poste_sup else "Non",
+                    "Décharge (eq/h)": decharge_eq,
                     "Grade": grade,
                     "Qualité": qualite,
                     "Email": email,
@@ -21139,9 +21365,10 @@ if is_admin:
                     "TD": nb_td,
                     "TP": nb_tp,
                     "Charge Eq/h": charge_eq,
-                    "Seuil Réglem.": seuil,
+                    "Seuil Réglem.": seuil_enseignant,
                     "Delta Eq/h": delta_eq,
-                    "Heures Sup/Déficit (h)": heures_sup,
+                    "Heures Sup/Déficit (h)": round(heures_sup, 4),
+                    "Heures Sup/Déficit (h:min)": heures_sup_hmin,
                     "Situation": "✅ Heures Sup" if heures_sup > 0 else ("⚠️ Déficit" if heures_sup < 0 else "⚖️ Seuil exact"),
                     "Chevauchement": txt_chevauchement
                 })
@@ -21190,7 +21417,7 @@ if is_admin:
                     ws.merge_range(0, 0, 0, len(df_bilan.columns)-1, 
                                   "BILAN GLOBAL DES HEURES SUPPLÉMENTAIRES — S1 2026-2027", title_fmt)
                     ws.merge_range(1, 0, 1, len(df_bilan.columns)-1, 
-                                  f"département d'Électrotechnique — Seuil appliqué : {seuil} eq/h", 
+                                  "Charge standard : 7.0 eq/h | Poste supérieur : décharge 3.5 eq/h, seuil 3.5 eq/h",
                                   wb.add_format({'italic': True, 'align': 'center', 'font_size': 10}))
 
                     # En-têtes (ligne 2)
@@ -21223,7 +21450,9 @@ if is_admin:
                             'Avec heures supplémentaires', 
                             'Avec déficit horaire', 
                             'Seuil exact atteint',
-                            'Total heures sup à payer',
+                            'Total heures sup à payer (décimal)',
+                            'Total heures sup à payer (h:min)',
+                            'Déficits cumulés (h:min)',
                             'Date de génération'
                         ],
                         'Valeur': [
@@ -21232,6 +21461,8 @@ if is_admin:
                             len(df_bilan[df_bilan['Heures Sup/Déficit (h)'] < 0]),
                             len(df_bilan[df_bilan['Heures Sup/Déficit (h)'] == 0]),
                             round(df_bilan[df_bilan['Heures Sup/Déficit (h)'] > 0]['Heures Sup/Déficit (h)'].sum(), 2),
+                            _formater_heures_minutes(df_bilan.loc[df_bilan['Heures Sup/Déficit (h)'] > 0, 'Heures Sup/Déficit (h)'].sum()),
+                            _formater_heures_minutes(df_bilan.loc[df_bilan['Heures Sup/Déficit (h)'] < 0, 'Heures Sup/Déficit (h)'].sum()),
                             datetime.now().strftime('%d/%m/%Y à %H:%M')
                         ]
                     })
@@ -21240,7 +21471,7 @@ if is_admin:
                     ws_recap.set_column(0, 0, 35)
                     ws_recap.set_column(1, 1, 25)
 
-                st.success(f"✅ Bilan généré : **{len(bilan_data)}** enseignants analysés (Seuil : {seuil} eq/h)")
+                st.success(f"✅ Bilan généré : **{len(bilan_data)}** enseignants analysés (seuil standard 7.0 eq/h ; poste supérieur 3.5 eq/h)")
                 if chevauchements_bilan:
                     st.error(
                         "🚨 Chevauchements détectés : un enseignant ne peut pas avoir deux "
@@ -21313,9 +21544,9 @@ with st.sidebar:
             "🟢 Lieux Non Occupés", 
             "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
         ])
-        poste_sup = st.checkbox("Poste Supérieur (Décharge 3h)")
+        poste_sup = False  # statut récupéré depuis la liste permanente ci-dessous
     elif portail == "👤 Mon Espace Enseignant":
-        poste_sup = st.session_state.get("poste_sup_ens", False)
+        poste_sup = _est_poste_superieur(user.get("nom_officiel", ""))
 
     if st.button("🚪 Déconnexion du compte"):
         st.session_state["user_data"] = None
@@ -21702,6 +21933,9 @@ if df is not None:
                 cible = inverse_map[choix_utilisateur]
                 # 6. 'nom_affichage_complet' servira pour le titre du bilan
                 nom_affichage_complet = choix_utilisateur
+
+            # Le seuil est déterminé par la liste des postes supérieurs enregistrée.
+            poste_sup = _est_poste_superieur(cible)
             
             # --- FILTRAGE ET CALCULS ---
             # Filtrage des données basé sur le NOM (variable 'cible')
@@ -21718,8 +21952,8 @@ if df is not None:
             nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
             _afficher_erreur_chevauchement_natures(df_f, ['j_norm', 'h_norm'], cible)
 
-            # Le seuil réglementaire (3.0 si poste sup, sinon 6.0)
-            seuil_obligatoire = 3.0 if poste_sup else 6.0
+            # Seuil statutaire automatiquement appliqué : 7.0 standard / 3.5 avec poste supérieur.
+            seuil_obligatoire = _seuil_charge_enseignant(cible)
             
             # Calcul de la charge totale en Équivalent (Cours = 1.5, TD/TP = 1.0)
             charge_totale_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
@@ -21731,13 +21965,7 @@ if df is not None:
             h_sup = delta_eq * 1.5
             
             # --- LOGIQUE DE CONVERSION EN HEURES ET MINUTES ---
-            abs_h_sup = abs(h_sup)
-            heures_entieres = int(abs_h_sup)
-            minutes_restantes = int((abs_h_sup - heures_entieres) * 60)
-            
-            # Formatage du signe (+ ou -) et de la chaîne de caractères
-            signe_str = "+" if h_sup >= 0 else "-"
-            h_sup_formattee = f"{signe_str}{heures_entieres}h{minutes_restantes:02d}"
+            h_sup_formattee = _formater_heures_minutes(h_sup)
             
             # Charge effective enseignée (Nombre total de séances réelles * 1.5h)
             charge_effective = (nb_cours + nb_td + nb_tp) * 1.5
@@ -21805,7 +22033,7 @@ if df is not None:
             elif h_sup < 0:
                 st.caption(f"⚠️ Attention : Sous-charge détectée de {round(abs(h_sup), 2)}h par rapport au seuil.")
             else:
-                st.caption("⚖️ Service réglementaire exactement rempli (Pile 6.0 eq/h).")
+                st.caption(f"⚖️ Service réglementaire exactement rempli (seuil appliqué : {seuil_obligatoire} eq/h).")
 
             # --- 3. SECTION ADMINISTRATIVE : EXPORT EXCEL GLOBAL ---
             if is_admin:
@@ -21835,20 +22063,28 @@ if df is not None:
                         grade_enseignant = repertoire_grades.get(p.strip().upper(), "N/A")
                         qualite_enseignant = repertoire_qualites.get(p.strip().upper(), "Non spécifié")
                         
-                        # Comptage des séances
-                        n_co = len(df_up[df_up['Type'] == 'COURS'])
-                        n_td = len(df_up[df_up['Type'] == 'TD'])
-                        n_tp = len(df_up[df_up['Type'] == 'TP'])
+                        # Comptage cohérent avec les autres vues : une nature prioritaire
+                        # par cellule normalisée jour + horaire (COURS > TD > TP).
+                        if "j_norm" not in df_p.columns:
+                            df_p["j_norm"] = df_p["Jours"].apply(normalize)
+                        if "h_norm" not in df_p.columns:
+                            df_p["h_norm"] = df_p["Horaire"].apply(normalize)
+                        n_co, n_td, n_tp = _compter_natures_par_cellule(df_p, ["j_norm", "h_norm"])
                         
-                        # --- VOTRE LOGIQUE DE CALCUL (NON MODIFIÉE) ---
-                        s_oblig = 6.0 
+                        # Charge standard = 7 eq/h ; poste supérieur = seuil 3.5 eq/h.
+                        s_oblig = _seuil_charge_enseignant(p)
                         c_eq = (n_co * 1.5) + (n_td + n_tp)
                         b_h = (c_eq - s_oblig) * 1.5
                         c_eff = (n_co + n_td + n_tp) * 1.5
+                        depts_intervention = sorted({str(v).strip() for v in df_p.get("Département", pd.Series(dtype=str)).dropna().tolist() if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}}, key=str.casefold)
+                        promos_intervention = sorted({str(v).strip() for v in df_p.get("Promotion", pd.Series(dtype=str)).dropna().tolist() if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}}, key=str.casefold)
+                        dept_affiliation = repertoire_departements_affiliation.get(p.strip().upper(), "") or " / ".join(depts_intervention) or "Non renseigné"
 
-                        # Ajout à la liste avec la nouvelle colonne Qualité
                         recap_data.append({
                             "Enseignant": nom_complet,
+                            "Département d'affiliation": dept_affiliation,
+                            "Promotion(s) d'intervention": " / ".join(promos_intervention) if promos_intervention else "Non renseignée",
+                            "Poste supérieur": "Oui" if _est_poste_superieur(p) else "Non",
                             "Grade": grade_enseignant,
                             "Qualité": qualite_enseignant,
                             "Cours": n_co,
@@ -21856,7 +22092,8 @@ if df is not None:
                             "TP": n_tp,
                             "Charge Effective (h)": c_eff,
                             "Total (Eq)": c_eq,
-                            "Heures Sup. Réelles/Déficit Horaire": round(b_h, 2)
+                            "Heures Sup. Réelles/Déficit Horaire": round(b_h, 4),
+                            "Résultat (h:min)": _formater_heures_minutes(b_h)
                         })
 
                     df_global = pd.DataFrame(recap_data)
@@ -21880,7 +22117,8 @@ if df is not None:
                         
                         # 2. Coloration des charges inférieures à 0 (Colonne "Heures Sup. Réelles/Déficit Horaire" - index 7)
                         last_row = len(df_global)
-                        worksheet.conditional_format(1, 7, last_row, 7, {
+                        _idx_bilan_global = df_global.columns.get_loc("Heures Sup. Réelles/Déficit Horaire")
+                        worksheet.conditional_format(1, _idx_bilan_global, last_row, _idx_bilan_global, {
                             'type':     'cell',
                             'criteria': '<',
                             'value':    0,
@@ -23406,6 +23644,7 @@ if df is not None:
             # 1. IDENTITÉ & INFOS PERSONNELLES
             # ─────────────────────────────────────────────────────────────
             cible = user['nom_officiel']
+            poste_sup = _est_poste_superieur(cible)
             nom_affichage_complet = repertoire_noms_complets.get(cible.strip().upper(), cible)
             grade_enseignant = repertoire_grades.get(cible.strip().upper(), "Grade non spécifié")
             statut_enseignant = repertoire_qualites.get(cible.strip().upper(), "Statut non spécifié")
@@ -23466,16 +23705,13 @@ if df is not None:
             nb_cours, nb_td, nb_tp = _compter_natures_par_cellule(df_f, ['j_norm', 'h_norm'])
             _afficher_erreur_chevauchement_natures(df_f, ['j_norm', 'h_norm'], cible)
         
-            seuil_obligatoire = 3.0 if poste_sup else 6.0
+            poste_sup = _est_poste_superieur(cible)
+            seuil_obligatoire = _seuil_charge_enseignant(cible)
             charge_totale_eq = (nb_cours * 1.5) + (nb_td + nb_tp)
             delta_eq = charge_totale_eq - seuil_obligatoire
             h_sup = delta_eq * 1.5
         
-            abs_h_sup = abs(h_sup)
-            heures_entieres = int(abs_h_sup)
-            minutes_restantes = int((abs_h_sup - heures_entieres) * 60)
-            signe_str = "+" if h_sup >= 0 else "-"
-            h_sup_formattee = f"{signe_str}{heures_entieres}h{minutes_restantes:02d}"
+            h_sup_formattee = _formater_heures_minutes(h_sup)
             charge_effective = (nb_cours + nb_td + nb_tp) * 1.5
         
             # ─────────────────────────────────────────────────────────────
