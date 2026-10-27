@@ -23968,47 +23968,86 @@ if df is not None:
         if not promos_dep:
             st.info("Aucune promotion disponible dans l'EDT pour ce département.")
         else:
-            promo_sel = st.selectbox("🎓 Promotion", promos_dep, key="stats_donnees_promotion")
-            df_mat = df_dep[df_dep["Promotion"] == promo_sel].copy()
-            if not df_mat.empty:
-                # Une ligne par matière/type : les groupes ne créent pas de doublon au même créneau.
-                # Les séances sont comptées par créneau distinct (jour + horaire) après suppression des marqueurs SG/G.
-                df_mat = df_mat[df_mat["Matière"].ne("")]
-                df_mat["Jour normalisé"] = df_mat["Jours"].map(_stats_norm)
-                df_mat["Horaire normalisé"] = df_mat["Horaire"].map(_stats_norm)
-                df_mat["Groupe source"] = df_mat["Enseignements"].str.extract(
+            choix_toutes_promos = "📦 Toutes les promotions (pack complet)"
+            promo_options = [choix_toutes_promos] + list(promos_dep)
+            promo_sel = st.selectbox("🎓 Promotion", promo_options, key="stats_donnees_promotion")
+
+            def _stats_sessions_promotion(df_promo):
+                """Construit le récapitulatif hebdomadaire sans multiplier les groupes TD/TP."""
+                df_mat_local = df_promo.copy()
+                if df_mat_local.empty:
+                    return pd.DataFrame(columns=["Matière", "Type d'enseignement", "Séances / semaine"]), df_mat_local
+                df_mat_local = df_mat_local[df_mat_local["Matière"].ne("")].copy()
+                df_mat_local["Jour normalisé"] = df_mat_local["Jours"].map(_stats_norm)
+                df_mat_local["Horaire normalisé"] = df_mat_local["Horaire"].map(_stats_norm)
+                df_mat_local["Groupe source"] = df_mat_local["Enseignements"].str.extract(
                     r"(?i)(?:[-_ ](SG\d{1,2}|G\d{1,2}))\s*$", expand=False
                 ).fillna("")
-                df_mat = df_mat[df_mat["Type d'enseignement"].isin(["COURS", "TD", "TP"])]
-                # Si une matière est planifiée en plusieurs groupes/sous-groupes,
-                # on retient le groupe représentatif (le premier dans l'ordre naturel)
-                # pour compter les séances hebdomadaires, afin de ne pas multiplier
-                # artificiellement le TD/TP par le nombre de groupes.
-                groupes_par_matiere = df_mat.groupby(["Promotion", "Matière", "Type d'enseignement"])["Groupe source"].transform(
-                    lambda s: sorted([g for g in s.unique() if g], key=lambda g: [int(n) if n.isdigit() else n for n in re.split(r"(\d+)", g.upper())])[0]
-                    if any(s.astype(str).str.strip()) else ""
+                df_mat_local = df_mat_local[df_mat_local["Type d'enseignement"].isin(["COURS", "TD", "TP"])].copy()
+                groupes_par_matiere = df_mat_local.groupby(["Promotion", "Matière", "Type d'enseignement"])["Groupe source"].transform(
+                    lambda series: sorted([g for g in series.unique() if g], key=lambda g: [int(n) if n.isdigit() else n for n in re.split(r"(\d+)", g.upper())])[0]
+                    if any(str(g).strip() for g in series) else ""
                 )
-                a_groupes = df_mat.groupby(["Promotion", "Matière", "Type d'enseignement"])["Groupe source"].transform(
-                    lambda s: any(str(g).strip() for g in s)
+                a_groupes = df_mat_local.groupby(["Promotion", "Matière", "Type d'enseignement"])["Groupe source"].transform(
+                    lambda series: any(str(g).strip() for g in series)
                 )
-                df_mat = df_mat[(~a_groupes) | (df_mat["Groupe source"] == groupes_par_matiere)]
-                df_mat = df_mat.drop_duplicates(subset=["Promotion", "Matière", "Type d'enseignement", "Jour normalisé", "Horaire normalisé"])
-                df_sessions = (df_mat.groupby(["Matière", "Type d'enseignement"], dropna=False)
-                               .size().rename("Séances / semaine").reset_index())
-                ordre_type = {"COURS": 0, "TD": 1, "TP": 2}
-                df_sessions["_ordre"] = df_sessions["Type d'enseignement"].map(ordre_type)
-                df_sessions = df_sessions.sort_values(["Matière", "_ordre"]).drop(columns="_ordre")
-                st.dataframe(df_sessions, use_container_width=True, hide_index=True)
-                buf_mat = io.BytesIO()
-                with pd.ExcelWriter(buf_mat, engine="openpyxl") as writer:
-                    df_sessions.to_excel(writer, sheet_name="Matieres et seances", index=False)
-                st.download_button("📥 Télécharger matières et séances (Excel)", buf_mat.getvalue(),
-                                   f"Matieres_seances_{re.sub(r'[^A-Za-z0-9_-]', '_', promo_sel)}.xlsx",
-                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                   key="dl_stats_matieres")
-                with st.expander("Voir les lignes EDT prises en compte"):
-                    st.dataframe(df_mat[["Enseignements", "Matière", "Type d'enseignement", "Enseignants", "Jours", "Horaire", "Lieu", "Promotion", "Département"]],
-                                 use_container_width=True, hide_index=True)
+                df_mat_local = df_mat_local[(~a_groupes) | (df_mat_local["Groupe source"] == groupes_par_matiere)]
+                df_mat_local = df_mat_local.drop_duplicates(
+                    subset=["Promotion", "Matière", "Type d'enseignement", "Jour normalisé", "Horaire normalisé"]
+                )
+                df_sessions_local = (df_mat_local.groupby(["Matière", "Type d'enseignement"], dropna=False)
+                                     .size().rename("Séances / semaine").reset_index())
+                ordre_type_local = {"COURS": 0, "TD": 1, "TP": 2}
+                df_sessions_local["_ordre"] = df_sessions_local["Type d'enseignement"].map(ordre_type_local)
+                df_sessions_local = df_sessions_local.sort_values(["Matière", "_ordre"]).drop(columns="_ordre")
+                return df_sessions_local, df_mat_local
+
+            if promo_sel == choix_toutes_promos:
+                st.caption("Le pack contient un fichier Excel par promotion, ainsi qu'un classeur récapitulatif avec un onglet par promotion.")
+                zip_buffer = io.BytesIO()
+                classeur_buffer = io.BytesIO()
+                resultats_promos = []
+                with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as pack_zip:
+                    with pd.ExcelWriter(classeur_buffer, engine="openpyxl") as writer:
+                        for promo in promos_dep:
+                            df_promo = df_dep[df_dep["Promotion"] == promo].copy()
+                            df_sessions_promo, _ = _stats_sessions_promotion(df_promo)
+                            resultats_promos.append({"Promotion": promo, "Nombre de matières": int(df_sessions_promo["Matière"].nunique()) if not df_sessions_promo.empty else 0,
+                                                     "Séances / semaine": int(df_sessions_promo["Séances / semaine"].sum()) if not df_sessions_promo.empty else 0})
+                            nom_fichier_promo = re.sub(r"[^A-Za-z0-9_-]", "_", str(promo)).strip("_")[:80] or "Promotion"
+                            xlsx_promo = io.BytesIO()
+                            with pd.ExcelWriter(xlsx_promo, engine="openpyxl") as writer_promo:
+                                df_sessions_promo.to_excel(writer_promo, sheet_name="Matieres et seances", index=False)
+                            pack_zip.writestr(f"{nom_fichier_promo}/Matieres_seances_{nom_fichier_promo}.xlsx", xlsx_promo.getvalue())
+                            nom_onglet = re.sub(r"[\[\]:*?/\\]", "_", str(promo))[:31] or "Promotion"
+                            df_sessions_promo.to_excel(writer, sheet_name=nom_onglet, index=False)
+                        pd.DataFrame(resultats_promos).to_excel(writer, sheet_name="Sommaire", index=False)
+                    pack_zip.writestr("Matieres_seances_toutes_promotions.xlsx", classeur_buffer.getvalue())
+                st.dataframe(pd.DataFrame(resultats_promos), use_container_width=True, hide_index=True)
+                st.download_button(
+                    "📦 Télécharger le pack complet — toutes les promotions (ZIP)",
+                    data=zip_buffer.getvalue(),
+                    file_name=f"Pack_matieres_seances_{re.sub(r'[^A-Za-z0-9_-]', '_', str(dep_selected))}.zip",
+                    mime="application/zip",
+                    key="dl_stats_matieres_pack_toutes_promos"
+                )
+            else:
+                df_mat = df_dep[df_dep["Promotion"] == promo_sel].copy()
+                df_sessions, df_mat_detail = _stats_sessions_promotion(df_mat)
+                if not df_sessions.empty:
+                    st.dataframe(df_sessions, use_container_width=True, hide_index=True)
+                    buf_mat = io.BytesIO()
+                    with pd.ExcelWriter(buf_mat, engine="openpyxl") as writer:
+                        df_sessions.to_excel(writer, sheet_name="Matieres et seances", index=False)
+                    st.download_button("📥 Télécharger matières et séances (Excel)", buf_mat.getvalue(),
+                                       f"Matieres_seances_{re.sub(r'[^A-Za-z0-9_-]', '_', promo_sel)}.xlsx",
+                                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                       key="dl_stats_matieres")
+                    with st.expander("Voir les lignes EDT prises en compte"):
+                        st.dataframe(df_mat_detail[["Enseignements", "Matière", "Type d'enseignement", "Enseignants", "Jours", "Horaire", "Lieu", "Promotion", "Département"]],
+                                     use_container_width=True, hide_index=True)
+                else:
+                    st.info("Aucune séance Cours/TD/TP exploitable pour cette promotion.")
 
         st.caption(
             f"Sources chargées : EDT = {Path(source_edt_stats).name if source_edt_stats else 'non trouvé'} · "
