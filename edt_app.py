@@ -6073,7 +6073,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             "🎓 Recherche Étudiant"
         ]
     
-    portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
+    portail = st.selectbox("🚀 Sélectionner Espace", options_portail, key="portal_main_selector")
     
     mode_view = "Personnel"
     poste_sup = False
@@ -21549,7 +21549,10 @@ with st.sidebar:
             "📅 Surveillances Examens"
         ]
 
-    portail = st.selectbox("🚀 Sélectionner Espace", options_portail)
+    portail = st.selectbox("🚀 Sélectionner Espace", options_portail, key="portal_sidebar_selector")
+    # Synchroniser le choix Statistiques du sélecteur principal avec la logique active ci-dessous.
+    if st.session_state.get("portal_main_selector") == "📊 Statistiques & Données":
+        portail = "📊 Statistiques & Données"
     st.divider()
 
     mode_view = "Personnel"
