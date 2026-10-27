@@ -1024,8 +1024,14 @@ if create_client:
 _BASE_DIR = Path(__file__).parent.resolve()
 
 FILE_ETUDIANTS = str(_BASE_DIR / "Liste des étudiants_2026-2027.xlsx")
-FILE_EDT       = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
-FILE_ENS       = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
+FILE_EDT = str(
+    _BASE_DIR / (
+        "dataEDT-ELT-S1-2027.xlsx"
+        if (_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx").exists()
+        else "dataEDT-ELT-S1-2027(1).xlsx"
+    )
+)
+FILE_ENS = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
@@ -20392,7 +20398,9 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- CHARGEMENT DES DONNÉES ---
-NOM_FICHIER_FIXE = "dataEDT-ELT-S1-2027.xlsx"
+NOM_FICHIER_FIXE = FILE_EDT if os.path.exists(FILE_EDT) else str(
+    Path(__file__).resolve().parent / "dataEDT-ELT-S1-2027(1).xlsx"
+)
 NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
 
 df = None
@@ -21522,10 +21530,11 @@ with st.sidebar:
     # ─── RESTRICTION DES PORTAILS SELON LE RÔLE ───
     if is_admin:
         options_portail = [
-            "📖 Emploi du Temps", 
-            "📅 Surveillances Examens", 
-            "🤖 Générateur Automatique", 
-            "👥 Portail Enseignants", 
+            "📖 Emploi du Temps",
+            "📊 Statistiques & Données",
+            "📅 Surveillances Examens",
+            "🤖 Générateur Automatique",
+            "👥 Portail Enseignants",
             "🎓 Portail mise à jour EDT",
             "📝 Demandes de Mise à Jour EDT",
             "📢 Gestion Administrative - Bordereaux & PVs"
@@ -23645,6 +23654,363 @@ if df is not None:
             else:
                 st.success("✅ Félicitations ! Aucun conflit détecté dans l'emploi du temps actuel.")
                 st.balloons()
+    elif portail == "📊 Statistiques & Données":
+        if not is_admin:
+            st.error("Accès réservé à l'administration.")
+            st.stop()
+
+        import unicodedata
+        from html import escape as _html_escape
+
+        st.header("📊 Tableau de bord — Statistiques & Données")
+        st.caption("Effectifs inscrits, promotions, matières et enseignants ayant une charge dans l'emploi du temps.")
+
+        def _stats_norm(v):
+            txt = "" if pd.isna(v) else str(v).strip()
+            txt = unicodedata.normalize("NFKD", txt)
+            txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+            return re.sub(r"\s+", " ", txt).strip().upper()
+
+        def _stats_clean(v):
+            if pd.isna(v):
+                return ""
+            txt = str(v).strip()
+            return "" if txt.lower() in {"nan", "none", "<na>"} else txt
+
+        def _stats_teacher_tokens(v):
+            raw = _stats_clean(v)
+            return {_stats_norm(t) for t in re.split(r"\s*(?:\+|/|,|&|;|\bet\b)\s*", raw, flags=re.I) if _stats_norm(t)}
+
+        def _stats_type(row):
+            code = _stats_norm(row.get("Code", ""))
+            enseignement = _stats_norm(row.get("Enseignements", ""))
+            for typ in ("COURS", "TD", "TP"):
+                if typ in code.split() or code == typ or enseignement.startswith(typ + "-") or enseignement.startswith(typ + " "):
+                    return typ
+            return "AUTRE"
+
+        def _stats_matiere(v):
+            txt = _stats_clean(v)
+            # Retire uniquement le préfixe de nature et les marqueurs explicites de groupe/sous-groupe.
+            txt = re.sub(r"^\s*(?:COURS|COURS MAGISTRAL|CM|TD|TP)\s*[-:]\s*", "", txt, flags=re.I)
+            txt = re.sub(r"\s*[-_ ]+(?:S(?:OUS)?[-_ ]?G(?:ROUPE)?|SG|G)\s*[-_ ]?\d{1,2}\s*$", "", txt, flags=re.I)
+            txt = re.sub(r"\s+", " ", txt).strip(" -_")
+            return txt or _stats_clean(v)
+
+        def _stats_load_excel(candidates, sheet_name=0):
+            for candidate in candidates:
+                if candidate and os.path.exists(str(candidate)):
+                    try:
+                        frame = pd.read_excel(candidate, sheet_name=sheet_name)
+                        frame.columns = [str(c).strip() for c in frame.columns]
+                        return frame, str(candidate)
+                    except Exception:
+                        continue
+            return pd.DataFrame(), ""
+
+        base_stats = Path(__file__).resolve().parent
+        df_stats_edt, source_edt_stats = _stats_load_excel([
+            base_stats / "dataEDT-ELT-S1-2027.xlsx",
+            base_stats / "dataEDT-ELT-S1-2027(1).xlsx",
+            globals().get("FILE_EDT"), globals().get("NOM_FICHIER_FIXE"),
+            Path.cwd() / "dataEDT-ELT-S1-2027(1).xlsx"
+        ])
+        df_stats_etu, source_etu_stats = _stats_load_excel([
+            base_stats / "Liste des étudiants_2026-2027.xlsx",
+            globals().get("FILE_ETUDIANTS")
+        ])
+        df_stats_ens, source_ens_stats = _stats_load_excel([
+            base_stats / "Permanents-Vacataires-ELT2-2026-2027.xlsx",
+            globals().get("FILE_ENS"), globals().get("NOM_FICHIER_CONTACTS")
+        ], sheet_name="Permanents-Vacataires")
+
+        if df_stats_edt.empty:
+            st.error("Le fichier source de l'emploi du temps est introuvable ou illisible. Vérifiez le fichier Excel EDT.")
+            st.stop()
+        for col in ["Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion", "Département"]:
+            if col not in df_stats_edt.columns:
+                df_stats_edt[col] = ""
+            df_stats_edt[col] = df_stats_edt[col].map(_stats_clean)
+
+        df_stats_edt = df_stats_edt[
+            df_stats_edt["Promotion"].ne("") &
+            df_stats_edt["Enseignements"].ne("") &
+            df_stats_edt["Enseignements"].str.lower().ne("non défini")
+        ].copy()
+        df_stats_edt["Type d'enseignement"] = df_stats_edt.apply(_stats_type, axis=1)
+        df_stats_edt["Matière"] = df_stats_edt["Enseignements"].map(_stats_matiere)
+        df_stats_edt["Enseignant(s) normalisé"] = df_stats_edt["Enseignants"].map(_stats_teacher_tokens)
+        df_stats_edt["Département"] = df_stats_edt["Département"].replace("", "Non renseigné")
+
+        # Les enseignants sont associés uniquement aux départements/promotions où leur nom apparaît dans l'EDT.
+        charges_par_prof = {}
+        for _, ligne in df_stats_edt.iterrows():
+            dep = _stats_clean(ligne["Département"]) or "Non renseigné"
+            for nom_prof in ligne["Enseignant(s) normalisé"]:
+                if not nom_prof:
+                    continue
+                rec = charges_par_prof.setdefault(nom_prof, {"departements": set(), "promotions": set(), "seances": set(), "matieres": set()})
+                rec["departements"].add(dep)
+                rec["promotions"].add(_stats_clean(ligne["Promotion"]))
+                rec["matieres"].add(_stats_clean(ligne["Matière"]))
+                rec["seances"].add((
+                    dep, _stats_clean(ligne["Promotion"]), _stats_clean(ligne["Matière"]),
+                    _stats_clean(ligne["Type d'enseignement"]), _stats_norm(ligne["Jours"]), _stats_norm(ligne["Horaire"])
+                ))
+
+        if df_stats_ens.empty:
+            st.warning("Le fichier des enseignants est introuvable : les statistiques de charge EDT restent disponibles, mais les listes détaillées du personnel ne pourront pas être complétées.")
+            df_stats_ens = pd.DataFrame(columns=["NOM", "PRÉNOM", "Qualité", "Grade", "Email", "N°/TEL"])
+
+        def _stats_nom_source(row):
+            nom = _stats_clean(row.get("NOM", row.get("Nom", "")))
+            prenom = _stats_clean(row.get("PRÉNOM", row.get("Prénom", "")))
+            if not nom:
+                nom = prenom
+            elif prenom and prenom not in {"-", "—"} and _stats_norm(prenom) not in _stats_norm(nom):
+                nom = f"{nom} {prenom}"
+            return nom.strip()
+
+        if not df_stats_ens.empty:
+            df_stats_ens["Nom affiché"] = df_stats_ens.apply(_stats_nom_source, axis=1)
+            df_stats_ens["_cle_nom"] = df_stats_ens["Nom affiché"].map(_stats_norm)
+            df_stats_ens["_qualite_norm"] = df_stats_ens.get("Qualité", pd.Series("", index=df_stats_ens.index)).map(_stats_norm)
+            df_stats_ens["_statut_personnel"] = df_stats_ens["_qualite_norm"].map(
+                lambda q: "Permanent" if q.startswith("PERMANENT") else ("Vacataire" if q.startswith("VACATAIRE") else "Autre")
+            )
+            df_stats_ens["_charge"] = df_stats_ens["_cle_nom"].map(charges_par_prof)
+            # Secours : certaines lignes EDT peuvent contenir le nom officiel sous une forme légèrement différente.
+            df_stats_ens["_a_charge"] = df_stats_ens["_charge"].map(lambda x: isinstance(x, dict) and bool(x.get("departements")))
+            df_stats_ens["_departements_charge"] = df_stats_ens["_charge"].map(lambda x: ", ".join(sorted(x["departements"])) if isinstance(x, dict) else "")
+            df_stats_ens["_promotions_charge"] = df_stats_ens["_charge"].map(lambda x: ", ".join(sorted(x["promotions"])) if isinstance(x, dict) else "")
+            df_stats_ens["_nb_seances_charge"] = df_stats_ens["_charge"].map(lambda x: len(x["seances"]) if isinstance(x, dict) else 0)
+            df_stats_ens["_matieres_charge"] = df_stats_ens["_charge"].map(lambda x: ", ".join(sorted(x["matieres"])) if isinstance(x, dict) else "")
+
+            # Enrichissement depuis la base applicative, sans jamais exporter de mot de passe/hash.
+            df_stats_ens["Nom officiel (base)"] = ""
+            df_stats_ens["Email (base)"] = ""
+            df_stats_ens["Dernier envoi EDT (base)"] = ""
+            try:
+                _db_stats = globals().get("supabase")
+                if _db_stats is not None:
+                    _rep_stats = _db_stats.table("enseignants_auth").select(
+                        "nom_officiel, email, last_sent"
+                    ).execute()
+                    _db_rows_stats = _rep_stats.data or []
+                    _db_map_stats = {}
+                    for _r_stats in _db_rows_stats:
+                        _cle_db = _stats_norm(_r_stats.get("nom_officiel", ""))
+                        if _cle_db:
+                            _db_map_stats[_cle_db] = _r_stats
+                    df_stats_ens["Nom officiel (base)"] = df_stats_ens["_cle_nom"].map(
+                        lambda k: _db_map_stats.get(k, {}).get("nom_officiel", "")
+                    )
+                    df_stats_ens["Email (base)"] = df_stats_ens["_cle_nom"].map(
+                        lambda k: _db_map_stats.get(k, {}).get("email", "")
+                    )
+                    df_stats_ens["Dernier envoi EDT (base)"] = df_stats_ens["_cle_nom"].map(
+                        lambda k: _db_map_stats.get(k, {}).get("last_sent", "")
+                    )
+            except Exception as _err_db_stats:
+                st.caption("ℹ️ La base applicative n'a pas pu être consultée ; les exports contiennent les données du fichier source uniquement.")
+
+        dep_values = sorted([d for d in df_stats_edt["Département"].dropna().astype(str).unique() if d.strip()])
+        dep_options = ["Tous les départements"] + dep_values
+        dep_selected = st.selectbox("🏢 Département à analyser", dep_options, key="stats_donnees_departement")
+        df_dep = df_stats_edt.copy() if dep_selected == "Tous les départements" else df_stats_edt[df_stats_edt["Département"] == dep_selected].copy()
+
+        # Cartes KPI colorées.
+        if not df_stats_etu.empty:
+            col_promo_etu = next((c for c in df_stats_etu.columns if _stats_norm(c) == "PROMOTION"), None)
+            col_validation = next((c for c in df_stats_etu.columns if _stats_norm(c) in {"SIT. D'INS.", "SIT D'INS", "SITUATION D'INSCRIPTION"}), None)
+            if col_validation:
+                valid_mask = df_stats_etu[col_validation].map(_stats_norm).isin({"VALIDEE", "VALIDÉE"})
+            elif "Date validation inscription" in df_stats_etu.columns:
+                valid_mask = df_stats_etu["Date validation inscription"].notna()
+            else:
+                valid_mask = pd.Series(False, index=df_stats_etu.index)
+            df_etu_valides = df_stats_etu[valid_mask].copy()
+            if col_promo_etu:
+                df_etu_valides[col_promo_etu] = df_etu_valides[col_promo_etu].map(_stats_clean)
+                stats_etu_promo = df_etu_valides[df_etu_valides[col_promo_etu].ne("")].groupby(col_promo_etu).size().sort_index()
+            else:
+                stats_etu_promo = pd.Series(dtype=int)
+        else:
+            df_etu_valides = pd.DataFrame()
+            stats_etu_promo = pd.Series(dtype=int)
+
+        promos_dep = sorted(df_dep["Promotion"].replace("", pd.NA).dropna().unique().tolist())
+        nb_promos_dep = len(promos_dep)
+        df_ens_dep = df_stats_ens.copy()
+        if not df_ens_dep.empty:
+            if dep_selected == "Tous les départements":
+                df_ens_dep = df_ens_dep[df_ens_dep["_a_charge"]]
+            else:
+                df_ens_dep = df_ens_dep[df_ens_dep["_departements_charge"].map(lambda x: dep_selected in [d.strip() for d in x.split(",")])]
+            df_ens_dep = df_ens_dep[df_ens_dep["_statut_personnel"].isin(["Permanent", "Vacataire"])]
+            nb_perm = int((df_ens_dep["_statut_personnel"] == "Permanent").sum())
+            nb_vac = int((df_ens_dep["_statut_personnel"] == "Vacataire").sum())
+        else:
+            nb_perm = nb_vac = 0
+
+        def _stats_card(col, label, value, color, subtitle=""):
+            col.markdown(
+                f"""<div style="background:linear-gradient(135deg,{color},#172554);padding:18px 14px;border-radius:14px;color:#fff;min-height:118px;box-shadow:0 5px 14px rgba(15,23,42,.14);">
+                <div style="font-size:12px;font-weight:700;letter-spacing:.5px;opacity:.95;">{_html_escape(str(label))}</div>
+                <div style="font-size:34px;font-weight:850;line-height:1.25;margin:7px 0;">{format(int(value), ',').replace(',', ' ')}</div>
+                <div style="font-size:11px;opacity:.9;">{_html_escape(str(subtitle))}</div></div>""",
+                unsafe_allow_html=True
+            )
+
+        st.markdown("### 📌 Indicateurs clés")
+        c1, c2, c3, c4 = st.columns(4)
+        _stats_card(c1, "ÉTUDIANTS — INSCRIPTION VALIDÉE", len(df_etu_valides), "#047857", "Toutes promotions du fichier étudiants")
+        _stats_card(c2, "ENSEIGNANTS PERMANENTS AVEC CHARGE", nb_perm, "#1D4ED8", dep_selected)
+        _stats_card(c3, "ENSEIGNANTS VACATAIRES AVEC CHARGE", nb_vac, "#B45309", dep_selected)
+        _stats_card(c4, "PROMOTIONS DANS L'EDT", nb_promos_dep, "#7E22CE", dep_selected)
+
+        st.divider()
+        st.markdown("### 🎓 Étudiants ayant une inscription validée par promotion")
+        if stats_etu_promo.empty:
+            st.info("Aucune donnée d'inscription validée par promotion n'a pu être extraite du fichier étudiants.")
+        else:
+            df_etu_promo = stats_etu_promo.rename("Nombre d'étudiants").reset_index().rename(columns={stats_etu_promo.index.name or "index": "Promotion"})
+            # Renomme explicitement la première colonne, quel que soit le nom généré par pandas.
+            df_etu_promo.columns = ["Promotion", "Nombre d'étudiants"]
+            st.dataframe(df_etu_promo, use_container_width=True, hide_index=True)
+            st.bar_chart(df_etu_promo.set_index("Promotion"), y="Nombre d'étudiants")
+            buf_etu = io.BytesIO()
+            with pd.ExcelWriter(buf_etu, engine="openpyxl") as writer:
+                df_etu_promo.to_excel(writer, sheet_name="Etudiants valides", index=False)
+            st.download_button("📥 Télécharger les effectifs validés (Excel)", buf_etu.getvalue(),
+                               "Effectifs_inscriptions_validees_par_promotion.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               key="dl_stats_effectifs")
+
+        if dep_selected not in {"Tous les départements", "ELT"} and not df_ens.empty:
+            st.info("ℹ️ Le fichier personnel fourni est « Permanents-Vacataires-ELT2-2026-2027.xlsx » : il couvre principalement ELT. Les chiffres des autres départements ne peuvent compter que les personnes rapprochées de cette source et ne constituent donc pas un recensement exhaustif.")
+        elif dep_selected == "Tous les départements" and not df_ens.empty:
+            st.info("ℹ️ Le fichier personnel fourni est centré sur ELT. Le total « Tous les départements » compte les enseignants de ce fichier qui ont une charge dans au moins un département de l'EDT, et non tous les personnels des quatre départements.")
+
+        st.divider()
+        st.markdown(f"### 👥 Personnel enseignant avec charge — {dep_selected}")
+        if df_ens_dep.empty:
+            st.warning("Aucun enseignant du fichier source n'a été rapproché de l'EDT pour ce filtre. Vérifiez l'orthographe des noms dans les deux fichiers.")
+        else:
+            df_export_ens = df_ens_dep.drop(columns=["_cle_nom", "_qualite_norm", "_statut_personnel", "_charge", "_a_charge"], errors="ignore").copy()
+            df_export_ens = df_export_ens.rename(columns={
+                "_departements_charge": "Département(s) avec charge",
+                "_promotions_charge": "Promotion(s) avec charge",
+                "_nb_seances_charge": "Nombre de séances EDT",
+                "_matieres_charge": "Matières dans l'EDT"
+            })
+            c_perm, c_vac = st.columns(2)
+            with c_perm:
+                st.metric("Permanents avec charge", nb_perm)
+                st.dataframe(df_export_ens[df_ens_dep["_statut_personnel"] == "Permanent"], use_container_width=True, hide_index=True)
+                df_dl_perm = df_export_ens[df_ens_dep["_statut_personnel"] == "Permanent"]
+                buf_perm = io.BytesIO()
+                with pd.ExcelWriter(buf_perm, engine="openpyxl") as writer:
+                    df_dl_perm.to_excel(writer, sheet_name="Permanents", index=False)
+                st.download_button("📥 Télécharger les permanents", buf_perm.getvalue(), "Enseignants_permanents_avec_charge.xlsx",
+                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_stats_perm")
+            with c_vac:
+                st.metric("Vacataires avec charge", nb_vac)
+                st.dataframe(df_export_ens[df_ens_dep["_statut_personnel"] == "Vacataire"], use_container_width=True, hide_index=True)
+                df_dl_vac = df_export_ens[df_ens_dep["_statut_personnel"] == "Vacataire"]
+                buf_vac = io.BytesIO()
+                with pd.ExcelWriter(buf_vac, engine="openpyxl") as writer:
+                    df_dl_vac.to_excel(writer, sheet_name="Vacataires", index=False)
+                st.download_button("📥 Télécharger les vacataires", buf_vac.getvalue(), "Enseignants_vacataires_avec_charge.xlsx",
+                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_stats_vac")
+
+            buf_all_ens = io.BytesIO()
+            with pd.ExcelWriter(buf_all_ens, engine="openpyxl") as writer:
+                df_export_ens.to_excel(writer, sheet_name="Personnel avec charge", index=False)
+            st.download_button("📥 Télécharger toute la liste du personnel avec charge", buf_all_ens.getvalue(),
+                               "Personnel_enseignant_avec_charge_EDT.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_stats_all_ens")
+
+        if not df_stats_ens.empty:
+            with st.expander("📂 Télécharger le répertoire complet des permanents et vacataires du fichier source"):
+                df_tout_personnel = df_stats_ens[
+                    df_stats_ens["_statut_personnel"].isin(["Permanent", "Vacataire"])
+                ].copy()
+                df_tout_personnel = df_tout_personnel.drop(
+                    columns=["_cle_nom", "_qualite_norm", "_statut_personnel", "_charge", "_a_charge"],
+                    errors="ignore"
+                ).rename(columns={
+                    "_departements_charge": "Département(s) avec charge",
+                    "_promotions_charge": "Promotion(s) avec charge",
+                    "_nb_seances_charge": "Nombre de séances EDT",
+                    "_matieres_charge": "Matières dans l'EDT"
+                })
+                st.caption("Ce téléchargement conserve toutes les colonnes du fichier personnel source et ajoute les informations de charge repérées dans l'EDT, y compris pour les personnes sans charge repérée.")
+                buf_tout_personnel = io.BytesIO()
+                with pd.ExcelWriter(buf_tout_personnel, engine="openpyxl") as writer:
+                    df_tout_personnel.to_excel(writer, sheet_name="Répertoire complet", index=False)
+                st.download_button(
+                    "📥 Télécharger le répertoire complet (Excel)",
+                    buf_tout_personnel.getvalue(),
+                    "Repertoire_complet_permanents_vacataires.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_stats_repertoire_complet"
+                )
+
+        st.divider()
+        st.markdown(f"### 📚 Matières et séances hebdomadaires — {dep_selected}")
+        if not promos_dep:
+            st.info("Aucune promotion disponible dans l'EDT pour ce département.")
+        else:
+            promo_sel = st.selectbox("🎓 Promotion", promos_dep, key="stats_donnees_promotion")
+            df_mat = df_dep[df_dep["Promotion"] == promo_sel].copy()
+            if not df_mat.empty:
+                # Une ligne par matière/type : les groupes ne créent pas de doublon au même créneau.
+                # Les séances sont comptées par créneau distinct (jour + horaire) après suppression des marqueurs SG/G.
+                df_mat = df_mat[df_mat["Matière"].ne("")]
+                df_mat["Jour normalisé"] = df_mat["Jours"].map(_stats_norm)
+                df_mat["Horaire normalisé"] = df_mat["Horaire"].map(_stats_norm)
+                df_mat["Groupe source"] = df_mat["Enseignements"].str.extract(
+                    r"(?i)(?:[-_ ](SG\d{1,2}|G\d{1,2}))\s*$", expand=False
+                ).fillna("")
+                df_mat = df_mat[df_mat["Type d'enseignement"].isin(["COURS", "TD", "TP"])]
+                # Si une matière est planifiée en plusieurs groupes/sous-groupes,
+                # on retient le groupe représentatif (le premier dans l'ordre naturel)
+                # pour compter les séances hebdomadaires, afin de ne pas multiplier
+                # artificiellement le TD/TP par le nombre de groupes.
+                groupes_par_matiere = df_mat.groupby(["Promotion", "Matière", "Type d'enseignement"])["Groupe source"].transform(
+                    lambda s: sorted([g for g in s.unique() if g], key=lambda g: [int(n) if n.isdigit() else n for n in re.split(r"(\d+)", g.upper())])[0]
+                    if any(s.astype(str).str.strip()) else ""
+                )
+                a_groupes = df_mat.groupby(["Promotion", "Matière", "Type d'enseignement"])["Groupe source"].transform(
+                    lambda s: any(str(g).strip() for g in s)
+                )
+                df_mat = df_mat[(~a_groupes) | (df_mat["Groupe source"] == groupes_par_matiere)]
+                df_mat = df_mat.drop_duplicates(subset=["Promotion", "Matière", "Type d'enseignement", "Jour normalisé", "Horaire normalisé"])
+                df_sessions = (df_mat.groupby(["Matière", "Type d'enseignement"], dropna=False)
+                               .size().rename("Séances / semaine").reset_index())
+                ordre_type = {"COURS": 0, "TD": 1, "TP": 2}
+                df_sessions["_ordre"] = df_sessions["Type d'enseignement"].map(ordre_type)
+                df_sessions = df_sessions.sort_values(["Matière", "_ordre"]).drop(columns="_ordre")
+                st.dataframe(df_sessions, use_container_width=True, hide_index=True)
+                buf_mat = io.BytesIO()
+                with pd.ExcelWriter(buf_mat, engine="openpyxl") as writer:
+                    df_sessions.to_excel(writer, sheet_name="Matieres et seances", index=False)
+                st.download_button("📥 Télécharger matières et séances (Excel)", buf_mat.getvalue(),
+                                   f"Matieres_seances_{re.sub(r'[^A-Za-z0-9_-]', '_', promo_sel)}.xlsx",
+                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                   key="dl_stats_matieres")
+                with st.expander("Voir les lignes EDT prises en compte"):
+                    st.dataframe(df_mat[["Enseignements", "Matière", "Type d'enseignement", "Enseignants", "Jours", "Horaire", "Lieu", "Promotion", "Département"]],
+                                 use_container_width=True, hide_index=True)
+
+        st.caption(
+            f"Sources chargées : EDT = {Path(source_edt_stats).name if source_edt_stats else 'non trouvé'} · "
+            f"Étudiants = {Path(source_etu_stats).name if source_etu_stats else 'non trouvé'} · "
+            f"Personnel = {Path(source_ens_stats).name if source_ens_stats else 'non trouvé'}. "
+            "Les effectifs étudiants proviennent du fichier étudiants (statut « Validée ») ; les charges et séances proviennent des lignes EDT."
+        )
+
     elif portail == "👤 Mon Espace Enseignant":
             # ─────────────────────────────────────────────────────────────
             # 1. IDENTITÉ & INFOS PERSONNELLES
