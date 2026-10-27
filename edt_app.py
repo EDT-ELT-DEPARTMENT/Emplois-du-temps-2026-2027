@@ -6062,7 +6062,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
     
     if is_admin:
         options_portail = [
-            "📖 Emploi du Temps", 
+            "📖 Emploi du Temps",
+            "📊 Statistiques & Données",
             "🎓 Recherche Étudiant"
         ]
     else:
