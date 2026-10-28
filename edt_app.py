@@ -3923,6 +3923,176 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     with tab1:
         st.header("📝 Suivi de l'Assiduité et Compteur d'Absences")
 
+        # ---------------------------------------------------------------------
+        # ADMIN : LISTE GLOBALE DES ÉTUDIANTS SIGNALÉS ABSENTS + EXPORT EXCEL
+        # Les absences sont lues dans Supabase (table suivi_assiduite_2026) si
+        # activé, puis enrichies avec les coordonnées disponibles.
+        # ---------------------------------------------------------------------
+        if is_admin_edt:
+            with st.expander("📋 Liste globale des étudiants signalés absents — consulter et télécharger", expanded=True):
+                st.caption("Cette liste reprend les absences enregistrées par les enseignants. Les coordonnées sont complétées depuis la liste des étudiants et, si disponible, la table Supabase « étudiants_emails ».")
+                absences_admin = []
+                if MODE_SUPABASE:
+                    try:
+                        # Pagination afin de ne pas limiter la liste aux premières lignes.
+                        debut = 0
+                        taille_page = 1000
+                        while True:
+                            rep = supabase.table("suivi_assiduite_2026").select("*").range(debut, debut + taille_page - 1).execute()
+                            page = rep.data or []
+                            absences_admin.extend(page)
+                            if len(page) < taille_page:
+                                break
+                            debut += taille_page
+                    except Exception as e:
+                        st.error(f"Impossible de charger toutes les absences depuis Supabase : {e}")
+                else:
+                    absences_admin = list(st.session_state.get("absences", []))
+
+                if absences_admin:
+                    df_abs_admin = pd.DataFrame(absences_admin)
+                    # Harmonisation des noms de colonnes, sans supposer que toutes
+                    # les versions de la base ont exactement les mêmes champs.
+                    def _cle_nom_abs_admin(valeur):
+                        texte = unicodedata.normalize("NFKD", str(valeur or ""))
+                        texte = "".join(ch for ch in texte if not unicodedata.combining(ch))
+                        return re.sub(r"\s+", " ", texte).strip().casefold()
+
+                    # Table de correspondance issue du fichier maître des étudiants.
+                    df_coord_admin = df_etu.copy() if isinstance(df_etu, pd.DataFrame) else pd.DataFrame()
+                    if not df_coord_admin.empty:
+                        if "Nom_Complet" not in df_coord_admin.columns and col_nom and col_prenom:
+                            df_coord_admin["Nom_Complet"] = df_coord_admin[col_nom].astype(str).str.strip() + " " + df_coord_admin[col_prenom].astype(str).str.strip()
+                        if "Nom_Complet" in df_coord_admin.columns:
+                            df_coord_admin["_cle_nom"] = df_coord_admin["Nom_Complet"].map(_cle_nom_abs_admin)
+
+                    # Les emails enregistrés lors de l'accès étudiant peuvent être
+                    # conservés dans la table dédiée Supabase.
+                    df_emails_admin = pd.DataFrame()
+                    if MODE_SUPABASE:
+                        try:
+                            re_emails = supabase.table("étudiants_emails").select("*").execute()
+                            df_emails_admin = pd.DataFrame(re_emails.data or [])
+                        except Exception:
+                            try:
+                                re_emails = supabase.table("etudiants_emails").select("*").execute()
+                                df_emails_admin = pd.DataFrame(re_emails.data or [])
+                            except Exception:
+                                df_emails_admin = pd.DataFrame()
+
+                    if not df_emails_admin.empty:
+                        nom_email_col = next((c for c in ["nom_complet", "Nom_Complet", "nom_etudiant", "nom"] if c in df_emails_admin.columns), None)
+                        if nom_email_col:
+                            df_emails_admin["_cle_nom"] = df_emails_admin[nom_email_col].map(_cle_nom_abs_admin)
+
+                    # Détection tolérante des colonnes de coordonnées.
+                    def _colonne_coord(df, candidats):
+                        if df.empty:
+                            return None
+                        normalise = {re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", str(c)).encode("ascii", "ignore").decode().lower()): c for c in df.columns}
+                        for candidat in candidats:
+                            cle = re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", candidat).encode("ascii", "ignore").decode().lower())
+                            if cle in normalise:
+                                return normalise[cle]
+                        return None
+
+                    col_email_etu = _colonne_coord(df_coord_admin, ["email", "e-mail", "mail", "courriel", "adresse email"])
+                    col_tel_etu = _colonne_coord(df_coord_admin, ["N° de téléphone", "numero de telephone", "telephone", "téléphone", "tel", "phone", "mobile"])
+                    col_email_db = _colonne_coord(df_emails_admin, ["email", "e-mail", "mail", "courriel"])
+                    col_nom_abs = next((c for c in ["etud_non_eligible", "nom_etudiant", "nom_complet", "etudiant", "étudiant"] if c in df_abs_admin.columns), None)
+
+                    lignes_abs_admin = []
+                    for _, absence in df_abs_admin.iterrows():
+                        nom_abs = str(absence.get(col_nom_abs, "") if col_nom_abs else "").strip()
+                        cle_abs = _cle_nom_abs_admin(nom_abs)
+                        etu_match = pd.DataFrame()
+                        if not df_coord_admin.empty and "_cle_nom" in df_coord_admin.columns:
+                            etu_match = df_coord_admin[df_coord_admin["_cle_nom"] == cle_abs]
+                        email = ""
+                        telephone = ""
+                        promotion_etu = absence.get("promotion", "")
+                        if not etu_match.empty:
+                            etu = etu_match.iloc[0]
+                            if col_email_etu:
+                                email = str(etu.get(col_email_etu, "") or "").strip()
+                            if col_tel_etu:
+                                telephone = str(etu.get(col_tel_etu, "") or "").strip()
+                            if not promotion_etu:
+                                promotion_etu = etu.get("Promotion", etu.get("promotion", ""))
+                        if not email and not df_emails_admin.empty and "_cle_nom" in df_emails_admin.columns:
+                            email_match = df_emails_admin[df_emails_admin["_cle_nom"] == cle_abs]
+                            if not email_match.empty and col_email_db:
+                                email = str(email_match.iloc[-1].get(col_email_db, "") or "").strip()
+                        lignes_abs_admin.append({
+                            "Nom et prénom de l'étudiant": nom_abs,
+                            "Email": email,
+                            "N° de téléphone": telephone,
+                            "Promotion": promotion_etu or "",
+                            "Enseignant ayant signalé l'absence": absence.get("enseignant", absence.get("enseignant_nom", absence.get("professeur", absence.get("charge_matiere", "")))) or "",
+                            "Matière": absence.get("matiere", absence.get("enseignement", "")) or "",
+                            "Date de l'absence": absence.get("date_absence", absence.get("date", "")) or "",
+                            "Jour": absence.get("jour_absence", absence.get("jour", "")) or "",
+                            "Horaire": absence.get("horaire_absence", absence.get("horaire", "")) or "",
+                            "Motif enregistré": absence.get("cause_non_eligibilite", absence.get("motif", "")) or "",
+                            "Justifiée": "Oui" if absence.get("justifie") is True else ("Non" if absence.get("justifie") is False else "À vérifier"),
+                            "ID absence": absence.get("id", "")
+                        })
+
+                    df_liste_abs_admin = pd.DataFrame(lignes_abs_admin)
+                    if not df_liste_abs_admin.empty:
+                        filtres_abs = st.columns(3)
+                        with filtres_abs[0]:
+                            choix_promo_abs = st.selectbox("Filtrer par promotion", ["Toutes"] + sorted([str(x) for x in df_liste_abs_admin["Promotion"].dropna().unique() if str(x).strip()]), key="admin_abs_promo")
+                        with filtres_abs[1]:
+                            choix_matiere_abs = st.selectbox("Filtrer par matière", ["Toutes"] + sorted([str(x) for x in df_liste_abs_admin["Matière"].dropna().unique() if str(x).strip()]), key="admin_abs_matiere")
+                        with filtres_abs[2]:
+                            choix_justif_abs = st.selectbox("Statut du justificatif", ["Tous", "Non", "Oui", "À vérifier"], key="admin_abs_justif")
+                        df_abs_affiche = df_liste_abs_admin.copy()
+                        if choix_promo_abs != "Toutes":
+                            df_abs_affiche = df_abs_affiche[df_abs_affiche["Promotion"].astype(str) == choix_promo_abs]
+                        if choix_matiere_abs != "Toutes":
+                            df_abs_affiche = df_abs_affiche[df_abs_affiche["Matière"].astype(str) == choix_matiere_abs]
+                        if choix_justif_abs != "Tous":
+                            df_abs_affiche = df_abs_affiche[df_abs_affiche["Justifiée"].astype(str) == choix_justif_abs]
+
+                        st.metric("Nombre de signalements affichés", len(df_abs_affiche))
+                        st.dataframe(df_abs_affiche, use_container_width=True, hide_index=True)
+                        excel_abs = io.BytesIO()
+                        try:
+                            with pd.ExcelWriter(excel_abs, engine="openpyxl") as writer:
+                                df_abs_affiche.to_excel(writer, sheet_name="Étudiants absents", index=False)
+                                ws_abs = writer.sheets["Étudiants absents"]
+                                from openpyxl.styles import Font, PatternFill, Alignment
+                                from openpyxl.utils import get_column_letter
+                                entete_abs = PatternFill(fill_type="solid", fgColor="1F4E78")
+                                for cell in ws_abs[1]:
+                                    cell.fill = entete_abs
+                                    cell.font = Font(color="FFFFFF", bold=True)
+                                    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                                for col_idx, nom_col in enumerate(df_abs_affiche.columns, start=1):
+                                    valeurs = [len(str(nom_col))] + [len(str(v)) for v in df_abs_affiche[nom_col].fillna("").head(300)]
+                                    ws_abs.column_dimensions[get_column_letter(col_idx)].width = min(max(max(valeurs, default=12) + 2, 12), 42)
+                                ws_abs.freeze_panes = "A2"
+                                ws_abs.auto_filter.ref = ws_abs.dimensions
+                                ws_abs.row_dimensions[1].height = 32
+                            excel_abs.seek(0)
+                            st.download_button(
+                                "📥 Télécharger la liste des étudiants absents (Excel)",
+                                data=excel_abs.getvalue(),
+                                file_name=f"Liste_etudiants_absents_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key="download_liste_absents_admin"
+                            )
+                            csv_abs = df_abs_affiche.to_csv(index=False, sep=";", encoding="utf-8-sig")
+                            st.download_button("📄 Télécharger aussi en CSV", data=csv_abs, file_name="Liste_etudiants_absents.csv", mime="text/csv", use_container_width=True, key="download_liste_absents_csv_admin")
+                        except Exception as e:
+                            st.error(f"Erreur lors de la préparation du fichier Excel : {e}")
+                    else:
+                        st.info("Aucun signalement d'absence disponible.")
+                else:
+                    st.info("Aucune absence enregistrée dans la source de données actuelle.")
+
         sel_prof = ""
         sel_mat = ""
         promo_c = ""
