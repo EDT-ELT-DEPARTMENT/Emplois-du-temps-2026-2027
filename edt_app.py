@@ -3608,7 +3608,15 @@ def run_Assiduité():
             st.error(f"Erreur envoi email : {e}")
             return False
 
-    def envoyer_notification_absence_étudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause, absences_étudiant=None):
+    # Adresses de supervision utilisées uniquement si l'étudiant n'a pas d'adresse email connue.
+    # Modifiables par l'administrateur selon les besoins du département.
+    EMAILS_NOTIFICATION_ABSENCE_DEFAUT = [
+        "medhadjera4@gmail.com",
+        "nass_ka@yahoo.fr",
+        "chef.department.elt.fge@gmail.com",
+    ]
+
+    def envoyer_notification_absence_étudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause, absences_étudiant=None, notification_admin=False):
         try:
             import smtplib
             from email.mime.text import MIMEText
@@ -3653,11 +3661,11 @@ def run_Assiduité():
 <p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
 </div>
 <div style="background:#fef2f2;border-left:5px solid #ef4444;padding:15px;margin:20px;color:#991b1b;font-weight:600;">
-Vous avez été signalé(e) absent(e) lors d'une séance de cours.
+{"Signalement : l'étudiant " + str(nom_etud) + " a été déclaré absent lors d'une séance de cours." if notification_admin else "Vous avez été signalé(e) absent(e) lors d'une séance de cours."}
 </div>
 <div style="padding:20px 30px;">
-<p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_etud}</strong>,</p>
-<p style="color:#64748b;font-size:14px;">L'enseignant ci-dessous a enregistré votre absence. Voici les details de la séance :</p>
+<p style="color:#334155;margin-bottom:20px;">{"Bonjour, équipe de suivi de l'assiduité," if notification_admin else "Salem " + str(nom_etud) + ","}</p>
+<p style="color:#64748b;font-size:14px;">{"Un enseignant a enregistré l'absence de l'étudiant " + str(nom_etud) + ". Voici les détails de la séance :" if notification_admin else "L'enseignant ci-dessous a enregistré votre absence. Voici les details de la séance :"}</p>
 <table style="width:100%;border-collapse:collapse;margin-top:15px;">
 <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">matiere</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{matiere}</td></tr>
 <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Charge de cours</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{enseignant}</td></tr>
@@ -4458,7 +4466,22 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                             )
                                             st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
                                         else:
-                                            st.caption(f"ℹ️ Email de {etud_non} non trouvé dans la base étudiants.")
+                                            st.warning(f"ℹ️ Aucun email personnel trouvé pour {etud_non}. Envoi de la notification aux adresses de supervision par défaut…")
+                                            notifications_envoyees = []
+                                            for email_defaut in EMAILS_NOTIFICATION_ABSENCE_DEFAUT:
+                                                ok_notification = envoyer_notification_absence_étudiant(
+                                                    email_defaut, etud_non, sel_mat, sel_prof,
+                                                    jour_abs, horaire_abs, str(date_abs),
+                                                    cause_s if cause_s else "Non justifie",
+                                                    get_absences_étudiant(etud_non),
+                                                    notification_admin=True
+                                                )
+                                                if ok_notification:
+                                                    notifications_envoyees.append(email_defaut)
+                                            if notifications_envoyees:
+                                                st.info("📧 Notification de supervision envoyée à : " + ", ".join(notifications_envoyees))
+                                            else:
+                                                st.error("❌ La notification n'a pu être envoyée à aucune adresse de supervision. Vérifiez la configuration SMTP.")
                                         st.success(f"✅ Absence enregistrée pour {etud_non} !")
                                         time.sleep(0.5)
                                         st.rerun()
@@ -4476,7 +4499,22 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                         )
                                         st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
                                     else:
-                                        st.caption(f"ℹ️ Email de {etud_non} non trouvé dans la base étudiants.")
+                                        st.warning(f"ℹ️ Aucun email personnel trouvé pour {etud_non}. Envoi de la notification aux adresses de supervision par défaut…")
+                                        notifications_envoyees = []
+                                        for email_defaut in EMAILS_NOTIFICATION_ABSENCE_DEFAUT:
+                                            ok_notification = envoyer_notification_absence_étudiant(
+                                                email_defaut, etud_non, sel_mat, sel_prof,
+                                                jour_abs, horaire_abs, str(date_abs),
+                                                cause_s if cause_s else "Non justifie",
+                                                get_absences_étudiant(etud_non),
+                                                notification_admin=True
+                                            )
+                                            if ok_notification:
+                                                notifications_envoyees.append(email_defaut)
+                                        if notifications_envoyees:
+                                            st.info("📧 Notification de supervision envoyée à : " + ", ".join(notifications_envoyees))
+                                        else:
+                                            st.error("❌ La notification n'a pu être envoyée à aucune adresse de supervision. Vérifiez la configuration SMTP.")
                                     st.success(f"✅ Absence enregistrée (mode locale) pour {etud_non} !")
                                     time.sleep(0.5)
                                     st.rerun()
