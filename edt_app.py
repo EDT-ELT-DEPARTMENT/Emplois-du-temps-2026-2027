@@ -3951,11 +3951,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 if absences_admin:
                     df_abs_admin = pd.DataFrame(absences_admin)
+                    # Import local explicite : évite un NameError si le fichier
+                    # déployé ne contient pas l'import global de unicodedata.
+                    import unicodedata as _unicodedata_abs_admin
                     # Harmonisation des noms de colonnes, sans supposer que toutes
                     # les versions de la base ont exactement les mêmes champs.
                     def _cle_nom_abs_admin(valeur):
-                        texte = unicodedata.normalize("NFKD", str(valeur or ""))
-                        texte = "".join(ch for ch in texte if not unicodedata.combining(ch))
+                        texte = _unicodedata_abs_admin.normalize("NFKD", str(valeur or ""))
+                        texte = "".join(ch for ch in texte if not _unicodedata_abs_admin.combining(ch))
                         return re.sub(r"\s+", " ", texte).strip().casefold()
 
                     # Table de correspondance issue du fichier maître des étudiants.
@@ -3989,9 +3992,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     def _colonne_coord(df, candidats):
                         if df.empty:
                             return None
-                        normalise = {re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", str(c)).encode("ascii", "ignore").decode().lower()): c for c in df.columns}
+                        normalise = {re.sub(r"[^a-z0-9]", "", _unicodedata_abs_admin.normalize("NFKD", str(c)).encode("ascii", "ignore").decode().lower()): c for c in df.columns}
                         for candidat in candidats:
-                            cle = re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", candidat).encode("ascii", "ignore").decode().lower())
+                            cle = re.sub(r"[^a-z0-9]", "", _unicodedata_abs_admin.normalize("NFKD", candidat).encode("ascii", "ignore").decode().lower())
                             if cle in normalise:
                                 return normalise[cle]
                         return None
