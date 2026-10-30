@@ -3679,10 +3679,10 @@ def run_Assiduité():
 
 <div style="background:#fee2e2;border:1px solid #ef4444;border-radius:8px;padding:15px;margin:20px 0;color:#991b1b;font-size:13px;">
     <strong>⏰ Délais de justification :</strong><br>
-    Vous disposez d'un délai de <strong>48 heures</strong> à compter de la date d'absence pour déposer un justificatif via l'onglet <strong>Justificatifs</strong> de la plateforme. Passé ce délai, l'absence sera considérée comme <strong>définitivement non justifiee</strong>.
+    Vous disposez d'un délai de <strong>72 heures</strong> à compter de la date d'absence pour déposer un justificatif via l'onglet <strong>Justificatifs</strong> de la plateforme. Passé ce délai, l'absence sera considérée comme <strong>définitivement non justifiee</strong>.
 </div>
 
-<p style="color:#64748b;font-size:13px;margin-top:20px;">Accédez à la plateforme pour déposer votre justificatif : onglet <strong>Justificatifs</strong>.</p>
+<p style="color:#64748b;font-size:13px;margin-top:20px;">Accédez à la plateforme (https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app) pour déposer votre justificatif : onglet <strong>Justificatifs</strong>.</p>
 </div>
 <div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
 Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
