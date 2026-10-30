@@ -3661,7 +3661,7 @@ def run_Assiduité():
 <p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
 </div>
 <div style="background:#fef2f2;border-left:5px solid #ef4444;padding:15px;margin:20px;color:#991b1b;font-weight:600;">
-{"Signalement : l'étudiant " + str(nom_etud) + " a été déclaré absent lors d'une séance de cours." if notification_admin else "Vous avez été signalé(e) absent(e) lors d'une séance obligatoire."}
+{"Signalement : l'étudiant " + str(nom_etud) + " a été déclaré absent lors d'une séance obligatoire." if notification_admin else "Vous avez été signalé(e) absent(e) lors d'une séance obligatoire."}
 </div>
 <div style="padding:20px 30px;">
 <p style="color:#334155;margin-bottom:20px;">{"Bonjour, équipe de suivi de l'assiduité," if notification_admin else "Salem " + str(nom_etud) + ","}</p>
