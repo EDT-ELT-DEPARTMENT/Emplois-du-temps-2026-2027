@@ -23487,6 +23487,93 @@ if df is not None:
                 if not tous_lieux_lx:
                     st.warning("⚠️ Aucun lieu exploitable dans les données EDT.")
                 else:
+                    # ============================================================
+                    # NOUVEL OUTIL : RECHERCHE DES LIEUX LIBRES PAR TYPE,
+                    # JOUR ET CRÉNEAU. Les laboratoires TP sont identifiés
+                    # uniquement à partir des lignes dont Enseignements
+                    # commence réellement par « TP- ».
+                    # ============================================================
+                    st.markdown("### 🔎 Rechercher les lieux disponibles")
+                    st.caption(
+                        "Sélectionnez le type de lieu, le jour et l'horaire. "
+                        "La liste affiche uniquement les lieux libres sur ce créneau. "
+                        "Les laboratoires TP sont repérés à partir des enseignements TP-."
+                    )
+
+                    def _type_lieu_dispo(nom_lieu):
+                        nom = str(nom_lieu).strip().upper()
+                        if any(m in nom for m in ("AMPHI", "AMPHITHEATRE", "AMPHITHÉÂTRE")):
+                            return "Amphi"
+                        return "Salle"
+
+                    lieux_tp_source = set()
+                    if "Enseignements" in df.columns and "Lieu" in df.columns:
+                        masque_tp = df["Enseignements"].fillna("").astype(str).str.strip().str.match(
+                            r"^TP\s*-", case=False, na=False
+                        )
+                        for valeur_lieu_tp in df.loc[masque_tp, "Lieu"].dropna().tolist():
+                            lieux_tp_source.update(_lieux_eclater(valeur_lieu_tp))
+
+                    # Les lieux identifiés dans des séances TP sont classés
+                    # comme laboratoires TP, même si leur nom ne contient
+                    # pas explicitement le mot « labo ».
+                    lieux_par_type_lx = {
+                        "Salles": sorted(l for l in tous_lieux_lx
+                                         if _type_lieu_dispo(l) == "Salle" and l not in lieux_tp_source),
+                        "Amphi": sorted(l for l in tous_lieux_lx
+                                        if _type_lieu_dispo(l) == "Amphi"),
+                        "Labo de TP": sorted(l for l in tous_lieux_lx
+                                             if l in lieux_tp_source),
+                    }
+
+                    f_type_lx, f_jour_lx, f_horaire_lx = st.columns([1.2, 1, 1.3])
+                    type_sel_lx = f_type_lx.selectbox(
+                        "🏷️ Type de lieu :", ["Salles", "Amphi", "Labo de TP"],
+                        key="lx_type_lieu_disponibilite"
+                    )
+                    jour_sel_dispo_lx = f_jour_lx.selectbox(
+                        "📅 Jour :", jours_list_lx, key="lx_jour_disponibilite"
+                    )
+                    horaire_sel_dispo_lx = f_horaire_lx.selectbox(
+                        "🕒 Horaire :", horaires_list_lx, key="lx_horaire_disponibilite"
+                    )
+
+                    candidats_type_lx = lieux_par_type_lx.get(type_sel_lx, [])
+                    lieux_disponibles_type_lx = [
+                        lieu for lieu in candidats_type_lx
+                        if (jour_sel_dispo_lx, horaire_sel_dispo_lx, lieu) not in occupes_lx
+                    ]
+                    lieux_occupes_type_lx = [
+                        lieu for lieu in candidats_type_lx
+                        if (jour_sel_dispo_lx, horaire_sel_dispo_lx, lieu) in occupes_lx
+                    ]
+
+                    k1_lx, k2_lx, k3_lx = st.columns(3)
+                    k1_lx.metric("🟢 Lieux libres", len(lieux_disponibles_type_lx))
+                    k2_lx.metric("🔴 Lieux occupés", len(lieux_occupes_type_lx))
+                    k3_lx.metric("📚 Lieux recensés", len(candidats_type_lx))
+                    if type_sel_lx == "Labo de TP":
+                        st.info(
+                            f"Filtrage TP : {len(candidats_type_lx)} lieu(x) identifié(s) "
+                            "uniquement dans les lignes dont l'enseignement commence par TP-."
+                        )
+                    if lieux_disponibles_type_lx:
+                        st.success(
+                            f"{len(lieux_disponibles_type_lx)} lieu(x) disponible(s) "
+                            f"pour **{type_sel_lx}**, le **{jour_sel_dispo_lx}**, "
+                            f"à **{horaire_sel_dispo_lx}**."
+                        )
+                        st.dataframe(
+                            pd.DataFrame({"Lieu disponible": lieux_disponibles_type_lx}),
+                            use_container_width=True, hide_index=True
+                        )
+                    else:
+                        st.warning(
+                            f"Aucun lieu de type « {type_sel_lx} » n'est libre "
+                            f"le {jour_sel_dispo_lx} à {horaire_sel_dispo_lx}."
+                        )
+                    st.markdown("---")
+
                     cible_lx = st.selectbox(
                         "Lieu à analyser (ex. AS10) :",
                         ["📊 Vue globale — tous les lieux"] + tous_lieux_lx,
