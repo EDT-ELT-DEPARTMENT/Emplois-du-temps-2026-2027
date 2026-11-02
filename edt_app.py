@@ -21033,7 +21033,7 @@ Réinitialiser mon mot de passe
         email_verif = st.text_input(
             "📧 Saisissez votre email",
             key="verif_email_insc_v2",
-            placeholder="ex: nom.prenom@univ-sba.dz"
+            placeholder="saisir votre email personnel"
         )
         email_verif_clean = str(email_verif).strip().lower()
         
