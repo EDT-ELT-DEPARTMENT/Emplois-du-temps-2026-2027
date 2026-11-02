@@ -21033,7 +21033,7 @@ Réinitialiser mon mot de passe
         email_verif = st.text_input(
             "📧 Saisissez votre email",
             key="verif_email_insc_v2",
-            placeholder="saisir votre email personnel"
+            placeholder="ex: nom.prenom@univ-sba.dz"
         )
         email_verif_clean = str(email_verif).strip().lower()
         
@@ -24555,11 +24555,17 @@ if df is not None:
                                 nom_key_famille,
                                 repertoire_source.get(nom_key_complet, None)
                             )
+                            # Téléphone issu du fichier source Permanents-Vacataires.
+                            # Recherche par nom de famille puis par nom complet.
+                            telephone_col = repertoire_telephones.get(
+                                nom_key_famille,
+                                repertoire_telephones.get(nom_key_complet, None)
+                            )
         
                             # Badge couleur selon qualité
                             badge_color = "#22c55e" if "PERMANENT" in str(qualite_col).upper() else "#f59e0b"
         
-                            col1, col2, col3 = st.columns([3, 2, 2])
+                            col1, col2, col3, col4 = st.columns([3, 2, 2.5, 2.5])
                             with col1:
                                 st.markdown(f"**{nom_complet_col}**")
                                 st.caption(f"🏷️ {grade_col}")
@@ -24571,6 +24577,12 @@ if df is not None:
                                     st.markdown(f"📧 `{email_col}`")
                                 else:
                                     st.markdown("<span style='color:#94a3b8; font-size:12px;'>📧 Non communiqué</span>", 
+                                               unsafe_allow_html=True)
+                            with col4:
+                                if telephone_col and str(telephone_col).strip() not in {"", "nan", "None", "N/A"}:
+                                    st.markdown(f"📞 `{telephone_col}`")
+                                else:
+                                    st.markdown("<span style='color:#94a3b8; font-size:12px;'>📞 Non renseigné</span>",
                                                unsafe_allow_html=True)
                             st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #f1f5f9;'>", 
                                        unsafe_allow_html=True)
