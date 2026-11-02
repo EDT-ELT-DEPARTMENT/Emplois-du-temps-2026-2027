@@ -14179,16 +14179,45 @@ td{{word-wrap:break-word;}}
             "par un liseré doré."
         )
 
+        # Filtrage supplémentaire par département pour consulter les EDT
+        # de l'établissement département par département.
+        _col_dept_consult = next(
+            (c for c in df.columns if str(c).strip().casefold() in
+             {"département", "departement", "department"}),
+            None
+        )
+        df_consult_dept = df.copy()
+        if _col_dept_consult:
+            _departements_disponibles_consult = sorted([
+                str(v).strip() for v in df[_col_dept_consult].dropna().unique()
+                if str(v).strip() and str(v).strip().casefold() not in {"nan", "non défini", "non defini"}
+            ], key=str.casefold)
+            if _departements_disponibles_consult:
+                departement_recherche_ens = st.selectbox(
+                    "🏛️ Choisir un département :",
+                    ["Tous les départements"] + _departements_disponibles_consult,
+                    key="departement_recherche_ens_toutes"
+                )
+                if departement_recherche_ens != "Tous les départements":
+                    df_consult_dept = df_consult_dept[
+                        df_consult_dept[_col_dept_consult].astype(str).str.strip()
+                        == departement_recherche_ens
+                    ].copy()
+            else:
+                st.info("Aucun département renseigné dans les données EDT.")
+        else:
+            st.warning("La colonne 'Département' est absente du fichier EDT : affichage de toutes les promotions.")
+
         toutes_les_promotions_etab = sorted([
-            p for p in df["Promotion"].dropna().unique()
+            p for p in df_consult_dept["Promotion"].dropna().unique()
             if str(p).strip() and str(p).strip() != "Non défini"
-        ])
+        ], key=lambda x: str(x).casefold())
 
         if not toutes_les_promotions_etab:
-            st.info("ℹ️ Aucune promotion trouvée dans les données.")
+            st.info("ℹ️ Aucune promotion trouvée pour le département sélectionné.")
         else:
             promotion_recherchee_ens = st.selectbox(
-                "🎓 Choisir une promotion (liste complète) :",
+                "🎓 Choisir une promotion (selon le département) :",
                 toutes_les_promotions_etab,
                 key="promotion_recherchee_ens_toutes"
             )
@@ -14233,7 +14262,7 @@ td{{word-wrap:break-word;}}
                 m_num = re.search(r'(\d+)', str(code_rg))
                 return int(m_num.group(1)) if m_num else 0
 
-            _df_promo_options_rg = df[df["Promotion"] == promotion_recherchee_ens]
+            _df_promo_options_rg = df_consult_dept[df_consult_dept["Promotion"] == promotion_recherchee_ens]
             _groupes_dispo_rg = set()
             _sg_dispo_rg = set()
             for _, _lg_rg in _df_promo_options_rg.iterrows():
@@ -14273,7 +14302,7 @@ td{{word-wrap:break-word;}}
                     key=f"sous_groupe_recherche_ens_toutes_{promotion_recherchee_ens}_{groupe_recherche_ens}"
                 )
 
-            df_promo_recherchee = df[df["Promotion"] == promotion_recherchee_ens].copy()
+            df_promo_recherchee = df_consult_dept[df_consult_dept["Promotion"] == promotion_recherchee_ens].copy()
             df_promo_recherchee['Type'] = df_promo_recherchee['Code'].apply(
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
