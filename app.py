@@ -4167,13 +4167,21 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 else:
                     noms_e = sorted(df_etudiants_selection["Nom_Complet"].dropna().astype(str).unique().tolist())
 
-                st.info(f"🎓 **{nb_etudiants_promo}** étudiants dans la promotion concernée")
                 if type_matiere_abs in {"TD", "TP"}:
-                    st.metric(
-                        f"Effectif du {('groupe ' + groupe_matiere_abs) if type_matiere_abs == 'TD' and groupe_matiere_abs else 'sous-groupe ' + ', '.join(sorted(sous_groupes_matiere_abs)) if sous_groupes_matiere_abs else 'groupe/sous-groupe sélectionné'}",
-                        len(noms_e)
-                    )
+                    col_metric_promo, col_metric_cible = st.columns(2)
+                    with col_metric_promo:
+                        st.metric("🎓 Effectif total de la promotion", nb_etudiants_promo)
+                    with col_metric_cible:
+                        libelle_effectif = (
+                            f"👥 Effectif du groupe {groupe_matiere_abs}"
+                            if type_matiere_abs == "TD" and groupe_matiere_abs
+                            else "🔹 Effectif du sous-groupe " + ", ".join(sorted(sous_groupes_matiere_abs))
+                        )
+                        st.metric(libelle_effectif, len(noms_e))
+                    if filtre_groupe_applique:
+                        st.caption(f"La liste de signalement ci-dessous est limitée à {len(noms_e)} étudiant(s) de cette sélection.")
                 else:
+                    st.info(f"🎓 **{nb_etudiants_promo}** étudiants dans la promotion concernée")
                     st.caption(f"Effectif concerné par cette matière : {len(noms_e)} étudiant(s).")
 
                 if MODE_SUPABASE:
@@ -4198,9 +4206,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 with cn1:
                     etud_non = st.selectbox(
                         "👤 Étudiant ou type d'absence :",
-                        ["", "👥 ABSENCE COLLECTIVE — tous les étudiants"] + noms_e,
+                        ["", "👥 ABSENCE COLLECTIVE — tous les étudiants du groupe sélectionné"] + noms_e,
                         key="ne_et_t1",
-                        help="Choisissez l'absence collective pour enregistrer la même absence pour tous les étudiants de la promotion concernée."
+                        help="Pour un TD/TP, l'absence collective concerne uniquement les étudiants du groupe/sous-groupe sélectionné. Pour un cours commun, elle concerne les étudiants de la promotion."
                     )
                     absence_collective = etud_non == "👥 ABSENCE COLLECTIVE — tous les étudiants"
                     if etud_non and not absence_collective and col_mat_bac:
@@ -4210,8 +4218,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             st.markdown(f"<div style='background:linear-gradient(90deg,#1E3A8A,#3B82F6);color:white;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:600;text-align:center;margin-top:4px;'>🎓 Mat. BAC : {mat_bac_str}</div>", unsafe_allow_html=True)
                 with cn2:
                     status_assid = st.selectbox("📊 Statut :", ["", "Absent"], key="status_t1")
-                with cn3:
-                    cause_s = st.selectbox("❓ Motif :", CAUSES_ABSENCES, key="cause_t1")
+                # Le motif n'est plus demandé à la saisie. On conserve une valeur
+                # par défaut pour la compatibilité avec les anciennes colonnes Supabase.
+                cause_s = "Non justifiee"
 
                 c_d1, c_d2, c_d3 = st.columns(3)
                 with c_d1:
@@ -4223,7 +4232,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 if absence_collective:
                     st.warning(
-                        f"👥 **Absence collective sélectionnée** : l'absence sera enregistrée pour les **{len(noms_e)}** étudiant(s) de la/des promotion(s) concernée(s)."
+                        f"👥 **Absence collective sélectionnée** : l'absence sera enregistrée pour les **{len(noms_e)}** étudiant(s) correspondant à la sélection pédagogique."
                     )
 
                 # ─── COMPTEUR NUMÉRIQUE D'ABSENCES ───
