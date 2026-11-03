@@ -4124,7 +4124,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     }
 
                 def _norm_nom_col_abs(nom):
-                    s = unicodedata.normalize("NFKD", str(nom).strip().lower()).encode("ASCII", "ignore").decode("ASCII")
+                    import unicodedata as _unicodedata_abs  # import local : le module n'est pas global dans cette fonction
+                    s = _unicodedata_abs.normalize("NFKD", str(nom).strip().lower()).encode("ASCII", "ignore").decode("ASCII")
                     return re.sub(r"[\s_\-./]", "", s)
 
                 def _trouver_col_abs(df, noms_acceptes):
