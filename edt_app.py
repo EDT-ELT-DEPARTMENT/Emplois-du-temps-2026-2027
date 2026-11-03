@@ -2929,82 +2929,26 @@ def _lieux_creneau_key(txt):
 
 
 def _lieux_horaires_dynamiques(df, horaires_reference):
-    """Liste des créneaux horaires à utiliser pour la correspondance
-    « Lieux Non Occupés », déterminée de façon FLEXIBLE à partir de la
-    colonne « Horaire » du fichier source Data (donc selon les EDT déjà
-    générés pour TOUTES les promotions).
-
-    Cohérente avec _lieux_occups (correspondance par CHEVAUCHEMENT
-    HORAIRE REEL, pas par égalité stricte de libellé) :
-      - un horaire de la liste de référence n'est conservé que s'il est
-        réellement utilisé, OU CHEVAUCHÉ dans le temps par au moins une
-        séance des données sources (sinon c'est un créneau « fantôme »
-        toujours vide, donc toujours compté comme libre pour tous les
-        lieux, ce qui fausse le comptage) ;
-      - un horaire présent dans les données dont la plage horaire ne
-        chevauche AUCUN horaire de référence (un créneau réellement
-        nouveau, par ex. un cours du soir) est ajouté automatiquement.
-    Résultat trié chronologiquement (heure de début)."""
+    """Retourne tous les horaires distincts réellement présents dans la
+    colonne Horaire, y compris les créneaux d'une heure et les formats
+    inhabituels. Les libellés source sont conservés tels quels et triés
+    chronologiquement lorsque leur intervalle est analysable."""
     if df is None or not hasattr(df, "columns") or "Horaire" not in df.columns:
         return list(horaires_reference)
 
-    bornes_ref = {h: _lieux_parse_intervalle(h) for h in horaires_reference}
-    normes_ref = {_lieux_norm_creneau(h): h for h in horaires_reference}
-
-    valeurs_reelles = []
-    for v in df["Horaire"].dropna().unique():
-        v_norm = _lieux_norm_creneau(v)
-        if v_norm == "vide":
+    valeurs = []
+    vus = set()
+    for valeur in df["Horaire"].dropna().tolist():
+        brut = str(valeur).strip()
+        cle = _lieux_norm_creneau(brut)
+        if not brut or cle == "vide" or cle in vus:
             continue
-        d_v, f_v = _lieux_parse_intervalle(v)
-        valeurs_reelles.append((v_norm, str(v).strip(), d_v, f_v))
+        vus.add(cle)
+        valeurs.append(brut)
 
-    if not valeurs_reelles:
+    if not valeurs:
         return list(horaires_reference)
-
-    def _chevauche_ref(d_v, f_v, d_ref, f_ref):
-        if None in (d_v, f_v, d_ref, f_ref):
-            return False
-        return d_v < f_ref and d_ref < f_v
-
-    # 1) Créneaux de référence réellement utilisés (libellé identique)
-    #    ou chevauchés (plage horaire différente mais qui se recoupe)
-    #    par au moins une séance des données sources.
-    conserves = []
-    for h in horaires_reference:
-        v_norm_h = _lieux_norm_creneau(h)
-        d_h, f_h = bornes_ref[h]
-        utilise = any(
-            v_norm == v_norm_h or _chevauche_ref(d_v, f_v, d_h, f_h)
-            for (v_norm, v_brut, d_v, f_v) in valeurs_reelles
-        )
-        if utilise:
-            conserves.append(h)
-
-    # 2) Horaires réellement présents dans les données mais dont la
-    #    plage horaire ne chevauche AUCUN créneau de référence : ce
-    #    sont de véritables nouveaux créneaux, à ajouter tels quels.
-    for (v_norm, v_brut, d_v, f_v) in valeurs_reelles:
-        if v_norm in normes_ref:
-            continue
-        if d_v is None:
-            # Libellé non parsable : ajouté par précaution (repli), pour
-            # ne perdre aucune occupation potentielle.
-            if v_brut not in conserves:
-                conserves.append(v_brut)
-            continue
-        chevauche_qqch = any(
-            _chevauche_ref(d_v, f_v, bornes_ref[h][0], bornes_ref[h][1])
-            for h in horaires_reference
-        )
-        if not chevauche_qqch and v_brut not in conserves:
-            conserves.append(v_brut)
-
-    if not conserves:
-        return list(horaires_reference)
-
-    return sorted(set(conserves), key=_lieux_creneau_key)
-
+    return sorted(valeurs, key=_lieux_creneau_key)
 
 
 def _lieux_jours_dynamiques(df, jours_reference):
@@ -11053,20 +10997,32 @@ td{{word-wrap:break-word;}}
                     key="lieu_chevauchement_admin"
                 )
 
-                df_lieu_chev = df[df["Lieu"] == lieu_chevauchement].copy()
-                df_lieu_chev['h_norm'] = df_lieu_chev['Horaire'].apply(normalize)
-                df_lieu_chev['j_norm'] = df_lieu_chev['Jours'].apply(normalize)
+                df_lieu_chev = df[df["Lieu"].astype(str).str.strip() == str(lieu_chevauchement).strip()].copy()
+                horaires_chev_list = _lieux_horaires_dynamiques(df_lieu_chev, horaires_list)
+                jours_chev_list = _lieux_jours_dynamiques(df_lieu_chev, jours_list)
 
-                # Regroupement de toutes les séances de ce lieu par
-                # cellule (Jour, Horaire) — tous enseignants et promotions
-                # confondus.
+                # Une cellule reçoit toutes les séances du même jour dont
+                # l'intervalle réel recouvre le créneau affiché. Ainsi, un
+                # créneau source d'une heure est traité comme les autres.
                 cellules_chev = {}
-                for (j_n, h_n), groupe in df_lieu_chev.groupby(['j_norm', 'h_norm']):
-                    j_aff = map_j.get(j_n)
-                    h_aff = map_h.get(h_n)
-                    if j_aff is None or h_aff is None:
-                        continue
-                    cellules_chev[(j_aff, h_aff)] = groupe
+                for jour_aff in jours_chev_list:
+                    jour_norm = _lieux_norm_creneau(jour_aff)
+                    lignes_jour = df_lieu_chev[
+                        df_lieu_chev["Jours"].map(_lieux_norm_creneau) == jour_norm
+                    ]
+                    for horaire_aff in horaires_chev_list:
+                        debut_c, fin_c = _lieux_parse_intervalle(horaire_aff)
+                        selection = []
+                        for idx_ligne, ligne in lignes_jour.iterrows():
+                            debut_s, fin_s = _lieux_parse_intervalle(ligne.get("Horaire", ""))
+                            if None not in (debut_c, fin_c, debut_s, fin_s):
+                                touche = debut_s < fin_c and debut_c < fin_s
+                            else:
+                                touche = _lieux_norm_creneau(ligne.get("Horaire", "")) == _lieux_norm_creneau(horaire_aff)
+                            if touche:
+                                selection.append(idx_ligne)
+                        if selection:
+                            cellules_chev[(jour_aff, horaire_aff)] = df_lieu_chev.loc[selection].copy()
 
                 def _nature_chev(code):
                     """Nature normalisée d'une séance (COURS / TD / TP / AUTRE)."""
@@ -11196,7 +11152,7 @@ td{{word-wrap:break-word;}}
                     "<tr><th style='background:#1E3A8A;color:white;padding:8px;"
                     "width:110px;'>JOUR \\ HORAIRE</th>"
                 )
-                for h in horaires_list:
+                for h in horaires_chev_list:
                     thead_chev += (
                         f"<th style='background:#1E3A8A;color:white;padding:8px;"
                         f"font-size:11px;'>{h}</th>"
@@ -11204,12 +11160,12 @@ td{{word-wrap:break-word;}}
                 thead_chev += "</tr>"
 
                 tbody_chev = ""
-                for j in jours_list:
+                for j in jours_chev_list:
                     tbody_chev += (
                         f"<tr><td style='background:#f1f5f9;font-weight:bold;"
                         f"text-align:center;padding:8px;'>{j}</td>"
                     )
-                    for h in horaires_list:
+                    for h in horaires_chev_list:
                         groupe = cellules_chev.get((j, h))
                         if groupe is None or groupe.empty:
                             tbody_chev += (
@@ -11585,9 +11541,9 @@ td{{word-wrap:break-word;}}
                 buf_xl_chev = io.BytesIO()
                 with pd.ExcelWriter(buf_xl_chev, engine='xlsxwriter') as writer:
                     data_excel_chev = []
-                    for j in jours_list:
+                    for j in jours_chev_list:
                         ligne = {"JOUR": j}
-                        for h in horaires_list:
+                        for h in horaires_chev_list:
                             groupe = cellules_chev.get((j, h))
                             ligne[h] = _contenu_cellule_texte_chev(groupe)
                         data_excel_chev.append(ligne)
