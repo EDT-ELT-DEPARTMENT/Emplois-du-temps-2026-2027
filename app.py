@@ -4117,23 +4117,36 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 m_tp_abs = re.match(r"^\s*TP\s*[-:]", matiere_abs_upper)
                 if m_td_abs:
                     type_matiere_abs = "TD"
-                    m_groupe_abs = re.search(r"(?:^|[-_\s])G\s*[-_ ]?(\d+)\s*$", matiere_abs_upper)
+                    m_groupe_abs = re.search(r"(?:^|[-_\s(])G\s*[-_ ]?(\d+)\s*\)?\s*$", matiere_abs_upper)
                     if m_groupe_abs:
-                        groupe_matiere_abs = f"G{m_groupe_abs.group(1)}"
+                        groupe_matiere_abs = f"G{int(m_groupe_abs.group(1))}"
                 elif m_tp_abs:
                     type_matiere_abs = "TP"
                     sous_groupes_matiere_abs = {
-                        f"SG{n}" for n in re.findall(r"SG\s*[-_ ]?(\d+)", matiere_abs_upper)
+                        f"SG{int(n)}" for n in re.findall(r"SG\s*[-_ ]?(\d+)", matiere_abs_upper)
                     }
 
                 def _normaliser_code_groupe_abs(valeur, prefixe):
+                    """G2 / Groupe 2 / G02 / 2 -> « G2 » ; SG11 / SG 11 / G2-SG11 / 11 -> « SG11 »."""
                     if pd.isna(valeur):
                         return ""
                     texte = str(valeur).strip().upper()
                     if not texte or texte in {"NAN", "NONE", "NON DÉFINI", "NON DEFINI", "N/A"}:
                         return ""
-                    trouve = re.search(r"(\d+)", texte)
-                    return f"{prefixe}{trouve.group(1)}" if trouve else (texte if texte.startswith(prefixe) else "")
+                    if prefixe == "SG":
+                        trouve = re.search(r"SG\s*[-_ .]?\s*(\d+)", texte) or re.search(r"(\d+)", texte)
+                    else:
+                        trouve = (re.search(r"(?<![A-Z])G(?:ROUPE|RP)?\s*[-_ .]?\s*(\d+)", texte)
+                                  or re.search(r"(\d+)", texte))
+                    return f"{prefixe}{int(trouve.group(1))}" if trouve else ""
+
+                def _repartition_effectifs_abs(df_source, colonne, prefixe):
+                    """Effectif de chaque groupe (G1, G2…) ou sous-groupe (SG1, SG2…) de la promotion."""
+                    if not colonne or df_source.empty:
+                        return {}
+                    codes = df_source[colonne].map(lambda v: _normaliser_code_groupe_abs(v, prefixe))
+                    comptes = codes[codes != ""].value_counts()
+                    return dict(sorted(comptes.items(), key=lambda kv: int(re.sub(r"\D", "", kv[0]) or 0)))
 
                 colonnes_groupes_abs = detecter_colonnes_etudiant(df_etudiants_promo)
                 col_groupe_abs = colonnes_groupes_abs.get("groupe")
@@ -4168,16 +4181,32 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     noms_e = sorted(df_etudiants_selection["Nom_Complet"].dropna().astype(str).unique().tolist())
 
                 if type_matiere_abs in {"TD", "TP"}:
+                    est_td_abs = type_matiere_abs == "TD"
+                    codes_cibles_abs = ({groupe_matiere_abs} if (est_td_abs and groupe_matiere_abs)
+                                        else set(sous_groupes_matiere_abs))
+                    repartition_abs = _repartition_effectifs_abs(
+                        df_etudiants_promo,
+                        col_groupe_abs if est_td_abs else col_sous_groupe_abs,
+                        "G" if est_td_abs else "SG",
+                    )
                     col_metric_promo, col_metric_cible = st.columns(2)
                     with col_metric_promo:
                         st.metric("🎓 Effectif total de la promotion", nb_etudiants_promo)
                     with col_metric_cible:
-                        libelle_effectif = (
-                            f"👥 Effectif du groupe {groupe_matiere_abs}"
-                            if type_matiere_abs == "TD" and groupe_matiere_abs
-                            else "🔹 Effectif du sous-groupe " + ", ".join(sorted(sous_groupes_matiere_abs))
-                        )
+                        if codes_cibles_abs:
+                            libelle_effectif = (("👥 Effectif du groupe " if est_td_abs else "🔹 Effectif du sous-groupe ")
+                                                + ", ".join(sorted(codes_cibles_abs)))
+                        else:
+                            libelle_effectif = ("👥 Effectif du groupe (non détecté)" if est_td_abs
+                                                else "🔹 Effectif du sous-groupe (non détecté)")
                         st.metric(libelle_effectif, len(noms_e))
+                    if repartition_abs:
+                        titre_repartition = "Répartition par groupe de TD" if est_td_abs else "Répartition par sous-groupe de TP"
+                        morceaux_repartition = [
+                            f"**{code} : {nb} ◀**" if code in codes_cibles_abs else f"{code} : {nb}"
+                            for code, nb in repartition_abs.items()
+                        ]
+                        st.caption(f"📊 {titre_repartition} (promotion entière) — " + " · ".join(morceaux_repartition))
                     if filtre_groupe_applique:
                         st.caption(f"La liste de signalement ci-dessous est limitée à {len(noms_e)} étudiant(s) de cette sélection.")
                 else:
@@ -4205,7 +4234,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 cn1, cn2, cn3 = st.columns(3)
                 with cn1:
                     etud_non = st.selectbox(
-                        "👤 Étudiant ou type d'absence :",
+                        f"👤 Étudiant ou type d'absence ({len(noms_e)} étudiant(s) dans cette sélection) :",
                         ["", "👥 ABSENCE COLLECTIVE — tous les étudiants du groupe sélectionné"] + noms_e,
                         key="ne_et_t1",
                         help="Pour un TD/TP, l'absence collective concerne uniquement les étudiants du groupe/sous-groupe sélectionné. Pour un cours commun, elle concerne les étudiants de la promotion."
