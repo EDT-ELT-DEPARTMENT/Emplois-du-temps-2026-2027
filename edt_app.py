@@ -4101,11 +4101,123 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         st.warning("⚠️ Aucune promotion trouvée pour cette matière.")
                         promo_c = ""
         
-        # ✨ MODIFICATION: Utiliser df_etudiants_tous au lieu de filtrer par une seule promotion
+        # Filtrage pédagogique : un TD ne concerne que SON groupe (TD-...-G2), un TP que SON sous-groupe (TP-...-SG11).
         if sel_mat and promo_c:
             if not df_etudiants_tous.empty:
-                noms_e = sorted(df_etudiants_tous["Nom_Complet"].tolist())
-                st.info(f"📍 **{len(noms_e)}** étudiants total(es) des promotion(s) concernée(s)")
+                df_etudiants_promo = df_etudiants_tous.copy()
+                nb_etudiants_promo = len(df_etudiants_promo)
+                df_etudiants_selection = df_etudiants_promo.copy()
+                type_matiere_abs = "AUTRE"
+                groupe_matiere_abs = None
+                sous_groupes_matiere_abs = set()
+                matiere_abs_upper = str(sel_mat).strip().upper()
+
+                if re.match(r"^\s*TD\s*[-:]", matiere_abs_upper):
+                    type_matiere_abs = "TD"
+                    m_groupe_abs = re.search(r"(?:^|[-_\s(])G\s*[-_ ]?(\d+)\s*\)?\s*$", matiere_abs_upper)
+                    if m_groupe_abs:
+                        groupe_matiere_abs = f"G{int(m_groupe_abs.group(1))}"
+                elif re.match(r"^\s*TP\s*[-:]", matiere_abs_upper):
+                    type_matiere_abs = "TP"
+                    sous_groupes_matiere_abs = {
+                        f"SG{int(n)}" for n in re.findall(r"SG\s*[-_ ]?(\d+)", matiere_abs_upper)
+                    }
+
+                def _norm_nom_col_abs(nom):
+                    s = unicodedata.normalize("NFKD", str(nom).strip().lower()).encode("ASCII", "ignore").decode("ASCII")
+                    return re.sub(r"[\s_\-./]", "", s)
+
+                def _trouver_col_abs(df, noms_acceptes):
+                    for c in df.columns:
+                        if _norm_nom_col_abs(c) in noms_acceptes:
+                            return c
+                    return None
+
+                def _normaliser_code_groupe_abs(valeur, prefixe):
+                    """G2 / Groupe 2 / G02 / 2 -> « G2 » ; SG11 / SG 11 / G2-SG11 / 11 -> « SG11 »."""
+                    if pd.isna(valeur):
+                        return ""
+                    texte = str(valeur).strip().upper()
+                    if not texte or texte in {"NAN", "NONE", "NON DÉFINI", "NON DEFINI", "N/A"}:
+                        return ""
+                    if prefixe == "SG":
+                        trouve = re.search(r"SG\s*[-_ .]?\s*(\d+)", texte) or re.search(r"(\d+)", texte)
+                    else:
+                        trouve = (re.search(r"(?<![A-Z])G(?:ROUPE|RP)?\s*[-_ .]?\s*(\d+)", texte)
+                                  or re.search(r"(\d+)", texte))
+                    return f"{prefixe}{int(trouve.group(1))}" if trouve else ""
+
+                def _repartition_effectifs_abs(df_source, colonne, prefixe):
+                    """Effectif de chaque groupe (G1, G2…) ou sous-groupe (SG1, SG2…) de la promotion."""
+                    if not colonne or df_source.empty:
+                        return {}
+                    codes = df_source[colonne].map(lambda v: _normaliser_code_groupe_abs(v, prefixe))
+                    comptes = codes[codes != ""].value_counts()
+                    return dict(sorted(comptes.items(), key=lambda kv: int(re.sub(r"\D", "", kv[0]) or 0)))
+
+                col_groupe_abs = _trouver_col_abs(df_etudiants_promo, {"groupe", "grp", "group"})
+                col_sous_groupe_abs = _trouver_col_abs(df_etudiants_promo, {"sousgroupe", "sousgrp", "sg", "subgroup"})
+                filtre_groupe_applique = False
+
+                if type_matiere_abs == "TD" and groupe_matiere_abs:
+                    if col_groupe_abs:
+                        masque_groupe_abs = df_etudiants_promo[col_groupe_abs].map(
+                            lambda v: _normaliser_code_groupe_abs(v, "G") == groupe_matiere_abs
+                        )
+                        df_etudiants_selection = df_etudiants_promo[masque_groupe_abs].copy()
+                        filtre_groupe_applique = True
+                        st.info(f"👥 Matière TD du groupe **{groupe_matiere_abs}**")
+                    else:
+                        st.error("La colonne Groupe est introuvable dans le fichier des étudiants : impossible de filtrer correctement cette matière TD.")
+                elif type_matiere_abs == "TP" and sous_groupes_matiere_abs:
+                    if col_sous_groupe_abs:
+                        masque_sg_abs = df_etudiants_promo[col_sous_groupe_abs].map(
+                            lambda v: _normaliser_code_groupe_abs(v, "SG") in sous_groupes_matiere_abs
+                        )
+                        df_etudiants_selection = df_etudiants_promo[masque_sg_abs].copy()
+                        filtre_groupe_applique = True
+                        st.info("🔹 Matière TP — sous-groupe(s) : **" + ", ".join(sorted(sous_groupes_matiere_abs)) + "**")
+                    else:
+                        st.error("La colonne Sous groupe est introuvable dans le fichier des étudiants : impossible de filtrer correctement cette matière TP.")
+
+                if type_matiere_abs in {"TD", "TP"} and not filtre_groupe_applique:
+                    noms_e = []
+                    st.warning("La sélection des étudiants est bloquée pour éviter de signaler une absence à toute la promotion par erreur "
+                               "(groupe / sous-groupe non reconnu dans le nom de la matière ou colonne absente du fichier).")
+                else:
+                    noms_e = sorted(df_etudiants_selection["Nom_Complet"].dropna().astype(str).unique().tolist())
+
+                if type_matiere_abs in {"TD", "TP"}:
+                    est_td_abs = type_matiere_abs == "TD"
+                    codes_cibles_abs = ({groupe_matiere_abs} if (est_td_abs and groupe_matiere_abs)
+                                        else set(sous_groupes_matiere_abs))
+                    repartition_abs = _repartition_effectifs_abs(
+                        df_etudiants_promo,
+                        col_groupe_abs if est_td_abs else col_sous_groupe_abs,
+                        "G" if est_td_abs else "SG",
+                    )
+                    col_metric_promo, col_metric_cible = st.columns(2)
+                    with col_metric_promo:
+                        st.metric("🎓 Effectif total de la promotion", nb_etudiants_promo)
+                    with col_metric_cible:
+                        if codes_cibles_abs:
+                            libelle_effectif = (("👥 Effectif du groupe " if est_td_abs else "🔹 Effectif du sous-groupe ")
+                                                + ", ".join(sorted(codes_cibles_abs)))
+                        else:
+                            libelle_effectif = ("👥 Effectif du groupe (non détecté)" if est_td_abs
+                                                else "🔹 Effectif du sous-groupe (non détecté)")
+                        st.metric(libelle_effectif, len(noms_e))
+                    if repartition_abs:
+                        titre_repartition = "Répartition par groupe de TD" if est_td_abs else "Répartition par sous-groupe de TP"
+                        morceaux_repartition = [
+                            f"**{code} : {nb} ◀**" if code in codes_cibles_abs else f"{code} : {nb}"
+                            for code, nb in repartition_abs.items()
+                        ]
+                        st.caption(f"📊 {titre_repartition} (promotion entière) — " + " · ".join(morceaux_repartition))
+                    if filtre_groupe_applique:
+                        st.caption(f"La liste de signalement ci-dessous est limitée à {len(noms_e)} étudiant(s) de cette sélection.")
+                else:
+                    st.info(f"📍 **{len(noms_e)}** étudiants total(es) des promotion(s) concernée(s)")
 
                 if MODE_SUPABASE:
                     absences_filtrees = charger_absences_supabase(sel_mat, promo_c)
@@ -4128,14 +4240,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 cn1, cn2, cn3 = st.columns(3)
                 with cn1:
                     etud_non = st.selectbox(
-                        "👤 Étudiant ou type d'absence :",
+                        f"👤 Étudiant ou type d'absence ({len(noms_e)} étudiant(s) dans cette sélection) :",
                         ["", "👥 ABSENCE COLLECTIVE — tous les étudiants"] + noms_e,
                         key="ne_et_t1",
-                        help="Choisissez l'absence collective pour enregistrer la même absence pour tous les étudiants de la promotion concernée."
+                        help="Pour un TD/TP, l'absence collective concerne uniquement les étudiants du groupe/sous-groupe sélectionné. Pour un cours, elle concerne les étudiants de la promotion."
                     )
                     absence_collective = etud_non == "👥 ABSENCE COLLECTIVE — tous les étudiants"
                     if etud_non and not absence_collective and col_mat_bac:
-                        mat_bac_val = df_etudiants_tous[df_etudiants_tous["Nom_Complet"] == etud_non][col_mat_bac]
+                        mat_bac_val = df_etudiants_selection[df_etudiants_selection["Nom_Complet"] == etud_non][col_mat_bac]
                         if not mat_bac_val.empty:
                             mat_bac_str = str(mat_bac_val.iloc[0])
                             st.markdown(f"<div style='background:linear-gradient(90deg,#1E3A8A,#3B82F6);color:white;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:600;text-align:center;margin-top:4px;'>🎓 Mat. BAC : {mat_bac_str}</div>", unsafe_allow_html=True)
@@ -4154,7 +4266,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                 if absence_collective:
                     st.warning(
-                        f"👥 **Absence collective sélectionnée** : l'absence sera enregistrée pour les **{len(noms_e)}** étudiant(s) de la/des promotion(s) concernée(s)."
+                        f"👥 **Absence collective sélectionnée** : l'absence sera enregistrée pour les **{len(noms_e)}** étudiant(s) de la sélection (groupe / sous-groupe pour un TD / TP, promotion pour un cours)."
                     )
 
                 # ─── COMPTEUR NUMÉRIQUE D'ABSENCES ───
