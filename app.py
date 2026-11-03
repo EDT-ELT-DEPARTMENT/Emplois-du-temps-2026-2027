@@ -4210,7 +4210,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         key="ne_et_t1",
                         help="Pour un TD/TP, l'absence collective concerne uniquement les étudiants du groupe/sous-groupe sélectionné. Pour un cours commun, elle concerne les étudiants de la promotion."
                     )
-                    absence_collective = etud_non == "👥 ABSENCE COLLECTIVE — tous les étudiants"
+                    absence_collective = etud_non == "👥 ABSENCE COLLECTIVE — tous les étudiants du groupe sélectionné"
                     if etud_non and not absence_collective and col_mat_bac:
                         mat_bac_val = df_etudiants_selection[df_etudiants_selection["Nom_Complet"] == etud_non][col_mat_bac]
                         if not mat_bac_val.empty:
