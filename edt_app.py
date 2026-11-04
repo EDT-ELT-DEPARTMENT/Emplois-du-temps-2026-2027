@@ -3828,34 +3828,90 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         st.markdown("<h3 style='text-align:center;color:#1E3A8A;'>🔐 Portail Étudiant</h3>", unsafe_allow_html=True)
         st.info("Accédez à votre espace pour consulter vos absences et déposer des justificatifs.")
 
-        mat_bac_input = st.text_input("🎓 Numéro de Matricule BAC :", key="mat_bac_auth", placeholder="Ex: 12345678")
+        # L'identifiant du portail est désormais le matricule étudiant du fichier source,
+        # et non le matricule BAC qui peut être partagé par plusieurs étudiants.
+        def _normaliser_matricule_portail(valeur):
+            if valeur is None or pd.isna(valeur):
+                return ""
+            texte = str(valeur).strip().upper()
+            # Corrige les valeurs numériques Excel telles que 123456.0 sans
+            # supprimer les éventuels zéros initiaux d'une chaîne texte.
+            if re.fullmatch(r"\d+\.0+", texte):
+                texte = texte.split(".", 1)[0]
+            return re.sub(r"[\s\-]+", "", texte)
 
-        if mat_bac_input:
-            mat_bac_clean = str(mat_bac_input).strip().upper().replace(" ", "").replace("-", "")
+        mat_etud_input = st.text_input(
+            "🎓 Mat. Etudiant :",
+            key="mat_etud_auth",
+            placeholder="Saisissez votre matricule étudiant"
+        )
+
+        if mat_etud_input:
+            mat_etud_clean = _normaliser_matricule_portail(mat_etud_input)
             df_match = pd.DataFrame()
-            col_mat_bac = None
-            for c in df_etu.columns:
-                c_up = str(c).strip().upper().replace('.', '').replace(' ', '').replace('_', '').replace('-', '')
-                if "MAT" in c_up and "BAC" in c_up:
-                    col_mat_bac = c
-                    break
 
-            if col_mat_bac:
-                mask_mat = df_etu[col_mat_bac].astype(str).str.strip().str.upper().str.replace(' ', '').str.replace('-', '') == mat_bac_clean
-                df_match = df_etu[mask_mat]
+            # Priorité à l'en-tête source « Mat. Etudiant » (ou équivalent exact).
+            def _normaliser_entete_mat_portail(valeur):
+                # Import local pour garantir la disponibilité de unicodedata
+                # même si les imports globaux du fichier sont réorganisés.
+                import unicodedata
+                texte = unicodedata.normalize("NFKD", str(valeur or ""))
+                texte = "".join(ch for ch in texte if not unicodedata.combining(ch))
+                return re.sub(r"[^a-z0-9]", "", texte.casefold())
+
+            alias_mat_etud = {
+                "matetudiant", "matriculeetudiant", "numeretudiant",
+                "numeroetudiant", "numetudiant", "netudiant", "matetud",
+                "codeetudiant"
+            }
+            col_mat_etud = next(
+                (c for c in df_etu.columns if _normaliser_entete_mat_portail(c) in alias_mat_etud),
+                None
+            )
+            if col_mat_etud is None:
+                try:
+                    col_mat_etud = detecter_colonnes_etudiant(df_etu).get("mat_etud")
+                except Exception:
+                    col_mat_etud = None
+
+            if col_mat_etud and col_mat_etud in df_etu.columns:
+                valeurs_mat = df_etu[col_mat_etud].map(_normaliser_matricule_portail)
+                df_match = df_etu.loc[valeurs_mat.eq(mat_etud_clean)].copy()
             else:
-                for c in df_etu.columns:
-                    vals = df_etu[c].astype(str).str.strip().str.upper().str.replace(' ', '').str.replace('-', '')
-                    if vals.eq(mat_bac_clean).any():
-                        df_match = df_etu[vals == mat_bac_clean]
-                        break
+                st.error(
+                    "❌ La colonne « Mat. Etudiant » est introuvable dans le fichier source "
+                    "des étudiants. Vérifiez l'intitulé de cette colonne."
+                )
 
             if not df_match.empty:
-                etud_nom = str(df_match.iloc[0]['Nom_Complet']).strip()
-                etud_promo = str(df_match.iloc[0]['Promotion']).strip() if 'Promotion' in df_match.columns else ''
+                df_match = df_match.reset_index(drop=True)
+
+                # Si le matricule apparaît plusieurs fois dans le fichier, demander
+                # une confirmation par nom et promotion au lieu de prendre la première ligne.
+                if len(df_match) > 1:
+                    choix_lignes = list(range(len(df_match)))
+                    choix_ligne = st.selectbox(
+                        "Plusieurs fiches portent ce matricule. Sélectionnez votre fiche :",
+                        choix_lignes,
+                        format_func=lambda i: (
+                            f"{str(df_match.iloc[i].get('Nom_Complet', 'Nom non renseigné')).strip()} "
+                            f"— {str(df_match.iloc[i].get('Promotion', 'Promotion non renseignée')).strip()}"
+                        ),
+                        key="choix_fiche_mat_etud_portail"
+                    )
+                    ligne_etudiant = df_match.iloc[int(choix_ligne)]
+                else:
+                    ligne_etudiant = df_match.iloc[0]
+
+                etud_nom = str(ligne_etudiant.get('Nom_Complet', '')).strip()
+                etud_promo = str(ligne_etudiant.get('Promotion', '')).strip()
                 st.success(f"✅ Étudiant trouvé : **{etud_nom}** ({etud_promo})")
 
-                email_input = st.text_input("📧 Votre adresse email :", key="email_etud_auth", placeholder="ex: nom@email.com")
+                email_input = st.text_input(
+                    "📧 Votre adresse email :",
+                    key="email_etud_auth",
+                    placeholder="ex: nom@email.com"
+                )
 
                 if email_input and "@" in str(email_input):
                     if st.button("📧 Recevoir mon code d'accès", use_container_width=True, key="btn_otp"):
@@ -3863,6 +3919,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         otp_code = str(random.randint(100000, 999999))
                         st.session_state.étudiant_otp = otp_code
                         st.session_state.étudiant_otp_email = str(email_input).strip()
+                        st.session_state.étudiant_otp_mat_etud = mat_etud_clean
 
                         sent = envoyer_otp_étudiant(email_input, etud_nom, otp_code)
                         if sent:
@@ -3871,21 +3928,29 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                             st.warning(f"⚠️ Impossible d'envoyer l'email. Votre code (mode démo) : `{otp_code}`")
 
                 if st.session_state.get("étudiant_otp"):
-                    otp_input = st.text_input("🔑 Saisissez le code reçu par email :", type="password", key="otp_input_auth")
+                    otp_input = st.text_input(
+                        "🔑 Saisissez le code reçu par email :",
+                        type="password",
+                        key="otp_input_auth"
+                    )
                     if st.button("✅ Valider mon accès", use_container_width=True, key="btn_valider_otp"):
                         if otp_input == st.session_state.get("étudiant_otp"):
                             st.session_state.étudiant_auth = {
-                                "mat_bac": mat_bac_clean,
+                                "mat_etud": mat_etud_clean,
+                                # Alias historique conservé pour compatibilité avec
+                                # les anciennes parties du programme et le schéma Supabase.
+                                "mat_bac": mat_etud_clean,
                                 "nom": etud_nom,
                                 "email": st.session_state.étudiant_otp_email,
                                 "promotion": etud_promo
                             }
-                            # Stockage persistant de l'email dans Supabase pour notifications futures
+                            # Stockage de l'identifiant étudiant dans l'ancien champ
+                            # mat_bac pour rester compatible avec la table existante.
                             if MODE_SUPABASE:
                                 try:
                                     supabase.table("étudiants_emails").upsert({
                                         "nom_complet": etud_nom,
-                                        "mat_bac": mat_bac_clean,
+                                        "mat_bac": mat_etud_clean,
                                         "email": st.session_state.étudiant_otp_email,
                                         "promotion": etud_promo,
                                         "derniere_connexion": datetime.now().isoformat()
@@ -3894,13 +3959,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     pass
                             st.session_state.étudiant_otp = None
                             st.session_state.étudiant_otp_email = None
+                            st.session_state.étudiant_otp_mat_etud = None
                             st.success(f"🎓 Bienvenue {etud_nom} ! Accès autorisé...")
                             time.sleep(0.8)
                             st.rerun()
                         else:
                             st.error("❌ Code incorrect. Veuillez réessayer.")
-            else:
-                st.error("❌ Matricule BAC non reconnu dans la base étudiants.")
+            elif col_mat_etud:
+                st.error("❌ Matricule étudiant non reconnu dans le fichier source étudiants.")
 
         return
 
@@ -5062,7 +5128,10 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             if étudiant_connecte:
                 # Mode étudiant connecté : accès direct au dépôt
                 choix_vue = "Étudiant (Dépôt)"
-                st.success(f"👤 Connecté en tant qu'étudiant : **{étudiant_connecte['nom']}** — Mat. BAC: {étudiant_connecte['mat_bac']}")
+                st.success(
+                    f"👤 Connecté en tant qu'étudiant : **{étudiant_connecte['nom']}** "
+                    f"— Mat. Etudiant : {étudiant_connecte.get('mat_etud', étudiant_connecte.get('mat_bac', ''))}"
+                )
                 if st.button("🚪 Se déconnecter", use_container_width=True):
                     st.session_state.étudiant_auth = None
                     st.rerun()
