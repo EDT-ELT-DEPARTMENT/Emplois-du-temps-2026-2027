@@ -1437,18 +1437,55 @@ def mapper_promotion(promo_edt):
             if code in p: return f"M2{code}"
     return p
 
+def _cle_nom_enseignant_complet(valeur):
+    """Normalise le NOM + PRÉNOM complet sans réduire l'identité au nom de famille."""
+    texte = nettoyer_nom_enseignant("" if valeur is None else str(valeur))
+    texte = unicodedata.normalize("NFKD", texte)
+    texte = "".join(ch for ch in texte if not unicodedata.combining(ch))
+    texte = texte.upper()
+    # Les différences de ponctuation et d'espacement ne doivent pas créer
+    # de faux négatifs, mais tous les éléments du nom complet sont conservés.
+    texte = re.sub(r"[^A-Z0-9]+", " ", texte)
+    return re.sub(r"\\s+", " ", texte).strip()
+
+
+def _enseignant_complet_present(cellule_enseignants, nom_ens_complet):
+    """Vérifie une identité complète dans une cellule pouvant contenir plusieurs enseignants."""
+    cible = _cle_nom_enseignant_complet(nom_ens_complet)
+    if not cible:
+        return False
+
+    texte = "" if cellule_enseignants is None else str(cellule_enseignants).strip()
+    if texte.upper() in {"", "NAN", "NONE", "NON DEFINI", "NON DÉFINI"}:
+        return False
+
+    # Une cellule peut contenir plusieurs enseignants. On sépare uniquement
+    # sur les séparateurs usuels, puis on compare chaque nom complet à l'identité.
+    morceaux = re.split(r"\\s*(?:\\+|/|,|;|&|\\bet\\b)\\s*", texte, flags=re.IGNORECASE)
+    return any(_cle_nom_enseignant_complet(morceau) == cible for morceau in morceaux)
+
+
 def trouver_matiere_promo(nom_ens_complet, df_edt):
-    nom_fam = extraire_nom_famille(nom_ens_complet)
-    if not nom_fam or df_edt.empty:
+    """Retourne uniquement les matières attribuées à cet enseignant identifié par NOM + PRÉNOM."""
+    if df_edt is None or df_edt.empty or "Enseignants" not in df_edt.columns:
         return pd.DataFrame()
-    mask = df_edt["Enseignants"].astype(str).str.upper().str.contains(
-        re.escape(nom_fam), na=False, regex=True
+
+    nom_complet_cle = _cle_nom_enseignant_complet(nom_ens_complet)
+    if not nom_complet_cle:
+        return pd.DataFrame()
+
+    # Comparaison stricte du nom complet : MILOUA FARID ne correspond donc
+    # jamais à MILOUA FETHI, contrairement à l'ancien filtre par nom seul.
+    masque = df_edt["Enseignants"].apply(
+        lambda valeur: _enseignant_complet_present(valeur, nom_ens_complet)
     )
-    df_filtre = df_edt[mask].copy()
+    df_filtre = df_edt[masque].copy()
     if df_filtre.empty:
         return pd.DataFrame()
-    df_filtre["Promotion_Mappee"] = df_filtre["Promotion"].apply(mapper_promotion)
-    df_filtre = df_filtre[df_filtre["Enseignants"].astype(str).str.strip().str.lower() != "non defini"]
+
+    if "Promotion" in df_filtre.columns:
+        df_filtre["Promotion_Mappee"] = df_filtre["Promotion"].apply(mapper_promotion)
+
     return df_filtre
 
 def trouver_toutes_promos_matiere(nom_matiere, df_edt, df_etu):
