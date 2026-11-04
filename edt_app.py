@@ -3852,6 +3852,9 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
             # Priorité à l'en-tête source « Mat. Etudiant » (ou équivalent exact).
             def _normaliser_entete_mat_portail(valeur):
+                # Import local pour garantir la disponibilité de unicodedata
+                # même si les imports globaux du fichier sont réorganisés.
+                import unicodedata
                 texte = unicodedata.normalize("NFKD", str(valeur or ""))
                 texte = "".join(ch for ch in texte if not unicodedata.combining(ch))
                 return re.sub(r"[^a-z0-9]", "", texte.casefold())
