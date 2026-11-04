@@ -4087,7 +4087,22 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 
                 if sel_mat:
                     # ✨ NOUVEAU: Récupérer TOUTES les promotions pour cette matière
-                    promos_toutes, df_etudiants_tous, promo_primaire = trouver_toutes_promos_matiere(sel_mat, df_edt, df_etu)
+                    # Uniquement les lignes EDT de CET enseignant : une matière de même intitulé enseignée par un autre
+                    # enseignant (dans une autre promotion) n'est PAS mélangée à celle-ci.
+                    df_edt_enseignant_abs = df_matiere
+                    try:
+                        nom_complet_abs = nettoyer_nom_enseignant(sel_prof).upper().strip(" -")
+                        if nom_complet_abs:
+                            sous_df_abs = df_matiere[df_matiere["Enseignants"].astype(str).str.upper()
+                                                     .str.contains(re.escape(nom_complet_abs), na=False)]
+                            if not sous_df_abs.empty and (sous_df_abs["Enseignements"].astype(str).str.strip().str.lower()
+                                                          == str(sel_mat).strip().lower()).any():
+                                df_edt_enseignant_abs = sous_df_abs  # nom complet reconnu : on évite les homonymes
+                    except Exception:
+                        df_edt_enseignant_abs = df_matiere
+                    promos_toutes, df_etudiants_tous, promo_primaire = trouver_toutes_promos_matiere(
+                        sel_mat, df_edt_enseignant_abs, df_etu
+                    )
                     
                     if promos_toutes:
                         promo_c = promo_primaire
@@ -4155,6 +4170,25 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     codes = df_source[colonne].map(lambda v: _normaliser_code_groupe_abs(v, prefixe))
                     comptes = codes[codes != ""].value_counts()
                     return dict(sorted(comptes.items(), key=lambda kv: int(re.sub(r"\D", "", kv[0]) or 0)))
+
+                def _est_conge_abs(valeur):
+                    if pd.isna(valeur):
+                        return False
+                    return str(valeur).strip().casefold() in {
+                        "oui", "o", "yes", "y", "true", "vrai", "1", "en conge", "en congé", "conge", "congé",
+                        "conge academique", "congé académique", "en conge academique", "en congé académique",
+                    }
+
+                # Les étudiants en congé académique ne sont pas pris en compte (liste, effectifs, absence collective).
+                nb_conge_exclus_abs = 0
+                col_conge_abs = _trouver_col_abs(df_etudiants_promo, {"congeacademique", "congeacad"})
+                if col_conge_abs:
+                    masque_conge_abs = df_etudiants_promo[col_conge_abs].map(_est_conge_abs)
+                    nb_conge_exclus_abs = int(masque_conge_abs.sum())
+                    if nb_conge_exclus_abs:
+                        df_etudiants_promo = df_etudiants_promo[~masque_conge_abs].copy()
+                        df_etudiants_selection = df_etudiants_promo.copy()
+                        nb_etudiants_promo = len(df_etudiants_promo)
 
                 col_groupe_abs = _trouver_col_abs(df_etudiants_promo, {"groupe", "grp", "group"})
                 col_sous_groupe_abs = _trouver_col_abs(df_etudiants_promo, {"sousgroupe", "sousgrp", "sg", "subgroup"})
@@ -4232,6 +4266,8 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         st.caption(f"La liste de signalement ci-dessous est limitée à {len(noms_e)} étudiant(s) de cette sélection.")
                 else:
                     st.info(f"📍 **{len(noms_e)}** étudiants total(es) des promotion(s) concernée(s)")
+                if nb_conge_exclus_abs:
+                    st.caption(f"🎓 {nb_conge_exclus_abs} étudiant(s) en congé académique non pris en compte dans cette liste.")
 
                 if MODE_SUPABASE:
                     absences_filtrees = charger_absences_supabase(sel_mat, promo_c)
