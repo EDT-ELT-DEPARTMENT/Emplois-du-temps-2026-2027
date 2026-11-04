@@ -1438,19 +1438,26 @@ def mapper_promotion(promo_edt):
     return p
 
 def _cle_nom_enseignant_complet(valeur):
-    """Normalise le NOM + PRÉNOM complet sans réduire l'identité au nom de famille."""
-    texte = nettoyer_nom_enseignant("" if valeur is None else str(valeur))
+    """Normalise un nom complet sans supprimer le prénom ni le nom."""
+    if valeur is None:
+        return ""
+    try:
+        if pd.isna(valeur):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    texte = nettoyer_nom_enseignant(str(valeur))
     texte = unicodedata.normalize("NFKD", texte)
     texte = "".join(ch for ch in texte if not unicodedata.combining(ch))
     texte = texte.upper()
-    # Les différences de ponctuation et d'espacement ne doivent pas créer
-    # de faux négatifs, mais tous les éléments du nom complet sont conservés.
+    # La ponctuation est remplacée par des espaces puis les espaces multiples
+    # sont réellement réduits (\s doit être écrit avec un seul antislash).
     texte = re.sub(r"[^A-Z0-9]+", " ", texte)
     return re.sub(r"\s+", " ", texte).strip()
 
 
 def _enseignant_complet_present(cellule_enseignants, nom_ens_complet):
-    """Vérifie une identité complète dans une cellule pouvant contenir plusieurs enseignants."""
+    """Recherche le nom complet, même si plusieurs enseignants figurent dans la cellule EDT."""
     cible = _cle_nom_enseignant_complet(nom_ens_complet)
     if not cible:
         return False
@@ -1459,55 +1466,15 @@ def _enseignant_complet_present(cellule_enseignants, nom_ens_complet):
     if texte.upper() in {"", "NAN", "NONE", "NON DEFINI", "NON DÉFINI"}:
         return False
 
-    # Une cellule peut contenir plusieurs enseignants. On sépare uniquement
-    # sur les séparateurs usuels, puis on compare chaque nom complet à l'identité.
-    morceaux = re.split(r"\s*(?:\+|/|,|;|&|\bet\b)\s*", texte, flags=re.IGNORECASE)
-    return any(_cle_nom_enseignant_complet(morceau) == cible for morceau in morceaux)
-
-
-def _noms_individuels_edt(df_edt):
-    """Noms individuels (séparés par + / , ; &) présents dans la colonne Enseignants de l'EDT."""
-    if df_edt is None or getattr(df_edt, "empty", True) or "Enseignants" not in df_edt.columns:
-        return []
-    noms = set()
-    for valeur in df_edt["Enseignants"].dropna().astype(str).unique():
-        for morceau in re.split(r"\s*(?:\+|/|,|;|&|\bet\b)\s*", valeur, flags=re.IGNORECASE):
-            m = morceau.strip()
-            if m and m.upper() not in {"NAN", "NONE", "NON DEFINI", "NON DÉFINI"}:
-                noms.add(m)
-    return sorted(noms)
-
-
-def resoudre_nom_complet_enseignant(nom_officiel, df_edt):
-    """Retrouve le NOM + PRÉNOM de l'EDT d'un compte enregistré avec le seul nom de famille.
-
-    Retourne (nom_resolu, statut, candidats) :
-    - "exact"      : le nom du compte figure tel quel dans l'EDT (rien à compléter) ;
-    - "complete"   : un seul enseignant de l'EDT correspond (ex. « SEMMAH » -> « SEMMAH ABDELHAFID ») ;
-    - "ambigu"     : plusieurs enseignants portent ce nom (homonymes) -> liste des candidats ;
-    - "introuvable": aucun enseignant de l'EDT ne correspond.
-    """
-    brut = "" if nom_officiel is None else str(nom_officiel).strip()
-    cle = _cle_nom_enseignant_complet(brut)
-    if not cle:
-        return brut, "introuvable", []
-    if df_edt is not None and not getattr(df_edt, "empty", True) and "Enseignants" in df_edt.columns:
-        if df_edt["Enseignants"].apply(lambda v: _enseignant_complet_present(v, brut)).any():
-            return brut, "exact", []
-    tok_compte = cle.split()
-    candidats = {}
-    for nom in _noms_individuels_edt(df_edt):
-        tok = _cle_nom_enseignant_complet(nom).split()
-        if len(tok) <= len(tok_compte) or tok_compte[0] not in tok:
-            continue
-        if all(t in tok or (len(t) == 1 and any(p.startswith(t) for p in tok)) for t in tok_compte):
-            candidats.setdefault(frozenset(tok), nom.strip())
-    noms = sorted(candidats.values())
-    if len(noms) == 1:
-        return noms[0], "complete", noms
-    if len(noms) > 1:
-        return brut, "ambigu", noms
-    return brut, "introuvable", []
+    # Séparateurs rencontrés dans les cellules Excel contenant plusieurs noms.
+    morceaux = re.split(r"\s*(?:\+|/|,|;|&|\bet\b|\r?\n)\s*", texte, flags=re.IGNORECASE)
+    cible_inverse = " ".join(reversed(cible.split()))
+    for morceau in morceaux:
+        cle_morceau = _cle_nom_enseignant_complet(morceau)
+        # L'ordre NOM PRÉNOM / PRÉNOM NOM peut varier entre le compte et l'EDT.
+        if cle_morceau == cible or cle_morceau == cible_inverse:
+            return True
+    return False
 
 
 def trouver_matiere_promo(nom_ens_complet, df_edt):
@@ -4202,17 +4169,11 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         df_matiere = pd.DataFrame()
 
         if is_enseignant_connecte:
-            # Le compte peut être enregistré avec le seul nom de famille (« SEMMAH ») alors que l'EDT contient
-            # « SEMMAH ABDELHAFID » : on retrouve le NOM + PRÉNOM complet dans l'EDT.
-            sel_prof, statut_identite_abs, candidats_identite_abs = resoudre_nom_complet_enseignant(user['nom_officiel'], df_edt)
+            sel_prof = user['nom_officiel']
             st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduité")
             c1, c2 = st.columns(2)
             with c1:
-                if statut_identite_abs == "ambigu":
-                    st.warning("Plusieurs enseignants de l'EDT portent ce nom : précisez votre nom et prénom.")
-                    sel_prof = st.selectbox("👤 Précisez votre identité :", [""] + candidats_identite_abs, key="ident_abs_T1")
-                else:
-                    st.markdown(f"**Enseignant :** `{sel_prof}`")
+                st.markdown(f"**Enseignant :** `{sel_prof}`")
             with c2:
                 st.markdown("*Accès direct — Aucun code requis*")
         elif is_admin_edt:
@@ -4234,9 +4195,6 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         # SUITE COMMUNE
         if sel_prof:
             df_matiere = trouver_matiere_promo(sel_prof, df_edt)
-            if df_matiere.empty and is_enseignant_connecte:
-                st.warning(f"⚠️ Aucune matière n'a été trouvée dans l'EDT pour **{sel_prof}**. "
-                           "Vérifiez que votre nom et prénom du compte correspondent à ceux de l'emploi du temps.")
             if not df_matiere.empty:
                 # Une option distincte par couple MATIÈRE + PROMOTION.
                 # Ainsi, une même matière assurée par le même enseignant dans
@@ -13743,13 +13701,6 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
         cible = user['nom_officiel']
         poste_sup = _est_poste_superieur(cible)
         nom_aff = repertoire_noms_complets.get(cible.strip().upper(), cible)
-        if nom_aff == cible:
-            try:
-                _nom_edt_aff, _statut_edt_aff, _ = resoudre_nom_complet_enseignant(cible, df)
-                if _statut_edt_aff == "complete":
-                    nom_aff = _nom_edt_aff  # ex. « SEMMAH » -> « SEMMAH ABDELHAFID »
-            except Exception:
-                pass
         
         # ═══════════════════════════════════════════════════════
         # EN-TÊTE IDENTITÉ + DÉCONNEXION
