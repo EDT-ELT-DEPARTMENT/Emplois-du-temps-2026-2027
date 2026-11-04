@@ -4181,10 +4181,20 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     else:
                         st.error("La colonne Sous groupe est introuvable dans le fichier des étudiants : impossible de filtrer correctement cette matière TP.")
 
-                if type_matiere_abs in {"TD", "TP"} and not filtre_groupe_applique:
+                # TD / TP SANS groupe (ou sous-groupe) mentionné dans le nom de la matière :
+                # il n'y a pas de groupe, toute la promotion est considérée comme un seul groupe.
+                sans_groupe_abs = (
+                    (type_matiere_abs == "TD" and not groupe_matiere_abs)
+                    or (type_matiere_abs == "TP" and not sous_groupes_matiere_abs)
+                )
+                if sans_groupe_abs:
+                    st.info(f"👥 Matière {type_matiere_abs} sans {'groupe' if type_matiere_abs == 'TD' else 'sous-groupe'} "
+                            "précisé dans son nom : toute la promotion est considérée comme un seul groupe.")
+                if type_matiere_abs in {"TD", "TP"} and not filtre_groupe_applique and not sans_groupe_abs:
+                    # Un groupe est bien indiqué dans le nom de la matière mais le fichier ne permet pas de filtrer.
                     noms_e = []
                     st.warning("La sélection des étudiants est bloquée pour éviter de signaler une absence à toute la promotion par erreur "
-                               "(groupe / sous-groupe non reconnu dans le nom de la matière ou colonne absente du fichier).")
+                               "(colonne Groupe / Sous groupe absente du fichier des étudiants).")
                 else:
                     noms_e = sorted(df_etudiants_selection["Nom_Complet"].dropna().astype(str).unique().tolist())
 
@@ -4204,11 +4214,14 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         if codes_cibles_abs:
                             libelle_effectif = (("👥 Effectif du groupe " if est_td_abs else "🔹 Effectif du sous-groupe ")
                                                 + ", ".join(sorted(codes_cibles_abs)))
+                        elif sans_groupe_abs:
+                            libelle_effectif = ("👥 Effectif du groupe (promotion entière)" if est_td_abs
+                                                else "🔹 Effectif du sous-groupe (promotion entière)")
                         else:
                             libelle_effectif = ("👥 Effectif du groupe (non détecté)" if est_td_abs
                                                 else "🔹 Effectif du sous-groupe (non détecté)")
                         st.metric(libelle_effectif, len(noms_e))
-                    if repartition_abs:
+                    if repartition_abs and not sans_groupe_abs:
                         titre_repartition = "Répartition par groupe de TD" if est_td_abs else "Répartition par sous-groupe de TP"
                         morceaux_repartition = [
                             f"**{code} : {nb} ◀**" if code in codes_cibles_abs else f"{code} : {nb}"
