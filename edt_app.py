@@ -4118,41 +4118,80 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         if sel_prof:
             df_matiere = trouver_matiere_promo(sel_prof, df_edt)
             if not df_matiere.empty:
-                liste_mats = sorted(df_matiere["Enseignements"].dropna().unique().tolist())
-                with c2:
-                    sel_mat = st.selectbox("📚 Sélectionnez la matière :", [""] + liste_mats, key="mat_T1")
-                
-                if sel_mat:
-                    # ✨ NOUVEAU: Récupérer TOUTES les promotions pour cette matière
-                    # Uniquement les lignes EDT de CET enseignant : une matière de même intitulé enseignée par un autre
-                    # enseignant (dans une autre promotion) n'est PAS mélangée à celle-ci.
-                    df_edt_enseignant_abs = df_matiere
-                    try:
-                        nom_complet_abs = nettoyer_nom_enseignant(sel_prof).upper().strip(" -")
-                        if nom_complet_abs:
-                            sous_df_abs = df_matiere[df_matiere["Enseignants"].astype(str).str.upper()
-                                                     .str.contains(re.escape(nom_complet_abs), na=False)]
-                            if not sous_df_abs.empty and (sous_df_abs["Enseignements"].astype(str).str.strip().str.lower()
-                                                          == str(sel_mat).strip().lower()).any():
-                                df_edt_enseignant_abs = sous_df_abs  # nom complet reconnu : on évite les homonymes
-                    except Exception:
-                        df_edt_enseignant_abs = df_matiere
-                    promos_toutes, df_etudiants_tous, promo_primaire = trouver_toutes_promos_matiere(
-                        sel_mat, df_edt_enseignant_abs, df_etu
-                    )
-                    
-                    if promos_toutes:
-                        promo_c = promo_primaire
-                        
-                        # Affichage des promotions communes
-                        if len(promos_toutes) > 1:
-                            st.info(f"📍 Matière commune à **{len(promos_toutes)} promotions** : {', '.join(promos_toutes)}")
-                        else:
-                            st.info(f"📍 Promotion détectée : **{promo_c}**")
+                # Une option distincte par couple MATIÈRE + PROMOTION.
+                # Ainsi, une même matière assurée par le même enseignant dans
+                # plusieurs promotions ne fusionne jamais les listes d'étudiants.
+                options_matiere_abs = {}
+                if "Promotion_Mappee" not in df_matiere.columns and "Promotion" in df_matiere.columns:
+                    df_matiere["Promotion_Mappee"] = df_matiere["Promotion"].apply(mapper_promotion)
+
+                df_etu_comptage_abs = df_etu.copy() if isinstance(df_etu, pd.DataFrame) else pd.DataFrame()
+                col_promo_etu_abs = next((c for c in df_etu_comptage_abs.columns
+                                          if str(c).strip().casefold() in {"promotion", "promo", "promotions"}), None)
+                if col_promo_etu_abs:
+                    df_etu_comptage_abs["_Promotion_Mappee_abs"] = df_etu_comptage_abs[col_promo_etu_abs].apply(mapper_promotion)
+
+                couples_matiere_promo_abs = (
+                    df_matiere[["Enseignements", "Promotion_Mappee"]]
+                    .dropna()
+                    .astype(str)
+                    .drop_duplicates()
+                ) if "Promotion_Mappee" in df_matiere.columns else pd.DataFrame(columns=["Enseignements", "Promotion_Mappee"])
+
+                for _, ligne_couple_abs in couples_matiere_promo_abs.iterrows():
+                    mat_abs_option = str(ligne_couple_abs["Enseignements"]).strip()
+                    promo_abs_option = str(ligne_couple_abs["Promotion_Mappee"]).strip()
+                    if not mat_abs_option or not promo_abs_option:
+                        continue
+                    if col_promo_etu_abs:
+                        df_compte_option_abs = df_etu_comptage_abs[
+                            df_etu_comptage_abs["_Promotion_Mappee_abs"] == promo_abs_option
+                        ]
+                        col_nom_compte_abs = next((c for c in df_compte_option_abs.columns
+                                                   if str(c).strip().casefold() in {"nom_complet", "nom complet", "etudiant", "étudiant"}), None)
+                        nb_abs_option = (int(df_compte_option_abs[col_nom_compte_abs].dropna().astype(str).str.strip().nunique())
+                                         if col_nom_compte_abs else len(df_compte_option_abs))
                     else:
-                        st.warning("⚠️ Aucune promotion trouvée pour cette matière.")
-                        promo_c = ""
-        
+                        nb_abs_option = 0
+                    libelle_abs_option = f"{mat_abs_option} — {promo_abs_option} ({nb_abs_option} étudiant(s))"
+                    # Le suffixe protège aussi contre deux intitulés identiques
+                    # dont les promotions auraient des libellés très proches.
+                    options_matiere_abs[libelle_abs_option] = (mat_abs_option, promo_abs_option, nb_abs_option)
+
+                if options_matiere_abs:
+                    libelles_matiere_abs = ["", *sorted(options_matiere_abs.keys(), key=lambda x: x.casefold())]
+                    with c2:
+                        choix_matiere_promo_abs = st.selectbox(
+                            "📚 Sélectionnez la matière et la promotion :",
+                            libelles_matiere_abs,
+                            key="mat_promo_T1"
+                        )
+                    if choix_matiere_promo_abs:
+                        sel_mat, promo_c, nb_etudiants_promo_option = options_matiere_abs[choix_matiere_promo_abs]
+                        # Charger exclusivement les étudiants de la promotion choisie.
+                        if col_promo_etu_abs:
+                            df_etudiants_tous = df_etu_comptage_abs[
+                                df_etu_comptage_abs["_Promotion_Mappee_abs"] == promo_c
+                            ].drop(columns=["_Promotion_Mappee_abs"], errors="ignore").copy()
+                            col_nom_unique_abs = next((c for c in df_etudiants_tous.columns
+                                                       if str(c).strip().casefold() in {"nom_complet", "nom complet", "etudiant", "étudiant"}), None)
+                            if col_nom_unique_abs:
+                                df_etudiants_tous = df_etudiants_tous.drop_duplicates(
+                                    subset=[col_nom_unique_abs], keep="first"
+                                )
+                        else:
+                            df_etudiants_tous = pd.DataFrame()
+                        if not df_etudiants_tous.empty:
+                            st.success(
+                                f"🎓 Promotion : **{promo_c}** — **{len(df_etudiants_tous)} étudiant(s)** recensé(s)"
+                            )
+                        else:
+                            st.warning(
+                                f"⚠️ La promotion **{promo_c}** est présente dans l'EDT, mais aucun étudiant correspondant n'a été trouvé dans le fichier des étudiants."
+                            )
+                else:
+                    st.warning("⚠️ Aucune matière avec promotion identifiable n'a été trouvée pour cet enseignant.")
+
         # Filtrage pédagogique : un TD ne concerne que SON groupe (TD-...-G2), un TP que SON sous-groupe (TP-...-SG11).
         if sel_mat and promo_c:
             if not df_etudiants_tous.empty:
@@ -4327,7 +4366,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                 cn1, cn2, cn3 = st.columns(3)
                 with cn1:
                     etud_non = st.selectbox(
-                        f"👤 Étudiant ou type d'absence ({len(noms_e)} étudiant(s) dans cette sélection) :",
+                        f"👤 Étudiant — promotion {promo_c} : {nb_etudiants_promo} étudiant(s) au total ; {len(noms_e)} dans cette sélection :",
                         ["", "👥 ABSENCE COLLECTIVE — tous les étudiants"] + noms_e,
                         key="ne_et_t1",
                         help="Pour un TD/TP, l'absence collective concerne uniquement les étudiants du groupe/sous-groupe sélectionné. Pour un cours, elle concerne les étudiants de la promotion."
