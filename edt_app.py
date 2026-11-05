@@ -3855,7 +3855,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
         mat_etud_input = st.text_input(
             "🎓 Mat. Etudiant :",
             key="mat_etud_auth",
-            placeholder="Saisissez votre matricule étudiant"
+            placeholder="Saisissez votre matricule étudiant, exemple: 2626matricule du Bac"
         )
 
         if mat_etud_input:
