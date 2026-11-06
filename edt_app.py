@@ -25023,7 +25023,10 @@ if is_admin and mode_view == "✍️ Éditeur de données":
         st.stop() # Arrête l'exécution pour éviter le plantage
 
     # 2. STRUCTURE ET NETTOYAGE
-    cols_format = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion', 'Chevauchement']
+    cols_format = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
+    if "Département" in df.columns:
+        cols_format.append("Département")
+    cols_format.append("Chevauchement")
 
     if 'df_admin' not in st.session_state:
         # On s'assure que df est bien un DataFrame valide avant de le copier
@@ -25156,7 +25159,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
         df_to_edit[cols_format],
         use_container_width=True,
         num_rows="dynamic",
-        key="editor_final_unique_v3", 
+        key="editor_final_unique_v4", 
         column_config={
             "Enseignements": st.column_config.TextColumn("📚 matiere"),
             "Horaire": st.column_config.SelectboxColumn("🕒 Horaire", options=liste_horaires),
@@ -25166,14 +25169,220 @@ if is_admin and mode_view == "✍️ Éditeur de données":
         }
     )
 
-    # Synchronisation intelligente
+    # ------------------------------------------------------------------
+    # SYNCHRONISATION RÉELLE : éditeur -> DataFrame maître -> Excel source
+    # Le reste de l'application lit le DataFrame global `df` (chargé depuis
+    # NOM_FICHIER_FIXE). Mettre à jour uniquement df_admin ne suffisait pas.
+    # ------------------------------------------------------------------
+    _colonnes_metier_edt = [
+        "Enseignements", "Code", "Enseignants", "Horaire",
+        "Jours", "Lieu", "Promotion", "Département"
+    ]
+    _colonnes_source_edt = [c for c in _colonnes_metier_edt if c in df.columns]
+
     if edited_df is not None and not edited_df.equals(df_to_edit[cols_format]):
-        if search_prof:
-            indices_modifies = df_to_edit.index
-            df_others = st.session_state.df_admin.drop(indices_modifies)
-            st.session_state.df_admin = pd.concat([df_others, edited_df], ignore_index=True)
-        else:
-            st.session_state.df_admin = edited_df
+        try:
+            _admin_avant = st.session_state.df_admin.copy()
+            _admin_apres = _admin_avant.copy()
+
+            # Met à jour les lignes existantes en conservant leur index d'origine.
+            _indices_existants = [i for i in edited_df.index if i in _admin_avant.index]
+            for _idx in _indices_existants:
+                for _col in cols_format:
+                    _admin_apres.loc[_idx, _col] = edited_df.loc[_idx, _col]
+
+            # Ajoute les lignes nouvellement créées dans data_editor.
+            _indices_nouveaux = [i for i in edited_df.index if i not in _admin_avant.index]
+            if _indices_nouveaux:
+                _admin_apres = pd.concat(
+                    [_admin_apres, edited_df.loc[_indices_nouveaux]],
+                    ignore_index=True
+                )
+
+            # Si le tableau est filtré par enseignant, les lignes hors filtre
+            # restent intactes. Les suppressions de lignes sont appliquées
+            # seulement aux lignes visibles supprimées dans l'éditeur.
+            if search_prof:
+                _visibles_avant = set(df_to_edit.index)
+                _visibles_apres = set(edited_df.index)
+                _supprimes = _visibles_avant - _visibles_apres
+                if _supprimes:
+                    _admin_apres = _admin_apres.drop(
+                        index=[i for i in _supprimes if i in _admin_apres.index],
+                        errors="ignore"
+                    )
+
+            # Reconstruit la source par index d'origine : cela évite de décaler
+            # les colonnes Département / métadonnées si le tableau est filtré
+            # ou si une ligne est supprimée au milieu du DataFrame.
+            _df_source_originale = df.copy()
+            for _c in _colonnes_metier_edt:
+                if _c not in _df_source_originale.columns:
+                    _df_source_originale[_c] = ""
+
+            _lignes_maitre = []
+            _indices_nouveaux_admin = []
+            for _idx_admin, _ligne_admin in _admin_apres.iterrows():
+                if _idx_admin in _df_source_originale.index:
+                    _ligne_source = _df_source_originale.loc[_idx_admin].copy()
+                else:
+                    _ligne_source = pd.Series(
+                        {c: "" for c in _df_source_originale.columns}
+                    )
+                    _indices_nouveaux_admin.append(_idx_admin)
+
+                for _c in _colonnes_metier_edt:
+                    if _c in _admin_apres.columns:
+                        _ligne_source[_c] = _ligne_admin[_c]
+                _lignes_maitre.append(_ligne_source)
+
+            _df_maitre = pd.DataFrame(
+                _lignes_maitre, columns=_df_source_originale.columns
+            ).reset_index(drop=True)
+            _admin_apres = _admin_apres.reset_index(drop=True)
+            _df_maitre["h_norm"] = _df_maitre["Horaire"].apply(normalize)
+            _df_maitre["j_norm"] = _df_maitre["Jours"].apply(normalize)
+
+            # Écriture immédiate du vrai fichier lu par les vues individuelles,
+            # la charge horaire et la vue Promotion.
+            _df_export = _df_maitre.drop(
+                columns=["h_norm", "j_norm", "_type_affichage_admin", "Chevauchement"],
+                errors="ignore"
+            )
+            _df_export.to_excel(NOM_FICHIER_FIXE, index=False)
+
+            st.session_state.df_admin = _admin_apres
+            df = _df_maitre
+            st.session_state["edt_source_modifiee"] = True
+            st.success(
+                "✅ Modification enregistrée automatiquement dans la source EDT. "
+                "Les vues Enseignant, Promotion et Charge horaire utilisent maintenant "
+                "les données actualisées."
+            )
+            st.rerun()
+        except Exception as _err_sync_edt:
+            st.error(f"❌ Échec de synchronisation de l'EDT : {_err_sync_edt}")
+
+    # ------------------------------------------------------------------
+    # COMPTEUR DE LIGNES ET EXPORT EXCEL DU TABLEAU D'ÉDITION
+    # L'export reprend les valeurs actuellement affichées dans data_editor.
+    # ------------------------------------------------------------------
+    _df_tableau_export = edited_df.copy() if isinstance(edited_df, pd.DataFrame) else df_to_edit[cols_format].copy()
+    _nb_lignes_tableau = len(_df_tableau_export)
+    _col_compteur, _col_telechargement = st.columns([1, 2])
+    with _col_compteur:
+        st.metric("📊 Nombre de lignes du tableau", f"{_nb_lignes_tableau:,}".replace(",", " "))
+    with _col_telechargement:
+        try:
+            _buffer_excel_edt = io.BytesIO()
+            with pd.ExcelWriter(_buffer_excel_edt, engine="openpyxl") as _writer_excel_edt:
+                _df_tableau_export.to_excel(
+                    _writer_excel_edt,
+                    index=False,
+                    sheet_name="Modification des données"
+                )
+            _buffer_excel_edt.seek(0)
+            st.download_button(
+                label="📥 Télécharger le tableau en Excel",
+                data=_buffer_excel_edt.getvalue(),
+                file_name="Tableau_modification_EDT.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="telecharger_tableau_modification_edt_v1",
+                use_container_width=True
+            )
+        except Exception as _err_export_edt:
+            st.error(f"❌ Impossible de préparer le fichier Excel : {_err_export_edt}")
+
+    # ------------------------------------------------------------------
+    # APERÇU IMMÉDIAT DE L'EDT : enseignant / département / promotion
+    # ------------------------------------------------------------------
+    st.divider()
+    st.markdown("### 📅 Aperçu de l'emploi du temps actualisé")
+    st.caption(
+        "Cette vue utilise les données du fichier EDT maître après synchronisation "
+        "des modifications. Les filtres peuvent être combinés."
+    )
+
+    _df_apercu = df.copy()
+    _c_dept_apercu = next(
+        (c for c in _df_apercu.columns
+         if str(c).strip().casefold() in {"département", "departement", "department"}),
+        None
+    )
+    _c1_ap, _c2_ap, _c3_ap = st.columns(3)
+
+    with _c1_ap:
+        _opts_dept = ["Tous les départements"]
+        if _c_dept_apercu:
+            _opts_dept += sorted(
+                [str(v).strip() for v in _df_apercu[_c_dept_apercu].dropna().unique()
+                 if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}],
+                key=str.casefold
+            )
+        _sel_dept_ap = st.selectbox(
+            "🏛️ Département", _opts_dept, key="apercu_edt_departement_v1"
+        )
+
+    if _sel_dept_ap != "Tous les départements" and _c_dept_apercu:
+        _df_apercu = _df_apercu[
+            _df_apercu[_c_dept_apercu].astype(str).str.strip() == _sel_dept_ap
+        ].copy()
+
+    with _c2_ap:
+        _opts_promo = ["Toutes les promotions"] + sorted(
+            [str(v).strip() for v in _df_apercu["Promotion"].dropna().unique()
+             if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}],
+            key=str.casefold
+        )
+        _sel_promo_ap = st.selectbox(
+            "🎓 Promotion", _opts_promo, key="apercu_edt_promotion_v1"
+        )
+
+    with _c3_ap:
+        _opts_prof = ["Tous les enseignants"] + sorted(
+            [str(v).strip() for v in _df_apercu["Enseignants"].dropna().unique()
+             if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}],
+            key=str.casefold
+        )
+        _sel_prof_ap = st.selectbox(
+            "👨‍🏫 Enseignant", _opts_prof, key="apercu_edt_enseignant_v1"
+        )
+
+    if _sel_promo_ap != "Toutes les promotions":
+        _df_apercu = _df_apercu[
+            _df_apercu["Promotion"].astype(str).str.strip() == _sel_promo_ap
+        ].copy()
+    if _sel_prof_ap != "Tous les enseignants":
+        # Correspondance exacte pour éviter de mélanger les homonymes.
+        _df_apercu = _df_apercu[
+            _df_apercu["Enseignants"].astype(str).str.strip().str.casefold()
+            == _sel_prof_ap.casefold()
+        ].copy()
+
+    _colonnes_apercu = [
+        c for c in ["Jours", "Horaire", "Enseignements", "Code",
+                    "Enseignants", "Lieu", "Promotion"]
+        if c in _df_apercu.columns
+    ]
+    _ordre_jours_ap = {
+        "dimanche": 0, "lundi": 1, "mardi": 2, "mercredi": 3, "jeudi": 4
+    }
+    if not _df_apercu.empty:
+        _df_apercu["_ordre_jour_ap"] = (
+            _df_apercu["Jours"].astype(str).str.strip().str.casefold()
+            .map(_ordre_jours_ap).fillna(99)
+        )
+        _df_apercu = _df_apercu.sort_values(
+            ["_ordre_jour_ap", "Horaire"], kind="stable"
+        ).drop(columns=["_ordre_jour_ap"])
+        st.dataframe(
+            _df_apercu[_colonnes_apercu],
+            use_container_width=True,
+            hide_index=True
+        )
+        st.caption(f"Nombre de séances affichées : {len(_df_apercu)}")
+    else:
+        st.info("Aucune séance ne correspond aux filtres sélectionnés.")
 
     # --- BLOC D'ANALYSE VISUELLE (STYLE PERSONNALISÉ : SALLE/PROF/PROMO) ---
     st.divider()
@@ -25252,9 +25461,20 @@ if is_admin and mode_view == "✍️ Éditeur de données":
     with c1:
         if st.button("💾 Enregistrer sur Serveur", type="primary", use_container_width=True):
             try:
-                st.session_state.df_admin[cols_format].to_excel(NOM_FICHIER_FIXE, index=False)
-                st.success("✅ Modifications enregistrées sur le serveur !")
+                _df_save_admin = df.copy()
+                _df_admin_save = st.session_state.df_admin.copy().reset_index(drop=True)
+                for _c in ["Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion", "Département"]:
+                    if _c not in _df_save_admin.columns:
+                        _df_save_admin[_c] = ""
+                    if _c in _df_admin_save.columns:
+                        _df_save_admin[_c] = _df_admin_save[_c].reindex(range(len(_df_save_admin))).fillna("").values
+                _df_save_admin.drop(
+                    columns=["h_norm", "j_norm", "_type_affichage_admin", "Chevauchement"],
+                    errors="ignore"
+                ).to_excel(NOM_FICHIER_FIXE, index=False)
+                st.success("✅ Modifications enregistrées dans le fichier EDT source.")
                 st.balloons()
+                st.rerun()
             except Exception as e:
                 st.error(f"Erreur d'écriture : {e}")
 
