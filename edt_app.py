@@ -24551,7 +24551,7 @@ _NAV_MODE_BY_LABEL = {
 with st.container():
     st.markdown(f"""<div class="elt-hero" style="background:linear-gradient(118deg,#14213d 0%,#1e40af 58%,#4f46e5 100%);">
       <div class="eyebrow">Université Djillali Liabès · Faculté de génie électrique</div>
-      <div class="headline">🏛️ ELT CAMPUS</div>
+      <div class="headline">🏛️ CAMPUS Universitaire-SBA</div>
       <div class="subline">Plateforme intelligente de gestion pédagogique et des emplois du temps</div>
       <div class="identity">👤 { _user_auth.get('nom_officiel', 'Utilisateur') } &nbsp;·&nbsp; Portail sécurisé</div>
     </div>""", unsafe_allow_html=True)
