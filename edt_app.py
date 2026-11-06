@@ -1544,6 +1544,98 @@ def detecter_colonnes_etudiant(df):
     return mapping
 
 
+def _edt_inferer_departement_etudiant(df_edt, promotion, groupe="", sous_groupe="", mapper_promotion=None):
+    """Infère le département à partir de Promotion + Groupe + Sous-groupe
+    de la fiche étudiant, en les rapprochant des tags dans Enseignements.
+    Ne choisit jamais arbitrairement si plusieurs départements restent possibles.
+    Retourne (département_unique_ou_None, départements_candidats, diagnostic)."""
+    if df_edt is None or df_edt.empty or "Promotion" not in df_edt.columns:
+        return None, [], "Fichier EDT vide ou colonne Promotion absente."
+    col_dept = next((c for c in df_edt.columns if str(c).strip().casefold() in
+                     {"département", "departement", "department", "dept"}), None)
+    if not col_dept:
+        return None, [], "Colonne Département absente du fichier EDT."
+    promo = str(promotion or "").strip()
+    if not promo:
+        return None, [], "Promotion étudiant absente."
+
+    def norm(v):
+        try:
+            if pd.isna(v):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        return re.sub(r"\s+", "", str(v).strip().upper())
+
+    def promo_match(v):
+        if mapper_promotion:
+            try:
+                return norm(mapper_promotion(v)) == norm(mapper_promotion(promo))
+            except Exception:
+                pass
+        return norm(v) == norm(promo)
+
+    dfp = df_edt[df_edt["Promotion"].apply(promo_match)].copy()
+    if dfp.empty:
+        return None, [], f"Aucune ligne EDT pour la promotion {promo}."
+    groupe = norm(groupe)
+    sous_groupe = norm(sous_groupe)
+    if groupe and not re.fullmatch(r"G\d+", groupe):
+        m = re.search(r"G\s*-?\s*(\d+)", groupe)
+        groupe = f"G{m.group(1)}" if m else groupe
+    if sous_groupe and not re.fullmatch(r"SG\d+", sous_groupe):
+        m = re.search(r"SG\s*-?\s*(\d+)", sous_groupe)
+        sous_groupe = f"SG{m.group(1)}" if m else sous_groupe
+
+    candidats = []
+    for dept, dfd in dfp.groupby(col_dept, dropna=True):
+        dept_txt = str(dept).strip()
+        if not dept_txt or dept_txt.lower() in {"nan", "none", "non défini", "non defini"}:
+            continue
+        groupes_dispo, sous_groupes_dispo = set(), set()
+        for _, ligne in dfd.iterrows():
+            ens = str(ligne.get("Enseignements", "") or "").upper()
+            code = str(ligne.get("Code", "") or "").upper()
+            if "COURS" in code:
+                m = re.search(r"\(([^)]*)\)\s*$", ens)
+                if m:
+                    groupes_dispo.update(f"G{x}" for x in re.findall(r"(?<![A-Z])G\s*-?\s*(\d+)", m.group(1)))
+            elif "TD" in code:
+                m = re.search(r"(?<![A-Z])G\s*-?\s*(\d+)\s*$", ens)
+                if m:
+                    groupes_dispo.add(f"G{m.group(1)}")
+            elif "TP" in code:
+                sous_groupes_dispo.update(f"SG{x}" for x in re.findall(r"SG\s*-?\s*(\d+)", ens))
+        # Une catégorie sans tag n'est pas discriminante ; une catégorie
+        # qui possède des tags doit correspondre exactement à l'étudiant.
+        score = 0
+        compatible = True
+        if groupe and groupes_dispo:
+            if groupe not in groupes_dispo:
+                compatible = False
+            else:
+                score += 1
+        if sous_groupe and sous_groupes_dispo:
+            if sous_groupe not in sous_groupes_dispo:
+                compatible = False
+            else:
+                score += 1
+        if compatible:
+            candidats.append((dept_txt, score, bool(groupes_dispo), bool(sous_groupes_dispo)))
+
+    if not candidats:
+        return None, [], (f"Aucun département ne correspond à {promo}, {groupe or 'groupe non renseigné'}, "
+                          f"{sous_groupe or 'sous-groupe non renseigné'}. Vérifiez les intitulés EDT.")
+    meilleur_score = max(x[1] for x in candidats)
+    meilleurs = sorted({x[0] for x in candidats if x[1] == meilleur_score})
+    # Sans identifiant de groupe/sous-groupe discriminant, n'accepter qu'un
+    # seul département pour la promotion.
+    if len(meilleurs) == 1:
+        return meilleurs[0], meilleurs, "Correspondance unique Promotion/Groupe/Sous-groupe."
+    return None, meilleurs, ("Correspondance ambiguë : plusieurs départements possèdent la même "
+                             "promotion et les mêmes identifiants de groupe/sous-groupe.")
+
+
 # =============================================================================
 # NOUVEAU : GÉNÉRATION D'UN ZIP CONTENANT UN FICHIER EXCEL PAR PROMOTION
 # Chaque classeur contient : Nom, Prénom, Groupe et Sous-groupe.
@@ -5043,69 +5135,24 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         df_edt_justif = pd.read_excel(NOM_FICHIER_FIXE)
 
                         promo_justif = str(étudiant_connecte.get("promotion", "")).strip()
-                        # Département de l'étudiant : priorité à la fiche de connexion,
-                        # puis récupération depuis le fichier source des étudiants.
-                        _dept_justif = str(étudiant_connecte.get("departement", "") or "").strip()
-                        if _dept_justif.lower() in {"nan", "none", "non défini", "non defini"}:
-                            _dept_justif = ""
-                        if not _dept_justif and "Nom_Complet" in df_etu.columns:
-                            _lignes_dept_justif = df_etu[
-                                df_etu["Nom_Complet"].astype(str).str.strip().str.upper()
-                                == str(étudiant_connecte.get("nom", "")).strip().upper()
-                            ]
-                            _col_dept_etu_justif = next(
-                                (c for c in df_etu.columns
-                                 if str(c).strip().casefold() in {"département", "departement", "department", "dept"}),
-                                None
-                            )
-                            if not _lignes_dept_justif.empty and _col_dept_etu_justif:
-                                _val_dept_justif = _lignes_dept_justif.iloc[0].get(_col_dept_etu_justif, "")
-                                _dept_justif = (
-                                    str(_val_dept_justif).strip()
-                                    if pd.notna(_val_dept_justif) else ""
-                                )
-                                if _dept_justif.lower() in {"nan", "none", "non défini", "non defini"}:
-                                    _dept_justif = ""
+                        # Département inféré ensuite depuis la source EDT par
+                        # correspondance Promotion + Groupe + Sous-groupe.
+                        _dept_justif = ""
 
                         _col_dept_edt_justif = next(
                             (c for c in df_edt_justif.columns
                              if str(c).strip().casefold() in {"département", "departement", "department", "dept"}),
                             None
                         )
+                        _promo_map_justif = mapper_promotion(promo_justif)
                         _df_promo_justif_toutes = df_edt_justif[
-                            df_edt_justif["Promotion"].astype(str).str.strip().str.upper()
-                            == promo_justif.upper()
+                            df_edt_justif["Promotion"].apply(mapper_promotion).astype(str).str.strip().str.upper()
+                            == str(_promo_map_justif).strip().upper()
                         ].copy()
 
-                        if _col_dept_edt_justif:
-                            if not _dept_justif:
-                                _depts_promo_justif = sorted(
-                                    _df_promo_justif_toutes[_col_dept_edt_justif]
-                                    .dropna().astype(str).str.strip().unique().tolist()
-                                )
-                                if len(_depts_promo_justif) == 1:
-                                    _dept_justif = _depts_promo_justif[0]
-                                elif len(_depts_promo_justif) > 1:
-                                    st.error(
-                                        "Impossible d'afficher votre EDT sans mélanger les promotions : "
-                                        "votre fiche étudiant ne précise pas le département alors que "
-                                        f"{promo_justif} existe dans plusieurs départements. "
-                                        "Veuillez faire compléter la colonne Département dans le fichier étudiants."
-                                    )
-                            if _dept_justif:
-                                df_edt_justif_promo = _df_promo_justif_toutes[
-                                    _df_promo_justif_toutes[_col_dept_edt_justif].fillna("").astype(str).str.strip().str.upper()
-                                    == _dept_justif.upper()
-                                ].copy()
-                            else:
-                                df_edt_justif_promo = pd.DataFrame(columns=df_edt_justif.columns)
-                        else:
-                            df_edt_justif_promo = _df_promo_justif_toutes.copy()
-                            if _dept_justif:
-                                st.warning(
-                                    "Le fichier EDT ne contient pas de colonne Département : "
-                                    "le filtrage inter-départements ne peut pas être garanti."
-                                )
+                        # Le filtrage départemental sera appliqué après lecture
+                        # des colonnes Groupe et Sous-groupe de la fiche étudiant.
+                        df_edt_justif_promo = _df_promo_justif_toutes.copy()
 
                         # --- Groupe / Sous-groupe de l'étudiant (fichier étudiants source) ---
                         cols_etu_map_justif = detecter_colonnes_etudiant(df_etu)
@@ -5114,7 +5161,17 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                         groupe_justif = ""
                         sous_groupe_justif = ""
-                        ligne_etu_justif = df_etu[df_etu["Nom_Complet"] == étudiant_connecte["nom"]]
+                        ligne_etu_justif = df_etu[
+                            df_etu["Nom_Complet"].astype(str).str.strip().str.upper()
+                            == str(étudiant_connecte.get("nom", "")).strip().upper()
+                        ].copy()
+                        _promo_col_etu_justif = cols_etu_map_justif.get("promotion")
+                        if _promo_col_etu_justif and _promo_col_etu_justif in ligne_etu_justif.columns and promo_justif:
+                            _promo_cible_ligne_justif = mapper_promotion(promo_justif)
+                            ligne_etu_justif = ligne_etu_justif[
+                                ligne_etu_justif[_promo_col_etu_justif].apply(mapper_promotion).astype(str).str.strip().str.upper()
+                                == str(_promo_cible_ligne_justif).strip().upper()
+                            ]
                         if not ligne_etu_justif.empty:
                             if col_groupe_justif and col_groupe_justif in ligne_etu_justif.columns:
                                 val_g_justif = ligne_etu_justif.iloc[0].get(col_groupe_justif)
@@ -5124,6 +5181,21 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 val_sg_justif = ligne_etu_justif.iloc[0].get(col_sous_groupe_justif)
                                 if pd.notna(val_sg_justif):
                                     sous_groupe_justif = str(val_sg_justif).strip().upper()
+
+                        _dept_justif, _depts_candidats_justif, _diag_dept_justif = _edt_inferer_departement_etudiant(
+                            df_edt_justif, promo_justif, groupe_justif, sous_groupe_justif, mapper_promotion
+                        )
+                        if _dept_justif:
+                            df_edt_justif_promo = _df_promo_justif_toutes[
+                                _df_promo_justif_toutes[_col_dept_edt_justif].fillna("").astype(str).str.strip().str.upper()
+                                == _dept_justif.upper()
+                            ].copy()
+                        else:
+                            df_edt_justif_promo = pd.DataFrame(columns=df_edt_justif.columns)
+                            st.error(
+                                "Votre EDT n'est pas affiché afin d'éviter de mélanger deux départements. "
+                                + _diag_dept_justif
+                            )
 
                         st.markdown(
                             f"<div style='background:#f1f5f9;padding:8px 12px;border-radius:8px;"
@@ -7899,69 +7971,24 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                         df_edt_justif = pd.read_excel(NOM_FICHIER_FIXE)
 
                         promo_justif = str(étudiant_connecte.get("promotion", "")).strip()
-                        # Département de l'étudiant : priorité à la fiche de connexion,
-                        # puis récupération depuis le fichier source des étudiants.
-                        _dept_justif = str(étudiant_connecte.get("departement", "") or "").strip()
-                        if _dept_justif.lower() in {"nan", "none", "non défini", "non defini"}:
-                            _dept_justif = ""
-                        if not _dept_justif and "Nom_Complet" in df_etu.columns:
-                            _lignes_dept_justif = df_etu[
-                                df_etu["Nom_Complet"].astype(str).str.strip().str.upper()
-                                == str(étudiant_connecte.get("nom", "")).strip().upper()
-                            ]
-                            _col_dept_etu_justif = next(
-                                (c for c in df_etu.columns
-                                 if str(c).strip().casefold() in {"département", "departement", "department", "dept"}),
-                                None
-                            )
-                            if not _lignes_dept_justif.empty and _col_dept_etu_justif:
-                                _val_dept_justif = _lignes_dept_justif.iloc[0].get(_col_dept_etu_justif, "")
-                                _dept_justif = (
-                                    str(_val_dept_justif).strip()
-                                    if pd.notna(_val_dept_justif) else ""
-                                )
-                                if _dept_justif.lower() in {"nan", "none", "non défini", "non defini"}:
-                                    _dept_justif = ""
+                        # Département inféré ensuite depuis la source EDT par
+                        # correspondance Promotion + Groupe + Sous-groupe.
+                        _dept_justif = ""
 
                         _col_dept_edt_justif = next(
                             (c for c in df_edt_justif.columns
                              if str(c).strip().casefold() in {"département", "departement", "department", "dept"}),
                             None
                         )
+                        _promo_map_justif = mapper_promotion(promo_justif)
                         _df_promo_justif_toutes = df_edt_justif[
-                            df_edt_justif["Promotion"].astype(str).str.strip().str.upper()
-                            == promo_justif.upper()
+                            df_edt_justif["Promotion"].apply(mapper_promotion).astype(str).str.strip().str.upper()
+                            == str(_promo_map_justif).strip().upper()
                         ].copy()
 
-                        if _col_dept_edt_justif:
-                            if not _dept_justif:
-                                _depts_promo_justif = sorted(
-                                    _df_promo_justif_toutes[_col_dept_edt_justif]
-                                    .dropna().astype(str).str.strip().unique().tolist()
-                                )
-                                if len(_depts_promo_justif) == 1:
-                                    _dept_justif = _depts_promo_justif[0]
-                                elif len(_depts_promo_justif) > 1:
-                                    st.error(
-                                        "Impossible d'afficher votre EDT sans mélanger les promotions : "
-                                        "votre fiche étudiant ne précise pas le département alors que "
-                                        f"{promo_justif} existe dans plusieurs départements. "
-                                        "Veuillez faire compléter la colonne Département dans le fichier étudiants."
-                                    )
-                            if _dept_justif:
-                                df_edt_justif_promo = _df_promo_justif_toutes[
-                                    _df_promo_justif_toutes[_col_dept_edt_justif].fillna("").astype(str).str.strip().str.upper()
-                                    == _dept_justif.upper()
-                                ].copy()
-                            else:
-                                df_edt_justif_promo = pd.DataFrame(columns=df_edt_justif.columns)
-                        else:
-                            df_edt_justif_promo = _df_promo_justif_toutes.copy()
-                            if _dept_justif:
-                                st.warning(
-                                    "Le fichier EDT ne contient pas de colonne Département : "
-                                    "le filtrage inter-départements ne peut pas être garanti."
-                                )
+                        # Le filtrage départemental sera appliqué après lecture
+                        # des colonnes Groupe et Sous-groupe de la fiche étudiant.
+                        df_edt_justif_promo = _df_promo_justif_toutes.copy()
 
                         # --- Groupe / Sous-groupe de l'étudiant (fichier étudiants source) ---
                         cols_etu_map_justif = detecter_colonnes_etudiant(df_etu)
@@ -7970,7 +7997,17 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
 
                         groupe_justif = ""
                         sous_groupe_justif = ""
-                        ligne_etu_justif = df_etu[df_etu["Nom_Complet"] == étudiant_connecte["nom"]]
+                        ligne_etu_justif = df_etu[
+                            df_etu["Nom_Complet"].astype(str).str.strip().str.upper()
+                            == str(étudiant_connecte.get("nom", "")).strip().upper()
+                        ].copy()
+                        _promo_col_etu_justif = cols_etu_map_justif.get("promotion")
+                        if _promo_col_etu_justif and _promo_col_etu_justif in ligne_etu_justif.columns and promo_justif:
+                            _promo_cible_ligne_justif = mapper_promotion(promo_justif)
+                            ligne_etu_justif = ligne_etu_justif[
+                                ligne_etu_justif[_promo_col_etu_justif].apply(mapper_promotion).astype(str).str.strip().str.upper()
+                                == str(_promo_cible_ligne_justif).strip().upper()
+                            ]
                         if not ligne_etu_justif.empty:
                             if col_groupe_justif and col_groupe_justif in ligne_etu_justif.columns:
                                 val_g_justif = ligne_etu_justif.iloc[0].get(col_groupe_justif)
@@ -7980,6 +8017,21 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 val_sg_justif = ligne_etu_justif.iloc[0].get(col_sous_groupe_justif)
                                 if pd.notna(val_sg_justif):
                                     sous_groupe_justif = str(val_sg_justif).strip().upper()
+
+                        _dept_justif, _depts_candidats_justif, _diag_dept_justif = _edt_inferer_departement_etudiant(
+                            df_edt_justif, promo_justif, groupe_justif, sous_groupe_justif, mapper_promotion
+                        )
+                        if _dept_justif:
+                            df_edt_justif_promo = _df_promo_justif_toutes[
+                                _df_promo_justif_toutes[_col_dept_edt_justif].fillna("").astype(str).str.strip().str.upper()
+                                == _dept_justif.upper()
+                            ].copy()
+                        else:
+                            df_edt_justif_promo = pd.DataFrame(columns=df_edt_justif.columns)
+                            st.error(
+                                "Votre EDT n'est pas affiché afin d'éviter de mélanger deux départements. "
+                                + _diag_dept_justif
+                            )
 
                         st.markdown(
                             f"<div style='background:#f1f5f9;padding:8px 12px;border-radius:8px;"
@@ -34034,19 +34086,10 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
             )
 
         if col_promo_etu and col_promo_etu in df_etu_rep_indiv.columns:
+            # La fiche étudiant est rapprochée de l'EDT par Promotion + Groupe
+            # + Sous-groupe. La colonne Département n'est PAS exigée dans le
+            # fichier étudiants : le département provient de la source EDT.
             _df_etu_indiv_base = df_etu_rep_indiv.copy()
-            if _col_dept_etu_indiv and _dept_indiv_sel:
-                _df_etu_indiv_base = _df_etu_indiv_base[
-                    _df_etu_indiv_base[_col_dept_etu_indiv].fillna("").astype(str).str.strip().str.upper()
-                    == str(_dept_indiv_sel).strip().upper()
-                ].copy()
-            elif _dept_indiv_sel:
-                st.warning(
-                    "Le fichier des étudiants ne contient pas de colonne Département. "
-                    "La liste des étudiants ne peut donc pas être séparée de façon certaine "
-                    "entre deux promotions homonymes ; ajoutez cette colonne au fichier source."
-                )
-
             _promos_edt_dept = _edt_grp_promos_par_departement(
                 _df_edt_indiv_dept,
                 _df_etu_indiv_base[col_promo_etu].dropna().astype(str).str.strip().unique().tolist(),
@@ -34072,9 +34115,37 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
 
         if promo_sel_indiv and promo_sel_indiv != "— Choisir —":
             # Filtrage des étudiants par promotion ET département.
+            _promo_cible_indiv = mapper_promotion(promo_sel_indiv)
             df_etu_promo = _df_etu_indiv_base[
-                _df_etu_indiv_base[col_promo_etu].astype(str).str.strip().str.upper() == promo_sel_indiv.upper()
+                _df_etu_indiv_base[col_promo_etu].apply(mapper_promotion).astype(str).str.strip().str.upper()
+                == str(_promo_cible_indiv).strip().upper()
             ].copy()
+            if _dept_indiv_sel and not df_etu_promo.empty:
+                _col_g_inf = cols_etu_map.get("groupe")
+                _col_sg_inf = cols_etu_map.get("sous_groupe")
+                _dept_inferes = []
+                _ambigus_dept = 0
+                for _, _r_inf in df_etu_promo.iterrows():
+                    _g_inf = _r_inf.get(_col_g_inf, "") if _col_g_inf else ""
+                    _sg_inf = _r_inf.get(_col_sg_inf, "") if _col_sg_inf else ""
+                    _dept_inf, _cands_inf, _diag_inf = _edt_inferer_departement_etudiant(
+                        df_edt_rep, _r_inf.get(col_promo_etu, ""), _g_inf, _sg_inf, mapper_promotion
+                    )
+                    _dept_inferes.append(_dept_inf or "")
+                    if _dept_inf is None:
+                        _ambigus_dept += 1
+                df_etu_promo = df_etu_promo.copy()
+                df_etu_promo["_Departement_EDT_Inferre"] = _dept_inferes
+                df_etu_promo = df_etu_promo[
+                    df_etu_promo["_Departement_EDT_Inferre"].astype(str).str.strip().str.upper()
+                    == str(_dept_indiv_sel).strip().upper()
+                ].copy()
+                if _ambigus_dept:
+                    st.caption(
+                        f"ℹ️ {_ambigus_dept} étudiant(s) n'ont pas pu être rattachés automatiquement "
+                        "à un département unique à partir de Promotion/Groupe/Sous-groupe ; "
+                        "ils sont exclus pour éviter tout mélange."
+                    )
 
             if not df_etu_promo.empty:
                 liste_etu_noms = sorted(df_etu_promo["Nom_Complet"].dropna().unique().tolist())
