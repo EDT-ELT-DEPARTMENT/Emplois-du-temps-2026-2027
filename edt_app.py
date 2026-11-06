@@ -25384,6 +25384,199 @@ if is_admin and mode_view == "✍️ Éditeur de données":
     else:
         st.info("Aucune séance ne correspond aux filtres sélectionnés.")
 
+    # ------------------------------------------------------------------
+    # EXPORT DE L'APERÇU ET GRILLE HEBDOMADAIRE COLORÉE
+    # ------------------------------------------------------------------
+    st.divider()
+    st.markdown("### 🗓️ Grille hebdomadaire colorée")
+    st.caption(
+        "La grille reprend les séances correspondant aux filtres Département, "
+        "Promotion et Enseignant sélectionnés ci-dessus. Les séances simultanées "
+        "sont regroupées dans la même cellule."
+    )
+
+    # Export Excel de la liste détaillée actuellement filtrée.
+    _col_xlsx_detail, _col_info_detail = st.columns([1, 2])
+    with _col_xlsx_detail:
+        try:
+            _buf_detail_xlsx = io.BytesIO()
+            with pd.ExcelWriter(_buf_detail_xlsx, engine="openpyxl") as _writer_detail:
+                _df_apercu[_colonnes_apercu].to_excel(
+                    _writer_detail, index=False, sheet_name="Aperçu EDT"
+                )
+                _ws_detail = _writer_detail.sheets["Aperçu EDT"]
+                _ws_detail.freeze_panes = "A2"
+                _ws_detail.auto_filter.ref = _ws_detail.dimensions
+                from openpyxl.styles import Font, PatternFill, Alignment
+                for _cell in _ws_detail[1]:
+                    _cell.font = Font(bold=True, color="FFFFFF")
+                    _cell.fill = PatternFill("solid", fgColor="17365D")
+                    _cell.alignment = Alignment(horizontal="center", vertical="center")
+                for _col_cells in _ws_detail.columns:
+                    _letter = _col_cells[0].column_letter
+                    _max_len = max((len(str(_c.value or "")) for _c in _col_cells), default=10)
+                    _ws_detail.column_dimensions[_letter].width = min(max(_max_len + 3, 12), 42)
+            _buf_detail_xlsx.seek(0)
+            st.download_button(
+                "📥 Télécharger l'aperçu détaillé (Excel)",
+                data=_buf_detail_xlsx.getvalue(),
+                file_name="Apercu_emploi_du_temps_actualise.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="export_apercu_edt_detail_excel_v1",
+                use_container_width=True,
+            )
+        except Exception as _err_detail_export:
+            st.error(f"Impossible de préparer l'aperçu Excel : {_err_detail_export}")
+    with _col_info_detail:
+        st.metric("Séances dans l'aperçu", len(_df_apercu))
+
+    _jours_grille = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+    def _cle_tri_horaire_grille(_val):
+        import re as _re_hg
+        _txt = str(_val).strip().lower().replace("h", ":")
+        _nums = _re_hg.findall(r"\d+", _txt)
+        return (int(_nums[0]) if _nums else 99, int(_nums[1]) if len(_nums) > 1 else 0, _txt)
+
+    _grille_edt = pd.DataFrame()
+    if not _df_apercu.empty and {"Jours", "Horaire"}.issubset(_df_apercu.columns):
+        _df_grille_src = _df_apercu.copy()
+        _df_grille_src["_jour_grille"] = _df_grille_src["Jours"].astype(str).str.strip().str.capitalize()
+        _horaires_grille = sorted(
+            [str(x).strip() for x in _df_grille_src["Horaire"].dropna().unique() if str(x).strip()],
+            key=_cle_tri_horaire_grille,
+        )
+        _jours_presents = [j for j in _jours_grille if j in set(_df_grille_src["_jour_grille"])]
+        _jours_presents += sorted(
+            [j for j in _df_grille_src["_jour_grille"].dropna().unique() if j not in _jours_grille],
+            key=str.casefold,
+        )
+        _grille_edt = pd.DataFrame("", index=_horaires_grille, columns=_jours_presents)
+        for _, _r_grille in _df_grille_src.iterrows():
+            _jour_cell = str(_r_grille.get("_jour_grille", ""))
+            _heure_cell = str(_r_grille.get("Horaire", "")).strip()
+            if _jour_cell not in _grille_edt.columns or _heure_cell not in _grille_edt.index:
+                continue
+            _matiere_cell = str(_r_grille.get("Enseignements", "Séance"))
+            _prof_cell = str(_r_grille.get("Enseignants", ""))
+            _promo_cell = str(_r_grille.get("Promotion", ""))
+            _lieu_cell = str(_r_grille.get("Lieu", ""))
+            _code_cell = str(_r_grille.get("Code", ""))
+            _bloc_cell = "\n".join(x for x in [
+                _matiere_cell,
+                ("Type / groupe : " + _code_cell) if _code_cell and _code_cell.lower() != "nan" else "",
+                ("Enseignant : " + _prof_cell) if _prof_cell and _prof_cell.lower() != "nan" else "",
+                ("Promotion : " + _promo_cell) if _promo_cell and _promo_cell.lower() != "nan" else "",
+                ("Lieu : " + _lieu_cell) if _lieu_cell and _lieu_cell.lower() != "nan" else "",
+            ] if x)
+            _ancien_bloc = _grille_edt.at[_heure_cell, _jour_cell]
+            _grille_edt.at[_heure_cell, _jour_cell] = (_ancien_bloc + "\n\n────────\n\n" + _bloc_cell) if _ancien_bloc else _bloc_cell
+
+        def _style_cellule_grille(_valeur):
+            _v = str(_valeur).casefold()
+            if not _v.strip():
+                return "background-color: #f3f4f6; color: #6b7280;"
+            if "tp" in _v:
+                return "background-color: #dcfce7; color: #14532d; border: 1px solid #86efac;"
+            if "td" in _v:
+                return "background-color: #dbeafe; color: #1e3a8a; border: 1px solid #93c5fd;"
+            if "cours" in _v:
+                return "background-color: #fef3c7; color: #78350f; border: 1px solid #fcd34d;"
+            return "background-color: #f3e8ff; color: #581c87; border: 1px solid #d8b4fe;"
+
+        _styled_grille = _grille_edt.style.applymap(_style_cellule_grille).set_properties(
+            **{"white-space": "pre-wrap", "text-align": "left", "vertical-align": "top", "min-width": "150px"}
+        ).set_table_styles([
+            {"selector": "th", "props": [("background-color", "#17365D"), ("color", "white"), ("font-weight", "bold"), ("text-align", "center")]},
+            {"selector": "td", "props": [("padding", "9px"), ("font-size", "12px")]},
+        ])
+        st.dataframe(_styled_grille, use_container_width=True, height=min(850, max(300, 115 + 125 * len(_grille_edt))))
+
+        _col_grid_xlsx, _col_grid_pdf = st.columns(2)
+        with _col_grid_xlsx:
+            try:
+                _buf_grille_xlsx = io.BytesIO()
+                with pd.ExcelWriter(_buf_grille_xlsx, engine="openpyxl") as _writer_grille:
+                    _grille_edt.to_excel(_writer_grille, sheet_name="Grille EDT", index_label="Horaire")
+                    _ws_grille = _writer_grille.sheets["Grille EDT"]
+                    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+                    _ws_grille.freeze_panes = "B2"
+                    _ws_grille.column_dimensions["A"].width = 18
+                    for _col_idx in range(2, _ws_grille.max_column + 1):
+                        _ws_grille.column_dimensions[_ws_grille.cell(1, _col_idx).column_letter].width = 32
+                    for _row_idx in range(1, _ws_grille.max_row + 1):
+                        _ws_grille.row_dimensions[_row_idx].height = 78 if _row_idx > 1 else 28
+                        for _col_idx in range(1, _ws_grille.max_column + 1):
+                            _cell = _ws_grille.cell(_row_idx, _col_idx)
+                            _cell.alignment = Alignment(wrap_text=True, vertical="top", horizontal="center" if _row_idx == 1 or _col_idx == 1 else "left")
+                            _cell.border = Border(bottom=Side(style="thin", color="D1D5DB"), right=Side(style="thin", color="D1D5DB"))
+                            if _row_idx == 1 or _col_idx == 1:
+                                _cell.fill = PatternFill("solid", fgColor="17365D")
+                                _cell.font = Font(bold=True, color="FFFFFF")
+                            elif not str(_cell.value or "").strip():
+                                _cell.fill = PatternFill("solid", fgColor="F3F4F6")
+                            else:
+                                _txt_grid = str(_cell.value).casefold()
+                                _couleur_grid = "DCFCE7" if "tp" in _txt_grid else ("DBEAFE" if "td" in _txt_grid else ("FEF3C7" if "cours" in _txt_grid else "F3E8FF"))
+                                _cell.fill = PatternFill("solid", fgColor=_couleur_grid)
+                _buf_grille_xlsx.seek(0)
+                st.download_button(
+                    "📊 Télécharger la grille colorée (Excel)", data=_buf_grille_xlsx.getvalue(),
+                    file_name="Grille_emploi_du_temps.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="export_grille_edt_excel_v1", use_container_width=True,
+                )
+            except Exception as _err_grid_xlsx:
+                st.error(f"Impossible de préparer la grille Excel : {_err_grid_xlsx}")
+        with _col_grid_pdf:
+            try:
+                from reportlab.lib.pagesizes import A3, landscape
+                from reportlab.lib import colors as _pdf_colors
+                from reportlab.lib.styles import getSampleStyleSheet as _pdf_styles, ParagraphStyle as _pdf_ParagraphStyle
+                from reportlab.lib.enums import TA_CENTER as _pdf_CENTER
+                from reportlab.platypus import SimpleDocTemplate as _pdf_Doc, Table as _pdf_Table, TableStyle as _pdf_TableStyle, Paragraph as _pdf_Paragraph, Spacer as _pdf_Spacer
+                from xml.sax.saxutils import escape as _xml_escape
+                _buf_grille_pdf = io.BytesIO()
+                _pdf_doc = _pdf_Doc(_buf_grille_pdf, pagesize=landscape(A3), rightMargin=18, leftMargin=18, topMargin=20, bottomMargin=20)
+                _pdf_style_sheet = _pdf_styles()
+                _pdf_cell_style = _pdf_ParagraphStyle("GridCellEDT", parent=_pdf_style_sheet["BodyText"], fontName="Helvetica", fontSize=6.5, leading=8, spaceAfter=0)
+                _pdf_head_style = _pdf_ParagraphStyle("GridHeadEDT", parent=_pdf_style_sheet["BodyText"], fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=_pdf_colors.white, alignment=_pdf_CENTER)
+                _pdf_title_style = _pdf_ParagraphStyle("GridTitleEDT", parent=_pdf_style_sheet["Title"], fontName="Helvetica-Bold", fontSize=15, leading=18, alignment=_pdf_CENTER)
+                _pdf_data = [[_pdf_Paragraph("Horaire", _pdf_head_style)] + [_pdf_Paragraph(_xml_escape(str(c)), _pdf_head_style) for c in _grille_edt.columns]]
+                for _heure_pdf, _ligne_pdf in _grille_edt.iterrows():
+                    _pdf_row = [_pdf_Paragraph(_xml_escape(str(_heure_pdf)), _pdf_head_style)]
+                    for _jour_pdf in _grille_edt.columns:
+                        _txt_pdf = str(_ligne_pdf[_jour_pdf] or "").replace("\n", "<br/>")
+                        _pdf_row.append(_pdf_Paragraph(_xml_escape(_txt_pdf).replace("&lt;br/&gt;", "<br/>"), _pdf_cell_style))
+                    _pdf_data.append(_pdf_row)
+                _pdf_table = _pdf_Table(_pdf_data, repeatRows=1, colWidths=[65] + [(_pdf_doc.width - 65) / max(1, len(_grille_edt.columns))] * len(_grille_edt.columns))
+                _pdf_commands = [
+                    ("BACKGROUND", (0, 0), (-1, 0), _pdf_colors.HexColor("#17365D")),
+                    ("BACKGROUND", (0, 1), (0, -1), _pdf_colors.HexColor("#24476B")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), _pdf_colors.white),
+                    ("GRID", (0, 0), (-1, -1), 0.45, _pdf_colors.HexColor("#CBD5E1")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+                for _ri in range(1, len(_pdf_data)):
+                    for _ci, _jour_pdf in enumerate(_grille_edt.columns, start=1):
+                        _v_pdf = str(_grille_edt.iloc[_ri - 1, _ci - 1]).casefold()
+                        _fill_pdf = "#DCFCE7" if "tp" in _v_pdf else ("#DBEAFE" if "td" in _v_pdf else ("#FEF3C7" if "cours" in _v_pdf else "#F3E8FF")) if _v_pdf.strip() else "#F3F4F6"
+                        _pdf_commands.append(("BACKGROUND", (_ci, _ri), (_ci, _ri), _pdf_colors.HexColor(_fill_pdf)))
+                _pdf_table.setStyle(_pdf_TableStyle(_pdf_commands))
+                _pdf_story = [_pdf_Paragraph("EMPLOI DU TEMPS — GRILLE HEBDOMADAIRE", _pdf_title_style), _pdf_Spacer(1, 10), _pdf_table]
+                _pdf_doc.build(_pdf_story)
+                _buf_grille_pdf.seek(0)
+                st.download_button(
+                    "📄 Télécharger la grille colorée (PDF)", data=_buf_grille_pdf.getvalue(),
+                    file_name="Grille_emploi_du_temps.pdf", mime="application/pdf",
+                    key="export_grille_edt_pdf_v1", use_container_width=True,
+                )
+            except Exception as _err_grid_pdf:
+                st.error(f"Impossible de préparer la grille PDF : {_err_grid_pdf}")
+    else:
+        st.info("La grille hebdomadaire sera disponible dès qu'au moins une séance avec jour et horaire correspondra aux filtres.")
+
     # --- BLOC D'ANALYSE VISUELLE (STYLE PERSONNALISÉ : SALLE/PROF/PROMO) ---
     st.divider()
     st.markdown("### 🔍 Analyse Visuelle des Chevauchements")
