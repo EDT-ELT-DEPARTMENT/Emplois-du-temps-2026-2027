@@ -25586,75 +25586,123 @@ if is_admin and mode_view == "✍️ Éditeur de données":
     else:
         st.info("La grille hebdomadaire sera disponible dès qu'au moins une séance avec jour et horaire correspondra aux filtres.")
 
-    # --- BLOC D'ANALYSE VISUELLE (STYLE PERSONNALISÉ : SALLE/PROF/PROMO) ---
+    # --- ANALYSE VISUELLE PROGRESSIVE DES CHEVAUCHEMENTS ---
     st.divider()
     st.markdown("### 🔍 Analyse Visuelle des Chevauchements")
+    st.caption("Analyse progressive : département → promotion, puis répartition des conflits par créneau, jour et enseignant.")
 
-    def afficher_grille_anomalie(df_source, type_tri):
-        jours_ordre = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-        horaires_ordre = [
-            "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-            "10h - 11h", "11h - 12h", "11h - 12h30", "12h - 13h", 
-            "12h30 - 14h", "13h - 14h", "14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
-        ]
-        
-        grid = pd.DataFrame("", index=horaires_ordre, columns=jours_ordre)
-        df_temp = df_source.copy()
-        
-        def format_horaire(h):
-            h_str = str(h).replace(" ", "").lower()
-            for target in horaires_ordre:
-                if h_str == target.replace(" ", "").lower(): return target
-            return h
+    _df_analyse = st.session_state.df_admin.copy()
+    _df_analyse.columns = [str(c).strip() for c in _df_analyse.columns]
+    _aliases_analyse = {
+        "Département": ["Département", "Departement", "Department"],
+        "Promotion": ["Promotion", "Promotions"],
+        "Jour": ["Jours", "Jour"],
+        "Horaire": ["Horaire", "Horaires", "Créneau", "Creneau"],
+        "Enseignant": ["Enseignants", "Enseignant", "Intervenant"],
+        "Lieu": ["Lieu", "Salle", "Local"],
+        "Matière": ["Enseignements", "Enseignement", "Matière", "Matiere"],
+    }
+    _cols_analyse = {}
+    for _canon, _candidats in _aliases_analyse.items():
+        _cols_analyse[_canon] = next((c for c in _candidats if c in _df_analyse.columns), None)
 
-        df_temp['Horaire_Normalise'] = df_temp['Horaire'].apply(format_horaire)
-        df_temp['Jours'] = df_temp['Jours'].astype(str).str.strip().str.capitalize()
+    def _valide_analyse(_serie):
+        _x = _serie.fillna("").astype(str).str.strip()
+        return _x.ne("") & _x.str.casefold().ne("nan") & _x.str.casefold().ne("nd")
 
-        # Détection des doublons
-        doublons = df_temp.duplicated(subset=['Jours', 'Horaire_Normalise', type_tri], keep=False)
-        mask_valid = (df_temp[type_tri].astype(str).str.len() > 1) & (df_temp[type_tri].astype(str).str.lower() != "nan")
-        df_conflits = df_temp[doublons & mask_valid].copy()
-        
-        if not df_conflits.empty:
-            for _, row in df_conflits.iterrows():
-                idx_h = row['Horaire_Normalise']
-                col_j = row['Jours']
-                
-                if idx_h in horaires_ordre and col_j in jours_ordre:
-                    # Formatage selon votre exemple
-                    salle_label = f"🏢 {row['Lieu']}"
-                    prof_label = f"(M: {row['Enseignants']})"
-                    promo_label = f"🎓 {row['Promotion']}"
-                    matiere_label = f"📚 {row['Enseignements']}"
-                    heure_label = f"🕒 {row['Horaire']}"
+    # Colonnes normalisées dédiées à l'analyse ; les données sources ne sont pas modifiées.
+    for _canon in ["Département", "Promotion", "Jour", "Horaire", "Enseignant", "Lieu", "Matière"]:
+        _source_col = _cols_analyse.get(_canon)
+        _df_analyse["_A_" + _canon] = _df_analyse[_source_col].fillna("").astype(str).str.strip() if _source_col else ""
 
-                    cell_html = (
-                        f"<div style='color: #b91c1c; font-size: 0.75rem; border-left: 4px solid #b91c1c; "
-                        f"padding: 6px; margin-bottom: 8px; background-color: #fff5f5; line-height: 1.3;'>"
-                        f"<b>{salle_label}</b><br>"
-                        f"{prof_label}<br>"
-                        f"<b>{promo_label}</b><br>"
-                        f"{matiere_label}<br>"
-                        f"{heure_label}"
-                        f"</div>"
-                    )
-                    
-                    prev = grid.at[idx_h, col_j]
-                    grid.at[idx_h, col_j] = (prev + cell_html) if prev else cell_html
-            
-            st.write(grid.to_html(escape=False, justify='center'), unsafe_allow_html=True)
-        else:
-            st.success(f"✅ Aucun conflit de type **{type_tri}** détecté.")
+    _c1, _c2 = st.columns(2)
+    with _c1:
+        _departements = sorted([x for x in _df_analyse["_A_Département"].unique() if x and x.casefold() != "nan"], key=str.casefold)
+        _dep_sel = st.selectbox("🏢 1. Choisir le département", ["Tous les départements"] + _departements, key="analyse_chev_dep_v2")
+    _df_dep = _df_analyse if _dep_sel == "Tous les départements" else _df_analyse[_df_analyse["_A_Département"] == _dep_sel]
+    with _c2:
+        _promotions = sorted([x for x in _df_dep["_A_Promotion"].unique() if x and x.casefold() != "nan"], key=str.casefold)
+        _promo_sel = st.selectbox("🎓 2. Choisir la promotion", ["Toutes les promotions"] + _promotions, key="analyse_chev_promo_v2")
+    _df_scope = _df_dep if _promo_sel == "Toutes les promotions" else _df_dep[_df_dep["_A_Promotion"] == _promo_sel]
 
-    # Onglets de navigation
-    t_salle, t_prof, t_promo = st.tabs(["🏢 Conflits Salles", "👤 Conflits Enseignants", "🎓 Conflits Promotions"])
-    
-    with t_salle:
-        afficher_grille_anomalie(st.session_state.df_admin, "Lieu")
-    with t_prof:
-        afficher_grille_anomalie(st.session_state.df_admin, "Enseignants")
-    with t_promo:
-        afficher_grille_anomalie(st.session_state.df_admin, "Promotion")
+    def _conflits_dimension(_data, _dimension):
+        _keys = ["_A_Jour", "_A_Horaire", _dimension]
+        _valid = _data[ _data[ _keys ].apply(lambda _r: all(str(v).strip() and str(v).strip().casefold() not in {"nan", "nd"} for v in _r), axis=1) ].copy()
+        if _valid.empty:
+            return _valid
+        _counts = _valid.groupby(_keys, dropna=False).size().reset_index(name="Nombre de séances")
+        _bad = _counts[_counts["Nombre de séances"] > 1]
+        if _bad.empty:
+            return _valid.iloc[0:0]
+        _out = _valid.merge(_bad, on=_keys, how="inner")
+        _out["Type de conflit"] = _dimension.replace("_A_", "").upper()
+        return _out
+
+    _types_conflits = [("Lieu", "Conflit de salle"), ("Enseignant", "Conflit enseignant"), ("Promotion", "Conflit promotion")]
+    _liste_conflits = []
+    for _dim, _label in _types_conflits:
+        _col_dim = "_A_" + _dim
+        if _col_dim in _df_scope.columns:
+            _part = _conflits_dimension(_df_scope, _col_dim)
+            if not _part.empty:
+                _part["Type de conflit"] = _label
+                _liste_conflits.append(_part)
+    _df_conflits_scope = pd.concat(_liste_conflits, ignore_index=True) if _liste_conflits else pd.DataFrame()
+
+    _m1, _m2, _m3, _m4 = st.columns(4)
+    _m1.metric("Lignes analysées", f"{len(_df_scope):,}".replace(",", " "))
+    _m2.metric("Conflits détectés", f"{len(_df_conflits_scope):,}".replace(",", " "))
+    _m3.metric("Jours concernés", int(_df_conflits_scope["_A_Jour"].nunique()) if not _df_conflits_scope.empty else 0)
+    _m4.metric("Enseignants concernés", int(_df_conflits_scope.loc[_df_conflits_scope["Type de conflit"] == "Conflit enseignant", "_A_Enseignant"].nunique()) if not _df_conflits_scope.empty else 0)
+
+    if _df_conflits_scope.empty:
+        st.success("✅ Aucun chevauchement détecté pour le périmètre sélectionné.")
+    else:
+        _onglets_analyse = st.tabs(["📊 Synthèse progressive", "🕒 Par créneau horaire", "📅 Par jour", "👨‍🏫 Par enseignant", "🏢 Par salle", "🎓 Par promotion"])
+        with _onglets_analyse[0]:
+            st.markdown("#### Résultat du filtrage progressif")
+            st.write(f"**Département :** {_dep_sel}  ·  **Promotion :** {_promo_sel}")
+            _synth = _df_conflits_scope.groupby("Type de conflit").agg(Occurrences=("Nombre de séances", "sum"), Groupes_en_conflit=("Nombre de séances", "count")).reset_index()
+            st.dataframe(_synth, use_container_width=True, hide_index=True)
+            _aff_cols = [c for c in ["Type de conflit", "_A_Département", "_A_Promotion", "_A_Jour", "_A_Horaire", "_A_Enseignant", "_A_Lieu", "_A_Matière", "Nombre de séances"] if c in _df_conflits_scope.columns]
+            _detail = _df_conflits_scope[_aff_cols].rename(columns={"_A_Département":"Département", "_A_Promotion":"Promotion", "_A_Jour":"Jour", "_A_Horaire":"Horaire", "_A_Enseignant":"Enseignant", "_A_Lieu":"Lieu", "_A_Matière":"Matière"})
+            st.dataframe(_detail, use_container_width=True, hide_index=True)
+        with _onglets_analyse[1]:
+            _par_creneau = _df_conflits_scope.groupby(["_A_Horaire", "Type de conflit"]).size().reset_index(name="Nombre de séances en conflit").rename(columns={"_A_Horaire":"Créneau horaire"}).sort_values("Nombre de séances en conflit", ascending=False)
+            st.markdown("#### Créneaux horaires les plus concernés")
+            st.dataframe(_par_creneau, use_container_width=True, hide_index=True)
+            if not _par_creneau.empty:
+                st.bar_chart(_par_creneau.pivot_table(index="Créneau horaire", columns="Type de conflit", values="Nombre de séances en conflit", aggfunc="sum", fill_value=0))
+        with _onglets_analyse[2]:
+            _par_jour = _df_conflits_scope.groupby(["_A_Jour", "Type de conflit"]).size().reset_index(name="Nombre de séances en conflit").rename(columns={"_A_Jour":"Jour"})
+            st.markdown("#### Répartition des chevauchements par jour")
+            st.dataframe(_par_jour, use_container_width=True, hide_index=True)
+            if not _par_jour.empty:
+                st.bar_chart(_par_jour.pivot_table(index="Jour", columns="Type de conflit", values="Nombre de séances en conflit", aggfunc="sum", fill_value=0))
+        with _onglets_analyse[3]:
+            _prof_conf = _df_conflits_scope[_df_conflits_scope["Type de conflit"] == "Conflit enseignant"]
+            if _prof_conf.empty:
+                st.info("Aucun conflit enseignant dans ce périmètre.")
+            else:
+                _par_prof = _prof_conf.groupby("_A_Enseignant").agg(Occurrences=("Nombre de séances", "sum"), Créneaux=("_A_Horaire", "nunique"), Jours=("_A_Jour", "nunique")).reset_index().rename(columns={"_A_Enseignant":"Enseignant"}).sort_values("Occurrences", ascending=False)
+                st.dataframe(_par_prof, use_container_width=True, hide_index=True)
+                st.bar_chart(_par_prof.set_index("Enseignant")[["Occurrences"]])
+        with _onglets_analyse[4]:
+            _salle_conf = _df_conflits_scope[_df_conflits_scope["Type de conflit"] == "Conflit de salle"]
+            if _salle_conf.empty:
+                st.info("Aucun conflit de salle dans ce périmètre.")
+            else:
+                _par_salle = _salle_conf.groupby("_A_Lieu").agg(Occurrences=("Nombre de séances", "sum"), Créneaux=("_A_Horaire", "nunique"), Jours=("_A_Jour", "nunique")).reset_index().rename(columns={"_A_Lieu":"Salle"}).sort_values("Occurrences", ascending=False)
+                st.dataframe(_par_salle, use_container_width=True, hide_index=True)
+                st.bar_chart(_par_salle.set_index("Salle")[["Occurrences"]])
+        with _onglets_analyse[5]:
+            _promo_conf = _df_conflits_scope[_df_conflits_scope["Type de conflit"] == "Conflit promotion"]
+            if _promo_conf.empty:
+                st.info("Aucun conflit de promotion dans ce périmètre.")
+            else:
+                _par_promo = _promo_conf.groupby("_A_Promotion").agg(Occurrences=("Nombre de séances", "sum"), Créneaux=("_A_Horaire", "nunique"), Jours=("_A_Jour", "nunique")).reset_index().rename(columns={"_A_Promotion":"Promotion"}).sort_values("Occurrences", ascending=False)
+                st.dataframe(_par_promo, use_container_width=True, hide_index=True)
+                st.bar_chart(_par_promo.set_index("Promotion")[["Occurrences"]])
 
     # 4. SAUVEGARDE ET EXPORT AVEC RAPPORT DE CONFLITS DYNAMIQUE
     st.write("---")
