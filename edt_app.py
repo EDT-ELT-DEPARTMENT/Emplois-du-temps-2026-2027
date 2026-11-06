@@ -25483,7 +25483,14 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                 return "background-color: #fef3c7; color: #78350f; border: 1px solid #fcd34d;"
             return "background-color: #f3e8ff; color: #581c87; border: 1px solid #d8b4fe;"
 
-        _styled_grille = _grille_edt.style.applymap(_style_cellule_grille).set_properties(
+        # Compatibilite Pandas : Styler.applymap() a ete remplace par Styler.map()
+        # dans les versions recentes. On choisit la methode disponible.
+        _styler_grille = _grille_edt.style
+        if hasattr(_styler_grille, "map"):
+            _styler_grille = _styler_grille.map(_style_cellule_grille)
+        else:
+            _styler_grille = _styler_grille.applymap(_style_cellule_grille)
+        _styled_grille = _styler_grille.set_properties(
             **{"white-space": "pre-wrap", "text-align": "left", "vertical-align": "top", "min-width": "150px"}
         ).set_table_styles([
             {"selector": "th", "props": [("background-color", "#17365D"), ("color", "white"), ("font-weight", "bold"), ("text-align", "center")]},
