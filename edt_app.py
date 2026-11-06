@@ -24551,7 +24551,7 @@ _NAV_MODE_BY_LABEL = {
 with st.container():
     st.markdown(f"""<div class="elt-hero" style="background:linear-gradient(118deg,#14213d 0%,#1e40af 58%,#4f46e5 100%);">
       <div class="eyebrow">Université Djillali Liabès · Faculté de génie électrique</div>
-      <div class="headline">🏛️ ELT CAMPUS</div>
+      <div class="headline">🏛️ CAMPUS Universitaire</div>
       <div class="subline">Plateforme intelligente de gestion pédagogique et des emplois du temps</div>
       <div class="identity">👤 { _user_auth.get('nom_officiel', 'Utilisateur') } &nbsp;·&nbsp; Portail sécurisé</div>
     </div>""", unsafe_allow_html=True)
@@ -26029,6 +26029,44 @@ if df is not None:
                     )
         
             
+        elif is_admin and mode_view == "Promotion":
+            # Vue dédiée à une promotion.
+            # Le bloc de synthèse était auparavant placé dans la vue Enseignant,
+            # où df_p et p_sel n'étaient pas initialisés.
+            st.subheader("🎓 Emploi du temps par promotion")
+
+            if "Promotion" not in df.columns:
+                st.error("La colonne « Promotion » est absente du fichier EDT.")
+                st.stop()
+
+            _promotions_disponibles = sorted(
+                str(v).strip()
+                for v in df["Promotion"].dropna().unique()
+                if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}
+            )
+            if not _promotions_disponibles:
+                st.warning("Aucune promotion n'est disponible dans le fichier EDT.")
+                st.stop()
+
+            p_sel = st.selectbox(
+                "Choisir la promotion à consulter :",
+                _promotions_disponibles,
+                key="edt_promotion_vue_complete"
+            )
+            df_p = df[
+                df["Promotion"].fillna("").astype(str).str.strip() == str(p_sel).strip()
+            ].copy()
+
+            if df_p.empty:
+                st.warning(f"Aucune séance trouvée pour la promotion {p_sel}.")
+                st.stop()
+
+            # Garantir les colonnes normalisées nécessaires à la grille et aux exports.
+            if "j_norm" not in df_p.columns:
+                df_p["j_norm"] = df_p["Jours"].apply(normalize)
+            if "h_norm" not in df_p.columns:
+                df_p["h_norm"] = df_p["Horaire"].apply(normalize)
+
             # --- 2. CALCUL DES STATISTIQUES POUR L'EN-TÊTE ---
             # Identification des types pour le décompte (Cours, TD, TP)
             df_p['Type_Tmp'] = df_p['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
