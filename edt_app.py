@@ -33,8 +33,6 @@ def render_sidebar_qr_api():
     st.sidebar.markdown("---")
 
 
-# Appel dans la barre latérale
-render_sidebar_qr_api()
 import streamlit as st
 import pandas as pd
 import base64
@@ -990,6 +988,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Affichage du QR code dans la barre latérale après la configuration Streamlit.
+render_sidebar_qr_api()
+
+
 
 
 # Masquer les éléments du menu supérieur
@@ -1214,163 +1216,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# =============================================================================
-# SESSION STATE POUR NAVIGATION INTELLIGENTE
-# =============================================================================
-if "page_active" not in st.session_state:
-    st.session_state.page_active = "accueil_suivi"
-if "module_sel" not in st.session_state:
-    st.session_state.module_sel = "📊 Suivi d'Assiduite"
-
-# Structure de navigation intelligente
-MODULES_NAVIGATION = {
-    "📊 Suivi d'Assiduite": {
-        "icon": "📊",
-        "pages": [
-            ("🏠 Accueil", "accueil_suivi"),
-            ("📋 Saisir Absences", "saisir_abs"),
-            ("📊 Statistiques", "stats"),
-            ("📈 Rapports", "rapports"),
-            ("👥 Répertoire", "repertoire"),
-            ("🔔 Alertes", "alertes")
-        ]
-    },
-    "📅 Gestion des EDTs & Admin": {
-        "icon": "📅",
-        "pages": [
-            ("🏠 Accueil Admin", "accueil_admin"),
-            ("📅 Créer EDTs", "creer_edt"),
-            ("👨‍🏫 Enseignants", "gerer_ens"),
-            ("🎓 Promotions", "gerer_promo"),
-            ("⚙️ Paramètres", "parametres")
-        ]
-    },
-    "🧠 EDT Intelligent": {
-        "icon": "🧠",
-        "pages": [
-            ("🏠 Accueil IA", "accueil_ia"),
-            ("📊 Affichage EDT", "affichage"),
-            ("🔍 Recherche", "recherche"),
-            ("📤 Import/Export", "import_export"),
-            ("📊 Analytics", "analytics")
-        ]
-    }
-}
-
-# =============================================================================
-# SIDEBAR PRINCIPALE - BARRE LATÉRALE INTELLIGENTE
-# =============================================================================
-with st.sidebar:
-    # En-tête
-    st.markdown("""
-    <div style='text-align: center; padding: 20px 0;'>
-        <h1 style='color: white; margin: 0; font-size: 36px;'>🏛️</h1>
-        <h2 style='color: white; margin: 10px 0 0 0; font-size: 24px;'>UDL-SBA</h2>
-        <p style='color: rgba(255,255,255,0.85); margin: 5px 0 0 0; font-size: 11px;'>
-            Département d'Électrotechnique - FGE
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # Sélecteur de modules
-    st.markdown("""
-    <p style='color: white; font-weight: bold; margin-bottom: 10px; margin-top: 10px;'>📂 MODULES</p>
-    """, unsafe_allow_html=True)
-    
-    for module_name, module_info in MODULES_NAVIGATION.items():
-        is_active = st.session_state.module_sel == module_name
-        
-        if st.button(
-            f"{module_info['icon']} {module_name}",
-            use_container_width=True,
-            key=f"module_btn_{module_name.replace(' ', '_')}"
-        ):
-            st.session_state.module_sel = module_name
-            st.session_state.page_active = module_info['pages'][0][1]
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # Pages du module actif
-    st.markdown("""
-    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>📄 PAGES</p>
-    """, unsafe_allow_html=True)
-    
-    for module_name, module_info in MODULES_NAVIGATION.items():
-        if st.session_state.module_sel == module_name:
-            for page_name, page_key in module_info['pages']:
-                is_active_page = st.session_state.page_active == page_key
-                
-                if is_active_page:
-                    st.markdown(f"""
-                    <div style='
-                        background: linear-gradient(90deg, #4f46e5, #6366f1);
-                        color: white;
-                        padding: 10px 12px;
-                        border-radius: 8px;
-                        font-weight: 600;
-                        margin: 5px 0;
-                        text-align: left;
-                    '>{page_name}</div>
-                    """, unsafe_allow_html=True)
-                else:
-                    if st.button(
-                        page_name,
-                        use_container_width=True,
-                        key=f"page_btn_{page_key}"
-                    ):
-                        st.session_state.page_active = page_key
-                        st.rerun()
-            break
-    
-    st.markdown("---")
-    
-    # Infos
-    st.markdown("""
-    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>ℹ️ INFOS</p>
-    """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Année", "2026-2027", label_visibility="collapsed")
-    with col2:
-        st.metric("Semestre", "S1", label_visibility="collapsed")
-    
-    st.markdown("---")
-    
-    # Actions rapides
-    st.markdown("""
-    <p style='color: white; font-weight: bold; margin-bottom: 10px;'>⚡ ACTIONS</p>
-    """, unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("🔄", use_container_width=True, help="Rafraîchir"):
-            st.rerun()
-    with col2:
-        if st.button("🌓", use_container_width=True, help="Thème"):
-            st.info("🌓 Thème switcher - À implémenter")
-    with col3:
-        if st.button("⚙️", use_container_width=True, help="Paramètres"):
-            st.session_state.module_sel = "📅 Gestion des EDTs & Admin"
-            st.session_state.page_active = "parametres"
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # Footer sidebar
-    st.markdown("""
-    <div style='text-align: center; color: rgba(255,255,255,0.7); font-size: 9px; padding: 15px 0 0 0;'>
-        <p style='margin: 0;'>v2.0 | Année 2026-2027</p>
-        <p style='margin: 0;'>© Département ELT</p>
-        <p style='margin: 5px 0 0 0; font-size: 8px;'>All rights reserved</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-# Récupérer le module sélectionné
-module_sel = st.session_state.module_sel
+# Navigation unifiée : les anciennes structures de menu sont retirées.
 
 # =============================================================================
 # FONCTIONS UTILITAIRES COMMUNES
@@ -3251,7 +3097,2802 @@ def _lieux_libres_pdf_bytes(jours, horaires, cellules, titre, sous_titre,
     return buf.getvalue()
 
 
-def run_Assiduité():
+def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
+    import io
+    from fpdf import FPDF
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib.units import mm
+    from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
+    st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
+    st.caption("département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - année 2026-2027")
+    
+    # =============================================================================
+    # CHARGEMENT DES DONNÉES (UNIFIÉ)
+    # =============================================================================
+    fichiers_locaux_ok = all(os.path.exists(c) for c in [FILE_ETUDIANTS, FILE_EDT, FILE_ENS])
+    
+    df_etu, df_edt, df_ens = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
+    if not fichiers_locaux_ok:
+        st.warning("⚠️ Fichiers locaux manquants. Veuillez uploader les 3 fichiers Excel :")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            up_etu = st.file_uploader("Liste des étudiants", type=["xlsx", "xls", "xlsb"], key="up_etu")
+        with c2:
+            up_edt = st.file_uploader("Données EDT", type=["xlsx", "xls", "xlsb"], key="up_edt")
+        with c3:
+            up_ens = st.file_uploader("Liste enseignants", type=["xlsx", "xls", "xlsb"], key="up_ens")
+        
+        if not all([up_etu, up_edt, up_ens]):
+            st.info("📤 En attente des fichiers...")
+            return
+        
+        try:
+            df_etu = lire_excel_robuste(up_etu)
+            df_etu.columns = df_etu.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de lecture étudiants : {e}")
+            return
+        try:
+            df_edt = lire_excel_robuste(up_edt)
+            df_edt.columns = df_edt.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de lecture EDT : {e}")
+            return
+        try:
+            df_ens = lire_excel_robuste(up_ens, sheet_name=0)
+            df_ens.columns = df_ens.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de lecture enseignants : {e}")
+            return
+    else:
+        try:
+            df_etu = lire_excel_robuste(FILE_ETUDIANTS)
+            df_etu.columns = df_etu.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de chargement étudiants : {e}")
+            return
+        try:
+            df_edt = lire_excel_robuste(FILE_EDT)
+            df_edt.columns = df_edt.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de chargement EDT : {e}")
+            return
+        try:
+            df_ens = lire_excel_robuste(FILE_ENS, sheet_name=0)
+            df_ens.columns = df_ens.columns.str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur de chargement enseignants : {e}")
+            return
+
+    # Vérification finale
+    if df_etu.empty or df_edt.empty or df_ens.empty:
+        st.error("❌ Données incomplètes après chargement. Vérifiez vos fichiers source.")
+        return
+    
+    # ... suite de votre code ...    
+    
+    # --- Preparation des listes ---
+    if "NOM" in df_ens.columns and "PRÉNOM" in df_ens.columns:
+        df_ens["Nom_Complet"] = df_ens["NOM"].astype(str).str.strip().str.upper() + " " + df_ens["PRÉNOM"].astype(str).str.strip().str.title()
+        LISTE_PROFS = sorted(df_ens["Nom_Complet"].dropna().unique().tolist())
+    elif "Nom" in df_ens.columns and "Prénom" in df_ens.columns:
+        df_ens["Nom_Complet"] = df_ens["Nom"].astype(str).str.strip().str.upper() + " " + df_ens["Prénom"].astype(str).str.strip().str.title()
+        LISTE_PROFS = sorted(df_ens["Nom_Complet"].dropna().unique().tolist())
+    else:
+        LISTE_PROFS = []
+
+    # Détection automatique des colonnes Nom/Prénom (insensible à la casse)
+    col_nom = None
+    col_prenom = None
+    for c in df_etu.columns:
+        if c.strip().upper() == "NOM":
+            col_nom = c
+        if c.strip().upper() in ["PRÉNOM", "PRENOM"]:
+            col_prenom = c
+
+    if col_nom and col_prenom:
+        df_etu["Nom_Complet"] = df_etu[col_nom].astype(str).str.strip().str.upper() + " " + df_etu[col_prenom].astype(str).str.strip().str.title()
+    else:
+        st.error(f"❌ Colonnes 'Nom' et 'Prénom' introuvables dans le fichier étudiants. Colonnes trouvées : {list(df_etu.columns)}")
+        return
+
+    # Partage du DataFrame étudiant déjà chargé avec les autres espaces de l'application.
+    # On conserve la même source et le même tableau : aucune nouvelle lecture Excel
+    # et aucune nouvelle table d'étudiants ne sont créées pour les délégués.
+    st.session_state["_df_etu_source_partagee"] = df_etu
+
+    # =============================================================================
+    # INITIALISATION SESSION STATE
+    # =============================================================================
+    if "absences" not in st.session_state:
+        st.session_state.absences = []
+    if "requetes" not in st.session_state:
+        st.session_state.requetes = []
+    if "confirm_reset" not in st.session_state:
+        st.session_state.confirm_reset = False
+    if "confirm_reset_abs" not in st.session_state:
+        st.session_state.confirm_reset_abs = False
+
+    # =============================================================================
+    if 'étudiant_auth' not in st.session_state:
+        st.session_state.étudiant_auth = None
+    if 'étudiant_otp' not in st.session_state:
+        st.session_state.étudiant_otp = None
+    if 'étudiant_otp_email' not in st.session_state:
+        st.session_state.étudiant_otp_email = None
+
+    # FONCTIONS SUPABASE
+    # =============================================================================
+    def charger_absences_supabase(matiere=None, promotion=None):
+        if not MODE_SUPABASE:
+            return []
+        try:
+            query = supabase.table("suivi_assiduite_2026").select("*")
+            if matiere:
+                query = query.eq("matiere", matiere)
+            if promotion:
+                query = query.eq("promotion", promotion)
+            res = query.execute()
+            return res.data if res.data else []
+        except Exception as e:
+            st.error(f"Erreur Supabase (charger absences) : {e}")
+            return []
+
+    def enregistrer_absence_supabase(payload):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            supabase.table("suivi_assiduite_2026").insert(payload).execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (enregistrer) : {e}")
+            return False
+
+    def supprimer_absences_supabase(matiere, promotion):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            supabase.table("suivi_assiduite_2026").delete().eq("matiere", matiere).eq("promotion", promotion).execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (supprimer) : {e}")
+            return False
+
+    def rehabiliter_absences_etudiant_supabase(etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            query = supabase.table("suivi_assiduite_2026").update({"justifie": True})\
+                .eq("etud_non_eligible", etudiant).eq("matiere", matiere)
+            if date_abs: query = query.eq("date_absence", date_abs)
+            if jour_abs: query = query.eq("jour_absence", jour_abs)
+            if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
+            query.execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (rehabilitation) : {e}")
+            return False
+
+    def charger_requetes_supabase(statut=None, promotion=None):
+        if not MODE_SUPABASE:
+            return []
+        try:
+            query = supabase.table("requetes_absences").select("*")
+            if statut:
+                query = query.eq("statut", statut)
+            if promotion:
+                query = query.eq("promotion", promotion)
+            res = query.execute()
+            return res.data if res.data else []
+        except Exception as e:
+            st.error(f"Erreur Supabase (charger requetes) : {e}")
+            return []
+
+    def enregistrer_requete_supabase(payload):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            supabase.table("requetes_absences").insert(payload).execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (requete) : {e}")
+            return False
+
+    def mettre_a_jour_statut_requete_supabase(req_id, statut):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            supabase.table("requetes_absences").update({"statut": statut}).eq("id", req_id).execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (maj statut) : {e}")
+            return False
+
+    def reinitialiser_requetes_supabase():
+        if not MODE_SUPABASE:
+            return False
+        try:
+            supabase.table("requetes_absences").delete().neq("id", -1).execute()
+            return True
+        except Exception as e:
+            st.error(f"Erreur Supabase (reset) : {e}")
+            return False
+
+    
+    def get_absences_étudiant(nom_etudiant):
+        if MODE_SUPABASE:
+            try:
+                res = supabase.table("suivi_assiduite_2026")\
+                    .select("id,etud_non_eligible,matiere,promotion,date_absence,jour_absence,horaire_absence,cause_non_eligibilite,justifie")\
+                    .eq("etud_non_eligible", nom_etudiant)\
+                    .order("id", desc=True)\
+                    .limit(50)\
+                    .execute()
+                return res.data if res.data else []
+            except Exception as e:
+                st.error(f"Erreur de chargement absences : {e}")
+                return []
+        else:
+            return [a for a in st.session_state.absences if a.get("etud_non_eligible") == nom_etudiant]    
+        
+    
+    def trouver_requete_existante(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
+        """Retourne une requete EN ATTENTE existante pour empecher les doublons de depot."""
+        if MODE_SUPABASE:
+            try:
+                query = supabase.table("requetes_absences").select("id,statut")\
+                    .eq("nom_etudiant", nom_etudiant)\
+                    .eq("matiere", matiere)\
+                    .eq("statut", "En attente")
+                if date_abs: query = query.eq("date_absence", date_abs)
+                if jour_abs: query = query.eq("jour_absence", jour_abs)
+                if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
+                res = query.limit(1).execute()
+                return res.data[0] if res.data else None
+            except Exception as e:
+                st.warning(f"⚠️ Vérification justificatif lente, réessayez : {e}")
+                return None
+    for r in st.session_state.requetes:
+        if (r.get("nom_etudiant") == nom_etudiant and 
+            r.get("matiere") == matiere and 
+            r.get("statut") == "En attente"):
+            if date_abs and r.get("date_absence") != date_abs: continue
+            if jour_abs and r.get("jour_absence") != jour_abs: continue
+            if horaire_abs and r.get("horaire_absence") != horaire_abs: continue
+            return r
+        return None        
+    for r in st.session_state.requetes:
+        if (r.get("nom_etudiant") == nom_etudiant and 
+                r.get("matiere") == matiere and 
+                r.get("statut") == "En attente"):
+                if date_abs and r.get("date_absence") != date_abs: continue
+                if jour_abs and r.get("jour_absence") != jour_abs: continue
+                if horaire_abs and r.get("horaire_absence") != horaire_abs: continue
+                return r    
+        return None
+
+    
+    def trouver_derniere_requete(nom_etudiant, matiere, date_abs=None, jour_abs=None, horaire_abs=None):
+        """Retourne la DERNIERE requete (tous statuts) pour affichage du statut final."""
+        if MODE_SUPABASE:
+            try:
+                query = supabase.table("requetes_absences").select("id,statut,motif,date_demande")\
+                    .eq("nom_etudiant", nom_etudiant)\
+                    .eq("matiere", matiere)
+                if date_abs: query = query.eq("date_absence", date_abs)
+                if jour_abs: query = query.eq("jour_absence", jour_abs)
+                if horaire_abs: query = query.eq("horaire_absence", horaire_abs)
+                res = query.order("id", desc=True).limit(1).execute()
+                return res.data[0] if res.data else None
+            except Exception as e:
+                st.warning(f"⚠️ Chargement statut justificatif lent : {e}")
+                return None
+        candidates = [r for r in st.session_state.requetes
+                      if r.get("nom_etudiant") == nom_etudiant 
+                      and r.get("matiere") == matiere]
+        filtered = []
+        for r in candidates:
+            if date_abs and r.get("date_absence") != date_abs: continue
+            if jour_abs and r.get("jour_absence") != jour_abs: continue
+            if horaire_abs and r.get("horaire_absence") != horaire_abs: continue
+            filtered.append(r)
+        return filtered[-1] if filtered else None
+    def supprimer_derniere_absence_supabase(etudiant, matiere, promotion):
+        if not MODE_SUPABASE:
+            return False
+        try:
+            res = supabase.table("suivi_assiduite_2026").select("*")\
+                .eq("etud_non_eligible", etudiant)\
+                .eq("matiere", matiere)\
+                .eq("promotion", promotion)\
+                .order("id", desc=True).limit(1).execute()
+            if res.data:
+                last_id = res.data[0]["id"]
+                supabase.table("suivi_assiduite_2026").delete().eq("id", last_id).execute()
+                return True
+            return False
+        except Exception as e:
+            st.error(f"Erreur Supabase (annulation) : {e}")
+            return False
+
+    def supprimer_derniere_absence_locale(etudiant, matiere, promotion):
+        candidates = [
+            (idx, a) for idx, a in enumerate(st.session_state.absences)
+            if a.get("etud_non_eligible") == etudiant
+            and a.get("matiere") == matiere
+            and a.get("promotion") == promotion
+        ]
+        if candidates:
+            last_idx = candidates[-1][0]
+            st.session_state.absences.pop(last_idx)
+            return True
+        return False
+
+
+    # =============================================================================
+
+    def envoyer_otp_étudiant(email_dest, nom_etud, code_otp):
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            body = f"Bonjour {nom_etud},\n\nVotre code d'accès à la Plateforme de Suivi d'Assiduité est : {code_otp}\n\nCe code est valable 10 minutes.\n\ndépartement d'Électrotechnique - FGE/UDL-SBA"
+            msg = MIMEText(body)
+            msg["Subject"] = "Code d'accès - Plateforme Assiduité"
+            msg["From"] = "chef.department.elt.fge@gmail.com"
+            msg["To"] = str(email_dest).strip()
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
+            server.send_message(msg)
+            server.quit()
+            return True
+        except Exception as e:
+            st.error(f"Erreur envoi email : {e}")
+            return False
+
+    # Adresses de supervision utilisées uniquement si l'étudiant n'a pas d'adresse email connue.
+    # Modifiables par l'administrateur selon les besoins du département.
+    EMAILS_NOTIFICATION_ABSENCE_DEFAUT = [
+        "medhadjera4@gmail.com",
+        "nass_ka@yahoo.fr",
+        "milouaf@yahoo.fr",
+    ]
+
+    def envoyer_notification_absence_étudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause, absences_étudiant=None, notification_admin=False):
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            # ═══ RÉCAPITULATIF DES ABSENCES PAR matiere ═══
+            recap_html = ""
+            if absences_étudiant:
+                matieres_abs = [a.get("matiere", "Inconnue") for a in absences_étudiant]
+                compteur = Counter(matieres_abs)
+                if compteur:
+                    recap_rows = ""
+                    for mat, count in sorted(compteur.items()):
+                        couleur = "#b91c1c" if count >= 5 else "#d97706" if count >= 3 else "#1e293b"
+                        alerte = " 🚨 EXCLU" if count >= 5 else (" ⚠️ Attention" if count >= 3 else "")
+                        recap_rows += f"<tr><td style='padding:8px;border-bottom:1px solid #e2e8f0;'>{mat}</td><td style='padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:bold;color:{couleur};'>{count}{alerte}</td></tr>"
+
+                    recap_html = f"""
+                    <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:15px;margin:20px 0;">
+                        <h3 style="margin:0 0 10px 0;color:#9a3412;font-size:15px;">📊 Récapitulatif de vos absences</h3>
+                        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                            <thead><tr style="background:#ffedd5;">
+                                <th style="padding:8px;text-align:left;border-bottom:2px solid #fdba74;">matiere</th>
+                                <th style="padding:8px;text-align:center;border-bottom:2px solid #fdba74;">Nombre d'absences</th>
+                            </tr></thead>
+                            <tbody>{recap_rows}</tbody>
+                        </table>
+                    </div>
+                    """
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"Signalement d'absence - {matiere}"
+            msg["From"] = "chef.department.elt.fge@gmail.com"
+            msg["To"] = str(email_dest).strip()
+
+            html_body = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
+<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
+</div>
+<div style="background:#fef2f2;border-left:5px solid #ef4444;padding:15px;margin:20px;color:#991b1b;font-weight:600;">
+{"Signalement : l'étudiant " + str(nom_etud) + " a été déclaré absent lors d'une séance obligatoire." if notification_admin else "Vous avez été signalé(e) absent(e) lors d'une séance obligatoire."}
+</div>
+<div style="padding:20px 30px;">
+<p style="color:#334155;margin-bottom:20px;">{"Bonjour, équipe de suivi de l'assiduité," if notification_admin else "Salem " + str(nom_etud) + ","}</p>
+<p style="color:#64748b;font-size:14px;">{"Un enseignant a enregistré l'absence de l'étudiant " + str(nom_etud) + ". Voici les détails de la séance :" if notification_admin else "L'enseignant ci-dessous a enregistré votre absence. Voici les details de la séance :"}</p>
+<table style="width:100%;border-collapse:collapse;margin-top:15px;">
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">matiere</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{matiere}</td></tr>
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Charge de cours</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{enseignant}</td></tr>
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Date</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{date_abs}</td></tr>
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Jour</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{jour}</td></tr>
+<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Horaire</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{horaire}</td></tr>
+<tr><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Motif enregistre</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{cause}</td></tr>
+</table>
+
+{recap_html}
+
+<div style="background:#fee2e2;border:1px solid #ef4444;border-radius:8px;padding:15px;margin:20px 0;color:#991b1b;font-size:13px;">
+    <strong>⏰ Délais de justification :</strong><br>
+    Vous disposez d'un délai de <strong>72 heures</strong> à compter de la date d'absence pour déposer un justificatif via l'onglet <strong>Justificatifs</strong> de la plateforme. Passé ce délai, l'absence sera considérée comme <strong>définitivement non justifiee</strong>.
+</div>
+
+<p style="color:#64748b;font-size:13px;margin-top:20px;">Accédez à la plateforme (https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app) pour déposer votre justificatif : onglet <strong>Justificatifs</strong>.</p>
+</div>
+<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
+Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
+Cet email est genere automatiquement - merci de ne pas y repondre.
+</div>
+</div>
+</body>
+</html>"""
+            msg.attach(MIMEText(html_body, "html"))
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
+            server.send_message(msg)
+            server.quit()
+            return True
+        except Exception as e:
+            st.warning(f"Notification email non envoyee : {e}")
+            return False
+
+    def envoyer_notification_decision_etudiant(email_dest, nom_etud, matiere, statut, motif=""):
+        """Envoie une notification à l'étudiant après décision admin (Favorable/Défavorable)."""
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            couleur = "#166534" if "Favorable" in statut else "#991b1b"
+            icone = "✅" if "Favorable" in statut else "❌"
+            titre = "Justificatif ACCEPTÉ" if "Favorable" in statut else "Justificatif REJETÉ"
+            msg_body = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
+<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
+</div>
+<div style="padding:30px;">
+<p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_etud}</strong>,</p>
+<div style="background:{'#dcfce7' if 'Favorable' in statut else '#fee2e2'};border-left:5px solid {couleur};padding:15px;margin:20px 0;color:{couleur};font-weight:600;border-radius:0 8px 8px 0;">
+    {icone} <strong>{titre}</strong><br>
+    matière concernée : <strong>{matiere}</strong>
+</div>
+<p style="color:#64748b;font-size:14px;"><strong>Motif du justificatif :</strong> {motif if motif else "Non précisé"}</p>
+{"<p style='color:#166534;font-size:14px;font-weight:600;'>🎓 Votre absence est désormais justifiee. Vous conservez votre éligibilité à l'examen et vous avez le droit à un <strong>examen de remplacement (rattrapage)</strong> si nécessaire.</p>" if "Favorable" in statut else "<p style='color:#991b1b;font-size:14px;'>Votre demande de justification a été rejetée. L'absence reste non justifiee et les sanctions réglementaires s'appliquent.</p>"}
+</div>
+<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
+Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
+Cet email est généré automatiquement - merci de ne pas y répondre.
+</div>
+</div>
+</body>
+</html>"""
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"{titre} - {matiere}"
+            msg["From"] = "chef.department.elt.fge@gmail.com"
+            msg["To"] = str(email_dest).strip()
+            msg.attach(MIMEText(msg_body, "html"))
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
+            server.send_message(msg)
+            server.quit()
+            return True
+        except Exception as e:
+            st.warning(f"Notification décision étudiant non envoyée : {e}")
+            return False
+
+    def envoyer_notification_decision_enseignant(email_dest, nom_ens, nom_etud, matiere, statut, promotion=""):
+        """Envoie une notification à l'enseignant après décision admin sur une justification."""
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            couleur = "#166534" if "Favorable" in statut else "#991b1b"
+            icone = "✅" if "Favorable" in statut else "❌"
+            titre = "Justificatif ACCEPTÉ" if "Favorable" in statut else "Justificatif REJETÉ"
+
+            msg_body = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
+<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
+<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
+<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
+</div>
+<div style="padding:30px;">
+<p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_ens}</strong>,</p>
+<p style="color:#64748b;font-size:14px;">L'administration a rendu son avis sur une demande de justification d'absence concernant un étudiant de votre enseignement.</p>
+<div style="background:{'#dcfce7' if 'Favorable' in statut else '#fee2e2'};border-left:5px solid {couleur};padding:15px;margin:20px 0;color:{couleur};font-weight:600;border-radius:0 8px 8px 0;">
+    {icone} <strong>{titre}</strong><br>
+    <strong>Étudiant :</strong> {nom_etud}<br>
+    <strong>matiere :</strong> {matiere}<br>
+    <strong>Promotion :</strong> {promotion}
+</div>
+{"<div style='background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:15px;margin:20px 0;color:#1e40af;font-size:13px;'><strong>📋 Information importante :</strong><br>Cet étudiant a obtenu un avis <strong>favorable</strong> pour la justification de son absence. Il est désormais réhabilité et <strong>a le droit à un examen de remplacement (rattrapage)</strong> s'il le souhaite, conformément au règlement intérieur.</div>" if "Favorable" in statut else "<div style='background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:15px;margin:20px 0;color:#9a3412;font-size:13px;'><strong>📋 Information :</strong><br>La demande de justification a été <strong>rejetée</strong>. L'absence reste enregistrée comme non justifiee et l'étudiant reste sous le seuil d'exclusion si applicable.</div>"}
+</div>
+<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
+Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
+Cet email est généré automatiquement - merci de ne pas y répondre.
+</div>
+</div>
+</body>
+</html>"""
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"[{titre}] {nom_etud} - {matiere}"
+            msg["From"] = "chef.department.elt.fge@gmail.com"
+            msg["To"] = str(email_dest).strip()
+            msg.attach(MIMEText(msg_body, "html"))
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
+            server.send_message(msg)
+            server.quit()
+            return True
+        except Exception as e:
+            st.warning(f"Notification décision enseignant non envoyée : {e}")
+            return False
+
+    def trouver_email_étudiant(nom_etudiant, df_étudiants):
+        # 1. Priorité : base de données Supabase (email saisi lors de connexion étudiant)
+        if MODE_SUPABASE:
+            try:
+                res = supabase.table("étudiants_emails").select("email").eq("nom_complet", str(nom_etudiant).strip()).execute()
+                if res.data and len(res.data) > 0:
+                    email_db = str(res.data[0]["email"]).strip()
+                    if email_db and email_db.lower() not in ["nan", "none", ""]:
+                        return email_db
+            except Exception:
+                pass
+        # 2. Fallback : fichier Excel source (colonne Email / Mail / E-mail)
+        if df_étudiants is None or df_étudiants.empty:
+            return None
+        col_email = None
+        for c in df_étudiants.columns:
+            c_up = str(c).strip().upper()
+            if c_up in ["EMAIL", "E-MAIL", "MAIL", "COURRIEL", "ADRESSE EMAIL"]:
+                col_email = c
+                break
+        if not col_email:
+            return None
+        mask = df_étudiants["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_etudiant).strip().upper()
+        match = df_étudiants[mask]
+        if not match.empty:
+            val = str(match.iloc[0][col_email]).strip()
+            if val and val.lower() not in ["nan", "none", ""]:
+                return val
+        return None
+
+    # =============================================================================
+    # AUTHENTIFICATION ETUDIANT (Mat. BAC + OTP)
+    # =============================================================================
+    # Récupération connexion enseignant (depuis Module 2 EDT)
+    user = st.session_state.get("user_data")
+    if preview_teacher:
+        user = {"role": "enseignant", "nom_officiel": str(preview_teacher), "email": ""}
+    if preview_student:
+        user = {"role": "etudiant", "nom_officiel": str(preview_student.get("nom", "Étudiant")), "email": preview_student.get("email", "")}
+
+    is_enseignant_connecte = user is not None and user.get("role") == "enseignant"
+    is_admin_edt = user is not None and user.get("role") == "admin" and not preview_student and not preview_teacher
+
+    étudiant_connecte = preview_student or st.session_state.get("étudiant_auth")
+
+    if not is_enseignant_connecte and not étudiant_connecte and not is_admin_edt:
+        st.markdown("<h3 style='text-align:center;color:#1E3A8A;'>🔐 Portail Étudiant</h3>", unsafe_allow_html=True)
+        st.info("Accédez à votre espace pour consulter vos absences et déposer des justificatifs.")
+
+        # L'identifiant du portail est désormais le matricule étudiant du fichier source,
+        # et non le matricule BAC qui peut être partagé par plusieurs étudiants.
+        def _normaliser_matricule_portail(valeur):
+            if valeur is None or pd.isna(valeur):
+                return ""
+            texte = str(valeur).strip().upper()
+            # Corrige les valeurs numériques Excel telles que 123456.0 sans
+            # supprimer les éventuels zéros initiaux d'une chaîne texte.
+            if re.fullmatch(r"\d+\.0+", texte):
+                texte = texte.split(".", 1)[0]
+            return re.sub(r"[\s\-]+", "", texte)
+
+        mat_etud_input = st.text_input(
+            "🎓 Mat. Etudiant :",
+            key="mat_etud_auth",
+            placeholder="Saisissez votre matricule étudiant, exemple: 2626matricule du Bac"
+        )
+
+        if mat_etud_input:
+            mat_etud_clean = _normaliser_matricule_portail(mat_etud_input)
+            df_match = pd.DataFrame()
+
+            # Priorité à l'en-tête source « Mat. Etudiant » (ou équivalent exact).
+            def _normaliser_entete_mat_portail(valeur):
+                # Import local pour garantir la disponibilité de unicodedata
+                # même si les imports globaux du fichier sont réorganisés.
+                import unicodedata
+                texte = unicodedata.normalize("NFKD", str(valeur or ""))
+                texte = "".join(ch for ch in texte if not unicodedata.combining(ch))
+                return re.sub(r"[^a-z0-9]", "", texte.casefold())
+
+            alias_mat_etud = {
+                "matetudiant", "matriculeetudiant", "numeretudiant",
+                "numeroetudiant", "numetudiant", "netudiant", "matetud",
+                "codeetudiant"
+            }
+            col_mat_etud = next(
+                (c for c in df_etu.columns if _normaliser_entete_mat_portail(c) in alias_mat_etud),
+                None
+            )
+            if col_mat_etud is None:
+                try:
+                    col_mat_etud = detecter_colonnes_etudiant(df_etu).get("mat_etud")
+                except Exception:
+                    col_mat_etud = None
+
+            if col_mat_etud and col_mat_etud in df_etu.columns:
+                valeurs_mat = df_etu[col_mat_etud].map(_normaliser_matricule_portail)
+                df_match = df_etu.loc[valeurs_mat.eq(mat_etud_clean)].copy()
+            else:
+                st.error(
+                    "❌ La colonne « Mat. Etudiant » est introuvable dans le fichier source "
+                    "des étudiants. Vérifiez l'intitulé de cette colonne."
+                )
+
+            if not df_match.empty:
+                df_match = df_match.reset_index(drop=True)
+
+                # Si le matricule apparaît plusieurs fois dans le fichier, demander
+                # une confirmation par nom et promotion au lieu de prendre la première ligne.
+                if len(df_match) > 1:
+                    choix_lignes = list(range(len(df_match)))
+                    choix_ligne = st.selectbox(
+                        "Plusieurs fiches portent ce matricule. Sélectionnez votre fiche :",
+                        choix_lignes,
+                        format_func=lambda i: (
+                            f"{str(df_match.iloc[i].get('Nom_Complet', 'Nom non renseigné')).strip()} "
+                            f"— {str(df_match.iloc[i].get('Promotion', 'Promotion non renseignée')).strip()}"
+                        ),
+                        key="choix_fiche_mat_etud_portail"
+                    )
+                    ligne_etudiant = df_match.iloc[int(choix_ligne)]
+                else:
+                    ligne_etudiant = df_match.iloc[0]
+
+                etud_nom = str(ligne_etudiant.get('Nom_Complet', '')).strip()
+                etud_promo = str(ligne_etudiant.get('Promotion', '')).strip()
+                st.success(f"✅ Étudiant trouvé : **{etud_nom}** ({etud_promo})")
+
+                email_input = st.text_input(
+                    "📧 Votre adresse email :",
+                    key="email_etud_auth",
+                    placeholder="ex: nom@email.com"
+                )
+
+                if email_input and "@" in str(email_input):
+                    if st.button("📧 Recevoir mon code d'accès", use_container_width=True, key="btn_otp"):
+                        import random
+                        otp_code = str(random.randint(100000, 999999))
+                        st.session_state.étudiant_otp = otp_code
+                        st.session_state.étudiant_otp_email = str(email_input).strip()
+                        st.session_state.étudiant_otp_mat_etud = mat_etud_clean
+
+                        sent = envoyer_otp_étudiant(email_input, etud_nom, otp_code)
+                        if sent:
+                            st.success(f"✅ Code envoyé à : `{email_input}` — Vérifiez votre boîte mail (et les spams).")
+                        else:
+                            st.warning(f"⚠️ Impossible d'envoyer l'email. Votre code (mode démo) : `{otp_code}`")
+
+                if st.session_state.get("étudiant_otp"):
+                    otp_input = st.text_input(
+                        "🔑 Saisissez le code reçu par email :",
+                        type="password",
+                        key="otp_input_auth"
+                    )
+                    if st.button("✅ Valider mon accès", use_container_width=True, key="btn_valider_otp"):
+                        if otp_input == st.session_state.get("étudiant_otp"):
+                            st.session_state.étudiant_auth = {
+                                "mat_etud": mat_etud_clean,
+                                # Alias historique conservé pour compatibilité avec
+                                # les anciennes parties du programme et le schéma Supabase.
+                                "mat_bac": mat_etud_clean,
+                                "nom": etud_nom,
+                                "email": st.session_state.étudiant_otp_email,
+                                "promotion": etud_promo
+                            }
+                            # Stockage de l'identifiant étudiant dans l'ancien champ
+                            # mat_bac pour rester compatible avec la table existante.
+                            if MODE_SUPABASE:
+                                try:
+                                    supabase.table("étudiants_emails").upsert({
+                                        "nom_complet": etud_nom,
+                                        "mat_bac": mat_etud_clean,
+                                        "email": st.session_state.étudiant_otp_email,
+                                        "promotion": etud_promo,
+                                        "derniere_connexion": datetime.now().isoformat()
+                                    }, on_conflict="nom_complet").execute()
+                                except Exception:
+                                    pass
+                            st.session_state.étudiant_otp = None
+                            st.session_state.étudiant_otp_email = None
+                            st.session_state.étudiant_otp_mat_etud = None
+                            st.success(f"🎓 Bienvenue {etud_nom} ! Accès autorisé...")
+                            time.sleep(0.8)
+                            st.rerun()
+                        else:
+                            st.error("❌ Code incorrect. Veuillez réessayer.")
+            elif col_mat_etud:
+                st.error("❌ Matricule étudiant non reconnu dans le fichier source étudiants.")
+
+        return
+
+    # =============================================================================
+    # ONGLETS
+    # =============================================================================
+    # Création des onglets (toujours 4 pour éviter UnboundLocalError)
+    tab1, tab2, tab3, tab4 = st.tabs(["📝 Suivi d'Assiduité", "📩 Justificatifs", "📊 Bilans & Exports", "👤 Infos Étudiant"])
+    with tab1:
+        st.header("📝 Suivi de l'Assiduité et Compteur d'Absences")
+
+        # ---------------------------------------------------------------------
+        # ADMIN : LISTE GLOBALE DES ÉTUDIANTS SIGNALÉS ABSENTS + EXPORT EXCEL
+        # Les absences sont lues dans Supabase (table suivi_assiduite_2026) si
+        # activé, puis enrichies avec les coordonnées disponibles.
+        # ---------------------------------------------------------------------
+        if is_admin_edt:
+            with st.expander("📋 Liste globale des étudiants signalés absents — consulter et télécharger", expanded=True):
+                st.caption("Cette liste reprend les absences enregistrées par les enseignants. Les coordonnées sont complétées depuis la liste des étudiants et, si disponible, la table Supabase « étudiants_emails ».")
+                absences_admin = []
+                if MODE_SUPABASE:
+                    try:
+                        # Pagination afin de ne pas limiter la liste aux premières lignes.
+                        debut = 0
+                        taille_page = 1000
+                        while True:
+                            rep = supabase.table("suivi_assiduite_2026").select("*").range(debut, debut + taille_page - 1).execute()
+                            page = rep.data or []
+                            absences_admin.extend(page)
+                            if len(page) < taille_page:
+                                break
+                            debut += taille_page
+                    except Exception as e:
+                        st.error(f"Impossible de charger toutes les absences depuis Supabase : {e}")
+                else:
+                    absences_admin = list(st.session_state.get("absences", []))
+
+                if absences_admin:
+                    df_abs_admin = pd.DataFrame(absences_admin)
+                    # Import local explicite : évite un NameError si le fichier
+                    # déployé ne contient pas l'import global de unicodedata.
+                    import unicodedata as _unicodedata_abs_admin
+                    # Harmonisation des noms de colonnes, sans supposer que toutes
+                    # les versions de la base ont exactement les mêmes champs.
+                    def _cle_nom_abs_admin(valeur):
+                        texte = _unicodedata_abs_admin.normalize("NFKD", str(valeur or ""))
+                        texte = "".join(ch for ch in texte if not _unicodedata_abs_admin.combining(ch))
+                        return re.sub(r"\s+", " ", texte).strip().casefold()
+
+                    # Table de correspondance issue du fichier maître des étudiants.
+                    df_coord_admin = df_etu.copy() if isinstance(df_etu, pd.DataFrame) else pd.DataFrame()
+                    if not df_coord_admin.empty:
+                        if "Nom_Complet" not in df_coord_admin.columns and col_nom and col_prenom:
+                            df_coord_admin["Nom_Complet"] = df_coord_admin[col_nom].astype(str).str.strip() + " " + df_coord_admin[col_prenom].astype(str).str.strip()
+                        if "Nom_Complet" in df_coord_admin.columns:
+                            df_coord_admin["_cle_nom"] = df_coord_admin["Nom_Complet"].map(_cle_nom_abs_admin)
+
+                    # Les emails enregistrés lors de l'accès étudiant peuvent être
+                    # conservés dans la table dédiée Supabase.
+                    df_emails_admin = pd.DataFrame()
+                    if MODE_SUPABASE:
+                        try:
+                            re_emails = supabase.table("étudiants_emails").select("*").execute()
+                            df_emails_admin = pd.DataFrame(re_emails.data or [])
+                        except Exception:
+                            try:
+                                re_emails = supabase.table("etudiants_emails").select("*").execute()
+                                df_emails_admin = pd.DataFrame(re_emails.data or [])
+                            except Exception:
+                                df_emails_admin = pd.DataFrame()
+
+                    if not df_emails_admin.empty:
+                        nom_email_col = next((c for c in ["nom_complet", "Nom_Complet", "nom_etudiant", "nom"] if c in df_emails_admin.columns), None)
+                        if nom_email_col:
+                            df_emails_admin["_cle_nom"] = df_emails_admin[nom_email_col].map(_cle_nom_abs_admin)
+
+                    # Détection tolérante des colonnes de coordonnées.
+                    def _colonne_coord(df, candidats):
+                        if df.empty:
+                            return None
+                        normalise = {re.sub(r"[^a-z0-9]", "", _unicodedata_abs_admin.normalize("NFKD", str(c)).encode("ascii", "ignore").decode().lower()): c for c in df.columns}
+                        for candidat in candidats:
+                            cle = re.sub(r"[^a-z0-9]", "", _unicodedata_abs_admin.normalize("NFKD", candidat).encode("ascii", "ignore").decode().lower())
+                            if cle in normalise:
+                                return normalise[cle]
+                        return None
+
+                    col_email_etu = _colonne_coord(df_coord_admin, ["email", "e-mail", "mail", "courriel", "adresse email"])
+                    col_tel_etu = _colonne_coord(df_coord_admin, ["N° de téléphone", "numero de telephone", "telephone", "téléphone", "tel", "phone", "mobile"])
+                    col_email_db = _colonne_coord(df_emails_admin, ["email", "e-mail", "mail", "courriel"])
+                    col_nom_abs = next((c for c in ["etud_non_eligible", "nom_etudiant", "nom_complet", "etudiant", "étudiant"] if c in df_abs_admin.columns), None)
+
+                    lignes_abs_admin = []
+                    for _, absence in df_abs_admin.iterrows():
+                        nom_abs = str(absence.get(col_nom_abs, "") if col_nom_abs else "").strip()
+                        cle_abs = _cle_nom_abs_admin(nom_abs)
+                        etu_match = pd.DataFrame()
+                        if not df_coord_admin.empty and "_cle_nom" in df_coord_admin.columns:
+                            etu_match = df_coord_admin[df_coord_admin["_cle_nom"] == cle_abs]
+                        email = ""
+                        telephone = ""
+                        promotion_etu = absence.get("promotion", "")
+                        if not etu_match.empty:
+                            etu = etu_match.iloc[0]
+                            if col_email_etu:
+                                email = str(etu.get(col_email_etu, "") or "").strip()
+                            if col_tel_etu:
+                                telephone = str(etu.get(col_tel_etu, "") or "").strip()
+                            if not promotion_etu:
+                                promotion_etu = etu.get("Promotion", etu.get("promotion", ""))
+                        if not email and not df_emails_admin.empty and "_cle_nom" in df_emails_admin.columns:
+                            email_match = df_emails_admin[df_emails_admin["_cle_nom"] == cle_abs]
+                            if not email_match.empty and col_email_db:
+                                email = str(email_match.iloc[-1].get(col_email_db, "") or "").strip()
+                        lignes_abs_admin.append({
+                            "Nom et prénom de l'étudiant": nom_abs,
+                            "Email": email,
+                            "N° de téléphone": telephone,
+                            "Promotion": promotion_etu or "",
+                            "Enseignant ayant signalé l'absence": absence.get("enseignant", absence.get("enseignant_nom", absence.get("professeur", absence.get("charge_matiere", "")))) or "",
+                            "Matière": absence.get("matiere", absence.get("enseignement", "")) or "",
+                            "Date de l'absence": absence.get("date_absence", absence.get("date", "")) or "",
+                            "Jour": absence.get("jour_absence", absence.get("jour", "")) or "",
+                            "Horaire": absence.get("horaire_absence", absence.get("horaire", "")) or "",
+                            "Motif enregistré": absence.get("cause_non_eligibilite", absence.get("motif", "")) or "",
+                            "Justifiée": "Oui" if absence.get("justifie") is True else ("Non" if absence.get("justifie") is False else "À vérifier"),
+                            "ID absence": absence.get("id", "")
+                        })
+
+                    df_liste_abs_admin = pd.DataFrame(lignes_abs_admin)
+                    if not df_liste_abs_admin.empty:
+                        filtres_abs = st.columns(3)
+                        with filtres_abs[0]:
+                            choix_promo_abs = st.selectbox("Filtrer par promotion", ["Toutes"] + sorted([str(x) for x in df_liste_abs_admin["Promotion"].dropna().unique() if str(x).strip()]), key="admin_abs_promo")
+                        with filtres_abs[1]:
+                            choix_matiere_abs = st.selectbox("Filtrer par matière", ["Toutes"] + sorted([str(x) for x in df_liste_abs_admin["Matière"].dropna().unique() if str(x).strip()]), key="admin_abs_matiere")
+                        with filtres_abs[2]:
+                            choix_justif_abs = st.selectbox("Statut du justificatif", ["Tous", "Non", "Oui", "À vérifier"], key="admin_abs_justif")
+                        df_abs_affiche = df_liste_abs_admin.copy()
+                        if choix_promo_abs != "Toutes":
+                            df_abs_affiche = df_abs_affiche[df_abs_affiche["Promotion"].astype(str) == choix_promo_abs]
+                        if choix_matiere_abs != "Toutes":
+                            df_abs_affiche = df_abs_affiche[df_abs_affiche["Matière"].astype(str) == choix_matiere_abs]
+                        if choix_justif_abs != "Tous":
+                            df_abs_affiche = df_abs_affiche[df_abs_affiche["Justifiée"].astype(str) == choix_justif_abs]
+
+                        st.metric("Nombre de signalements affichés", len(df_abs_affiche))
+                        st.dataframe(df_abs_affiche, use_container_width=True, hide_index=True)
+                        excel_abs = io.BytesIO()
+                        try:
+                            with pd.ExcelWriter(excel_abs, engine="openpyxl") as writer:
+                                df_abs_affiche.to_excel(writer, sheet_name="Étudiants absents", index=False)
+                                ws_abs = writer.sheets["Étudiants absents"]
+                                from openpyxl.styles import Font, PatternFill, Alignment
+                                from openpyxl.utils import get_column_letter
+                                entete_abs = PatternFill(fill_type="solid", fgColor="1F4E78")
+                                for cell in ws_abs[1]:
+                                    cell.fill = entete_abs
+                                    cell.font = Font(color="FFFFFF", bold=True)
+                                    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                                for col_idx, nom_col in enumerate(df_abs_affiche.columns, start=1):
+                                    valeurs = [len(str(nom_col))] + [len(str(v)) for v in df_abs_affiche[nom_col].fillna("").head(300)]
+                                    ws_abs.column_dimensions[get_column_letter(col_idx)].width = min(max(max(valeurs, default=12) + 2, 12), 42)
+                                ws_abs.freeze_panes = "A2"
+                                ws_abs.auto_filter.ref = ws_abs.dimensions
+                                ws_abs.row_dimensions[1].height = 32
+                            excel_abs.seek(0)
+                            st.download_button(
+                                "📥 Télécharger la liste des étudiants absents (Excel)",
+                                data=excel_abs.getvalue(),
+                                file_name=f"Liste_etudiants_absents_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key="download_liste_absents_admin"
+                            )
+                            csv_abs = df_abs_affiche.to_csv(index=False, sep=";", encoding="utf-8-sig")
+                            st.download_button("📄 Télécharger aussi en CSV", data=csv_abs, file_name="Liste_etudiants_absents.csv", mime="text/csv", use_container_width=True, key="download_liste_absents_csv_admin")
+                        except Exception as e:
+                            st.error(f"Erreur lors de la préparation du fichier Excel : {e}")
+                    else:
+                        st.info("Aucun signalement d'absence disponible.")
+                else:
+                    st.info("Aucune absence enregistrée dans la source de données actuelle.")
+
+        sel_prof = ""
+        sel_mat = ""
+        promo_c = ""
+        df_matiere = pd.DataFrame()
+
+        if is_enseignant_connecte:
+            sel_prof = user['nom_officiel']
+            st.success(f"👤 Bienvenue **{sel_prof}** — Espace Suivi d'Assiduité")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(f"**Enseignant :** `{sel_prof}`")
+            with c2:
+                st.markdown("*Accès direct — Aucun code requis*")
+        elif is_admin_edt:
+            st.success(f"👤 Mode Administrateur — Accès complet au suivi d'Assiduité")
+            c1, c2 = st.columns(2)
+            with c1:
+                sel_prof = st.selectbox("👤 Sélectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1_admin")
+            with c2:
+                st.markdown("*Supervision complète — Toutes les promotions*")
+        else:
+            pwd = st.text_input("🔑 Code d'accès :", type="password", key="pwd_tab1")
+            if pwd == CODE_ADMIN:
+                c1, c2 = st.columns(2)
+                with c1:
+                    sel_prof = st.selectbox("👤 Sélectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1")
+            elif pwd != "":
+                st.error("❌ Code incorrect.")
+
+        # SUITE COMMUNE
+        if sel_prof:
+            df_matiere = trouver_matiere_promo(sel_prof, df_edt)
+            if not df_matiere.empty:
+                # Une option distincte par couple MATIÈRE + PROMOTION.
+                # Ainsi, une même matière assurée par le même enseignant dans
+                # plusieurs promotions ne fusionne jamais les listes d'étudiants.
+                options_matiere_abs = {}
+                if "Promotion_Mappee" not in df_matiere.columns and "Promotion" in df_matiere.columns:
+                    df_matiere["Promotion_Mappee"] = df_matiere["Promotion"].apply(mapper_promotion)
+
+                df_etu_comptage_abs = df_etu.copy() if isinstance(df_etu, pd.DataFrame) else pd.DataFrame()
+                col_promo_etu_abs = next((c for c in df_etu_comptage_abs.columns
+                                          if str(c).strip().casefold() in {"promotion", "promo", "promotions"}), None)
+                if col_promo_etu_abs:
+                    df_etu_comptage_abs["_Promotion_Mappee_abs"] = df_etu_comptage_abs[col_promo_etu_abs].apply(mapper_promotion)
+
+                couples_matiere_promo_abs = (
+                    df_matiere[["Enseignements", "Promotion_Mappee"]]
+                    .dropna()
+                    .astype(str)
+                    .drop_duplicates()
+                ) if "Promotion_Mappee" in df_matiere.columns else pd.DataFrame(columns=["Enseignements", "Promotion_Mappee"])
+
+                for _, ligne_couple_abs in couples_matiere_promo_abs.iterrows():
+                    mat_abs_option = str(ligne_couple_abs["Enseignements"]).strip()
+                    promo_abs_option = str(ligne_couple_abs["Promotion_Mappee"]).strip()
+                    if not mat_abs_option or not promo_abs_option:
+                        continue
+                    if col_promo_etu_abs:
+                        df_compte_option_abs = df_etu_comptage_abs[
+                            df_etu_comptage_abs["_Promotion_Mappee_abs"] == promo_abs_option
+                        ]
+                        col_nom_compte_abs = next((c for c in df_compte_option_abs.columns
+                                                   if str(c).strip().casefold() in {"nom_complet", "nom complet", "etudiant", "étudiant"}), None)
+                        nb_abs_option = (int(df_compte_option_abs[col_nom_compte_abs].dropna().astype(str).str.strip().nunique())
+                                         if col_nom_compte_abs else len(df_compte_option_abs))
+                    else:
+                        nb_abs_option = 0
+                    libelle_abs_option = f"{mat_abs_option} — {promo_abs_option} ({nb_abs_option} étudiant(s))"
+                    # Le suffixe protège aussi contre deux intitulés identiques
+                    # dont les promotions auraient des libellés très proches.
+                    options_matiere_abs[libelle_abs_option] = (mat_abs_option, promo_abs_option, nb_abs_option)
+
+                if options_matiere_abs:
+                    libelles_matiere_abs = ["", *sorted(options_matiere_abs.keys(), key=lambda x: x.casefold())]
+                    with c2:
+                        choix_matiere_promo_abs = st.selectbox(
+                            "📚 Sélectionnez la matière et la promotion :",
+                            libelles_matiere_abs,
+                            key="mat_promo_T1"
+                        )
+                    if choix_matiere_promo_abs:
+                        sel_mat, promo_c, nb_etudiants_promo_option = options_matiere_abs[choix_matiere_promo_abs]
+                        # Charger exclusivement les étudiants de la promotion choisie.
+                        if col_promo_etu_abs:
+                            df_etudiants_tous = df_etu_comptage_abs[
+                                df_etu_comptage_abs["_Promotion_Mappee_abs"] == promo_c
+                            ].drop(columns=["_Promotion_Mappee_abs"], errors="ignore").copy()
+                            col_nom_unique_abs = next((c for c in df_etudiants_tous.columns
+                                                       if str(c).strip().casefold() in {"nom_complet", "nom complet", "etudiant", "étudiant"}), None)
+                            if col_nom_unique_abs:
+                                df_etudiants_tous = df_etudiants_tous.drop_duplicates(
+                                    subset=[col_nom_unique_abs], keep="first"
+                                )
+                        else:
+                            df_etudiants_tous = pd.DataFrame()
+                        if not df_etudiants_tous.empty:
+                            st.success(
+                                f"🎓 Promotion : **{promo_c}** — **{len(df_etudiants_tous)} étudiant(s)** recensé(s)"
+                            )
+                        else:
+                            st.warning(
+                                f"⚠️ La promotion **{promo_c}** est présente dans l'EDT, mais aucun étudiant correspondant n'a été trouvé dans le fichier des étudiants."
+                            )
+                else:
+                    st.warning("⚠️ Aucune matière avec promotion identifiable n'a été trouvée pour cet enseignant.")
+
+        # Filtrage pédagogique : un TD ne concerne que SON groupe (TD-...-G2), un TP que SON sous-groupe (TP-...-SG11).
+        if sel_mat and promo_c:
+            if not df_etudiants_tous.empty:
+                df_etudiants_promo = df_etudiants_tous.copy()
+                nb_etudiants_promo = len(df_etudiants_promo)
+                df_etudiants_selection = df_etudiants_promo.copy()
+                type_matiere_abs = "AUTRE"
+                groupe_matiere_abs = None
+                sous_groupes_matiere_abs = set()
+                matiere_abs_upper = str(sel_mat).strip().upper()
+
+                if re.match(r"^\s*TD\s*[-:]", matiere_abs_upper):
+                    type_matiere_abs = "TD"
+                    m_groupe_abs = re.search(r"(?:^|[-_\s(])G\s*[-_ ]?(\d+)\s*\)?\s*$", matiere_abs_upper)
+                    if m_groupe_abs:
+                        groupe_matiere_abs = f"G{int(m_groupe_abs.group(1))}"
+                elif re.match(r"^\s*TP\s*[-:]", matiere_abs_upper):
+                    type_matiere_abs = "TP"
+                    sous_groupes_matiere_abs = {
+                        f"SG{int(n)}" for n in re.findall(r"SG\s*[-_ ]?(\d+)", matiere_abs_upper)
+                    }
+
+                def _norm_nom_col_abs(nom):
+                    import unicodedata as _unicodedata_abs  # import local : le module n'est pas global dans cette fonction
+                    s = _unicodedata_abs.normalize("NFKD", str(nom).strip().lower()).encode("ASCII", "ignore").decode("ASCII")
+                    return re.sub(r"[\s_\-./]", "", s)
+
+                def _trouver_col_abs(df, noms_acceptes):
+                    for c in df.columns:
+                        if _norm_nom_col_abs(c) in noms_acceptes:
+                            return c
+                    return None
+
+                def _normaliser_code_groupe_abs(valeur, prefixe):
+                    """G2 / Groupe 2 / G02 / 2 -> « G2 » ; SG11 / SG 11 / G2-SG11 / 11 -> « SG11 »."""
+                    if pd.isna(valeur):
+                        return ""
+                    texte = str(valeur).strip().upper()
+                    if not texte or texte in {"NAN", "NONE", "NON DÉFINI", "NON DEFINI", "N/A"}:
+                        return ""
+                    if prefixe == "SG":
+                        trouve = re.search(r"SG\s*[-_ .]?\s*(\d+)", texte) or re.search(r"(\d+)", texte)
+                    else:
+                        trouve = (re.search(r"(?<![A-Z])G(?:ROUPE|RP)?\s*[-_ .]?\s*(\d+)", texte)
+                                  or re.search(r"(\d+)", texte))
+                    return f"{prefixe}{int(trouve.group(1))}" if trouve else ""
+
+                def _repartition_effectifs_abs(df_source, colonne, prefixe):
+                    """Effectif de chaque groupe (G1, G2…) ou sous-groupe (SG1, SG2…) de la promotion."""
+                    if not colonne or df_source.empty:
+                        return {}
+                    codes = df_source[colonne].map(lambda v: _normaliser_code_groupe_abs(v, prefixe))
+                    comptes = codes[codes != ""].value_counts()
+                    return dict(sorted(comptes.items(), key=lambda kv: int(re.sub(r"\D", "", kv[0]) or 0)))
+
+                def _est_conge_abs(valeur):
+                    if pd.isna(valeur):
+                        return False
+                    return str(valeur).strip().casefold() in {
+                        "oui", "o", "yes", "y", "true", "vrai", "1", "en conge", "en congé", "conge", "congé",
+                        "conge academique", "congé académique", "en conge academique", "en congé académique",
+                    }
+
+                # Les étudiants en congé académique ne sont pas pris en compte (liste, effectifs, absence collective).
+                nb_conge_exclus_abs = 0
+                col_conge_abs = _trouver_col_abs(df_etudiants_promo, {"congeacademique", "congeacad"})
+                if col_conge_abs:
+                    masque_conge_abs = df_etudiants_promo[col_conge_abs].map(_est_conge_abs)
+                    nb_conge_exclus_abs = int(masque_conge_abs.sum())
+                    if nb_conge_exclus_abs:
+                        df_etudiants_promo = df_etudiants_promo[~masque_conge_abs].copy()
+                        df_etudiants_selection = df_etudiants_promo.copy()
+                        nb_etudiants_promo = len(df_etudiants_promo)
+
+                col_groupe_abs = _trouver_col_abs(df_etudiants_promo, {"groupe", "grp", "group"})
+                col_sous_groupe_abs = _trouver_col_abs(df_etudiants_promo, {"sousgroupe", "sousgrp", "sg", "subgroup"})
+                filtre_groupe_applique = False
+
+                if type_matiere_abs == "TD" and groupe_matiere_abs:
+                    if col_groupe_abs:
+                        masque_groupe_abs = df_etudiants_promo[col_groupe_abs].map(
+                            lambda v: _normaliser_code_groupe_abs(v, "G") == groupe_matiere_abs
+                        )
+                        df_etudiants_selection = df_etudiants_promo[masque_groupe_abs].copy()
+                        filtre_groupe_applique = True
+                        st.info(f"👥 Matière TD du groupe **{groupe_matiere_abs}**")
+                    else:
+                        st.error("La colonne Groupe est introuvable dans le fichier des étudiants : impossible de filtrer correctement cette matière TD.")
+                elif type_matiere_abs == "TP" and sous_groupes_matiere_abs:
+                    if col_sous_groupe_abs:
+                        masque_sg_abs = df_etudiants_promo[col_sous_groupe_abs].map(
+                            lambda v: _normaliser_code_groupe_abs(v, "SG") in sous_groupes_matiere_abs
+                        )
+                        df_etudiants_selection = df_etudiants_promo[masque_sg_abs].copy()
+                        filtre_groupe_applique = True
+                        st.info("🔹 Matière TP — sous-groupe(s) : **" + ", ".join(sorted(sous_groupes_matiere_abs)) + "**")
+                    else:
+                        st.error("La colonne Sous groupe est introuvable dans le fichier des étudiants : impossible de filtrer correctement cette matière TP.")
+
+                # TD / TP SANS groupe (ou sous-groupe) mentionné dans le nom de la matière :
+                # il n'y a pas de groupe, toute la promotion est considérée comme un seul groupe.
+                sans_groupe_abs = (
+                    (type_matiere_abs == "TD" and not groupe_matiere_abs)
+                    or (type_matiere_abs == "TP" and not sous_groupes_matiere_abs)
+                )
+                if sans_groupe_abs:
+                    st.info(f"👥 Matière {type_matiere_abs} sans {'groupe' if type_matiere_abs == 'TD' else 'sous-groupe'} "
+                            "précisé dans son nom : toute la promotion est considérée comme un seul groupe.")
+                if type_matiere_abs in {"TD", "TP"} and not filtre_groupe_applique and not sans_groupe_abs:
+                    # Un groupe est bien indiqué dans le nom de la matière mais le fichier ne permet pas de filtrer.
+                    noms_e = []
+                    st.warning("La sélection des étudiants est bloquée pour éviter de signaler une absence à toute la promotion par erreur "
+                               "(colonne Groupe / Sous groupe absente du fichier des étudiants).")
+                else:
+                    noms_e = sorted(df_etudiants_selection["Nom_Complet"].dropna().astype(str).unique().tolist())
+
+                if type_matiere_abs in {"TD", "TP"}:
+                    est_td_abs = type_matiere_abs == "TD"
+                    codes_cibles_abs = ({groupe_matiere_abs} if (est_td_abs and groupe_matiere_abs)
+                                        else set(sous_groupes_matiere_abs))
+                    repartition_abs = _repartition_effectifs_abs(
+                        df_etudiants_promo,
+                        col_groupe_abs if est_td_abs else col_sous_groupe_abs,
+                        "G" if est_td_abs else "SG",
+                    )
+                    col_metric_promo, col_metric_cible = st.columns(2)
+                    with col_metric_promo:
+                        st.metric("🎓 Effectif total de la promotion", nb_etudiants_promo)
+                    with col_metric_cible:
+                        if codes_cibles_abs:
+                            libelle_effectif = (("👥 Effectif du groupe " if est_td_abs else "🔹 Effectif du sous-groupe ")
+                                                + ", ".join(sorted(codes_cibles_abs)))
+                        elif sans_groupe_abs:
+                            libelle_effectif = ("👥 Effectif du groupe (promotion entière)" if est_td_abs
+                                                else "🔹 Effectif du sous-groupe (promotion entière)")
+                        else:
+                            libelle_effectif = ("👥 Effectif du groupe (non détecté)" if est_td_abs
+                                                else "🔹 Effectif du sous-groupe (non détecté)")
+                        st.metric(libelle_effectif, len(noms_e))
+                    if repartition_abs and not sans_groupe_abs:
+                        titre_repartition = "Répartition par groupe de TD" if est_td_abs else "Répartition par sous-groupe de TP"
+                        morceaux_repartition = [
+                            f"**{code} : {nb} ◀**" if code in codes_cibles_abs else f"{code} : {nb}"
+                            for code, nb in repartition_abs.items()
+                        ]
+                        st.caption(f"📊 {titre_repartition} (promotion entière) — " + " · ".join(morceaux_repartition))
+                    if filtre_groupe_applique:
+                        st.caption(f"La liste de signalement ci-dessous est limitée à {len(noms_e)} étudiant(s) de cette sélection.")
+                else:
+                    st.info(f"📍 **{len(noms_e)}** étudiants total(es) des promotion(s) concernée(s)")
+                if nb_conge_exclus_abs:
+                    st.caption(f"🎓 {nb_conge_exclus_abs} étudiant(s) en congé académique non pris en compte dans cette liste.")
+
+                if MODE_SUPABASE:
+                    absences_filtrees = charger_absences_supabase(sel_mat, promo_c)
+                else:
+                    absences_filtrees = [
+                        a for a in st.session_state.absences
+                        if a.get("matiere") == sel_mat and a.get("promotion") == promo_c
+                    ]
+                df_db_full = pd.DataFrame(absences_filtrees)
+
+                # Détection automatique de la colonne Mat. BAC
+                col_mat_bac = None
+                for c in df_etudiants_tous.columns:
+                    c_up = str(c).strip().upper().replace(".", "").replace(" ", "").replace("_", "")
+                    if "MAT" in c_up and "BAC" in c_up:
+                        col_mat_bac = c
+                        break
+
+                st.markdown("#### 📥 Enregistrement d'une absence")
+                cn1, cn2, cn3 = st.columns(3)
+                with cn1:
+                    etud_non = st.selectbox(
+                        f"👤 Étudiant — promotion {promo_c} : {nb_etudiants_promo} étudiant(s) au total ; {len(noms_e)} dans cette sélection :",
+                        ["", "👥 ABSENCE COLLECTIVE — tous les étudiants"] + noms_e,
+                        key="ne_et_t1",
+                        help="Pour un TD/TP, l'absence collective concerne uniquement les étudiants du groupe/sous-groupe sélectionné. Pour un cours, elle concerne les étudiants de la promotion."
+                    )
+                    absence_collective = etud_non == "👥 ABSENCE COLLECTIVE — tous les étudiants"
+                    if etud_non and not absence_collective and col_mat_bac:
+                        mat_bac_val = df_etudiants_selection[df_etudiants_selection["Nom_Complet"] == etud_non][col_mat_bac]
+                        if not mat_bac_val.empty:
+                            mat_bac_str = str(mat_bac_val.iloc[0])
+                            st.markdown(f"<div style='background:linear-gradient(90deg,#1E3A8A,#3B82F6);color:white;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:600;text-align:center;margin-top:4px;'>🎓 Mat. BAC : {mat_bac_str}</div>", unsafe_allow_html=True)
+                with cn2:
+                    status_assid = st.selectbox("📊 Statut :", ["", "Absent"], key="status_t1")
+                with cn3:
+                    cause_s = st.selectbox("❓ Motif :", CAUSES_ABSENCES, key="cause_t1")
+
+                c_d1, c_d2, c_d3 = st.columns(3)
+                with c_d1:
+                    date_abs = st.date_input("📅 Date :", key="date_t1")
+                with c_d2:
+                    jour_abs = st.selectbox("🗓️ Jour :", JOURS_SEMAINE, key="jour_t1")
+                with c_d3:
+                    horaire_abs = st.selectbox("🕒 Horaire :", HORAIRES_LIST, key="horaire_t1")
+
+                if absence_collective:
+                    st.warning(
+                        f"👥 **Absence collective sélectionnée** : l'absence sera enregistrée pour les **{len(noms_e)}** étudiant(s) de la sélection (groupe / sous-groupe pour un TD / TP, promotion pour un cours)."
+                    )
+
+                # ─── COMPTEUR NUMÉRIQUE D'ABSENCES ───
+                if etud_non and not absence_collective and status_assid == "Absent":
+                    if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
+                        absences_etu_matiere = df_db_full[df_db_full["etud_non_eligible"] == etud_non]
+                        nb_abs_matiere = len(absences_etu_matiere)
+                        nb_abs_justif = len(absences_etu_matiere[absences_etu_matiere.get("justifie") == True]) if "justifie" in absences_etu_matiere.columns else 0
+                    else:
+                        nb_abs_matiere = 0
+                        nb_abs_justif = 0
+
+                    if MODE_SUPABASE:
+                        abs_global = [a for a in charger_absences_supabase() if a.get("etud_non_eligible") == etud_non]
+                    else:
+                        abs_global = [a for a in st.session_state.absences if a.get("etud_non_eligible") == etud_non]
+                    nb_abs_global = len(abs_global)
+
+                    # Afficheur numérique stylisé
+                    st.markdown("<div style='margin:10px 0;'>", unsafe_allow_html=True)
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1:
+                        color = "#ef4444" if nb_abs_matiere >= 5 else "#f59e0b" if nb_abs_matiere >= 3 else "#22c55e"
+                        st.markdown(f"<div style='background:{color}15;border:2px solid {color};border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:{color};'>{nb_abs_matiere}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>🔢 Absences matiere</div></div>", unsafe_allow_html=True)
+                    with c2:
+                        st.markdown(f"<div style='background:#22c55e15;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#22c55e;'>{nb_abs_justif}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>✅ justifiees</div></div>", unsafe_allow_html=True)
+                    with c3:
+                        st.markdown(f"<div style='background:#3b82f615;border:2px solid #3b82f6;border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#3b82f6;'>{nb_abs_global}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>🌍 Total global</div></div>", unsafe_allow_html=True)
+                    with c4:
+                        reste = max(0, 5 - nb_abs_matiere)
+                        color_r = "#ef4444" if reste == 0 else "#f59e0b" if reste <= 2 else "#22c55e"
+                        st.markdown(f"<div style='background:{color_r}15;border:2px solid {color_r};border-radius:12px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:{color_r};'>{reste}</div><div style='font-size:11px;color:#64748b;font-weight:600;'>⏳ Avant exclusion</div></div>", unsafe_allow_html=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                    if nb_abs_matiere >= 5:
+                        st.error(f"🚫 **EXCLU de la matiere {sel_mat}** — Seuil de 5 absences atteint.")
+                    elif nb_abs_matiere == 4:
+                        st.warning(f"⚠️ Attention : 4 absences dans {sel_mat}. Une prochaine absence = exclusion.")
+                    else:
+                        st.info(f"ℹ️ {nb_abs_matiere} absence(s) dans {sel_mat}. Seuil d'exclusion : 5.")
+
+                # ─── BOUTONS D'ACTION ───
+                # ─── SÉLECTION POUR ANNULATION CIBLÉE ───
+                options_annulation = {}
+                sel_abs_a_annuler = ""
+                
+                if etud_non:
+                    if MODE_SUPABASE:
+                        abs_etudiant_cible = [
+                            a for a in charger_absences_supabase(sel_mat, promo_c)
+                            if a.get("etud_non_eligible") == etud_non
+                        ]
+                    else:
+                        abs_etudiant_cible = [
+                            a for a in st.session_state.absences
+                            if a.get("etud_non_ligible") == etud_non
+                            and a.get("matiere") == sel_mat
+                            and a.get("promotion") == promo_c
+                        ]
+                    
+                    if abs_etudiant_cible:
+                        for a in abs_etudiant_cible:
+                            label = f"{a.get('date_absence','')} | {a.get('jour_absence','')} {a.get('horaire_absence','')} — {a.get('cause_non_eligibilite','Non justifie')}"
+                            options_annulation[label] = a
+                        
+                        sel_abs_a_annuler = st.selectbox(
+                            "🗑️ Choisir une absence à annuler :",
+                            options=[""] + list(options_annulation.keys()),
+                            key="sel_abs_annuler"
+                        )
+
+                # ─── BOUTONS D'ACTION ───
+                col_btn1, col_btn2, col_btn3 = st.columns(3)
+                
+                with col_btn1:
+                    if st.button("💾 ENREGISTRER L'ABSENCE", use_container_width=True, type="primary", disabled=preview_teacher is not None):
+                        if absence_collective:
+                            if status_assid != "Absent":
+                                st.warning("⚠️ L'enregistrement collectif nécessite le statut 'Absent'.")
+                            else:
+                                enregistrees_collectif = 0
+                                deja_presentes_collectif = 0
+                                erreurs_collectif = []
+
+                                for nom_collectif in noms_e:
+                                    existe_collectif = False
+
+                                    if MODE_SUPABASE:
+                                        try:
+                                            resultat_collectif = supabase.table(
+                                                "suivi_assiduite_2026"
+                                            ).select("id").eq(
+                                                "etud_non_eligible",
+                                                nom_collectif
+                                            ).eq(
+                                                "matiere",
+                                                sel_mat
+                                            ).eq(
+                                                "jour_absence",
+                                                jour_abs
+                                            ).eq(
+                                                "horaire_absence",
+                                                horaire_abs
+                                            ).eq(
+                                                "date_absence",
+                                                str(date_abs)
+                                            ).execute()
+
+                                            existe_collectif = bool(
+                                                resultat_collectif.data
+                                            )
+                                        except Exception as erreur_verif_collectif:
+                                            erreurs_collectif.append(
+                                                f"{nom_collectif} : vérification impossible ({erreur_verif_collectif})"
+                                            )
+                                            continue
+                                    else:
+                                        existe_collectif = any(
+                                            absence.get("etud_non_eligible") == nom_collectif
+                                            and absence.get("matiere") == sel_mat
+                                            and absence.get("jour_absence") == jour_abs
+                                            and absence.get("horaire_absence") == horaire_abs
+                                            and absence.get("date_absence") == str(date_abs)
+                                            for absence in st.session_state.absences
+                                        )
+
+                                    if existe_collectif:
+                                        deja_presentes_collectif += 1
+                                        continue
+
+                                    payload_collectif = {
+                                        "enseignant": sel_prof,
+                                        "matiere": sel_mat,
+                                        "promotion": promo_c,
+                                        "etud_non_eligible": nom_collectif,
+                                        "cause_non_eligibilite": (
+                                            cause_s if cause_s else "Absence collective"
+                                        ),
+                                        "date_absence": str(date_abs),
+                                        "jour_absence": jour_abs,
+                                        "horaire_absence": horaire_abs,
+                                        "date_saisie": datetime.now().strftime(
+                                            "%d/%m/%Y %H:%M"
+                                        ),
+                                        "justifie": False,
+                                        "absence_collective": True
+                                    }
+
+                                    try:
+                                        if MODE_SUPABASE:
+                                            succes_collectif = enregistrer_absence_supabase(
+                                                payload_collectif
+                                            )
+                                        else:
+                                            payload_collectif["id"] = (
+                                                len(st.session_state.absences) + 1
+                                            )
+                                            st.session_state.absences.append(
+                                                payload_collectif
+                                            )
+                                            succes_collectif = True
+
+                                        if succes_collectif:
+                                            enregistrees_collectif += 1
+                                        else:
+                                            erreurs_collectif.append(
+                                                f"{nom_collectif} : échec d'enregistrement"
+                                            )
+                                    except Exception as erreur_collectif:
+                                        erreurs_collectif.append(
+                                            f"{nom_collectif} : {erreur_collectif}"
+                                        )
+
+                                if enregistrees_collectif:
+                                    st.success(
+                                        f"✅ Absence collective enregistrée pour "
+                                        f"**{enregistrees_collectif}** étudiant(s) — "
+                                        f"{sel_mat}, {jour_abs} {horaire_abs}."
+                                    )
+
+                                if deja_presentes_collectif:
+                                    st.info(
+                                        f"ℹ️ **{deja_presentes_collectif}** absence(s) "
+                                        f"étaient déjà enregistrées et n'ont pas été dupliquées."
+                                    )
+
+                                if erreurs_collectif:
+                                    st.warning(
+                                        f"⚠️ {len(erreurs_collectif)} erreur(s) pendant "
+                                        f"l'enregistrement collectif."
+                                    )
+                                    st.dataframe(
+                                        pd.DataFrame(
+                                            {"Détail des erreurs": erreurs_collectif}
+                                        ),
+                                        use_container_width=True,
+                                        hide_index=True
+                                    )
+
+                                if enregistrees_collectif:
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+                        elif not etud_non:
+                            st.error("❌ Veuillez sélectionner un étudiant.")
+                        elif status_assid != "Absent":
+                            st.warning("⚠️ L'enregistrement nécessite le statut 'Absent'.")
+                        else:
+                            # ═══ VÉRIFICATION ANTI-DOUBLON ═══
+                            absence_existante = False
+                            if MODE_SUPABASE:
+                                try:
+                                    res = supabase.table("suivi_assiduite_2026").select("*")                                        .eq("etud_non_eligible", etud_non)                                        .eq("matiere", sel_mat)                                        .eq("jour_absence", jour_abs)                                        .eq("horaire_absence", horaire_abs)                                        .eq("date_absence", str(date_abs)).execute()
+                                    if res.data:
+                                        absence_existante = True
+                                except Exception:
+                                    pass
+                            else:
+                                for a in st.session_state.absences:
+                                    if (a.get("etud_non_eligible") == etud_non and
+                                        a.get("matiere") == sel_mat and
+                                        a.get("jour_absence") == jour_abs and
+                                        a.get("horaire_absence") == horaire_abs and
+                                        a.get("date_absence") == str(date_abs)):
+                                        absence_existante = True
+                                        break
+
+                            if absence_existante:
+                                st.error(f"❌ L'absence de **{etud_non}** pour **{sel_mat}** ({jour_abs} — {horaire_abs}, {date_abs}) est déjà enregistrée. Vous ne pouvez pas signaler deux fois la même séance.")
+                            else:
+                                payload = {
+                                    "enseignant": sel_prof,
+                                    "matiere": sel_mat,
+                                    "promotion": promo_c,
+                                    "etud_non_eligible": etud_non,
+                                    "cause_non_eligibilite": cause_s if cause_s else "Non justifie",
+                                    "date_absence": str(date_abs),
+                                    "jour_absence": jour_abs,
+                                    "horaire_absence": horaire_abs,
+                                    "date_saisie": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                    "justifie": False
+                                }
+                                if MODE_SUPABASE:
+                                    if enregistrer_absence_supabase(payload):
+                                        # Envoi notification instantanee a l'étudiant
+                                        email_etu = trouver_email_étudiant(etud_non, df_etu)
+                                        if email_etu:
+                                            envoyer_notification_absence_étudiant(
+                                                email_etu, etud_non, sel_mat, sel_prof,
+                                                jour_abs, horaire_abs, str(date_abs),
+                                                cause_s if cause_s else "Non justifie",
+                                                get_absences_étudiant(etud_non)
+                                            )
+                                            st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
+                                        else:
+                                            st.warning(f"ℹ️ Aucun email personnel trouvé pour {etud_non}. Envoi de la notification aux adresses de supervision par défaut…")
+                                            notifications_envoyees = []
+                                            for email_defaut in EMAILS_NOTIFICATION_ABSENCE_DEFAUT:
+                                                ok_notification = envoyer_notification_absence_étudiant(
+                                                    email_defaut, etud_non, sel_mat, sel_prof,
+                                                    jour_abs, horaire_abs, str(date_abs),
+                                                    cause_s if cause_s else "Non justifie",
+                                                    get_absences_étudiant(etud_non),
+                                                    notification_admin=True
+                                                )
+                                                if ok_notification:
+                                                    notifications_envoyees.append(email_defaut)
+                                            if notifications_envoyees:
+                                                st.info("📧 Notification de supervision envoyée à : " + ", ".join(notifications_envoyees))
+                                            else:
+                                                st.error("❌ La notification n'a pu être envoyée à aucune adresse de supervision. Vérifiez la configuration SMTP.")
+                                        st.success(f"✅ Absence enregistrée pour {etud_non} !")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                else:
+                                    payload["id"] = len(st.session_state.absences) + 1
+                                    st.session_state.absences.append(payload)
+                                    # Envoi notification instantanee a l'étudiant
+                                    email_etu = trouver_email_étudiant(etud_non, df_etu)
+                                    if email_etu:
+                                        envoyer_notification_absence_étudiant(
+                                            email_etu, etud_non, sel_mat, sel_prof,
+                                            jour_abs, horaire_abs, str(date_abs),
+                                            cause_s if cause_s else "Non justifie",
+                                            get_absences_étudiant(etud_non)
+                                        )
+                                        st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
+                                    else:
+                                        st.warning(f"ℹ️ Aucun email personnel trouvé pour {etud_non}. Envoi de la notification aux adresses de supervision par défaut…")
+                                        notifications_envoyees = []
+                                        for email_defaut in EMAILS_NOTIFICATION_ABSENCE_DEFAUT:
+                                            ok_notification = envoyer_notification_absence_étudiant(
+                                                email_defaut, etud_non, sel_mat, sel_prof,
+                                                jour_abs, horaire_abs, str(date_abs),
+                                                cause_s if cause_s else "Non justifie",
+                                                get_absences_étudiant(etud_non),
+                                                notification_admin=True
+                                            )
+                                            if ok_notification:
+                                                notifications_envoyees.append(email_defaut)
+                                        if notifications_envoyees:
+                                            st.info("📧 Notification de supervision envoyée à : " + ", ".join(notifications_envoyees))
+                                        else:
+                                            st.error("❌ La notification n'a pu être envoyée à aucune adresse de supervision. Vérifiez la configuration SMTP.")
+                                    st.success(f"✅ Absence enregistrée (mode locale) pour {etud_non} !")
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+                with col_btn2:
+                    if etud_non and st.button("🔄 ANNULER LA DERNIERE ABSENCE", use_container_width=True, disabled=preview_teacher is not None):
+                        if MODE_SUPABASE:
+                            if supprimer_derniere_absence_supabase(etud_non, sel_mat, promo_c):
+                                st.success(f"✅ Dernière absence annulée pour {etud_non} dans {sel_mat} ! L'exclusion est levée si applicable.")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Aucune absence à annuler pour cet étudiant dans cette matiere.")
+                        else:
+                            if supprimer_derniere_absence_locale(etud_non, sel_mat, promo_c):
+                                st.success(f"✅ Dernière absence annulée (mode local) pour {etud_non} ! L'exclusion est levée si applicable.")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Aucune absence à annuler pour cet étudiant dans cette matiere.")
+
+                with col_btn3:
+                    if sel_abs_a_annuler and st.button("❌ ANNULER L'ABSENCE CHOISIE", use_container_width=True, disabled=preview_teacher is not None):
+                        abs_cible = options_annulation[sel_abs_a_annuler]
+                        if MODE_SUPABASE:
+                            try:
+                                supabase.table("suivi_assiduite_2026").delete().eq("id", abs_cible["id"]).execute()
+                                st.success(f"✅ Absence du {abs_cible.get('date_absence','')} ({abs_cible.get('jour_absence','')} {abs_cible.get('horaire_absence','')}) annulée pour {etud_non} !")
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur lors de la suppression : {e}")
+                        else:
+                            try:
+                                st.session_state.absences.remove(abs_cible)
+                                st.success(f"✅ Absence du {abs_cible.get('date_absence','')} ({abs_cible.get('jour_absence','')} {abs_cible.get('horaire_absence','')}) annulée (mode local) pour {etud_non} !")
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur lors de la suppression : {e}")
+                # LISTE GLOBALE DES ABSENCES
+                st.divider()
+                st.subheader("📋 Liste globale des absences")
+
+                if not df_db_full.empty and "etud_non_eligible" in df_db_full.columns:
+                    if "justifie" not in df_db_full.columns:
+                        df_db_full["justifie"] = False
+                    df_db_full["justifie"] = df_db_full["justifie"].fillna(False)
+                    df_liste = df_db_full.copy()
+                    df_liste["Statut justificatif"] = df_liste["justifie"].apply(lambda x: "✅ justifiee" if x else "❌ Non justifiee")
+                    df_count_mat = df_liste.groupby(["etud_non_eligible", "matiere"]).size().reset_index(name="Abs matiere")
+                    df_liste = df_liste.merge(df_count_mat, on=["etud_non_eligible", "matiere"], how="left")
+                    df_liste["Statut exclusion"] = df_liste["Abs matiere"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "eligible")
+
+                    affichage_cols = {
+                        "enseignant": "Chargé de cours",
+                        "matiere": "matiere",
+                        "promotion": "Promotion",
+                        "etud_non_eligible": "Étudiant",
+                        "jour_absence": "Jour",
+                        "date_absence": "Date",
+                        "horaire_absence": "Horaire",
+                        "cause_non_eligibilite": "Motif",
+                        "Statut justificatif": "Justification",
+                        "Abs matiere": "🔢 Nb (cette matiere)",
+                        "Statut exclusion": "Statut"
+                    }
+                    df_aff = df_liste[list(affichage_cols.keys())].rename(columns=affichage_cols)
+                    df_aff = df_aff.sort_values(by=["Étudiant", "Date"], ascending=[True, False])
+                    st.dataframe(df_aff, use_container_width=True, hide_index=True)
+
+                    # ─── EFFACEMENT AVEC CONFIRMATION CONDITIONNELLE ───
+                    if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary", key="btn_reset_all_abs", disabled=preview_teacher is not None):
+                        st.session_state.confirm_reset_abs = True
+
+                    if st.session_state.get("confirm_reset_abs", False):
+                        st.error("⚠️ Cette action est IRRÉVERSIBLE ! Toutes les absences seront définitivement supprimées.")
+                        c_yes, c_no = st.columns(2)
+                        with c_yes:
+                            if st.button("✅ Oui, effacer tout", type="primary", use_container_width=True, key="confirm_yes_abs", disabled=preview_teacher is not None):
+                                if MODE_SUPABASE:
+                                    try:
+                                        supabase.table("suivi_assiduite_2026").delete().neq("id", -1).execute()
+                                        st.success("✅ Historique Supabase effacé !")
+                                    except Exception as e:
+                                        st.error(f"Erreur : {e}")
+                                else:
+                                    st.session_state.absences = []
+                                    st.success("✅ Historique local effacé !")
+                                st.session_state.confirm_reset_abs = False
+                                time.sleep(0.5)
+                                st.rerun()
+                        with c_no:
+                            if st.button("❌ Non, annuler", use_container_width=True, key="confirm_no_abs", disabled=preview_teacher is not None):
+                                st.session_state.confirm_reset_abs = False
+                                st.info("Action annulée.")
+                                time.sleep(0.5)
+                                st.rerun()
+                else:
+                    st.info("ℹ️ Aucune absence enregistrée dans l'historique global.")
+
+                # RAPPORT OFFICIEL EXCEL
+                # ─── SUIVI DES ABSENCES SIGNALÉES PAR L'ENSEIGNANT ───
+                if is_enseignant_connecte and sel_mat and promo_c:
+                    st.divider()
+                    col_titre, col_deco = st.columns([4, 1])
+                    with col_titre:
+                        st.subheader("👁️ Suivi des absences que j'ai signalées")
+                    with col_deco:
+                        if preview_teacher is not None:
+                            st.caption("Aperçu en lecture seule")
+                        elif st.button("🚪 Déconnexion", use_container_width=True, type="primary", key="deco_suivi_ens"):
+                            st.session_state["user_data"] = None
+                            st.rerun()
+
+                    # Récupération des absences de cet enseignant pour cette matiere
+                    if MODE_SUPABASE:
+                        abs_ens = charger_absences_supabase(sel_mat, promo_c)
+                        abs_ens = [a for a in abs_ens if a.get("enseignant") == sel_prof]
+                    else:
+                        abs_ens = [a for a in st.session_state.absences 
+                                   if a.get("enseignant") == sel_prof 
+                                   and a.get("matiere") == sel_mat 
+                                   and a.get("promotion") == promo_c]
+
+                    if abs_ens:
+                        # Récupérer Mat. BAC depuis df_etu
+                        col_mat_bac = None
+                        for c in df_etu.columns:
+                            c_up = str(c).strip().upper().replace(".", "").replace(" ", "").replace("_", "")
+                            if "MAT" in c_up and "BAC" in c_up:
+                                col_mat_bac = c
+                                break
+
+                        # Préparer le DataFrame d'affichage par ABSENCE INDIVIDUELLE
+                        data_suivi = []
+                        for a in sorted(abs_ens, key=lambda x: (x.get("etud_non_eligible",""), x.get("date_absence",""))):
+                            nom_e = a.get("etud_non_eligible", "")
+                            d_abs = a.get("date_absence", "")
+                            j_abs = a.get("jour_absence", "")
+                            h_abs = a.get("horaire_absence", "")
+                            is_justif = a.get("justifie", False)
+
+                            # Recherche de la requête liée à CETTE séance spécifique
+                            req = trouver_derniere_requete(nom_e, sel_mat, d_abs, j_abs, h_abs)
+
+                            if req:
+                                statut_req = req.get("statut", "—")
+                                motif_req = req.get("motif", "—")
+                            else:
+                                statut_req = "Aucune demande"
+                                motif_req = "—"
+
+                            # Mat. BAC
+                            mat_bac = ""
+                            match_etu = df_etu[df_etu["Nom_Complet"].astype(str).str.strip().str.upper() == str(nom_e).strip().upper()]
+                            if not match_etu.empty and col_mat_bac:
+                                mat_bac = str(match_etu.iloc[0].get(col_mat_bac, "")).strip()
+
+                            data_suivi.append({
+                                "Étudiant": nom_e,
+                                "Mat. BAC": mat_bac,
+                                "Date absence": d_abs,
+                                "Jour": j_abs,
+                                "Horaire": h_abs,
+                                "Motif initial": a.get("cause_non_eligibilite", ""),
+                                "justifiee": "✅ Oui" if is_justif else "❌ Non",
+                                "Statut justificatif": statut_req,
+                                "Motif déposé": motif_req
+                            })
+
+                        df_suivi = pd.DataFrame(data_suivi)
+                        st.dataframe(df_suivi, use_container_width=True, hide_index=True)
+
+                        # ─── EXPORT EXCEL DU SUIVI ───
+                        buf_suivi = io.BytesIO()
+                        with pd.ExcelWriter(buf_suivi, engine='xlsxwriter') as writer:
+                            df_suivi.to_excel(writer, index=False, sheet_name='Suivi_Absences')
+                            wb = writer.book
+                            ws = writer.sheets['Suivi_Absences']
+                            header_fmt = wb.add_format({
+                                'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
+                                'border': 1, 'align': 'center', 'valign': 'vcenter'
+                            })
+                            for col_num, val in enumerate(df_suivi.columns.values):
+                                ws.write(0, col_num, val, header_fmt)
+                            ws.set_column(0, 0, 28)
+                            ws.set_column(1, 1, 14)
+                            ws.set_column(2, 4, 16)
+                            ws.set_column(5, 8, 20)
+                            ws.freeze_panes(1, 0)
+
+                        st.download_button(
+                            label="📊 Télécharger le suivi (Excel)",
+                            data=buf_suivi.getvalue(),
+                            file_name=f"Suivi_Absences_{sel_mat.replace(' ', '_')}_{promo_c}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key=f"dl_suivi_{sel_mat}_{promo_c}"
+                        )
+
+                        # Récapitulatif par étudiant (compteurs agrégés)
+                        st.markdown("#### 📊 Récapitulatif par étudiant")
+                        recap = {}
+                        for row in data_suivi:
+                            nom = row["Étudiant"]
+                            if nom not in recap:
+                                recap[nom] = {"Mat. BAC": row["Mat. BAC"], "Total": 0, "justifiees": 0, "En attente": 0, "Rejetées": 0}
+                            recap[nom]["Total"] += 1
+                            if row["justifiee"] == "✅ Oui":
+                                recap[nom]["justifiees"] += 1
+                            elif "Favorable" in row["Statut justificatif"]:
+                                recap[nom]["justifiees"] += 1
+                            elif "Defavorable" in row["Statut justificatif"]:
+                                recap[nom]["Rejetées"] += 1
+                            elif "En attente" in row["Statut justificatif"]:
+                                recap[nom]["En attente"] += 1
+
+                        df_recap = pd.DataFrame([
+                            {"Étudiant": k, "Mat. BAC": v["Mat. BAC"], "Total absences": v["Total"], 
+                             "justifiees": v["justifiees"], "En attente": v["En attente"], "Rejetées": v["Rejetées"]}
+                            for k, v in sorted(recap.items())
+                        ])
+                        st.dataframe(df_recap, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Vous n'avez signalé aucune absence pour cette matiere et cette promotion.")
+
+                st.divider()
+                st.subheader("📥 Rapport officiel Excel — Liste d'Éligibilité")
+
+                toutes_promos = sorted(df_etu["Promotion"].dropna().unique().tolist())
+                promo_rapport = st.selectbox(
+                    "🎓 Sélectionner la promotion pour le rapport :",
+                    options=toutes_promos,
+                    index=toutes_promos.index(promo_c) if promo_c in toutes_promos else 0,
+                    key="promo_rapport_select"
+                )
+
+                df_p_rapport = df_etu[df_etu["Promotion"].astype(str).str.strip().str.upper() == promo_rapport.upper()].copy()
+
+                if not df_p_rapport.empty:
+                    try:
+                        if MODE_SUPABASE:
+                            absences_cours = charger_absences_supabase(sel_mat, promo_rapport)
+                        else:
+                            absences_cours = [
+                                a for a in st.session_state.absences
+                                if a.get("matiere") == sel_mat and a.get("promotion") == promo_rapport
+                            ]
+                        df_abs_cours = pd.DataFrame(absences_cours)
+
+                        absents_noms = []
+                        absents_details = {}
+                        if not df_abs_cours.empty and "etud_non_eligible" in df_abs_cours.columns:
+                            for _, row in df_abs_cours.iterrows():
+                                nom = row["etud_non_eligible"]
+                                absents_noms.append(nom)
+                                absents_details[nom] = {
+                                    "motif": row.get("cause_non_eligibilite", "Non justifie"),
+                                    "date": row.get("date_absence", ""),
+                                    "jour": row.get("jour_absence", ""),
+                                    "horaire": row.get("horaire_absence", "")
+                                }
+
+                        df_liste_finale = df_p_rapport.copy()
+                        df_liste_finale["Statut"] = df_liste_finale["Nom_Complet"].apply(
+                            lambda x: "❌ Non eligible (Absent)" if x in absents_noms else "✅ eligible"
+                        )
+                        df_liste_finale["Motif du retrait"] = df_liste_finale["Nom_Complet"].map(
+                            lambda x: absents_details.get(x, {}).get("motif", "")
+                        )
+                        df_liste_finale["Date Absence"] = df_liste_finale["Nom_Complet"].map(
+                            lambda x: absents_details.get(x, {}).get("date", "")
+                        )
+                        df_liste_finale["Jour"] = df_liste_finale["Nom_Complet"].map(
+                            lambda x: absents_details.get(x, {}).get("jour", "")
+                        )
+                        df_liste_finale["Horaire"] = df_liste_finale["Nom_Complet"].map(
+                            lambda x: absents_details.get(x, {}).get("horaire", "")
+                        )
+
+                        df_export = df_liste_finale[[
+                            "Nom_Complet", "Statut", "Motif du retrait",
+                            "Date Absence", "Jour", "Horaire"
+                        ]].rename(columns={
+                            "Nom_Complet": "Nom et Prénom",
+                            "Motif du retrait": "Motif absence",
+                            "Date Absence": "Date",
+                            "Horaire": "Horaire"
+                        })
+                        df_export["matiere"] = sel_mat
+                        df_export["Charge"] = sel_prof
+                        df_export["Promotion"] = promo_rapport
+
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                            workbook = writer.book
+                            fmt_title = workbook.add_format({
+                                'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter',
+                                'bg_color': '#1E3A8A', 'font_color': 'white'
+                            })
+                            fmt_sub = workbook.add_format({
+                                'italic': True, 'font_size': 11, 'align': 'center'
+                            })
+                            fmt_bold = workbook.add_format({'bold': True})
+                            fmt_eligible = workbook.add_format({
+                                'bg_color': '#dcfce7', 'font_color': '#166534', 'border': 1
+                            })
+                            fmt_non_eligible = workbook.add_format({
+                                'bg_color': '#fee2e2', 'font_color': '#991b1b', 'border': 1
+                            })
+
+                            df_export.to_excel(writer, sheet_name='Liste_Eligibilite', startrow=8, index=False)
+                            ws = writer.sheets['Liste_Eligibilite']
+
+                            ws.merge_range('A1:I1', "UNIVERSITE DJILLALI LIABES - SIDI BEL ABBES", fmt_title)
+                            ws.merge_range('A2:I2', "Faculté de génie Electrique - département d'Electrotechnique", fmt_sub)
+                            ws.merge_range('A3:I3', "LISTE D'ELIGIBILITE A L'EXAMEN", fmt_title)
+                            ws.write('A5', "matiere :", fmt_bold); ws.write('B5', sel_mat)
+                            ws.write('A6', "Enseignant :", fmt_bold); ws.write('B6', sel_prof)
+                            ws.write('D5', "Promotion :", fmt_bold); ws.write('E5', promo_rapport)
+                            ws.write('D6', "Date export :", fmt_bold); ws.write('E6', datetime.now().strftime('%d/%m/%Y'))
+
+                            ws.set_column('A:A', 28)
+                            ws.set_column('B:B', 22)
+                            ws.set_column('C:C', 28)
+                            ws.set_column('D:F', 14)
+                            ws.set_column('G:I', 20)
+
+                            for row_num in range(9, 9 + len(df_export)):
+                                statut_val = df_export.iloc[row_num - 9]["Statut"]
+                                if "eligible" in str(statut_val) and "Non" not in str(statut_val):
+                                    ws.set_row(row_num, None, fmt_eligible)
+                                else:
+                                    ws.set_row(row_num, None, fmt_non_eligible)
+
+                            ws.freeze_panes(9, 0)
+
+                        nb_eligibles = len(df_export[df_export["Statut"].str.contains("✅")])
+                        nb_non_eligibles = len(df_export[df_export["Statut"].str.contains("❌")])
+
+                        st.success(
+                            f"✅ Rapport généré pour **{promo_rapport}** : **{nb_eligibles}** eligible(s) | **{nb_non_eligibles}** signalé(s) comme absent(s)."
+                        )
+                        st.download_button(
+                            label="📥 Télecharger LE RAPPORT (XLSX)",
+                            data=output.getvalue(),
+                            file_name=f"Rapport_{sel_mat.replace(' ', '_')}_{promo_rapport}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        st.error(f"❌ Erreur Excel : {e}")
+                else:
+                    st.warning(f"⚠️ Aucun étudiant trouvé pour la promotion {promo_rapport}.")
+
+    # =============================================================================
+    # ONGLET 2 : GESTION DES JUSTIFICATIFS
+    # =============================================================================
+    if not is_enseignant_connecte:
+        with tab2:
+            st.header("📩 Système de Gestion des Justificatifs")
+            st.caption("Dépôt étudiant et validation administration")
+
+            if étudiant_connecte:
+                # Mode étudiant connecté : accès direct au dépôt
+                choix_vue = "Étudiant (Dépôt)"
+                st.success(
+                    f"👤 Connecté en tant qu'étudiant : **{étudiant_connecte['nom']}** "
+                    f"— Mat. Etudiant : {étudiant_connecte.get('mat_etud', étudiant_connecte.get('mat_bac', ''))}"
+                )
+                if preview_student is not None:
+                    st.info("👁️ Aperçu administrateur en lecture de l'espace étudiant sélectionné.")
+                elif st.button("🚪 Se déconnecter", use_container_width=True):
+                    st.session_state.étudiant_auth = None
+                    if (st.session_state.get("user_data") or {}).get("role") == "etudiant":
+                        st.session_state["user_data"] = None
+                    st.rerun()
+
+                # ════════════════════════════════════════════════════════
+                # 📅 MON EMPLOI DU TEMPS INDIVIDUEL
+                # ------------------------------------------------------------
+                # Ajouté ici pour que l'étudiant connecté au système de
+                # gestion des justificatifs retrouve aussi son propre EDT,
+                # sans devoir changer de portail. Même logique de
+                # détection groupe/sous-groupe que dans le Portail Étudiant
+                # (Cours communs, sauf s'ils listent des groupes entre
+                # parenthèses ; TD/TP communs, sauf s'ils portent un tag
+                # -G<n> / -SG<n> ne correspondant pas à l'étudiant).
+                # ════════════════════════════════════════════════════════
+                with st.expander("📅 Mon Emploi du Temps Individuel", expanded=False):
+                    if not os.path.exists(NOM_FICHIER_FIXE):
+                        st.warning("⚠️ Le fichier source de l'EDT est introuvable.")
+                    else:
+                        df_edt_justif = pd.read_excel(NOM_FICHIER_FIXE)
+
+                        promo_justif = étudiant_connecte["promotion"]
+                        df_edt_justif_promo = df_edt_justif[
+                            df_edt_justif["Promotion"] == promo_justif
+                        ].copy()
+
+                        # --- Groupe / Sous-groupe de l'étudiant (fichier étudiants source) ---
+                        cols_etu_map_justif = detecter_colonnes_etudiant(df_etu)
+                        col_groupe_justif = cols_etu_map_justif.get('groupe')
+                        col_sous_groupe_justif = cols_etu_map_justif.get('sous_groupe')
+
+                        groupe_justif = ""
+                        sous_groupe_justif = ""
+                        ligne_etu_justif = df_etu[df_etu["Nom_Complet"] == étudiant_connecte["nom"]]
+                        if not ligne_etu_justif.empty:
+                            if col_groupe_justif and col_groupe_justif in ligne_etu_justif.columns:
+                                val_g_justif = ligne_etu_justif.iloc[0].get(col_groupe_justif)
+                                if pd.notna(val_g_justif):
+                                    groupe_justif = str(val_g_justif).strip().upper()
+                            if col_sous_groupe_justif and col_sous_groupe_justif in ligne_etu_justif.columns:
+                                val_sg_justif = ligne_etu_justif.iloc[0].get(col_sous_groupe_justif)
+                                if pd.notna(val_sg_justif):
+                                    sous_groupe_justif = str(val_sg_justif).strip().upper()
+
+                        st.markdown(
+                            f"<div style='background:#f1f5f9;padding:8px 12px;border-radius:8px;"
+                            f"font-size:13px;margin-bottom:10px;'>"
+                            f"🎓 Promotion : <b>{promo_justif}</b> &nbsp;|&nbsp; "
+                            f"👥 Groupe : <b>{groupe_justif or 'N/A'}</b> &nbsp;|&nbsp; "
+                            f"🔹 Sous-groupe : <b>{sous_groupe_justif or 'N/A'}</b>"
+                            f"</div>", unsafe_allow_html=True
+                        )
+
+                        def _extraire_groupe_td_justif(val):
+                            if pd.isna(val):
+                                return None
+                            val_str = str(val).strip().upper()
+                            m = re.search(r'(?<![A-Z])G[\s\-]?(\d+)\s*$', val_str)
+                            return f"G{m.group(1)}" if m else None
+
+                        def _extraire_sousgroupes_tp_justif(val):
+                            if pd.isna(val):
+                                return set()
+                            val_str = str(val).strip().upper()
+                            return {f"SG{n}" for n in re.findall(r'SG[\s\-]?(\d+)', val_str)}
+
+                        def _extraire_groupes_cours_justif(val):
+                            if pd.isna(val):
+                                return None
+                            val_str = str(val).strip().upper()
+                            m = re.search(r'\(([^)]*)\)\s*$', val_str)
+                            if not m:
+                                return None
+                            trouvailles = re.findall(r'G(\d+)', m.group(1))
+                            return {f"G{n}" for n in trouvailles} if trouvailles else None
+
+                        mask_cours_j = df_edt_justif_promo["Code"].astype(str).str.contains("COURS", case=False, na=False)
+                        mask_td_j = df_edt_justif_promo["Code"].astype(str).str.contains("TD", case=False, na=False) & ~mask_cours_j
+                        mask_tp_j = ~mask_cours_j & ~mask_td_j
+
+                        df_edt_justif_promo.loc[mask_cours_j, "Groupes_Cours"] = df_edt_justif_promo.loc[
+                            mask_cours_j, "Enseignements"
+                        ].apply(_extraire_groupes_cours_justif)
+                        df_edt_justif_promo.loc[mask_td_j, "Groupe_TD"] = df_edt_justif_promo.loc[
+                            mask_td_j, "Enseignements"
+                        ].apply(_extraire_groupe_td_justif)
+                        df_edt_justif_promo.loc[mask_tp_j, "SousGroupes_TP"] = df_edt_justif_promo.loc[
+                            mask_tp_j, "Enseignements"
+                        ].apply(_extraire_sousgroupes_tp_justif)
+
+                        mask_cours_commun_j = mask_cours_j & df_edt_justif_promo["Groupes_Cours"].apply(
+                            lambda g: not g if isinstance(g, set) else pd.isna(g)
+                        )
+                        mask_cours_choisi_j = mask_cours_j & df_edt_justif_promo["Groupes_Cours"].apply(
+                            lambda g: bool(groupe_justif) and isinstance(g, set) and groupe_justif in g
+                        )
+                        mask_td_commun_j = df_edt_justif_promo.get(
+                            "Groupe_TD", pd.Series(index=df_edt_justif_promo.index, dtype=object)
+                        ).isna() & mask_td_j
+                        mask_td_choisi_j = (
+                            (df_edt_justif_promo.get("Groupe_TD") == groupe_justif)
+                            if groupe_justif else pd.Series(False, index=df_edt_justif_promo.index)
+                        )
+                        mask_tp_commun_j = mask_tp_j & df_edt_justif_promo["SousGroupes_TP"].apply(
+                            lambda s: not s if isinstance(s, set) else True
+                        )
+                        mask_tp_choisi_j = mask_tp_j & df_edt_justif_promo["SousGroupes_TP"].apply(
+                            lambda s: bool(sous_groupe_justif) and isinstance(s, set) and sous_groupe_justif in s
+                        )
+
+                        df_edt_indiv_justif = df_edt_justif_promo[
+                            mask_cours_commun_j | mask_cours_choisi_j
+                            | mask_td_commun_j | mask_td_choisi_j
+                            | mask_tp_commun_j | mask_tp_choisi_j
+                        ].copy()
+
+                        type_affiche_justif = st.selectbox(
+                            "📚 Type d'enseignement à afficher :",
+                            ["Tous les enseignements", "📘 Cours uniquement", "📗 TD uniquement", "🔴 TP uniquement"],
+                            key="type_affiche_justif_indiv"
+                        )
+                        if type_affiche_justif == "📘 Cours uniquement":
+                            df_edt_indiv_justif = df_edt_indiv_justif[mask_cours_j.reindex(df_edt_indiv_justif.index, fill_value=False)]
+                        elif type_affiche_justif == "📗 TD uniquement":
+                            df_edt_indiv_justif = df_edt_indiv_justif[mask_td_j.reindex(df_edt_indiv_justif.index, fill_value=False)]
+                        elif type_affiche_justif == "🔴 TP uniquement":
+                            df_edt_indiv_justif = df_edt_indiv_justif[mask_tp_j.reindex(df_edt_indiv_justif.index, fill_value=False)]
+
+                        def _norm_edt_justif(x):
+                            if not x or str(x).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
+                                return ""
+                            s = str(x).strip().lower()
+                            m = re.match(r'^\s*(\d{1,2})[h:](\d{2})?\s*[-–à]\s*(\d{1,2})[h:](\d{2})?\s*$', s)
+                            if m:
+                                h1, m1, h2, m2 = m.groups()
+                                return f"{int(h1):02d}h{m1 or '00'}-{int(h2):02d}h{m2 or '00'}"
+                            return re.sub(r'\s+', '', s)
+
+                        horaires_ref_justif = [
+                            "08h00-09h30", "09h30-11h00", "11h00-12h30",
+                            "12h30-14h00", "14h00-15h30", "15h30-17h00"
+                        ]
+                        jours_ref_justif = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
+                        map_h_labels_justif = {
+                            "08h00-09h30": "8h - 9h30", "09h30-11h00": "9h30 - 11h",
+                            "11h00-12h30": "11h - 12h30", "12h30-14h00": "12h30 - 14h",
+                            "14h00-15h30": "14h - 15h30", "15h30-17h00": "15h30 - 17h"
+                        }
+                        map_j_labels_justif = {
+                            "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
+                            "mercredi": "Mercredi", "jeudi": "Jeudi"
+                        }
+
+                        df_edt_indiv_justif["h_norm"] = df_edt_indiv_justif["Horaire"].apply(_norm_edt_justif)
+                        df_edt_indiv_justif["j_norm"] = df_edt_indiv_justif["Jours"].apply(_norm_edt_justif)
+
+                        def _fmt_cell_justif(rows):
+                            items = []
+                            for _, r in rows.iterrows():
+                                code_up = str(r["Code"]).upper()
+                                if "COURS" in code_up:
+                                    nat, color, bg = "📘", "#1e40af", "#dbeafe"
+                                elif "TD" in code_up:
+                                    nat, color, bg = "📗", "#166534", "#dcfce7"
+                                else:
+                                    nat, color, bg = "🔴", "#991b1b", "#fee2e2"
+                                items.append(
+                                    f"<div style='margin-bottom:5px;padding:6px;border-left:4px solid {color};"
+                                    f"background-color:{bg};border-radius:6px;text-align:left;'>"
+                                    f"<b style='color:{color};font-size:12px;'>{nat} {r['Enseignements']}</b><br>"
+                                    f"<span style='font-size:11px;color:#334155;'>👤 {r['Enseignants']}</span><br>"
+                                    f"<span style='font-size:10px;color:#64748b;'>📍 {r['Lieu']}</span>"
+                                    f"</div>"
+                                )
+                            return "".join(items)
+
+                        def _fmt_cell_justif_texte(rows):
+                            items = []
+                            for _, r in rows.iterrows():
+                                code_up = str(r["Code"]).upper()
+                                nat = "📘" if "COURS" in code_up else ("📗" if "TD" in code_up else "🔴")
+                                items.append(f"{nat} {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}")
+                            return "\n\n".join(items)
+
+                        if not df_edt_indiv_justif.empty:
+                            grouped_justif = df_edt_indiv_justif.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_justif)
+                            grouped_justif_texte = df_edt_indiv_justif.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_justif_texte)
+                            grid_justif = grouped_justif.unstack("h_norm")
+                            grid_justif_texte = grouped_justif_texte.unstack("h_norm")
+                        else:
+                            grid_justif = pd.DataFrame()
+                            grid_justif_texte = pd.DataFrame()
+
+                        jours_present_justif = [j for j in jours_ref_justif if j in grid_justif.index]
+                        h_present_justif = [h for h in horaires_ref_justif if h in grid_justif.columns]
+
+                        if jours_present_justif and h_present_justif:
+                            grid_justif = grid_justif.reindex(index=jours_present_justif, columns=h_present_justif).fillna("")
+                            grid_justif.index = [map_j_labels_justif.get(i, i) for i in grid_justif.index]
+                            grid_justif.columns = [map_h_labels_justif.get(c, c) for c in grid_justif.columns]
+
+                            grid_justif_texte = grid_justif_texte.reindex(index=jours_present_justif, columns=h_present_justif).fillna("")
+                            grid_justif_texte.index = [map_j_labels_justif.get(i, i) for i in grid_justif_texte.index]
+                            grid_justif_texte.columns = [map_h_labels_justif.get(c, c) for c in grid_justif_texte.columns]
+
+                            st.write(grid_justif.to_html(escape=False), unsafe_allow_html=True)
+
+                            st.markdown("##### 📥 Télécharger mon EDT")
+                            djl1, djl2, djl3 = st.columns(3)
+
+                            nom_base_justif = f"EDT_{étudiant_connecte['nom'].replace(' ', '_')}_{promo_justif}"
+
+                            # Excel
+                            buf_xl_justif = io.BytesIO()
+                            with pd.ExcelWriter(buf_xl_justif, engine='xlsxwriter') as writer:
+                                grid_justif_texte.to_excel(writer, sheet_name='Mon_EDT', startrow=2)
+                                wb_j = writer.book
+                                ws_j = writer.sheets['Mon_EDT']
+                                fmt_titre_j = wb_j.add_format({'bold': True, 'font_size': 13, 'font_color': 'white', 'bg_color': '#1E3A8A', 'align': 'center', 'valign': 'vcenter'})
+                                ws_j.merge_range(0, 0, 0, len(grid_justif_texte.columns), f"📅 EDT Individuel — {étudiant_connecte['nom']}", fmt_titre_j)
+                                ws_j.merge_range(1, 0, 1, len(grid_justif_texte.columns), f"Promotion {promo_justif} | Groupe {groupe_justif or 'N/A'} | Sous-groupe {sous_groupe_justif or 'N/A'}",
+                                                 wb_j.add_format({'italic': True, 'align': 'center', 'font_size': 9, 'font_color': '#64748b'}))
+                                fmt_hdr_j = wb_j.add_format({'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                                fmt_jour_j = wb_j.add_format({'bold': True, 'bg_color': '#f1f5f9', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                                fmt_cell_j = wb_j.add_format({'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10})
+                                ws_j.write(2, 0, "JOUR", fmt_hdr_j)
+                                for col_num, h in enumerate(grid_justif_texte.columns, start=1):
+                                    ws_j.write(2, col_num, h, fmt_hdr_j)
+                                ws_j.set_column(0, 0, 14)
+                                ws_j.set_column(1, len(grid_justif_texte.columns), 26)
+                                for row_num, (jour, ligne) in enumerate(grid_justif_texte.iterrows(), start=3):
+                                    ws_j.write(row_num, 0, jour, fmt_jour_j)
+                                    max_lignes_j = 1
+                                    for col_num, val in enumerate(ligne, start=1):
+                                        ws_j.write(row_num, col_num, val, fmt_cell_j)
+                                        max_lignes_j = max(max_lignes_j, str(val).count('\n') + 1)
+                                    ws_j.set_row(row_num, max(40, max_lignes_j * 14))
+                                ws_j.freeze_panes(3, 1)
+
+                            djl1.download_button(
+                                "📊 Excel", buf_xl_justif.getvalue(),
+                                f"{nom_base_justif}.xlsx",
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True, key="dl_edt_justif_xlsx"
+                            )
+
+                            # HTML
+                            html_edt_justif = f"""<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>EDT — {étudiant_connecte['nom']}</title>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;color:#1e293b;}}
+.container{{max-width:1100px;margin:auto;background:white;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;}}
+.header{{background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:20px;text-align:center;}}
+.header h1{{margin:0;font-size:20px;}} .header p{{margin:6px 0 0 0;opacity:0.9;font-size:13px;}}
+.content{{padding:20px;overflow-x:auto;}}table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+th{{background:#0f172a;color:white;padding:12px;text-align:center;font-size:12px;border:1px solid #e2e8f0;}}
+td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word-wrap:break-word;}}
+</style></head><body><div class='container'>
+<div class='header'><h1>📅 EDT Individuel — {étudiant_connecte['nom']}</h1>
+<p>Promotion {promo_justif} | Groupe {groupe_justif or 'N/A'} | Sous-groupe {sous_groupe_justif or 'N/A'}</p></div>
+<div class='content'>{grid_justif.to_html(escape=False)}</div>
+</div></body></html>"""
+                            djl2.download_button(
+                                "🌐 HTML", html_edt_justif,
+                                f"{nom_base_justif}.html", "text/html",
+                                use_container_width=True, key="dl_edt_justif_html"
+                            )
+
+                            # PDF
+                            try:
+                                from reportlab.lib import colors as rl_colors_justif
+                                from reportlab.lib.pagesizes import landscape, A4
+                                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepInFrame
+                                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                                from reportlab.lib.units import mm
+
+                                buf_pdf_justif = io.BytesIO()
+                                doc_justif = SimpleDocTemplate(
+                                    buf_pdf_justif, pagesize=landscape(A4),
+                                    topMargin=15 * mm, bottomMargin=12 * mm, leftMargin=10 * mm, rightMargin=10 * mm
+                                )
+                                styles_justif = getSampleStyleSheet()
+                                titre_style_justif = ParagraphStyle('TitreJustif', parent=styles_justif['Heading1'], fontSize=14,
+                                                                    textColor=rl_colors_justif.HexColor('#1E3A8A'), alignment=1)
+                                soustitre_style_justif = ParagraphStyle('SousTitreJustif', parent=styles_justif['Normal'], fontSize=9,
+                                                                        textColor=rl_colors_justif.HexColor('#64748b'), alignment=1)
+                                cell_style_justif = ParagraphStyle('CellJustif', parent=styles_justif['Normal'], fontSize=7, leading=9)
+
+                                elements_justif = [
+                                    Paragraph(f"📅 EDT Individuel — {étudiant_connecte['nom']}", titre_style_justif),
+                                    Paragraph(f"Promotion {promo_justif} | Groupe {groupe_justif or 'N/A'} | Sous-groupe {sous_groupe_justif or 'N/A'}", soustitre_style_justif),
+                                    Spacer(1, 8),
+                                ]
+                                page_width_justif = landscape(A4)[0] - 20 * mm
+                                col_j_justif = 26 * mm
+                                col_h_justif = (page_width_justif - col_j_justif) / len(grid_justif_texte.columns)
+                                col_widths_justif = [col_j_justif] + [col_h_justif] * len(grid_justif_texte.columns)
+
+                                def _cel_pdf_justif(texte, largeur):
+                                    return KeepInFrame(max(largeur - 10, 10), 380,
+                                                       [Paragraph(str(texte).replace(chr(10), '<br/>'), cell_style_justif)],
+                                                       mode='shrink')
+
+                                data_pdf_justif = [
+                                    [Paragraph("<b>JOUR</b>", cell_style_justif)] +
+                                    [Paragraph(f"<b>{h}</b>", cell_style_justif) for h in grid_justif_texte.columns]
+                                ]
+                                for jour, ligne in grid_justif_texte.iterrows():
+                                    ligne_pdf_j = [_cel_pdf_justif(jour, col_j_justif)]
+                                    for val in ligne:
+                                        ligne_pdf_j.append(_cel_pdf_justif(val, col_h_justif) if val else "")
+                                    data_pdf_justif.append(ligne_pdf_j)
+
+                                table_justif = Table(data_pdf_justif, colWidths=col_widths_justif, repeatRows=1)
+                                table_justif.setStyle(TableStyle([
+                                    ('BACKGROUND', (0, 0), (-1, 0), rl_colors_justif.HexColor('#1E3A8A')),
+                                    ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors_justif.white),
+                                    ('BACKGROUND', (0, 1), (0, -1), rl_colors_justif.HexColor('#f1f5f9')),
+                                    ('GRID', (0, 0), (-1, -1), 0.5, rl_colors_justif.HexColor('#cbd5e1')),
+                                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                                    ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+                                ]))
+                                elements_justif.append(table_justif)
+                                doc_justif.build(elements_justif)
+
+                                djl3.download_button(
+                                    "📄 PDF", buf_pdf_justif.getvalue(),
+                                    f"{nom_base_justif}.pdf", "application/pdf",
+                                    use_container_width=True, key="dl_edt_justif_pdf"
+                                )
+                            except Exception as e:
+                                djl3.warning(f"PDF indisponible : {e}")
+                        else:
+                            st.info("ℹ️ Aucun enseignement à afficher pour cette sélection.")
+
+                st.divider()
+            else:
+                choix_vue = st.radio("Profil :", ["Étudiant (Dépôt)", "Administration (Décision)"], horizontal=True)
+                st.divider()
+
+            if choix_vue == "Étudiant (Dépôt)":
+                st.subheader("📤 Soumettre une demande de réhabilitation")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if étudiant_connecte:
+                        promo_sel = étudiant_connecte["promotion"]
+                        st.markdown(f"**🎓 Promotion :** `{promo_sel}`")
+                        df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
+                        étudiant_sel = étudiant_connecte["nom"]
+                        st.markdown(f"**👤 Nom :** `{étudiant_sel}`")
+                    else:
+                        promo_dispo = sorted(df_etu["Promotion"].dropna().unique().tolist())
+                        promo_sel = st.selectbox("Promotion :", promo_dispo, key="promo_dépôt")
+                        df_etu_promo = df_etu[df_etu['Promotion'] == promo_sel]
+                        noms_dispo = sorted(df_etu_promo["Nom_Complet"].tolist())
+                        étudiant_sel = st.selectbox("Votre nom :", noms_dispo, key="etud_dépôt")
+                with col2:
+                    st.markdown("**ℹ️ Informations**")
+                    st.caption("Sélectionnez votre promotion et votre nom pour voir automatiquement vos absences signalées.")
+               
+                st.divider()
+                st.markdown("### 📋 Mes absences signalées")
+
+                absences_etu = get_absences_étudiant(étudiant_sel)
+
+                if absences_etu:
+                    data_display = []
+                    for abs_item in absences_etu:
+                        mat = abs_item.get("matiere", "")
+                        d_abs = abs_item.get("date_absence", "")
+                        j_abs = abs_item.get("jour_absence", "")
+                        h_abs = abs_item.get("horaire_absence", "")
+                        # Pour l'affichage : chercher la DERNIERE requete (tous statuts) pour CETTE séance
+                        req_affichage = trouver_derniere_requete(étudiant_sel, mat, d_abs, j_abs, h_abs)
+                        req_en_attente = trouver_requete_existante(étudiant_sel, mat, d_abs, j_abs, h_abs)
+                        is_justif = abs_item.get("justifie", False)
+
+                        if is_justif:
+                            statut_j = "🟢 justifiee (acceptée)"
+                        elif req_affichage:
+                            statut_j = "🟡 " + req_affichage.get("statut", "En attente")
+                        else:
+                            statut_j = "🔴 Non déposé"
+
+                        date_dep = req_affichage.get("date_demande", "-") if req_affichage else "-"
+
+                        data_display.append({
+                            "matiere": mat,
+                            "Date d'absence": abs_item.get("date_absence", ""),
+                            "Jour": abs_item.get("jour_absence", ""),
+                            "Horaire": abs_item.get("horaire_absence", ""),
+                            "Motif initial": abs_item.get("cause_non_eligibilite", ""),
+                            "Statut justificatif": statut_j,
+                            "Date dépôt": date_dep
+                        })
+
+                    df_disp = pd.DataFrame(data_display)
+                    st.dataframe(df_disp, use_container_width=True, hide_index=True)
+
+                    
+                    st.markdown("### 📎 justifier vos absences (un justificatif par absence)")
+                    # 1. FILTRAGE : seules les absences vraiment justifiables
+                    absences_sans_justif = []   # Celles que l'étudiant PEUT justifier (Non déposé)
+                    absences_bloquees = []      # Celles qu'il NE PEUT PLUS justifier (Rejetées)
+    
+                    for a in absences_etu:
+                        mat = a.get("matiere", "")
+                        d_abs = a.get("date_absence")
+                        j_abs = a.get("jour_absence")
+                        h_abs = a.get("horaire_absence")
+    
+                        # A. Déjà justifiee dans la table absences → on saute
+                        if a.get("justifie", False):
+                            continue
+    
+                        # B. Requête EN ATTENTE existante → on saute (déjà traité)
+                        existe_attente = trouver_requete_existante(
+                            étudiant_sel, mat, d_abs, j_abs, h_abs
+                        )
+                        if existe_attente:
+                            continue
+    
+                        # C. Dernière requête DEFAVORABLE → BLOQUÉ, on met de côté
+                        derniere_req = trouver_derniere_requete(
+                            étudiant_sel, mat, d_abs, j_abs, h_abs
+                        )
+                        if derniere_req and derniere_req.get("statut") == "Defavorable":
+                            absences_bloquees.append({
+                                "absence": a,
+                                "motif_rejet": derniere_req.get("motif", "Non précisé")
+                            })
+                            continue
+    
+                        # D. Sinon, c'est justifiable
+                        absences_sans_justif.append(a)
+    
+                    # 2. AFFICHAGE DES ABSENCES BLOQUÉES (Rejetées définitivement)
+                    if absences_bloquees:
+                        st.error("🔒 Les absences ci-dessous ont été **rejetées par l'administration** et ne peuvent plus être justifiees.")
+                        for item in absences_bloquees:
+                            a = item["absence"]
+                            st.markdown(
+                                f"<div style='padding:10px;border-left:4px solid #dc2626;background:#fef2f2;border-radius:6px;margin-bottom:8px;'>"
+                                f"<b>❌ {a['matiere']}</b> — {a.get('date_absence','')} ({a.get('jour_absence','')} {a.get('horaire_absence','')})<br>"
+                                f"<span style='font-size:12px;color:#991b1b;'>Décision défavorable | Motif du justificatif rejeté : {item['motif_rejet']}</span>"
+                                f"</div>",
+                                unsafe_allow_html=True
+                            )
+    
+                    # 3. FORMULAIRE DE DÉPÔT (uniquement pour les absences justifiables)
+                    if absences_sans_justif:
+                        st.info("Remplissez les champs ci-dessous pour chaque absence que vous souhaitez justifier, puis validez l'envoi global.")
+                        
+                        uploads = {}
+    
+                        for i, abs_item in enumerate(absences_sans_justif):
+                            with st.container(border=True):
+                                c1, c2, c3 = st.columns([2.5, 2, 3])
+                                
+                                with c1:
+                                    st.markdown(f"**📚 {abs_item['matiere']}**")
+                                    st.caption(f"📅 {abs_item.get('date_absence','')} | 🗓️ {abs_item.get('jour_absence','')} | 🕒 {abs_item.get('horaire_absence','')}")
+                                
+                                with c2:
+                                    motif_val = st.selectbox(
+                                        "Motif :", 
+                                        CAUSES_ABSENCES, 
+                                        key=f"motif_unique_{i}"
+                                    )
+                                
+                                with c3:
+                                    pdf_file = st.file_uploader(
+                                        "Joindre le justificatif (PDF)", 
+                                        type=["pdf"], 
+                                        key=f"pdf_unique_{i}"
+                                    )
+                                
+                                if pdf_file is not None:
+                                    uploads[i] = {
+                                        "absence": abs_item,
+                                        "motif": motif_val,
+                                        "pdf": pdf_file
+                                    }
+    
+                        st.divider()
+    
+                        if uploads:
+                            st.success(f"📎 **{len(uploads)}** justificatif(s) prêt(s) à être envoyé(s).")
+                            
+                            if st.button(
+                                "🚀 ENVOYER TOUTES LES JUSTIFICATIONS",
+                                type="primary",
+                                use_container_width=True,
+                                disabled=preview_student is not None,
+                                help="Désactivé pendant l'aperçu administrateur en lecture seule." if preview_student is not None else None,
+                            ):
+                                succes_count = 0
+                                erreurs_list = []
+                                
+                                for idx, data in uploads.items():
+                                    abs_conc = data["absence"]
+                                    
+                                    try:
+                                        pdf_bytes = data["pdf"].read()
+                                        pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
+                                        
+                                        payload = {
+                                            "date_demande": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                            "nom_etudiant": étudiant_sel,
+                                            "matiere": abs_conc["matiere"],
+                                            "promotion": abs_conc.get("promotion", promo_sel),
+                                            "motif": data["motif"],
+                                            "justificatif_pdf": pdf_encoded,
+                                            "statut": "En attente",
+                                            "date_absence": abs_conc.get("date_absence", ""),
+                                            "jour_absence": abs_conc.get("jour_absence", ""),
+                                            "horaire_absence": abs_conc.get("horaire_absence", "")
+                                        }
+                                        
+                                        if MODE_SUPABASE:
+                                            if enregistrer_requete_supabase(payload):
+                                                succes_count += 1
+                                            else:
+                                                erreurs_list.append(f"❌ {abs_conc['matiere']} ({abs_conc.get('date_absence','')}) : échec d'enregistrement")
+                                        else:
+                                            payload["id"] = len(st.session_state.requetes) + 1
+                                            st.session_state.requetes.append(payload)
+                                            succes_count += 1
+                                            
+                                    except Exception as e:
+                                        erreurs_list.append(f"❌ {abs_conc['matiere']} : {e}")
+                                
+                                if succes_count > 0:
+                                    st.success(f"✅ **{succes_count}** demande(s) envoyée(s) avec succès ! Toutes sont maintenant **En attente** de validation.")
+                                    st.balloons()
+                                if erreurs_list:
+                                    for err in erreurs_list:
+                                        st.error(err)
+                                
+                                time.sleep(1.5)
+                                st.rerun()
+                        else:
+                            st.warning("⚠️ Aucun justificatif PDF n'a été joint. Veuillez déposer au moins un fichier.")
+                    else:
+                        if not absences_bloquees:
+                            st.info("✅ Toutes vos absences ont déjà un justificatif déposé ou une demande en cours de traitement.")
+                else:
+                    st.info("ℹ️ Aucune absence signalée pour vous actuellement.")
+                    st.caption("Si vous pensez qu'il s'agit d'une erreur, contactez l'enseignant de la matiere concernée.")
+
+            else:
+                pwd_admin = st.text_input("🔑 Code Admin :", type="password", key="pwd_admin")
+
+                if pwd_admin == CODE_ADMIN:
+                    st.subheader("⚖️ Dossiers en attente")
+
+                    if MODE_SUPABASE:
+                        resultats = charger_requetes_supabase(statut="En attente")
+                    else:
+                        resultats = [r for r in st.session_state.requetes if r.get("statut") == "En attente"]
+
+                    if not resultats:
+                        st.info("📭 Aucun dossier en attente.")
+                    else:
+                        for req in resultats:
+                            with st.expander(f"📄 {req['nom_etudiant']} — {req['matiere']} ({req.get('date_absence','')} | {req.get('jour_absence','')} {req.get('horaire_absence','')})"):
+                                st.write(f"**Promotion :** {req['promotion']}")
+                                st.write(f"**Séance concernée :** {req.get('jour_absence','')} {req.get('horaire_absence','')} — {req.get('date_absence','')}")
+                                st.write(f"**Motif :** {req['motif']}")
+                                st.write(f"**Date de dépôt :** {req['date_demande']}")
+
+                                pdf_decoded = base64.b64decode(req['justificatif_pdf'])
+                                st.download_button(
+                                    label="👁️ Télécharger le PDF",
+                                    data=pdf_decoded,
+                                    file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"dl_{req['id']}"
+                                )
+
+                                col_acc, col_rej = st.columns(2)
+                                if col_acc.button("✅ ACCORDER", key=f"acc_{req['id']}", use_container_width=True):
+                                    d_abs = req.get("date_absence")
+                                    j_abs = req.get("jour_absence")
+                                    h_abs = req.get("horaire_absence")
+                                    if MODE_SUPABASE:
+                                        mettre_a_jour_statut_requete_supabase(req["id"], "Favorable")
+                                        rehabiliter_absences_etudiant_supabase(req['nom_etudiant'], req['matiere'], d_abs, j_abs, h_abs)
+                                    else:
+                                        for r in st.session_state.requetes:
+                                            if r["id"] == req["id"]:
+                                                r["statut"] = "Favorable"
+                                        for a in st.session_state.absences:
+                                            if (a.get("etud_non_eligible") == req['nom_etudiant']
+                                                    and a.get("matiere") == req['matiere']):
+                                                if d_abs and a.get("date_absence") != d_abs: continue
+                                                if j_abs and a.get("jour_absence") != j_abs: continue
+                                                if h_abs and a.get("horaire_absence") != h_abs: continue
+                                                a["justifie"] = True
+                                                a["cause_non_eligibilite"] = "justifiee - " + str(a.get("cause_non_eligibilite", ""))
+
+                                    # ═══ NOTIFICATIONS EMAIL ═══
+                                    # 1. Notification à l'étudiant
+                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
+                                    if email_etu:
+                                        envoyer_notification_decision_etudiant(
+                                            email_etu, req['nom_etudiant'], req['matiere'],
+                                            "Favorable", req.get('motif', '')
+                                        )
+                                        st.info(f"📧 Notification envoyée à l'étudiant {req['nom_etudiant']}")
+
+                                    # 2. Notification à l'enseignant responsable
+                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
+                                    if ens_rows.empty:
+                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
+                                    if not ens_rows.empty:
+                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
+                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
+                                            # Recherche email dans df_ens directement
+                                            email_ens = None
+                                            nom_fam_cible = extraire_nom_famille(nom_ens)
+                                            for _, row_ens in df_ens.iterrows():
+                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
+                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
+                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
+                                                    if email_ens and "@" in email_ens:
+                                                        break
+                                            if email_ens and "@" in str(email_ens):
+                                                envoyer_notification_decision_enseignant(
+                                                    email_ens, nom_ens, req['nom_etudiant'],
+                                                    req['matiere'], "Favorable", req.get('promotion', '')
+                                                )
+                                                st.info(f"📧 Notification envoyée à l'enseignant {nom_ens}")
+                                            else:
+                                                st.caption(f"ℹ️ Email de l'enseignant {nom_ens} non trouvé dans le répertoire.")
+
+                                    st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+                                if col_rej.button("❌ REJETER", key=f"rej_{req['id']}", use_container_width=True):
+                                    if MODE_SUPABASE:
+                                        mettre_a_jour_statut_requete_supabase(req["id"], "Defavorable")
+                                    else:
+                                        for r in st.session_state.requetes:
+                                            if r["id"] == req["id"]:
+                                                r["statut"] = "Defavorable"
+
+                                    # ═══ NOTIFICATIONS EMAIL (REJET) ═══
+                                    # 1. Notification à l'étudiant
+                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
+                                    if email_etu:
+                                        envoyer_notification_decision_etudiant(
+                                            email_etu, req['nom_etudiant'], req['matiere'],
+                                            "Defavorable", req.get('motif', '')
+                                        )
+                                        st.info(f"📧 Notification de rejet envoyée à l'étudiant {req['nom_etudiant']}")
+
+                                    # 2. Notification à l'enseignant responsable
+                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
+                                    if ens_rows.empty:
+                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
+                                    if not ens_rows.empty:
+                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
+                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
+                                            # Recherche email dans df_ens directement
+                                            email_ens = None
+                                            nom_fam_cible = extraire_nom_famille(nom_ens)
+                                            for _, row_ens in df_ens.iterrows():
+                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
+                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
+                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
+                                                    if email_ens and "@" in email_ens:
+                                                        break
+                                            if email_ens and "@" in str(email_ens):
+                                                envoyer_notification_decision_enseignant(
+                                                    email_ens, nom_ens, req['nom_etudiant'],
+                                                    req['matiere'], "Defavorable", req.get('promotion', '')
+                                                )
+                                                st.info(f"📧 Notification de rejet envoyée à l'enseignant {nom_ens}")
+
+                                    st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+                    with st.expander("🛠️ Zone maintenance"):
+                        st.write("Effacer toutes les requêtes de justificatifs.")
+                        if st.button("🔄 RÉINITIALISER", type="primary", disabled=preview_teacher is not None):
+                            st.session_state.confirm_reset = True
+
+                        if st.session_state.get("confirm_reset", False):
+                            st.error("⚠️ Cette action est IRRÉVERSIBLE !")
+                            c_ok, c_cancel = st.columns(2)
+                            if c_ok.button("🔥 CONFIRMER", type="primary"):
+                                if MODE_SUPABASE:
+                                    reinitialiser_requetes_supabase()
+                                else:
+                                    st.session_state.requetes = []
+                                st.session_state.confirm_reset = False
+                                st.success("✅ Base réinitialisée.")
+                                time.sleep(0.5)
+                                st.rerun()
+                            if c_cancel.button("❌ ANNULER"):
+                                st.session_state.confirm_reset = False
+                                st.info("Action annulée.")
+                                time.sleep(0.5)
+                                st.rerun()
+
+                elif pwd_admin != "":
+                    st.error("❌ Code incorrect.")
+
+    # =============================================================================
+    # ONGLET 3 : BILANS ET EXPORTS
+    # =============================================================================
+    if not is_enseignant_connecte:
+        with tab3:
+            st.header("📊 bilans d'assiduité")
+
+            # Vérification code d'accès pour les bilans et exports
+            if not is_enseignant_connecte and not is_admin_edt:
+                pwd_tab3 = st.text_input("🔑 Code d'accès Admin :", type="password", key="pwd_tab3")
+                if pwd_tab3 != CODE_ADMIN:
+                    if pwd_tab3 != "":
+                        st.error("❌ Code incorrect.")
+                    st.info("ℹ️ Veuillez saisir le code administrateur pour accéder aux bilans et exports.")
+                    st.stop()
+
+            promo_filtre = st.selectbox(
+                "Filtrer par Promotion :",
+                sorted(df_etu["Promotion"].dropna().unique().tolist()),
+                key="promo_bilan"
+            )
+
+            if MODE_SUPABASE:
+                data_hist = charger_requetes_supabase(promotion=promo_filtre)
+            else:
+                data_hist = [r for r in st.session_state.requetes if r.get("promotion") == promo_filtre]
+
+            if data_hist:
+                df_tab = pd.DataFrame(data_hist)
+
+                def trouver_enseignant_par_matiere(matiere):
+                    rows = df_edt[df_edt["Enseignements"] == matiere]
+                    if not rows.empty:
+                        return str(rows.iloc[0]["Enseignants"])
+                    return "Non assigne"
+
+                df_tab["Charge"] = df_tab["matiere"].apply(trouver_enseignant_par_matiere)
+
+                df_tab = df_tab[["date_demande", "promotion", "Charge",
+                                 "nom_etudiant", "matiere", "motif", "statut"]]
+                df_tab.columns = ["Date", "Promotion", "Charge", "Étudiant", "matiere", "Motif", "Statut"]
+
+                st.subheader("📋 Avis admimistratif d'assiduité")
+                st.dataframe(df_tab, use_container_width=True, hide_index=True)
+
+                buf_xl = io.BytesIO()
+                with pd.ExcelWriter(buf_xl, engine='xlsxwriter') as w:
+                    df_tab.to_excel(w, index=False, sheet_name='Registre')
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.download_button(
+                        "📥 EXCEL",
+                        buf_xl.getvalue(),
+                        f"Registre_{promo_filtre}.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                with c2:
+                    html_reg = Génerer_page_html(df_tab, "Registre général", df_tab.columns, df_tab.columns)
+                    st.download_button(
+                        "🌐 HTML",
+                        html_reg,
+                        f"Registre_{promo_filtre}.html",
+                        "text/html",
+                        use_container_width=True
+                    )
+
+                st.subheader("📚 Compteur d'assuiduité par matière")
+                df_bilan_mat = df_tab.groupby(["Étudiant", "matiere", "Charge", "Promotion"]).size().reset_index(name="Nombre d'Absences")
+                st.dataframe(df_bilan_mat, use_container_width=True, hide_index=True)
+
+                buf_mat = io.BytesIO()
+                with pd.ExcelWriter(buf_mat, engine='xlsxwriter') as w:
+                    df_bilan_mat.to_excel(w, index=False, sheet_name='Absences_matiere')
+
+                c3, c4 = st.columns(2)
+                with c3:
+                    st.download_button(
+                        "📥 EXCEL",
+                        buf_mat.getvalue(),
+                        f"Bilan_matiere_{promo_filtre}.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                with c4:
+                    html_mat = Génerer_page_html(df_bilan_mat, "Bilan par matiere", df_bilan_mat.columns, df_bilan_mat.columns)
+                    st.download_button(
+                        "🌐 HTML",
+                        html_mat,
+                        f"Bilan_matiere_{promo_filtre}.html",
+                        "text/html",
+                        use_container_width=True
+                    )
+
+                st.subheader("👥 Total des Absences par Étudiant")
+                df_bilan_etud = df_tab.groupby(["Étudiant", "Promotion"]).size().reset_index(name="Total Absences")
+                df_bilan_etud = df_bilan_etud.sort_values(by="Total Absences", ascending=False)
+                st.dataframe(df_bilan_etud, use_container_width=True, hide_index=True)
+
+                buf_etud = io.BytesIO()
+                with pd.ExcelWriter(buf_etud, engine='xlsxwriter') as w:
+                    df_bilan_etud.to_excel(w, index=False, sheet_name='Total_Étudiant')
+
+                c5, c6 = st.columns(2)
+                with c5:
+                    st.download_button(
+                        "📥 EXCEL",
+                        buf_etud.getvalue(),
+                        f"Total_Étudiants_{promo_filtre}.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                with c6:
+                    html_etud = Génerer_page_html(df_bilan_etud, "Total par Étudiant", df_bilan_etud.columns, df_bilan_etud.columns)
+                    st.download_button(
+                        "🌐 HTML",
+                        html_etud,
+                        f"Total_Étudiants_{promo_filtre}.html",
+                        "text/html",
+                        use_container_width=True
+                    )
+            else:
+                st.info(f"ℹ️ Aucun historique pour {promo_filtre}.")
+
+            st.divider()
+            st.subheader("📊 Bilan des absences par promotion")
+
+            promo_abs = st.selectbox(
+                "Filtrer les absences par promotion :",
+                sorted(df_etu["Promotion"].dropna().unique().tolist()),
+                key="promo_abs_bilan"
+            )
+
+            if MODE_SUPABASE:
+                abs_promo = charger_absences_supabase(promotion=promo_abs)
+            else:
+                abs_promo = [a for a in st.session_state.absences if a.get("promotion") == promo_abs]
+
+            if abs_promo:
+                df_abs = pd.DataFrame(abs_promo)
+                if "justifie" not in df_abs.columns:
+                    df_abs["justifie"] = False
+
+                df_abs_count = df_abs.groupby(["etud_non_eligible", "matiere"]).agg(
+                    Nombre_Absences=("etud_non_eligible", "size"),
+                    Dont_justifiees=("justifie", lambda x: (x == True).sum())
+                ).reset_index()
+                df_abs_count["Dont_Non_justifiees"] = df_abs_count["Nombre_Absences"] - df_abs_count["Dont_justifiees"]
+                df_abs_count["Statut"] = df_abs_count["Nombre_Absences"].apply(lambda x: "🚫 EXCLU" if x >= 5 else "Sous seuil")
+                df_abs_count = df_abs_count.sort_values(by="Nombre_Absences", ascending=False)
+
+                st.dataframe(df_abs_count, use_container_width=True, hide_index=True)
+
+                buf_abs = io.BytesIO()
+                with pd.ExcelWriter(buf_abs, engine='xlsxwriter') as w:
+                    df_abs_count.to_excel(w, index=False, sheet_name='Absences_Directes')
+                st.download_button(
+                    "📥 Exporter absences directes (XLSX)",
+                    buf_abs.getvalue(),
+                    f"Absences_Directes_{promo_abs}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            else:
+                st.info(f"ℹ️ Aucune absence directe enregistrée pour {promo_abs}.")
+
+
+# =============================================================================
+    # Les modules EDT et administration sont rendus par le routeur général.
+    return
+
+def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
     import io
     from fpdf import FPDF
     from reportlab.lib import colors
@@ -6554,13 +9195,13 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             "🎓 Recherche Étudiant"
         ]
     
-    portail = st.selectbox("🚀 Sélectionner Espace", options_portail, key="portal_main_selector")
+    portail = forced_portal if forced_portal is not None else st.selectbox("🚀 Sélectionner Espace", options_portail, key="portal_main_selector")
     
     mode_view = "Personnel"
     poste_sup = False
     
     if portail == "📖 Emploi du Temps" and is_admin:
-        mode_view = st.radio("Vue Administration :", [
+        mode_view = forced_mode_view if forced_mode_view is not None else st.radio("Vue Administration :", [
             "Promotion", "Enseignant", "🏢 Planning Salles", 
             "🟢 Lieux Non Occupés", 
             "🚩 Vérificateur de conflits",
@@ -6568,7 +9209,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             "🏢 Chevauchements par Lieu",
             "🛠️ Résolution des Chevauchements",
             "👥 EDT par Groupe (TD/TP)"
-        ], horizontal=True)
+        ], horizontal=True, key="legacy_mode_view_complet")
     
         # Le poste supérieur n'est plus coché ponctuellement : il est déterminé
         # automatiquement depuis la liste enregistrée par l'administrateur.
@@ -17182,7 +19823,14 @@ td,th{{word-wrap:break-word;}}
                     st.info(f"📧 **Email :** `{email_val}`")
                 else:
                     st.caption("📧 Email non renseigné dans le fichier source") 
-# ═════════════════════════════════════════════════════════════════════════════
+
+def run_Assiduité(preview_teacher=None, preview_student=None):
+    """Route vers la version complète historique ou l'aperçu administrateur en lecture seule."""
+    if preview_teacher is not None or preview_student is not None:
+        return run_Assiduité_apercu(preview_teacher=preview_teacher, preview_student=preview_student)
+    return run_Assiduité_complet()
+
+
 # MODULE : GÉNÉRATION AUTOMATIQUE DES PV DES COMITÉS PÉDAGOGIQUES
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -18063,12 +20711,8 @@ def run_pv_pedagogique():
 
 
 
-if module_sel == "📊 Suivi d'Assiduite":
-    run_Assiduité()
-elif module_sel == "📅 Gestion des EDTs & Admin":
-    st.info("Module Gestion des EDTs & Admin")
-else:
-    st.error(f"Module inconnu : {module_sel}")
+# Le suivi d’assiduité est désormais appelé uniquement depuis la page sélectionnée.
+
 
     
 import streamlit as st
@@ -18964,7 +21608,7 @@ def generate_edt_tous_enseignants_pdf(df_source, progress_bar=None):
                 (re.match(r'^TD\b', nom_ens_up) if 'TD' in code_up else
                  re.match(r'^TP\b', nom_ens_up))
             )
-            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\nPromo: {r.get('Promotion', '')}\ {r.get('Lieu', '')}"
+            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\nPromo: {r.get('Promotion', '')}\\ {r.get('Lieu', '')}"
             items.append(txt)
         return "\n".join(items)
 
@@ -19252,7 +21896,7 @@ def generate_edt_toutes_promotions_pdf(df_source, progress_bar=None):
                 (re.match(r'^TD\b', nom_ens_up) if 'TD' in code_up else
                  re.match(r'^TP\b', nom_ens_up))
             )
-            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\ {r.get('Enseignants', '')}\ {r.get('Lieu', '')}"
+            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\\ {r.get('Enseignants', '')}\\ {r.get('Lieu', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -19536,7 +22180,7 @@ def generate_edt_tous_lieux_pdf(df_source, progress_bar=None):
                 (re.match(r'^TD\b', nom_ens_up) if 'TD' in code_up else
                  re.match(r'^TP\b', nom_ens_up))
             )
-            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\ {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
+            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\\ {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -19820,7 +22464,7 @@ def generate_edt_individuel_lieu_pdf(df_source, nom_lieu):
                 (re.match(r'^TD\b', nom_ens_up) if 'TD' in code_up else
                  re.match(r'^TP\b', nom_ens_up))
             )
-            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\ {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
+            txt = (nom_ens_txt if type_deja_dans_nom else f"{nat} {nom_ens_txt}") + f"\\ {r.get('Enseignants', '')}\nPromo: {r.get('Promotion', '')}"
             items.append(txt)
         return "\n".join(items)
     
@@ -20812,11 +23456,8 @@ hide_st_style = """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(
-    page_title="EDT UDL 2027",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Configuration déjà définie au début du fichier.
+
 
 # --- CONNEXION BASE DE DONNÉES ---
 
@@ -21107,6 +23748,8 @@ if "reset_token" in query_params and query_params["reset_token"]:
             st.query_params.clear()
             st.rerun()
     
+
+
     st.stop()
 
 # ACTIVATION DE COMPTE PAR TOKEN (depuis lien email)
@@ -21184,9 +23827,19 @@ if "activation_token" in query_params and query_params["activation_token"]:
 if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
 
+# Après authentification OTP étudiant, créer une session de rôle étudiant
+# pour accéder au portail sans compte enseignant.
+if not st.session_state.get("user_data") and st.session_state.get("étudiant_auth"):
+    _etu_session = st.session_state.get("étudiant_auth") or {}
+    st.session_state["user_data"] = {
+        "role": "etudiant",
+        "nom_officiel": _etu_session.get("nom", "Étudiant"),
+        "email": _etu_session.get("email", "")
+    }
+
 if not st.session_state["user_data"]:
     st.markdown("<h1 class='main-title'>🏛️ Espace enseignant & Administration</h1>", unsafe_allow_html=True)
-    t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
+    t_conn, t_ins, t_adm, t_etu = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin", "🎓 Étudiant"])
 
     # ═══════════════════════════════════════════════════════════════
     # ONGLET CONNEXION
@@ -21524,6 +24177,12 @@ Activer mon compte
             else:
                 st.error("Code administrateur incorrect.")
     
+
+    with t_etu:
+        st.markdown("### 🎓 Accès étudiant")
+        st.caption("Connectez-vous avec votre Mat. Étudiant et le code reçu par email.")
+        run_Assiduité()
+
     st.stop()
 
 # --- GARDIEN DE SESSION ---
@@ -21533,11 +24192,8 @@ if user is None:
 
 is_admin = user.get("role") == "admin"
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(
-    page_title="EDT UDL 2027",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Configuration déjà définie au début du fichier.
+
 
 # --- CONNEXION BASE DE DONNÉES ---
 URL = st.secrets["SUPABASE_URL"]
@@ -21684,6 +24340,15 @@ if os.path.exists(NOM_FICHIER_FIXE):
 if "user_data" not in st.session_state:
     st.session_state["user_data"] = None
 
+# Après authentification OTP étudiant, ouvrir une session étudiant sans compte enseignant.
+if not st.session_state.get("user_data") and st.session_state.get("étudiant_auth"):
+    _etu_session = st.session_state.get("étudiant_auth") or {}
+    st.session_state["user_data"] = {
+        "role": "etudiant",
+        "nom_officiel": _etu_session.get("nom", "Étudiant"),
+        "email": _etu_session.get("email", "")
+    }
+
 if not st.session_state["user_data"]:
     st.markdown("<h1 class='main-title'>🏛️ département D'ÉLECTROTECHNIQUE-FGE- UDL-SBA</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin"])
@@ -21752,10 +24417,309 @@ if user is None:
 
 is_admin = user.get("role") == "admin"
 
+# 1. Définition précise de votre nouvelle liste d'horaires (16 créneaux)
+horaires_list = [
+    "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
+    "10h - 11h", "11h - 12h", "11h - 12h30", 
+    "12h - 13h", "12h30 - 14h", "13h - 14h30", "14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
+]
+
+# 2. Définition des jours de la semaine
+jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
+
+# 3. Mapping pour la normalisation (crucial pour faire le lien avec l'Excel)
+# Cela permet de faire correspondre "8h-9h30" (Excel) avec "8h - 9h30" (Affichage)
+map_h = {normalize(h): h for h in horaires_list}
+map_j = {normalize(j): j for j in jours_list}
+
+# =============================================================================
+# IDENTITE VISUELLE CAMPUS PREMIUM — COUCHE PRESENTATION UNIQUEMENT
+# =============================================================================
+st.markdown(r"""
+<style>
+:root {
+  --elt-navy:#14213d; --elt-blue:#2563eb; --elt-indigo:#7456d8;
+  --elt-teal:#0d9488; --elt-cyan:#0891b2; --elt-amber:#f59e0b;
+  --elt-bg:#f4f7fb; --elt-ink:#17243b; --elt-muted:#64748b;
+}
+.stApp { background: radial-gradient(ellipse at 8% 0%, rgba(37,99,235,.075), transparent 32%),
+                         radial-gradient(ellipse at 95% 8%, rgba(116,86,216,.07), transparent 28%), #f4f7fb; color:var(--elt-ink); }
+[data-testid="stHeader"] { background:rgba(244,247,251,.82); }
+[data-testid="stMainBlockContainer"] { padding-top:1.35rem; padding-bottom:3rem; max-width:1500px; }
+[data-testid="stVerticalBlock"] > [data-testid="stElementContainer"] { min-width:0; }
+[data-testid="stSidebar"] { background:linear-gradient(180deg,#14213d 0%,#1e3a5f 100%); }
+[data-testid="stSidebar"] * { color:#f8fafc; }
+[data-testid="stSidebar"] [data-testid="stImage"] { background:#fff; border-radius:16px; padding:8px; }
+.stMarkdown h1,.stMarkdown h2,.stMarkdown h3 { color:#17243b; letter-spacing:-.025em; }
+.stCaption, [data-testid="stCaption"] { color:#64748b; }
+[data-testid="stSelectbox"] > label, [data-testid="stTextInput"] > label,
+[data-testid="stMultiSelect"] > label, [data-testid="stDateInput"] > label { color:#334155; font-weight:700; }
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+[data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea,
+[data-testid="stNumberInput"] input { border-radius:12px; border-color:#dbe4f0; background:#fff; }
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div:focus-within,
+[data-testid="stTextInput"] input:focus, [data-testid="stTextArea"] textarea:focus { border-color:#60a5fa; box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+.stButton > button, [data-testid="stDownloadButton"] > button { border-radius:12px; min-height:2.65rem; font-weight:700; border:1px solid #dbe4f0; transition:all .18s ease; box-shadow:0 3px 10px rgba(15,23,42,.045); }
+.stButton > button:hover, [data-testid="stDownloadButton"] > button:hover { transform:translateY(-1px); border-color:#93c5fd; box-shadow:0 8px 20px rgba(37,99,235,.12); }
+.stButton > button[kind="primary"] { background:linear-gradient(135deg,#2563eb,#4f46e5); border:0; color:#fff; }
+[data-testid="stMetric"] { background:linear-gradient(145deg,#fff,#f8fbff); border:1px solid #e4ebf5; border-radius:18px; padding:16px 18px; box-shadow:0 7px 22px rgba(15,23,42,.045); }
+[data-testid="stMetricLabel"] { color:#64748b; font-weight:700; }
+[data-testid="stMetricValue"] { color:#14213d; font-weight:800; }
+[data-testid="stExpander"] { background:rgba(255,255,255,.9); border:1px solid #e3eaf4; border-radius:14px; overflow:hidden; }
+[data-testid="stTabs"] [data-baseweb="tab-list"] { gap:8px; border-bottom:1px solid #e2e8f0; }
+[data-testid="stTabs"] button[role="tab"] { border-radius:10px 10px 0 0; font-weight:700; }
+[data-testid="stDataFrame"], [data-testid="stTable"] { border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; }
+hr { border-color:#e2e8f0; }
+.elt-hero { position:relative; overflow:hidden; border-radius:24px; padding:25px 28px; color:white; margin:5px 0 18px; box-shadow:0 16px 38px rgba(20,33,61,.17); }
+.elt-hero:after { content:""; position:absolute; width:260px; height:260px; border:1px solid rgba(255,255,255,.17); border-radius:50%; right:-65px; top:-145px; box-shadow:0 0 0 28px rgba(255,255,255,.045),0 0 0 58px rgba(255,255,255,.035); }
+.elt-hero .eyebrow { font-size:11px; letter-spacing:.16em; font-weight:800; opacity:.78; text-transform:uppercase; }
+.elt-hero .headline { font-size:clamp(22px,3vw,31px); font-weight:850; letter-spacing:-.04em; margin:5px 0 4px; line-height:1.15; }
+.elt-hero .subline { font-size:13px; opacity:.88; }
+.elt-hero .identity { display:inline-block; margin-top:14px; padding:7px 12px; border-radius:999px; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.22); font-size:12px; font-weight:700; }
+.elt-nav-hint { background:#fff; border:1px solid #e5ebf4; border-radius:14px; padding:12px 15px; color:#52627a; font-size:13px; margin:0 0 14px; }
+@media (max-width:700px) { [data-testid="stMainBlockContainer"] { padding-left:1rem; padding-right:1rem; } .elt-hero { padding:20px; border-radius:18px; } }
+</style>
+""", unsafe_allow_html=True)
+
+# --- NAVIGATION CENTRALE PAR ESPACE ET RUBRIQUE ---
+_user_auth = st.session_state.get("user_data") or {}
+_role_auth = str(_user_auth.get("role", "")).strip().lower()
+_is_admin_auth = _role_auth == "admin"
+_preview_teacher = None
+_preview_student = None
+
+ADMIN_NAV = {
+    "Gestion des EDT et des locaux": [
+        ("Emploi du temps par promotion", "📖 Emploi du Temps"),
+        ("Emploi du temps par enseignant", "📖 Emploi du Temps"),
+        ("Conflits et chevauchements de lieux", "📖 Emploi du Temps"),
+        ("Disponibilité des locaux", "📖 Emploi du Temps"),
+        ("Éditeur des données EDT", "📖 Emploi du Temps"),
+        ("EDT par groupe et sous-groupe", "🧠 EDT par groupe"),
+        ("Consulter toutes les promotions", "🎓 Consulter EDT Toutes Promotions"),
+    ],
+    "Gestion pédagogique": [
+        ("Portail enseignants et responsabilités", "👥 Portail Enseignants"),
+        ("Surveillances des examens", "📅 Surveillances Examens"),
+        ("Générateur automatique des surveillances", "🤖 Générateur Automatique"),
+        ("Demandes de mise à jour EDT", "📝 Demandes de Mise à Jour EDT"),
+        ("Suivi de l'assiduité et des absences", "📝 Suivi d'Assiduité"),
+        ("Répertoire des matières", "📚 Répertoire des Matières"),
+    ],
+    "Pilotage et scolarité": [
+        ("Statistiques et données", "📊 Statistiques & Données"),
+        ("Effectifs par promotion", "📊 Statistiques & Données"),
+        ("Bordereaux et procès-verbaux", "📢 Gestion Administrative - Bordereaux & PVs"),
+        ("Répertoire des étudiants", "🎓 Répertoire Étudiants"),
+    ],
+}
+TEACHER_NAV = {
+    "Mon espace professionnel": [
+        ("Mon espace enseignant", "👤 Mon Espace Enseignant"),
+        ("Consulter les EDT des promotions", "🎓 Consulter EDT Toutes Promotions"),
+    ],
+    "Suivi pédagogique": [
+        ("Suivi de l'assiduité et des absences", "📝 Suivi d'Assiduité"),
+        ("Surveillances des examens", "📅 Surveillances Examens"),
+    ],
+    "Ressources pédagogiques": [
+        ("Répertoire des matières", "📚 Répertoire des Matières"),
+    ],
+}
+STUDENT_NAV = {
+    "Mon parcours universitaire": [
+        ("Mon compte étudiant", "🔐 Portail Étudiant"),
+    ],
+    "Mon emploi du temps": [
+        ("Consulter mon emploi du temps", "🔐 Portail Étudiant"),
+    ],
+    "Mes absences et justificatifs": [
+        ("Consulter mes absences et justificatifs", "🔐 Portail Étudiant"),
+    ],
+}
+
+# Chaque entrée peut ouvrir directement une vue précise du module EDT historique.
+_NAV_MODE_BY_LABEL = {
+    "Emploi du temps par promotion": "Promotion",
+    "Emploi du temps par enseignant": "Enseignant",
+    "Conflits et chevauchements de lieux": "🏢 Chevauchements par Lieu",
+    "Disponibilité des locaux": "🟢 Lieux Non Occupés",
+    "Éditeur des données EDT": "✍️ Éditeur de données",
+}
+
+
+with st.container():
+    st.markdown(f"""<div class="elt-hero" style="background:linear-gradient(118deg,#14213d 0%,#1e40af 58%,#4f46e5 100%);">
+      <div class="eyebrow">Université Djillali Liabès · Faculté de génie électrique</div>
+      <div class="headline">🏛️ ELT CAMPUS</div>
+      <div class="subline">Plateforme intelligente de gestion pédagogique et des emplois du temps</div>
+      <div class="identity">👤 { _user_auth.get('nom_officiel', 'Utilisateur') } &nbsp;·&nbsp; Portail sécurisé</div>
+    </div>""", unsafe_allow_html=True)
+
+    if _is_admin_auth:
+        espace_choisi = st.selectbox(
+            "🚀 Espace à consulter",
+            ["Administration", "Enseignant", "Étudiant"],
+            key="nav_espace_admin_v3"
+        )
+        if espace_choisi == "Enseignant":
+            _sources_enseignants_preview = set()
+            _edt_sources_preview = set()
+            if df is not None and "Enseignants" in df.columns:
+                _edt_sources_preview = {
+                    str(v).strip() for v in df["Enseignants"].dropna()
+                    if str(v).strip() and str(v).strip().casefold() not in {"nan", "none", "non défini"}
+                }
+                _sources_enseignants_preview.update(_edt_sources_preview)
+            # Ajouter également tous les enseignants du répertoire du personnel,
+            # y compris ceux qui n'ont pas encore de séance dans l'EDT.
+            if df_contacts is not None and not df_contacts.empty:
+                for _, _row_preview_ens in df_contacts.iterrows():
+                    _nom_preview_ens = str(_row_preview_ens.get("NOM", "")).strip().upper()
+                    _prenom_preview_ens = str(_row_preview_ens.get("PRÉNOM", "")).strip().title()
+                    if not _nom_preview_ens or _nom_preview_ens.casefold() in {"nan", "none"}:
+                        continue
+                    _complet_preview_ens = f"{_nom_preview_ens} {_prenom_preview_ens}".strip()
+                    if _complet_preview_ens in _edt_sources_preview:
+                        _sources_enseignants_preview.add(_complet_preview_ens)
+                    elif _nom_preview_ens in _edt_sources_preview:
+                        _sources_enseignants_preview.add(_nom_preview_ens)
+                    else:
+                        _sources_enseignants_preview.add(_complet_preview_ens)
+            if not _sources_enseignants_preview:
+                _sources_enseignants_preview.update(str(k).strip() for k in repertoire_noms_complets if str(k).strip())
+            _enseignants_par_affichage = {}
+            for _source_preview_ens in _sources_enseignants_preview:
+                _label_preview_ens = repertoire_noms_complets.get(str(_source_preview_ens).strip().upper(), str(_source_preview_ens))
+                _existant_preview_ens = _enseignants_par_affichage.get(_label_preview_ens)
+                if _existant_preview_ens is None or len(str(_source_preview_ens).split()) > len(str(_existant_preview_ens).split()):
+                    _enseignants_par_affichage[_label_preview_ens] = _source_preview_ens
+            _enseignants_labels = sorted(_enseignants_par_affichage, key=str.casefold)
+            _preview_teacher_label = st.selectbox(
+                "👨‍🏫 Enseignant à prévisualiser",
+                _enseignants_labels,
+                key="nav_preview_teacher_v3"
+            ) if _enseignants_labels else None
+            _preview_teacher = _enseignants_par_affichage.get(_preview_teacher_label) if _preview_teacher_label else None
+            if not _preview_teacher:
+                st.error("Aucun enseignant disponible pour la prévisualisation.")
+                st.stop()
+            nav_structure = TEACHER_NAV
+        elif espace_choisi == "Étudiant":
+            _df_preview_etu = pd.DataFrame()
+            try:
+                if os.path.exists(FILE_ETUDIANTS):
+                    _df_preview_etu = lire_excel_robuste(FILE_ETUDIANTS)
+                    _df_preview_etu.columns = [str(c).strip() for c in _df_preview_etu.columns]
+            except Exception as _err_preview_etu:
+                st.warning(f"Lecture du fichier étudiants impossible : {_err_preview_etu}")
+            def _pv_norm_col(v):
+                _v = unicodedata.normalize("NFKD", str(v or "")).encode("ascii", "ignore").decode("ascii").casefold()
+                return re.sub(r"[^a-z0-9]+", "", _v)
+            _pv_cols = {_pv_norm_col(c): c for c in _df_preview_etu.columns} if not _df_preview_etu.empty else {}
+            _pv_col_nom = next((_pv_cols[k] for k in ("nom", "lastname") if k in _pv_cols), None)
+            _pv_col_pre = next((_pv_cols[k] for k in ("prenom", "firstname") if k in _pv_cols), None)
+            _pv_col_mat = next((_pv_cols[k] for k in ("matetudiant", "matriculeetudiant", "matricule") if k in _pv_cols), None)
+            _pv_col_promo = next((_pv_cols[k] for k in ("promotion", "promotions") if k in _pv_cols), None)
+            _pv_col_groupe = next((_pv_cols[k] for k in ("groupe", "groupetd") if k in _pv_cols), None)
+            _pv_col_sg = next((_pv_cols[k] for k in ("sousgroupe", "sousgroupetp") if k in _pv_cols), None)
+            _pv_col_email = next((_pv_cols[k] for k in ("email", "courriel", "mail") if k in _pv_cols), None)
+            _pv_student_options = []
+            _pv_student_map = {}
+            if not _df_preview_etu.empty and _pv_col_nom and _pv_col_pre and _pv_col_mat and _pv_col_promo:
+                for _, _r in _df_preview_etu.iterrows():
+                    _nom_pv = f"{str(_r.get(_pv_col_nom, '')).strip().upper()} {str(_r.get(_pv_col_pre, '')).strip().title()}".strip()
+                    _mat_pv = str(_r.get(_pv_col_mat, '')).strip()
+                    _promo_pv = str(_r.get(_pv_col_promo, '')).strip()
+                    if not _nom_pv or not _mat_pv or _mat_pv.casefold() in {"nan", "none"}:
+                        continue
+                    _label_pv = f"{_nom_pv} — {_promo_pv} — {_mat_pv}"
+                    _pv_student_options.append(_label_pv)
+                    _pv_student_map[_label_pv] = {
+                        "nom": _nom_pv, "mat_etud": _mat_pv, "mat_bac": _mat_pv,
+                        "promotion": _promo_pv, "email": str(_r.get(_pv_col_email, "")).strip() if _pv_col_email else "",
+                        "groupe": str(_r.get(_pv_col_groupe, "")).strip() if _pv_col_groupe else "",
+                        "sous_groupe": str(_r.get(_pv_col_sg, "")).strip() if _pv_col_sg else "",
+                    }
+            _student_label = st.selectbox("🎓 Étudiant à prévisualiser", _pv_student_options, key="nav_preview_student_v3") if _pv_student_options else None
+            _preview_student = _pv_student_map.get(_student_label) if _student_label else None
+            if _preview_student is None:
+                st.warning("Le fichier étudiant doit contenir Nom, Prénom, Mat. Etudiant et Promotion pour activer l'aperçu.")
+            nav_structure = STUDENT_NAV
+        else:
+            nav_structure = ADMIN_NAV
+    elif _role_auth == "enseignant":
+        espace_choisi = "Enseignant"
+        nav_structure = TEACHER_NAV
+    elif _role_auth == "etudiant":
+        espace_choisi = "Étudiant"
+        nav_structure = STUDENT_NAV
+    else:
+        espace_choisi = "Administration"
+        nav_structure = ADMIN_NAV
+
+    _espace_key = {"Administration": "admin", "Enseignant": "enseignant", "Étudiant": "etudiant"}[espace_choisi]
+    _espace_style = {
+        "Administration": ("#7456d8", "#4f46e5", "🛡️", "Pilotage, organisation et gestion de la faculté"),
+        "Enseignant": ("#0d9488", "#0891b2", "👨‍🏫", "Votre espace professionnel et pédagogique"),
+        "Étudiant": ("#2563eb", "#0891b2", "🎓", "Votre parcours universitaire en un seul endroit"),
+    }
+    _c1, _c2, _ico, _desc = _espace_style[espace_choisi]
+    st.markdown(f"""<div class="elt-hero" style="background:linear-gradient(115deg,{_c1} 0%,{_c2} 100%);padding:17px 21px;margin:0 0 15px;">
+      <div class="eyebrow">Espace actif</div><div style="font-size:21px;font-weight:850;margin:3px 0;">{_ico} {espace_choisi}</div>
+      <div class="subline">{_desc}</div></div>""", unsafe_allow_html=True)
+    _categorie_key = f"nav_categorie_{_espace_key}_v3"
+    _nav_col1, _nav_col2 = st.columns([1, 1.35], gap="medium")
+    with _nav_col1:
+        _categorie = st.selectbox("📂 Rubrique", list(nav_structure.keys()), key=_categorie_key)
+    _pages_nav = nav_structure[_categorie]
+    _page_labels = [x[0] for x in _pages_nav]
+    _page_key = f"nav_page_{_espace_key}_{re.sub(r'[^a-z0-9]+', '_', _categorie.casefold())}_v3"
+    with _nav_col2:
+        _page_choisie = st.selectbox("📄 Ouvrir une fonctionnalité", _page_labels, key=_page_key)
+    _portail_map = {label: legacy for label, legacy in _pages_nav}
+    portail = _portail_map[_page_choisie]
+    mode_view = _NAV_MODE_BY_LABEL.get(_page_choisie, "Personnel")
+
+    _action_home, _action_logout, _action_spacer = st.columns([1, 1, 3])
+    with _action_home:
+        if st.button("🏠 Accueil", use_container_width=True, key="nav_home_v3"):
+            st.session_state[_categorie_key] = list(nav_structure.keys())[0]
+            st.rerun()
+    with _action_logout:
+        if st.button("🚪 Déconnexion", use_container_width=True, key="nav_logout_v3"):
+            st.session_state["user_data"] = None
+            st.session_state.pop("étudiant_auth", None)
+            st.rerun()
+
+# Identité simulée uniquement en mémoire pour l'affichage ; le compte administrateur
+# reste inchangé dans st.session_state et conserve ses droits de retour.
+user = dict(_user_auth)
+if _is_admin_auth and espace_choisi == "Enseignant" and _preview_teacher:
+    user.update({"nom_officiel": _preview_teacher, "role": "enseignant"})
+    is_admin = False
+    _preview_student = None
+elif _is_admin_auth and espace_choisi == "Étudiant" and _preview_student:
+    user.update({"nom_officiel": _preview_student.get("nom", "Étudiant"), "role": "etudiant"})
+    is_admin = False
+    portail = "🔐 Portail Étudiant"
+else:
+    is_admin = _is_admin_auth
+
+mode_view = _NAV_MODE_BY_LABEL.get(_page_choisie, "Personnel")
+poste_sup = False
+if portail == "👤 Mon Espace Enseignant":
+    poste_sup = _est_poste_superieur(user.get("nom_officiel", ""))
+
+# La vue avancée de chevauchements par lieu est conservée depuis le module complet historique.
+if _page_choisie == "Conflits et chevauchements de lieux" and is_admin:
+    run_Assiduité_complet(forced_portal="📖 Emploi du Temps", forced_mode_view="🏢 Chevauchements par Lieu")
+    st.stop()
+
 # =============================================================================
 # >>>>> HUB DE TELECHARGEMENT RAPIDE (CENTRE DE TELECHARGEMENT) <<<<<
 # =============================================================================
-if is_admin:
+if portail == "📊 Statistiques & Données" and is_admin:
     st.markdown("---")
     render_download_hub(df, user, is_admin)
 
@@ -22035,66 +24999,7 @@ if is_admin:
                 st.warning("⚠️ Aucun enseignant trouvé dans les données EDT.")
 
 
-# 1. Définition précise de votre nouvelle liste d'horaires (16 créneaux)
-horaires_list = [
-    "8h - 9h", "8h - 9h30", "8h - 10h", "9h - 10h", "9h30 - 11h", 
-    "10h - 11h", "11h - 12h", "11h - 12h30", 
-    "12h - 13h", "12h30 - 14h", "13h - 14h30", "14h - 15h30","14h - 15h", "14h - 16h","15h - 16h", "15h30 - 17h"
-]
 
-# 2. Définition des jours de la semaine
-jours_list = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"]
-
-# 3. Mapping pour la normalisation (crucial pour faire le lien avec l'Excel)
-# Cela permet de faire correspondre "8h-9h30" (Excel) avec "8h - 9h30" (Affichage)
-map_h = {normalize(h): h for h in horaires_list}
-map_j = {normalize(j): j for j in jours_list}
-
-# --- BARRE LATÉRALE ---
-with st.sidebar:
-    st.header(f"👤 {user.get('nom_officiel', 'Utilisateur')}")
-
-    # ─── RESTRICTION DES PORTAILS SELON LE RÔLE ───
-    if is_admin:
-        options_portail = [
-            "📖 Emploi du Temps",
-            "📊 Statistiques & Données",
-            "📅 Surveillances Examens",
-            "🤖 Générateur Automatique",
-            "👥 Portail Enseignants",
-            "🎓 Portail mise à jour EDT",
-            "📝 Demandes de Mise à Jour EDT",
-            "📢 Gestion Administrative - Bordereaux & PVs"
-        ]
-    else:
-        # ENSEIGNANT : accès strictement limité
-        options_portail = [
-            "👤 Mon Espace Enseignant",
-            "📅 Surveillances Examens"
-        ]
-
-    portail = st.selectbox("🚀 Sélectionner Espace", options_portail, key="portal_sidebar_selector")
-    # Synchroniser le choix Statistiques du sélecteur principal avec la logique active ci-dessous.
-    if st.session_state.get("portal_main_selector") == "📊 Statistiques & Données":
-        portail = "📊 Statistiques & Données"
-    st.divider()
-
-    mode_view = "Personnel"
-    poste_sup = False
-
-    if portail == "📖 Emploi du Temps" and is_admin:
-        mode_view = st.radio("Vue Administration :", [
-            "Promotion", "Enseignant", "🏢 Planning Salles", 
-            "🟢 Lieux Non Occupés", 
-            "🚩 Vérificateur de conflits", "✍️ Éditeur de données"
-        ])
-        poste_sup = False  # statut récupéré depuis la liste permanente ci-dessous
-    elif portail == "👤 Mon Espace Enseignant":
-        poste_sup = _est_poste_superieur(user.get("nom_officiel", ""))
-
-    if st.button("🚪 Déconnexion du compte"):
-        st.session_state["user_data"] = None
-        st.rerun()
 # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
 # --- ESPACE ÉDITEUR AVANCÉ (ADMIN UNIQUEMENT) ---
 if is_admin and mode_view == "✍️ Éditeur de données":
@@ -22443,6 +25348,85 @@ with col_date:
 # Ligne dorée décorative et badge du mode
 st.markdown("<div style='border-bottom: 3px solid #FFFFFF; margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 st.markdown(f"<div class='portal-badge'>MODE ACTIF : {portail.upper()}</div>", unsafe_allow_html=True)
+if _is_admin_auth and espace_choisi == "Enseignant":
+    st.info(f"👁️ Mode aperçu administrateur : vous consultez l'espace de l'enseignant **{_preview_teacher}**. Votre compte administrateur reste actif ; les actions d'enregistrement de l'assiduité sont désactivées dans cet aperçu.")
+elif _is_admin_auth and espace_choisi == "Étudiant" and _preview_student:
+    st.info(f"👁️ Mode aperçu administrateur : vous consultez l'espace de **{_preview_student.get('nom', 'Étudiant')}** — {_preview_student.get('promotion', '')}. Votre compte administrateur reste actif.")
+
+def afficher_edt_toutes_promotions(df_source, enseignant_connecte=None):
+    """Consultation filtrable de l'EDT de toutes les promotions, avec surlignage doré des séances propres."""
+    st.markdown("## 📅 Consultation de l'EDT de toutes les promotions")
+    st.caption("Filtrez par département, promotion et journée. Les séances de l'enseignant connecté sont encadrées en doré.")
+    if df_source is None or df_source.empty:
+        st.warning("Aucune donnée EDT disponible.")
+        return
+
+    colonnes_affichage = [c for c in ["Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion", "Département"] if c in df_source.columns]
+    if not colonnes_affichage:
+        st.error("Les colonnes nécessaires à la consultation EDT sont absentes du fichier source.")
+        return
+
+    df_consult = df_source.copy()
+    col_dept = next((c for c in df_consult.columns if str(c).strip().casefold() in {"département", "departement", "department"}), None)
+    col_promo = next((c for c in df_consult.columns if str(c).strip().casefold() in {"promotion", "promotions"}), None)
+    col_jour = next((c for c in df_consult.columns if str(c).strip().casefold() in {"jours", "jour"}), None)
+    col_ens = next((c for c in df_consult.columns if str(c).strip().casefold() in {"enseignants", "enseignant"}), None)
+
+    if col_dept:
+        deps = sorted({str(v).strip() for v in df_consult[col_dept].dropna() if str(v).strip() and str(v).strip().casefold() != "nan"}, key=str.casefold)
+        dep_choisi = st.selectbox("🏢 Département", ["Tous"] + deps, key="edt_toutes_promos_departement_v3")
+        if dep_choisi != "Tous":
+            df_consult = df_consult[df_consult[col_dept].astype(str).str.strip() == dep_choisi]
+
+    if col_promo:
+        promotions = sorted({str(v).strip() for v in df_consult[col_promo].dropna() if str(v).strip() and str(v).strip().casefold() != "nan"}, key=str.casefold)
+        promo_choisie = st.selectbox("🎓 Promotion", ["Toutes"] + promotions, key="edt_toutes_promos_promotion_v3")
+        if promo_choisie != "Toutes":
+            df_consult = df_consult[df_consult[col_promo].astype(str).str.strip() == promo_choisie]
+
+    if col_jour:
+        jours = sorted({str(v).strip() for v in df_consult[col_jour].dropna() if str(v).strip() and str(v).strip().casefold() != "nan"}, key=str.casefold)
+        jour_choisi = st.selectbox("📆 Journée", ["Tous"] + jours, key="edt_toutes_promos_jour_v3")
+        if jour_choisi != "Tous":
+            df_consult = df_consult[df_consult[col_jour].astype(str).str.strip() == jour_choisi]
+
+    df_consult = df_consult[colonnes_affichage].copy()
+    _nom_enseignant = str(enseignant_connecte or "").strip()
+    _masque_propre = pd.Series(False, index=df_consult.index)
+    if _nom_enseignant and col_ens and col_ens in df_consult.columns:
+        _masque_propre = df_consult[col_ens].fillna("").astype(str).str.contains(re.escape(_nom_enseignant), case=False, na=False)
+    df_consult["Séance de l'enseignant connecté"] = _masque_propre.values if len(_masque_propre) == len(df_consult) else False
+
+    if _nom_enseignant and df_consult["Séance de l'enseignant connecté"].any():
+        def _style_ligne_enseignant(row):
+            if bool(row.get("Séance de l'enseignant connecté", False)):
+                return ["background-color:#FFF8E1;border-top:2px solid #D4AF37;border-bottom:2px solid #D4AF37;font-weight:600;"] * len(row)
+            return [""] * len(row)
+        try:
+            st.dataframe(df_consult.style.apply(_style_ligne_enseignant, axis=1), use_container_width=True, hide_index=True)
+        except Exception:
+            st.dataframe(df_consult, use_container_width=True, hide_index=True)
+    else:
+        st.dataframe(df_consult, use_container_width=True, hide_index=True)
+
+    st.caption(f"{len(df_consult)} séance(s) affichée(s).")
+    import io as _io_edt
+    _buf_edt = _io_edt.BytesIO()
+    with pd.ExcelWriter(_buf_edt, engine="xlsxwriter") as _writer_edt:
+        df_consult.to_excel(_writer_edt, index=False, sheet_name="EDT")
+        _ws_edt = _writer_edt.sheets["EDT"]
+        _ws_edt.freeze_panes(1, 0)
+        _ws_edt.autofilter(0, 0, len(df_consult), max(0, len(df_consult.columns)-1))
+        _fmt_dore = _writer_edt.book.add_format({"bg_color": "#FFF2CC", "border": 1, "border_color": "#D4AF37", "bold": True})
+        _fmt_normal = _writer_edt.book.add_format({"text_wrap": True, "valign": "top"})
+        _ws_edt.set_column(0, len(df_consult.columns)-1, 22, _fmt_normal)
+        if "Séance de l'enseignant connecté" in df_consult.columns and not df_consult.empty:
+            _idx_propre = df_consult.columns.get_loc("Séance de l'enseignant connecté")
+            for _ridx, _is_propre in enumerate(df_consult["Séance de l'enseignant connecté"].tolist(), start=1):
+                if _is_propre:
+                    _ws_edt.set_row(_ridx, None, _fmt_dore)
+    st.download_button("📥 Télécharger l'EDT filtré (Excel)", _buf_edt.getvalue(), "EDT_Toutes_Promotions.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="dl_edt_toutes_promotions_v3")
+
 
 # --- LOGIQUE PRINCIPALE ---
 if df is not None:
@@ -25429,7 +28413,7 @@ if df is not None:
                                         st.error(f"Erreur: {e}")
                                 st.rerun()
 
-if is_admin:
+if is_admin and portail == "👥 Portail Enseignants":
     st.divider()
     st.subheader("📬 Gestion des envois personnalisés")
 
@@ -28092,1022 +31076,690 @@ if is_admin:
     
         
     # --- 2. ESPACE ADMINISTRATEUR (ÉDITION & AJOUT DE LIGNE) ---
-    if is_admin:
-        st.write("---")
-        st.subheader("✍️ Espace Éditeur de Données (Admin)")
-        st.info("💡 Pour ajouter une charge : Filtrez pour isoler l'EDT concerné, puis cliquez sur le (+) en bas du tableau.")
-    
-        # ═══════════════════════════════════════════════════════════════
-        # SECTION IMPORT EXCEL
-        # ═══════════════════════════════════════════════════════════════
-        # ═══════════════════════════════════════════════════════════════
-        # SECTION IMPORT EXCEL - CORRIGÉE (avec "Remplacer tout" par enseignant)
-        # ═══════════════════════════════════════════════════════════════
-        with st.expander("📥 Importer des données depuis un fichier Excel", expanded=False):
-            st.markdown("**Format attendu :** `Enseignements | Code | Enseignants | Horaire | Jours | Lieu | Promotion`")
-            
-            # Liste déroulante des enseignants pour filtrage pré-import
-            liste_enseignants = sorted(df['Enseignants'].dropna().unique().tolist())
-            enseignant_filtre = st.selectbox(
-                "👤 Filtrer par enseignant avant l'import (optionnel) :",
-                options=["Tous les enseignants"] + liste_enseignants,
-                key="import_enseignant_filter"
-            )
-            
-            uploaded_file = st.file_uploader(
-                "Choisir un fichier Excel (.xlsx) :",
-                type=["xlsx"],
-                key="excel_uploader"
-            )
-            
-            if uploaded_file is not None:
-                try:
-                    df_import = pd.read_excel(uploaded_file)
-                    
-                    # Vérification des colonnes requises
-                    colonnes_requises = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-                    colonnes_manquantes = [c for c in colonnes_requises if c not in df_import.columns]
-                    
-                    if colonnes_manquantes:
-                        st.error(f"❌ Colonnes manquantes dans le fichier : {', '.join(colonnes_manquantes)}")
-                    else:
-                        # Filtrage par enseignant si sélectionné
-                        if enseignant_filtre != "Tous les enseignants":
-                            df_import = df_import[df_import['Enseignants'] == enseignant_filtre]
-                        
-                        st.success(f"✅ {len(df_import)} lignes prêtes à être importées")
-                        st.dataframe(df_import, use_container_width=True)
-                        
-                        # Choix du mode d'intégration
-                        mode_import = st.radio(
-                            "Mode d'intégration :",
-                            options=["➕ Ajouter (fusionner avec l'existant)", "🔄 Remplacer (supprimer l'ancien pour cette promotion)"],
-                            key="mode_import"
-                        )
-                        
-                        # Sélection de la promotion cible pour le remplacement
-                        promo_cible = None
-                        
-                        if "Remplacer" in mode_import:
-                            promos_import = sorted([str(p) for p in df_import['Promotion'].unique()])
-                            
-                            # ═══════════════════════════════════════════════════════
-                            # NOUVEAUTÉ : Option "Remplacer tout" par enseignant
-                            # ═══════════════════════════════════════════════════════
-                            options_promo = promos_import.copy()
-                            if enseignant_filtre != "Tous les enseignants":
-                                options_promo.insert(0, f"🗑️ TOUTES LES LIGNES DE {enseignant_filtre}")
-                            
-                            promo_cible = st.selectbox(
-                                "Promotion à remplacer :",
-                                options=options_promo,
-                                key="promo_remplacement"
-                            )
-                            
-                            # Détection du mode "Tout remplacer"
-                            if enseignant_filtre != "Tous les enseignants" and isinstance(promo_cible, str) and promo_cible.startswith("🗑️ TOUTES"):
-                                st.session_state['promo_cible_import'] = "TOUT_ENSEIGNANT"
-                                st.warning(f"🗑️ **Mode Remplacer TOUT actif** : toutes les lignes de **{enseignant_filtre}** seront supprimées avant l'ajout.")
-                            else:
-                                st.session_state['promo_cible_import'] = str(promo_cible).strip()
-                                st.warning(f"🗑️ **Mode Remplacer actif** : les anciennes lignes de la promotion **{promo_cible}** seront supprimées avant l'ajout.")
-                        else:
-                            st.session_state['promo_cible_import'] = None
-                            st.info("➕ **Mode Ajouter actif** : les nouvelles lignes seront fusionnées avec les existantes.")
-                        
-                        # Bouton d'intégration
-                        if st.button("💾 Intégrer les données importées", key="btn_integrer"):
-                            try:
-                                # Récupération fiable depuis le session state
-                                current_mode = st.session_state.get('mode_import', mode_import)
-                                current_promo = st.session_state.get('promo_cible_import')
-                                
-                                # Chargement du fichier maître (création si inexistant)
-                                if os.path.exists(NOM_FICHIER_FIXE):
-                                    if NOM_FICHIER_FIXE.endswith('.xlsx'):
-                                        df_master = pd.read_excel(NOM_FICHIER_FIXE)
-                                    else:
-                                        df_master = pd.read_csv(NOM_FICHIER_FIXE)
-                                else:
-                                    df_master = pd.DataFrame(columns=colonnes_requises)
-                                
-                                # ═══════════════════════════════════════════════════════
-                                # CORRECTION CRITIQUE : uniformiser les types en string
-                                # ═══════════════════════════════════════════════════════
-                                if 'Promotion' in df_master.columns:
-                                    df_master['Promotion'] = df_master['Promotion'].astype(str).str.strip()
-                                if 'Enseignants' in df_master.columns:
-                                    df_master['Enseignants'] = df_master['Enseignants'].astype(str).str.strip()
-                                df_import['Promotion'] = df_import['Promotion'].astype(str).str.strip()
-                                df_import['Enseignants'] = df_import['Enseignants'].astype(str).str.strip()
-                                
-                                lignes_avant = len(df_master)
-                                lignes_supprimees = 0
-                                
-                                if "Remplacer" in current_mode and current_promo is not None:
-                                    if current_promo == "TOUT_ENSEIGNANT":
-                                        # MODE REMPLACER TOUT : suppression par enseignant
-                                        masque_suppr = df_master['Enseignants'] == str(enseignant_filtre).strip()
-                                        lignes_supprimees = int(masque_suppr.sum())
-                                        
-                                        if lignes_supprimees > 0:
-                                            df_master = df_master[~masque_suppr].copy()
-                                            st.info(f"🗑️ {lignes_supprimees} ligne(s) de l'enseignant '{enseignant_filtre}' supprimée(s).")
-                                        else:
-                                            st.warning(f"⚠️ Aucune ligne trouvée pour l'enseignant '{enseignant_filtre}' dans le fichier actuel.")
-                                    else:
-                                        # MODE REMPLACER PROMOTION : suppression par promotion
-                                        masque_suppr = df_master['Promotion'] == str(current_promo).strip()
-                                        lignes_supprimees = int(masque_suppr.sum())
-                                        
-                                        if lignes_supprimees > 0:
-                                            df_master = df_master[~masque_suppr].copy()
-                                            st.info(f"🗑️ {lignes_supprimees} ligne(s) de la promotion '{current_promo}' supprimée(s).")
-                                        else:
-                                            st.warning(f"⚠️ Aucune ligne trouvée pour la promotion '{current_promo}' dans le fichier actuel.")
-                                
-                                # Ajout des nouvelles lignes (dans les deux modes)
-                                df_final = pd.concat([df_master, df_import], ignore_index=True)
-                                
-                                # Nettoyage et tri
-                                df_final = df_final.dropna(subset=['Enseignements'])
-                                df_final = df_final.sort_values(by=["Promotion", "Jours", "Horaire"])
-                                
-                                # Sauvegarde
-                                if NOM_FICHIER_FIXE.endswith('.xlsx'):
-                                    df_final.to_excel(NOM_FICHIER_FIXE, index=False)
-                                else:
-                                    df_final.to_csv(NOM_FICHIER_FIXE, index=False)
-                                
-                                st.success(
-                                    f"✅ Importation terminée !\n\n"
-                                    f"• Lignes avant import : **{lignes_avant}**\n"
-                                    f"• Lignes supprimées : **{lignes_supprimees}**\n"
-                                    f"• Lignes importées : **{len(df_import)}**\n"
-                                    f"• **Total après import : {len(df_final)}**"
-                                )
-                                st.rerun()
-                                
-                            except Exception as e:
-                                st.error(f"❌ Erreur lors de l'intégration : {e}")
-                                import traceback
-                                st.code(traceback.format_exc())
-                                
-                except Exception as e:
-                    st.error(f"❌ Erreur de lecture du fichier : {e}")
-    
-        # ═══════════════════════════════════════════════════════════════
-        # BARRE DE RECHERCHE
-        # ═══════════════════════════════════════════════════════════════
-        # ═══════════════════════════════════════════════════════════════
-        # BARRE DE RECHERCHE & ÉDITEUR
-        # ═══════════════════════════════════════════════════════════════
-        
-        # Définition locale (sécurité contre NameError)
-        colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion', 'Département']
-        
-        # Vérification que df est bien chargé
-        if df is None or df.empty:
-            st.error("❌ Les données (df) ne sont pas chargées. Impossible d'afficher l'éditeur.")
-            st.stop()
-        
-        # S'assurer que toutes les colonnes existent dans df
-        for col in colonnes_ordonnees:
-            if col not in df.columns:
-                df[col] = ""
-        
-        recherche = st.text_input("🔍 Rechercher une ligne (Enseignant, Salle ou Code) :", key="admin_search_bar")
-    
-        # Préparation du DataFrame maître
-        df_master = df[colonnes_ordonnees].copy()
-        
-        # Application du filtre si recherche active
-        if recherche:
-            masque = df_master.apply(lambda r: r.astype(str).str.contains(recherche, case=False).any(), axis=1)
-            df_edition = df_master[masque].copy()
-        else:
-            df_edition = df_master.copy()
-    
-        # Affichage du compteur de lignes pour le suivi de l'index
-        total_lignes = len(df)
-        st.caption(f"Lignes totales dans le fichier source : {total_lignes} | Prochain index : {total_lignes}")
-    
-        # L'ÉDITEUR DYNAMIQUE
-        df_edite = st.data_editor(
-            df_edition,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="admin_data_editor_main"
+# Route secondaire : modules qui ne relèvent pas du premier groupe de pages.
+if df is not None:
+    if portail == "📝 Suivi d'Assiduité":
+        run_Assiduité(
+            preview_teacher=_preview_teacher if espace_choisi == "Enseignant" and _is_admin_auth else None,
+            preview_student=_preview_student if espace_choisi == "Étudiant" and _is_admin_auth else None,
         )
-    
-        # Boutons de téléchargement pour l'éditeur (données filtrées)
-        ca1, ca2 = st.columns(2)
-        with ca1:
-            out_ed = io.BytesIO()
-            df_edite.to_excel(out_ed, index=False)
-            st.download_button("📊 Télécharger l'EDT filtré (Excel)", out_ed.getvalue(), "EDT_Edition.xlsx")
-        with ca2:
-            st.download_button("📄 Télécharger l'EDT filtré (HTML)", df_edite.to_html(index=False), "EDT_Edition.html", "text/html")
-    
-        # --- 3. LOGIQUE DE SAUVEGARDE ET AUTO-INDEXATION ---
-        if st.button("💾 Sauvegarder les modifications et la nouvelle charge"):
+    elif portail == "🔐 Portail Étudiant":
+        if _is_admin_auth and _preview_student is None:
+            st.warning("Sélectionnez un étudiant dans la navigation centrale pour afficher son espace.")
+        else:
+            run_Assiduité(preview_student=_preview_student if _is_admin_auth else None)
+    elif portail == "📢 Gestion Administrative - Bordereaux & PVs" and is_admin:
+        # ==========================================
+        # IMPORTS SPÉCIFIQUES (idéalement à déplacer en haut du fichier)
+        # ==========================================
+        from docx import Document
+        from docx.shared import Inches, Pt
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+        import io
+        import os
+        import pandas as pd
+        from datetime import datetime
+
+        # ==========================================
+        # CONFIGURATION ET CONSTANTES
+        # ==========================================
+        TITRE_PLATEFORME = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
+
+        departementS = [
+            "departement d'Électrotechnique",
+            "departement d'Électronique",
+            "departement d'Automatique",
+            "departement de Télécommunications"
+        ]
+
+        TYPES_DOCUMENTS = [
+            "Bordereau d'envoi"
+        ]
+
+        OPTIONS_DESTINATAIRES = [
+            "Le Doyen de la Faculté",
+            "Le vice Doyen de la Post graduation",
+            "Le vice Doyen de la graduation",
+            "Le chef de departement",
+            "Autres"
+        ]
+        OPTIONS_EXPEDITEURS = [
+            "Chef de departement",
+            "Chef de departement adjoint",
+            "Chef service de scolarité",
+            "Chef service d'enseignements",
+            "Signataire"
+        ]
+
+        # ==========================================
+        # FONCTIONS TECHNIQUES DE STRUCTURE
+        # ==========================================
+        def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
+            """Définit l'espacement interne (padding) des cellules d'un tableau."""
+            tc = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            tcMar = OxmlElement('w:tcMar')
+            for m, val in [('w:top', top), ('w:bottom', bottom), ('w:left', left), ('w:right', right)]:
+                node = OxmlElement(m)
+                node.set(qn('w:w'), str(val))
+                node.set(qn('w:type'), 'dxa')
+                tcMar.append(node)
+            tcPr.append(tcMar)
+
+        def ajouter_champ_page(run, type_champ):
+            """Injecte un champ de numérotation dynamique (PAGE ou NUMPAGES) dans un paragraphe Word."""
+            fldChar1 = OxmlElement('w:fldChar')
+            fldChar1.set(qn('w:fldCharType'), 'begin')
+            instrText = OxmlElement('w:instrText')
+            instrText.set(qn('xml:space'), 'preserve')
+            instrText.text = type_champ
+            fldChar2 = OxmlElement('w:fldChar')
+            fldChar2.set(qn('w:fldCharType'), 'separate')
+            fldChar3 = OxmlElement('w:fldChar')
+            fldChar3.set(qn('w:fldCharType'), 'end')
+        
+            run._r.append(fldChar1)
+            run._r.append(instrText)
+            run._r.append(fldChar2)
+            run._r.append(fldChar3)
+
+        # ==========================================
+        # GÉNÉRATEUR DE BORDEREAU ISO STRICT
+        # ==========================================
+        def construire_reference(numero, annee=None):
+            """Construit la référence complète du bordereau."""
+            if annee is None:
+                annee = datetime.now().year
+            num_str = str(numero).split('/')[0] if '/' in str(numero) else str(numero)
+            return f"{num_str}/F.G.E/departement-ELT/{annee}"
+
+        def générer_bordereau_iso(departement, donnees):
+            doc = Document()
+        
+            for section in doc.sections:
+                section.top_margin = Inches(0.8)
+                section.bottom_margin = Inches(0.8)
+                section.left_margin = Inches(0.8)
+                section.right_margin = Inches(0.8)
+                section.different_first_page_header_footer = False
+            
+                footer = section.footer
+                footer_p = footer.paragraphs[0]
+                footer_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                footer_pPr = footer_p._p.get_or_add_pPr()
+                tabs = OxmlElement('w:tabs')
+                tab_centre = OxmlElement('w:tab')
+                tab_centre.set(qn('w:val'), 'center')
+                tab_centre.set(qn('w:pos'), '4968')
+                tabs.append(tab_centre)
+                tab_droite = OxmlElement('w:tab')
+                tab_droite.set(qn('w:val'), 'right')
+                tab_droite.set(qn('w:pos'), '9936')
+                tabs.append(tab_droite)
+                footer_pPr.append(tabs)
+            
+                footer_p.add_run("\t")
+                annee_doc = donnees.get('annee_reference', datetime.now().year)
+                r_ref_fixe = footer_p.add_run(f"Réf : UDL-GEL-ER-004-{annee_doc}")
+                r_ref_fixe.font.name = 'Calibri'
+                r_ref_fixe.font.size = Pt(11)
+            
+                footer_p.add_run("\t")
+                r_page_actuelle = footer_p.add_run()
+                r_page_actuelle.font.name = 'Calibri'
+                r_page_actuelle.font.size = Pt(11)
+                ajouter_champ_page(r_page_actuelle, "PAGE")
+            
+                r_separateur = footer_p.add_run("/")
+                r_separateur.font.name = 'Calibri'
+                r_separateur.font.size = Pt(11)
+            
+                r_total_pages = footer_p.add_run()
+                r_total_pages.font.name = 'Calibri'
+                r_total_pages.font.size = Pt(11)
+                ajouter_champ_page(r_total_pages, "NUMPAGES")
+
+            # 1. EN-TÊTE : Tableau invisible Logo | Texte officiel
+            header_table = doc.add_table(rows=1, cols=2)
+            header_table.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            header_table.autofit = False
+            header_table.columns[0].width = Inches(1.2)
+            header_table.columns[1].width = Inches(5.7)
+        
+            cell_logo = header_table.rows[0].cells[0]
+            cell_texte = header_table.rows[0].cells[1]
+        
+            tblPr = header_table._tbl.tblPr
+            tblBorders = OxmlElement('w:tblBorders')
+            for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+                border = OxmlElement(f'w:{border_name}')
+                border.set(qn('w:val'), 'none')
+                tblBorders.append(border)
+            tblPr.append(tblBorders)
+
+            p_logo = cell_logo.paragraphs[0]
+            p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            nom_fichier_logo = "logo.PNG"
+            if os.path.exists(nom_fichier_logo):
+                p_logo.add_run().add_picture(nom_fichier_logo, width=Inches(0.833))
+            else:
+                r_alt = p_logo.add_run("[LOGO UNIVERSITÉ]")
+                r_alt.font.name = 'Calibri'
+                r_alt.font.size = Pt(8)
+                r_alt.font.italic = True
+
+            p_en_tete = cell_texte.paragraphs[0]
+            p_en_tete.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+            r1 = p_en_tete.add_run("République Algérienne Démocratique et populaire\n")
+            r1.bold = True
+            r1.font.size = Pt(12)
+            r1.font.name = 'Calibri'
+        
+            r2 = p_en_tete.add_run(
+                "Ministère de l'enseignement supérieur et de la recherche scientifiques\n"
+                "Université Djillali Liabes de Sidi Bel Abbés\n"
+                "Faculté de Génie Electrique\n"
+            )
+            r2.bold = True
+            r2.font.size = Pt(12)
+            r2.font.name = 'Calibri'
+        
+            r_dept = p_en_tete.add_run(f"{departement.upper()}\n")
+            r_dept.bold = True
+            r_dept.font.size = Pt(11)
+            r_dept.font.name = 'Calibri'
+
+            doc.add_paragraph("\n")
+
+            # 2. RÉFÉRENCE
+            p_ref = doc.add_paragraph()
+            p_ref.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            r_ref = p_ref.add_run(f"N° : {donnees['num_reference']}")
+            r_ref.font.size = Pt(10)
+            r_ref.font.name = 'Calibri'
+            r_ref.bold = True
+
+            doc.add_paragraph("\n")
+
+            # 3. TITRE
+            p_titre = doc.add_paragraph()
+            p_titre.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r_titre = p_titre.add_run("BORDEREAU D'ENVOI")
+            r_titre.font.name = 'Calibri'
+            r_titre.font.size = Pt(36)
+            r_titre.italic = True
+            r_titre.underline = True
+            r_titre.bold = True
+        
+            doc.add_paragraph("\n")
+
+            # 4. DESTINATAIRE
+            p_dest = doc.add_paragraph()
+            p_dest.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            r_dest = p_dest.add_run(f"A monsieur : {donnees['destinataire']}")
+            r_dest.bold = True
+            r_dest.font.size = Pt(12)
+            r_dest.font.name = 'Calibri'
+
+            doc.add_paragraph("\n")
+
+            # 5. TABLEAU DE TRANSMISSION
+            liste_pieces = donnees['liste_pieces']
+            nb_lignes_totales = 2 + len(liste_pieces)
+        
+            table = doc.add_table(rows=nb_lignes_totales, cols=3)
+            table.style = 'Table Grid'
+            table.columns[0].width = Inches(4.5)
+            table.columns[1].width = Inches(0.8)
+            table.columns[2].width = Inches(1.7)
+
+            hdr_cells = table.rows[0].cells
+            hdr_cells[0].text = "Désignation des pièces"
+            hdr_cells[1].text = "Nbre"
+            hdr_cells[2].text = "Observations"
+        
+            for cell in hdr_cells:
+                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                cell.paragraphs[0].runs[0].font.bold = True
+                cell.paragraphs[0].runs[0].font.name = 'Calibri'
+                cell.paragraphs[0].runs[0].font.size = Pt(10)
+                set_cell_margins(cell, top=120, bottom=120)
+
+            row_joint = table.rows[1].cells
+            row_joint[0].text = "Veuillez trouver ci-joint :"
+            row_joint[0].paragraphs[0].runs[0].font.italic = True
+            row_joint[0].paragraphs[0].runs[0].font.name = 'Calibri'
+            row_joint[0].paragraphs[0].runs[0].font.size = Pt(10)
+            set_cell_margins(row_joint[0], top=80, bottom=80)
+
+            for index, piece in enumerate(liste_pieces):
+                row_idx = 2 + index
+                current_row = table.rows[row_idx].cells
+                current_row[0].text = str(piece["Désignation des pièces"])
+                current_row[1].text = str(piece["Nbre"])
+                current_row[2].text = str(piece["Observations"])
+            
+                for i, cell in enumerate(current_row):
+                    set_cell_margins(cell, top=150, bottom=300)
+                    if len(cell.paragraphs[0].runs) > 0:
+                        cell.paragraphs[0].runs[0].font.name = 'Calibri'
+                        cell.paragraphs[0].runs[0].font.size = Pt(10)
+                    if i == 1:
+                        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            doc.add_paragraph("\n\n")
+
+            # 6. SIGNATURES ET ACCUSÉ DE RÉCEPTION
+            p_signatures = doc.add_paragraph()
+            p_signatures.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        
+            date_texte = donnees['date_creation'].strftime('%d/%m/%Y')
+            qualite_expediteur = donnees.get('expediteur_qualite', 'Chef de departement')
+        
+            run_sig = p_signatures.add_run(f"Sidi bel Abbès le : {date_texte}\t\t\t\t{qualite_expediteur}")
+            run_sig.font.name = 'Calibri'
+            run_sig.font.size = Pt(11)
+            run_sig.bold = True
+
+            doc.add_paragraph("\n\n\n\n")
+
+            p_accuse = doc.add_paragraph()
+            p_accuse.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run_accuse = p_accuse.add_run("Accusé de réception    ")
+            run_accuse.font.name = 'Calibri'
+            run_accuse.font.size = Pt(10)
+            run_accuse.font.underline = True
+            run_accuse.bold = True
+
+            return doc
+
+        def générer_pv_generique(departement, type_pv, donnees):
+            """Générateur secondaire de secours (Calibri)."""
+            doc = Document()
+            p = doc.add_paragraph()
+            run = p.add_run(f"{type_pv} - {departement}\nDocument en cours.")
+            run.font.name = 'Calibri'
+            return doc
+
+        # ==========================================
+        # HISTORIQUE DES BORDEREAUX (SUPABASE)
+        # ==========================================
+        def enregistrer_historique_bordereau(donnees, departement, user_email):
+            """Enregistre un bordereau généré dans l'historique Supabase."""
             try:
-                if recherche:
-                    # On fusionne : (Tout ce qui n'était pas affiché) + (Ce qui est dans l'éditeur + ajouts)
-                    df_final = pd.concat([df_master[~masque], df_edite], ignore_index=True)
-                else:
-                    df_final = df_edite
-    
-                # Nettoyage : suppression des lignes vides (si on a cliqué sur + sans écrire)
-                df_final = df_final.dropna(subset=['Enseignements'])
-                # Suppression des lignes où Enseignements est vide ou "nan"
-                df_final = df_final[df_final['Enseignements'].astype(str).str.strip() != '']
-                df_final = df_final[df_final['Enseignements'].astype(str).str.lower() != 'nan']
-                
-                # Tri pour l'organisation
-                df_final = df_final.sort_values(by=["Promotion", "Jours", "Horaire"])
-    
-                # Sauvegarde dans le fichier maître
-                if NOM_FICHIER_FIXE.endswith('.xlsx'):
-                    df_final.to_excel(NOM_FICHIER_FIXE, index=False)
-                else:
-                    df_final.to_csv(NOM_FICHIER_FIXE, index=False)
-    
-                st.success(f"✅ Modifications sauvegardées avec succès ! {len(df_final)} lignes enregistrées.")
-                st.balloons()
-                st.rerun()
-    
+                ref_pur = donnees.get('num_reference_pur', 1)
+                annee_ref = donnees.get('annee_reference', datetime.now().year)
+            
+                data_histo = {
+                    "generated_by": user_email,
+                    "departement": departement,
+                    "destinataire": donnees.get('destinataire', ''),
+                    "num_reference": str(ref_pur),
+                    "annee_reference": annee_ref,
+                    "expediteur_qualite": donnees.get('expediteur_qualite', 'Chef de departement'),
+                    "date_creation": donnees.get('date_creation', datetime.now()).isoformat(),
+                    "nombre_pieces": len(donnees.get('liste_pieces', [])),
+                    "pieces_details": donnees.get('liste_pieces', []),
+                    "fichier_nom": f"Bordereau_{departement.replace(' ', '_')}.docx"
+                }
+                supabase.table("bordereaux_historique").insert(data_histo).execute()
             except Exception as e:
-                st.error(f"❌ Erreur lors de la sauvegarde : {e}")
-    
-        # --- 4. GESTION DES DOUBLONS & CONFLITS ---
-        st.write("---")
-        st.subheader("🔍 Vérificateur de Conflits")
-    
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("🔎 Détecter les doublons de séances"):
-                doublons = df_master[df_master.duplicated(subset=['Enseignements', 'Code', 'Promotion'], keep=False)]
-                if not doublons.empty:
-                    st.warning(f"⚠️ {len(doublons)} doublons trouvés :")
-                    st.dataframe(doublons.sort_values(by=["Promotion", "Enseignements"]), use_container_width=True)
-                else:
-                    st.success("✅ Aucun doublon détecté.")
-    
-        with col2:
-            if st.button("🏫 Détecter les conflits de salles"):
-                conflits_salle = df_master.groupby(['Jours', 'Horaire', 'Lieu']).size().reset_index(name='count')
-                conflits_salle = conflits_salle[conflits_salle['count'] > 1]
-                if not conflits_salle.empty:
-                    st.warning(f"⚠️ {len(conflits_salle)} conflits de salle trouvés :")
-                    st.dataframe(conflits_salle, use_container_width=True)
-                else:
-                    st.success("✅ Aucun conflit de salle détecté.")
-    
-        with col3:
-            if st.button("👨‍🏫 Détecter les surcharges enseignants"):
-                # Comptage des heures par enseignant
-                df_h = df_master.copy()
-                df_h['Duree'] = df_h['Horaire'].str.extract(r'(\d+)').astype(float)
-                surcharge = df_h.groupby('Enseignants')['Duree'].sum().reset_index()
-                surcharge = surcharge[surcharge['Duree'] > 20]  # Seuil arbitraire
-                if not surcharge.empty:
-                    st.warning(f"⚠️ {len(surcharge)} enseignants potentiellement surchargés :")
-                    st.dataframe(surcharge.sort_values('Duree', ascending=False), use_container_width=True)
-                else:
-                    st.success("✅ Aucune surcharge détectée.")
-    # --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
-    # --- 5. ESPACE PUBLIC (VISUALISATION LECTURE SEULE) ---
-    else:
-        st.subheader("📅 Emploi du Temps - Vue Publique")
-        
-        # ═══════════════════════════════════════════════════════════════
-        # DÉFINITION LOCALE (sécurité contre NameError)
-        # ═══════════════════════════════════════════════════════════════
-        colonnes_ordonnees = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-        
-        # Vérification que df existe et n'est pas vide
-        if df is None or df.empty:
-            st.warning("⚠️ Aucune donnée EDT disponible pour l'affichage public.")
-            st.stop()
-        
-        # Filtres publics
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            promo_pub = st.selectbox(
-                "🎓 Filtrer par promotion :",
-                options=["Toutes"] + sorted(df['Promotion'].dropna().unique().tolist()),
-                key="pub_promo"
-            )
-        with col_f2:
-            jour_pub = st.selectbox(
-                "📆 Filtrer par jour :",
-                options=["Tous"] + sorted(df['Jours'].dropna().unique().tolist()),
-                key="pub_jour"
-            )
-    
-        df_pub = df.copy()
-        if promo_pub != "Toutes":
-            df_pub = df_pub[df_pub['Promotion'] == promo_pub]
-        if jour_pub != "Tous":
-            df_pub = df_pub[df_pub['Jours'] == jour_pub]
-    
-        # Affichage stylisé
-        st.dataframe(
-            df_pub[colonnes_ordonnees],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Enseignements": st.column_config.TextColumn("matiere", width="large"),
-                "Code": st.column_config.TextColumn("Code", width="small"),
-                "Enseignants": st.column_config.TextColumn("Intervenant", width="medium"),
-                "Horaire": st.column_config.TextColumn("Horaire", width="small"),
-                "Jours": st.column_config.TextColumn("Jour", width="small"),
-                "Lieu": st.column_config.TextColumn("Salle", width="small"),
-                "Promotion": st.column_config.TextColumn("Promo", width="small"),
-            }
-        )
-    
-        # Export public
-        st.write("---")
-        c1, c2 = st.columns(2)
-        with c1:
-            out_pub = io.BytesIO()
-            df_pub.to_excel(out_pub, index=False)
-            st.download_button("📊 Télécharger la vue (Excel)", out_pub.getvalue(), "EDT_Vue_Publique.xlsx")
-        with c2:
-            st.download_button("📄 Télécharger la vue (HTML)", df_pub.to_html(index=False), "EDT_Vue_Publique.html", "text/html")
+                st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
 
-    if not is_admin:
-        st.error("🚫 ACCÈS RESTREINT.")
-        st.stop()
-    # ==========================================
-    # IMPORTS SPÉCIFIQUES (idéalement à déplacer en haut du fichier)
-    # ==========================================
-    from docx import Document
-    from docx.shared import Inches, Pt
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
-    import io
-    import os
-    import pandas as pd
-    from datetime import datetime
+        def get_prochaine_reference():
+            """Récupère le prochain numéro de référence depuis l'historique."""
+            try:
+                res = supabase.table("bordereaux_historique")\
+                              .select("num_reference")\
+                              .order("num_reference", desc=True)\
+                              .limit(1)\
+                              .execute()
+                if res.data and len(res.data) > 0:
+                    dernier = res.data[0].get('num_reference', '0')
+                    try:
+                        if isinstance(dernier, str) and '/' in dernier:
+                            dernier = dernier.split('/')[0]
+                        return int(dernier) + 1
+                    except ValueError:
+                        return 1
+                return 1
+            except Exception:
+                return 1
 
-    # ==========================================
-    # CONFIGURATION ET CONSTANTES
-    # ==========================================
-    TITRE_PLATEFORME = "Plateforme de gestion des EDTs-Semestre 01__2026-2027-departement d'Électrotechnique-Faculté de génie électrique-UDL-SBA"
-
-    departementS = [
-        "departement d'Électrotechnique",
-        "departement d'Électronique",
-        "departement d'Automatique",
-        "departement de Télécommunications"
-    ]
-
-    TYPES_DOCUMENTS = [
-        "Bordereau d'envoi"
-    ]
-
-    OPTIONS_DESTINATAIRES = [
-        "Le Doyen de la Faculté",
-        "Le vice Doyen de la Post graduation",
-        "Le vice Doyen de la graduation",
-        "Le chef de departement",
-        "Autres"
-    ]
-    OPTIONS_EXPEDITEURS = [
-        "Chef de departement",
-        "Chef de departement adjoint",
-        "Chef service de scolarité",
-        "Chef service d'enseignements",
-        "Signataire"
-    ]
-
-    # ==========================================
-    # FONCTIONS TECHNIQUES DE STRUCTURE
-    # ==========================================
-    def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
-        """Définit l'espacement interne (padding) des cellules d'un tableau."""
-        tc = cell._tc
-        tcPr = tc.get_or_add_tcPr()
-        tcMar = OxmlElement('w:tcMar')
-        for m, val in [('w:top', top), ('w:bottom', bottom), ('w:left', left), ('w:right', right)]:
-            node = OxmlElement(m)
-            node.set(qn('w:w'), str(val))
-            node.set(qn('w:type'), 'dxa')
-            tcMar.append(node)
-        tcPr.append(tcMar)
-
-    def ajouter_champ_page(run, type_champ):
-        """Injecte un champ de numérotation dynamique (PAGE ou NUMPAGES) dans un paragraphe Word."""
-        fldChar1 = OxmlElement('w:fldChar')
-        fldChar1.set(qn('w:fldCharType'), 'begin')
-        instrText = OxmlElement('w:instrText')
-        instrText.set(qn('xml:space'), 'preserve')
-        instrText.text = type_champ
-        fldChar2 = OxmlElement('w:fldChar')
-        fldChar2.set(qn('w:fldCharType'), 'separate')
-        fldChar3 = OxmlElement('w:fldChar')
-        fldChar3.set(qn('w:fldCharType'), 'end')
-        
-        run._r.append(fldChar1)
-        run._r.append(instrText)
-        run._r.append(fldChar2)
-        run._r.append(fldChar3)
-
-    # ==========================================
-    # GÉNÉRATEUR DE BORDEREAU ISO STRICT
-    # ==========================================
-    def construire_reference(numero, annee=None):
-        """Construit la référence complète du bordereau."""
-        if annee is None:
-            annee = datetime.now().year
-        num_str = str(numero).split('/')[0] if '/' in str(numero) else str(numero)
-        return f"{num_str}/F.G.E/departement-ELT/{annee}"
-
-    def générer_bordereau_iso(departement, donnees):
-        doc = Document()
-        
-        for section in doc.sections:
-            section.top_margin = Inches(0.8)
-            section.bottom_margin = Inches(0.8)
-            section.left_margin = Inches(0.8)
-            section.right_margin = Inches(0.8)
-            section.different_first_page_header_footer = False
-            
-            footer = section.footer
-            footer_p = footer.paragraphs[0]
-            footer_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            footer_pPr = footer_p._p.get_or_add_pPr()
-            tabs = OxmlElement('w:tabs')
-            tab_centre = OxmlElement('w:tab')
-            tab_centre.set(qn('w:val'), 'center')
-            tab_centre.set(qn('w:pos'), '4968')
-            tabs.append(tab_centre)
-            tab_droite = OxmlElement('w:tab')
-            tab_droite.set(qn('w:val'), 'right')
-            tab_droite.set(qn('w:pos'), '9936')
-            tabs.append(tab_droite)
-            footer_pPr.append(tabs)
-            
-            footer_p.add_run("\t")
-            annee_doc = donnees.get('annee_reference', datetime.now().year)
-            r_ref_fixe = footer_p.add_run(f"Réf : UDL-GEL-ER-004-{annee_doc}")
-            r_ref_fixe.font.name = 'Calibri'
-            r_ref_fixe.font.size = Pt(11)
-            
-            footer_p.add_run("\t")
-            r_page_actuelle = footer_p.add_run()
-            r_page_actuelle.font.name = 'Calibri'
-            r_page_actuelle.font.size = Pt(11)
-            ajouter_champ_page(r_page_actuelle, "PAGE")
-            
-            r_separateur = footer_p.add_run("/")
-            r_separateur.font.name = 'Calibri'
-            r_separateur.font.size = Pt(11)
-            
-            r_total_pages = footer_p.add_run()
-            r_total_pages.font.name = 'Calibri'
-            r_total_pages.font.size = Pt(11)
-            ajouter_champ_page(r_total_pages, "NUMPAGES")
-
-        # 1. EN-TÊTE : Tableau invisible Logo | Texte officiel
-        header_table = doc.add_table(rows=1, cols=2)
-        header_table.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        header_table.autofit = False
-        header_table.columns[0].width = Inches(1.2)
-        header_table.columns[1].width = Inches(5.7)
-        
-        cell_logo = header_table.rows[0].cells[0]
-        cell_texte = header_table.rows[0].cells[1]
-        
-        tblPr = header_table._tbl.tblPr
-        tblBorders = OxmlElement('w:tblBorders')
-        for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-            border = OxmlElement(f'w:{border_name}')
-            border.set(qn('w:val'), 'none')
-            tblBorders.append(border)
-        tblPr.append(tblBorders)
-
-        p_logo = cell_logo.paragraphs[0]
-        p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        nom_fichier_logo = "logo.PNG"
-        if os.path.exists(nom_fichier_logo):
-            p_logo.add_run().add_picture(nom_fichier_logo, width=Inches(0.833))
-        else:
-            r_alt = p_logo.add_run("[LOGO UNIVERSITÉ]")
-            r_alt.font.name = 'Calibri'
-            r_alt.font.size = Pt(8)
-            r_alt.font.italic = True
-
-        p_en_tete = cell_texte.paragraphs[0]
-        p_en_tete.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        r1 = p_en_tete.add_run("République Algérienne Démocratique et populaire\n")
-        r1.bold = True
-        r1.font.size = Pt(12)
-        r1.font.name = 'Calibri'
-        
-        r2 = p_en_tete.add_run(
-            "Ministère de l'enseignement supérieur et de la recherche scientifiques\n"
-            "Université Djillali Liabes de Sidi Bel Abbés\n"
-            "Faculté de Génie Electrique\n"
-        )
-        r2.bold = True
-        r2.font.size = Pt(12)
-        r2.font.name = 'Calibri'
-        
-        r_dept = p_en_tete.add_run(f"{departement.upper()}\n")
-        r_dept.bold = True
-        r_dept.font.size = Pt(11)
-        r_dept.font.name = 'Calibri'
-
-        doc.add_paragraph("\n")
-
-        # 2. RÉFÉRENCE
-        p_ref = doc.add_paragraph()
-        p_ref.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        r_ref = p_ref.add_run(f"N° : {donnees['num_reference']}")
-        r_ref.font.size = Pt(10)
-        r_ref.font.name = 'Calibri'
-        r_ref.bold = True
-
-        doc.add_paragraph("\n")
-
-        # 3. TITRE
-        p_titre = doc.add_paragraph()
-        p_titre.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r_titre = p_titre.add_run("BORDEREAU D'ENVOI")
-        r_titre.font.name = 'Calibri'
-        r_titre.font.size = Pt(36)
-        r_titre.italic = True
-        r_titre.underline = True
-        r_titre.bold = True
-        
-        doc.add_paragraph("\n")
-
-        # 4. DESTINATAIRE
-        p_dest = doc.add_paragraph()
-        p_dest.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        r_dest = p_dest.add_run(f"A monsieur : {donnees['destinataire']}")
-        r_dest.bold = True
-        r_dest.font.size = Pt(12)
-        r_dest.font.name = 'Calibri'
-
-        doc.add_paragraph("\n")
-
-        # 5. TABLEAU DE TRANSMISSION
-        liste_pieces = donnees['liste_pieces']
-        nb_lignes_totales = 2 + len(liste_pieces)
-        
-        table = doc.add_table(rows=nb_lignes_totales, cols=3)
-        table.style = 'Table Grid'
-        table.columns[0].width = Inches(4.5)
-        table.columns[1].width = Inches(0.8)
-        table.columns[2].width = Inches(1.7)
-
-        hdr_cells = table.rows[0].cells
-        hdr_cells[0].text = "Désignation des pièces"
-        hdr_cells[1].text = "Nbre"
-        hdr_cells[2].text = "Observations"
-        
-        for cell in hdr_cells:
-            cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            cell.paragraphs[0].runs[0].font.bold = True
-            cell.paragraphs[0].runs[0].font.name = 'Calibri'
-            cell.paragraphs[0].runs[0].font.size = Pt(10)
-            set_cell_margins(cell, top=120, bottom=120)
-
-        row_joint = table.rows[1].cells
-        row_joint[0].text = "Veuillez trouver ci-joint :"
-        row_joint[0].paragraphs[0].runs[0].font.italic = True
-        row_joint[0].paragraphs[0].runs[0].font.name = 'Calibri'
-        row_joint[0].paragraphs[0].runs[0].font.size = Pt(10)
-        set_cell_margins(row_joint[0], top=80, bottom=80)
-
-        for index, piece in enumerate(liste_pieces):
-            row_idx = 2 + index
-            current_row = table.rows[row_idx].cells
-            current_row[0].text = str(piece["Désignation des pièces"])
-            current_row[1].text = str(piece["Nbre"])
-            current_row[2].text = str(piece["Observations"])
-            
-            for i, cell in enumerate(current_row):
-                set_cell_margins(cell, top=150, bottom=300)
-                if len(cell.paragraphs[0].runs) > 0:
-                    cell.paragraphs[0].runs[0].font.name = 'Calibri'
-                    cell.paragraphs[0].runs[0].font.size = Pt(10)
-                if i == 1:
-                    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        doc.add_paragraph("\n\n")
-
-        # 6. SIGNATURES ET ACCUSÉ DE RÉCEPTION
-        p_signatures = doc.add_paragraph()
-        p_signatures.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        
-        date_texte = donnees['date_creation'].strftime('%d/%m/%Y')
-        qualite_expediteur = donnees.get('expediteur_qualite', 'Chef de departement')
-        
-        run_sig = p_signatures.add_run(f"Sidi bel Abbès le : {date_texte}\t\t\t\t{qualite_expediteur}")
-        run_sig.font.name = 'Calibri'
-        run_sig.font.size = Pt(11)
-        run_sig.bold = True
-
-        doc.add_paragraph("\n\n\n\n")
-
-        p_accuse = doc.add_paragraph()
-        p_accuse.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        run_accuse = p_accuse.add_run("Accusé de réception    ")
-        run_accuse.font.name = 'Calibri'
-        run_accuse.font.size = Pt(10)
-        run_accuse.font.underline = True
-        run_accuse.bold = True
-
-        return doc
-
-    def générer_pv_generique(departement, type_pv, donnees):
-        """Générateur secondaire de secours (Calibri)."""
-        doc = Document()
-        p = doc.add_paragraph()
-        run = p.add_run(f"{type_pv} - {departement}\nDocument en cours.")
-        run.font.name = 'Calibri'
-        return doc
-
-    # ==========================================
-    # HISTORIQUE DES BORDEREAUX (SUPABASE)
-    # ==========================================
-    def enregistrer_historique_bordereau(donnees, departement, user_email):
-        """Enregistre un bordereau généré dans l'historique Supabase."""
-        try:
-            ref_pur = donnees.get('num_reference_pur', 1)
-            annee_ref = donnees.get('annee_reference', datetime.now().year)
-            
-            data_histo = {
-                "generated_by": user_email,
-                "departement": departement,
-                "destinataire": donnees.get('destinataire', ''),
-                "num_reference": str(ref_pur),
-                "annee_reference": annee_ref,
-                "expediteur_qualite": donnees.get('expediteur_qualite', 'Chef de departement'),
-                "date_creation": donnees.get('date_creation', datetime.now()).isoformat(),
-                "nombre_pieces": len(donnees.get('liste_pieces', [])),
-                "pieces_details": donnees.get('liste_pieces', []),
-                "fichier_nom": f"Bordereau_{departement.replace(' ', '_')}.docx"
-            }
-            supabase.table("bordereaux_historique").insert(data_histo).execute()
-        except Exception as e:
-            st.warning(f"⚠️ Sauvegarde historique échouée : {e}")
-
-    def get_prochaine_reference():
-        """Récupère le prochain numéro de référence depuis l'historique."""
-        try:
-            res = supabase.table("bordereaux_historique")\
-                          .select("num_reference")\
-                          .order("num_reference", desc=True)\
-                          .limit(1)\
-                          .execute()
-            if res.data and len(res.data) > 0:
-                dernier = res.data[0].get('num_reference', '0')
-                try:
-                    if isinstance(dernier, str) and '/' in dernier:
-                        dernier = dernier.split('/')[0]
-                    return int(dernier) + 1
-                except ValueError:
-                    return 1
-            return 1
-        except Exception:
-            return 1
-
-    def afficher_historique_bordereaux():
-        """Affiche l'historique des bordereaux avec export Excel et effacement sécurisé."""
-        try:
-            res = supabase.table("bordereaux_historique")\
-                          .select("*")\
-                          .order("created_at", desc=True)\
-                          .limit(50)\
-                          .execute()
-            if res.data:
-                from collections import Counter
+        def afficher_historique_bordereaux():
+            """Affiche l'historique des bordereaux avec export Excel et effacement sécurisé."""
+            try:
+                res = supabase.table("bordereaux_historique")\
+                              .select("*")\
+                              .order("created_at", desc=True)\
+                              .limit(50)\
+                              .execute()
+                if res.data:
+                    from collections import Counter
                 
-                compteur_dest = Counter([row.get('destinataire', 'Non spécifié') for row in res.data])
-                total_bordereaux = len(res.data)
+                    compteur_dest = Counter([row.get('destinataire', 'Non spécifié') for row in res.data])
+                    total_bordereaux = len(res.data)
                 
-                st.markdown("### 📊 Tableau de bord — Bordereaux par destination")
+                    st.markdown("### 📊 Tableau de bord — Bordereaux par destination")
                 
-                c_total, c_unique = st.columns(2)
-                c_total.metric("📨 Total bordereaux générés", total_bordereaux)
-                c_unique.metric("🏛️ Destinations distinctes", len(compteur_dest))
+                    c_total, c_unique = st.columns(2)
+                    c_total.metric("📨 Total bordereaux générés", total_bordereaux)
+                    c_unique.metric("🏛️ Destinations distinctes", len(compteur_dest))
                 
-                st.divider()
+                    st.divider()
                 
-                st.markdown("**Répartition par destinataire :**")
-                destinations = sorted(compteur_dest.items(), key=lambda x: x[1], reverse=True)
+                    st.markdown("**Répartition par destinataire :**")
+                    destinations = sorted(compteur_dest.items(), key=lambda x: x[1], reverse=True)
                 
-                cols = st.columns(min(3, len(destinations)))
-                for idx, (dest, count) in enumerate(destinations):
-                    with cols[idx % 3]:
-                        st.markdown(f"""
-                            <div style="
-                                background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
-                                border-radius: 12px;
-                                padding: 16px;
-                                color: white;
-                                text-align: center;
-                                margin-bottom: 12px;
-                                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                            ">
-                                <div style="font-size: 11px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
-                                    {dest}
+                    cols = st.columns(min(3, len(destinations)))
+                    for idx, (dest, count) in enumerate(destinations):
+                        with cols[idx % 3]:
+                            st.markdown(f"""
+                                <div style="
+                                    background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+                                    border-radius: 12px;
+                                    padding: 16px;
+                                    color: white;
+                                    text-align: center;
+                                    margin-bottom: 12px;
+                                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                                ">
+                                    <div style="font-size: 11px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">
+                                        {dest}
+                                    </div>
+                                    <div style="font-size: 32px; font-weight: bold; margin: 8px 0;">
+                                        {count}
+                                    </div>
+                                    <div style="font-size: 12px; opacity: 0.8;">
+                                        bordereau{'x' if count > 1 else ''}
+                                    </div>
                                 </div>
-                                <div style="font-size: 32px; font-weight: bold; margin: 8px 0;">
-                                    {count}
-                                </div>
-                                <div style="font-size: 12px; opacity: 0.8;">
-                                    bordereau{'x' if count > 1 else ''}
-                                </div>
-                            </div>
-                        """, unsafe_allow_html=True)
+                            """, unsafe_allow_html=True)
                 
-                st.divider()
+                    st.divider()
                 
-                rows_recap = []
-                rows_detail = []
+                    rows_recap = []
+                    rows_detail = []
                 
-                for row in res.data:
-                    date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
+                    for row in res.data:
+                        date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
                     
-                    rows_recap.append({
-                        'Date': date_str,
-                        'Généré par': row.get('generated_by', '-'),
-                        'Expéditeur': row.get('expediteur_qualite', '-'),
-                        'departement': row.get('departement', '-'),
-                        'Destinataire': row.get('destinataire', '-'),
-                        'N° Référence': row.get('num_reference', '-'),
-                        'Nb pièces': row.get('nombre_pieces', 0),
-                        'Fichier': row.get('fichier_nom', '-')
-                    })
-                    
-                    pieces = row.get('pieces_details', [])
-                    ref_num = row.get('num_reference', '-')
-                    ref_annee = row.get('annee_reference', datetime.now().year)
-                    ref_full = construire_reference(ref_num, ref_annee)
-                    
-                    if isinstance(pieces, list) and len(pieces) > 0:
-                        for p in pieces:
-                            rows_detail.append({
-                                'Date génération': date_str,
-                                'Généré par': row.get('generated_by', '-'),
-                                'Expéditeur': row.get('expediteur_qualite', '-'),
-                                'departement': row.get('Departement', '-'),
-                                'Destinataire': row.get('destinataire', '-'),
-                                'N° Référence': ref_full,
-                                'Désignation des pièces': p.get('Désignation des pièces', ''),
-                                'Nbre': p.get('Nbre', ''),
-                                'Observations': p.get('Observations', ''),
-                                'Fichier': row.get('fichier_nom', '-')
-                            })
-                    else:
-                        rows_detail.append({
-                            'Date génération': date_str,
+                        rows_recap.append({
+                            'Date': date_str,
                             'Généré par': row.get('generated_by', '-'),
                             'Expéditeur': row.get('expediteur_qualite', '-'),
                             'departement': row.get('departement', '-'),
                             'Destinataire': row.get('destinataire', '-'),
-                            'N° Référence': ref_full,
-                            'Désignation des pièces': '-',
-                            'Nbre': '-',
-                            'Observations': '-',
+                            'N° Référence': row.get('num_reference', '-'),
+                            'Nb pièces': row.get('nombre_pieces', 0),
                             'Fichier': row.get('fichier_nom', '-')
                         })
+                    
+                        pieces = row.get('pieces_details', [])
+                        ref_num = row.get('num_reference', '-')
+                        ref_annee = row.get('annee_reference', datetime.now().year)
+                        ref_full = construire_reference(ref_num, ref_annee)
+                    
+                        if isinstance(pieces, list) and len(pieces) > 0:
+                            for p in pieces:
+                                rows_detail.append({
+                                    'Date génération': date_str,
+                                    'Généré par': row.get('generated_by', '-'),
+                                    'Expéditeur': row.get('expediteur_qualite', '-'),
+                                    'departement': row.get('Departement', '-'),
+                                    'Destinataire': row.get('destinataire', '-'),
+                                    'N° Référence': ref_full,
+                                    'Désignation des pièces': p.get('Désignation des pièces', ''),
+                                    'Nbre': p.get('Nbre', ''),
+                                    'Observations': p.get('Observations', ''),
+                                    'Fichier': row.get('fichier_nom', '-')
+                                })
+                        else:
+                            rows_detail.append({
+                                'Date génération': date_str,
+                                'Généré par': row.get('generated_by', '-'),
+                                'Expéditeur': row.get('expediteur_qualite', '-'),
+                                'departement': row.get('departement', '-'),
+                                'Destinataire': row.get('destinataire', '-'),
+                                'N° Référence': ref_full,
+                                'Désignation des pièces': '-',
+                                'Nbre': '-',
+                                'Observations': '-',
+                                'Fichier': row.get('fichier_nom', '-')
+                            })
                 
-                df_recap = pd.DataFrame(rows_recap)
-                df_detail = pd.DataFrame(rows_detail)
+                    df_recap = pd.DataFrame(rows_recap)
+                    df_detail = pd.DataFrame(rows_detail)
                 
-                col_titre, col_dl, col_del = st.columns([3, 1, 1])
+                    col_titre, col_dl, col_del = st.columns([3, 1, 1])
                 
-                with col_titre:
-                    st.markdown("**📊 Vue d'ensemble des bordereaux**")
+                    with col_titre:
+                        st.markdown("**📊 Vue d'ensemble des bordereaux**")
                 
-                with col_dl:
-                    buffer_excel = io.BytesIO()
-                    with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
-                        df_recap.to_excel(writer, index=False, sheet_name='Récapitulatif')
-                        ws1 = writer.sheets['Récapitulatif']
-                        header_fmt = writer.book.add_format({
-                            'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1
-                        })
-                        for col_num, value in enumerate(df_recap.columns.values):
-                            ws1.write(0, col_num, value, header_fmt)
-                            ws1.set_column(col_num, col_num, 18)
+                    with col_dl:
+                        buffer_excel = io.BytesIO()
+                        with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
+                            df_recap.to_excel(writer, index=False, sheet_name='Récapitulatif')
+                            ws1 = writer.sheets['Récapitulatif']
+                            header_fmt = writer.book.add_format({
+                                'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1
+                            })
+                            for col_num, value in enumerate(df_recap.columns.values):
+                                ws1.write(0, col_num, value, header_fmt)
+                                ws1.set_column(col_num, col_num, 18)
                         
-                        df_detail.to_excel(writer, index=False, sheet_name='Détail des pièces')
-                        ws2 = writer.sheets['Détail des pièces']
-                        for col_num, value in enumerate(df_detail.columns.values):
-                            ws2.write(0, col_num, value, header_fmt)
-                            ws2.set_column(col_num, col_num, 22)
+                            df_detail.to_excel(writer, index=False, sheet_name='Détail des pièces')
+                            ws2 = writer.sheets['Détail des pièces']
+                            for col_num, value in enumerate(df_detail.columns.values):
+                                ws2.write(0, col_num, value, header_fmt)
+                                ws2.set_column(col_num, col_num, 22)
                     
-                    st.download_button(
-                        label="📥 Excel",
-                        data=buffer_excel.getvalue(),
-                        file_name=f"Historique_Bordereaux_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_histo_bordereaux"
-                    )
+                        st.download_button(
+                            label="📥 Excel",
+                            data=buffer_excel.getvalue(),
+                            file_name=f"Historique_Bordereaux_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key="dl_histo_bordereaux"
+                        )
                 
-                with col_del:
-                    if st.button("🗑️ Effacer", use_container_width=True, key="btn_del_histo"):
-                        st.session_state['confirmer_suppression_historique'] = True
+                    with col_del:
+                        if st.button("🗑️ Effacer", use_container_width=True, key="btn_del_histo"):
+                            st.session_state['confirmer_suppression_historique'] = True
                 
-                if st.session_state.get('confirmer_suppression_historique'):
-                    st.warning("⚠️ **Action irréversible** — Tous les bordereaux enregistrés seront supprimés définitivement.")
+                    if st.session_state.get('confirmer_suppression_historique'):
+                        st.warning("⚠️ **Action irréversible** — Tous les bordereaux enregistrés seront supprimés définitivement.")
                     
-                    c1, c2 = st.columns([1, 1])
-                    with c1:
-                        if st.button("✅ Oui, supprimer définitivement", type="primary", key="confirm_del_yes"):
-                            try:
-                                supabase.table("bordereaux_historique").delete().neq('id', -1).execute()
-                                st.success("✅ Historique effacé avec succès.")
+                        c1, c2 = st.columns([1, 1])
+                        with c1:
+                            if st.button("✅ Oui, supprimer définitivement", type="primary", key="confirm_del_yes"):
+                                try:
+                                    supabase.table("bordereaux_historique").delete().neq('id', -1).execute()
+                                    st.success("✅ Historique effacé avec succès.")
+                                    del st.session_state['confirmer_suppression_historique']
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Erreur lors de la suppression : {e}")
+                        with c2:
+                            if st.button("❌ Non, annuler", key="confirm_del_no"):
                                 del st.session_state['confirmer_suppression_historique']
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ Erreur lors de la suppression : {e}")
-                    with c2:
-                        if st.button("❌ Non, annuler", key="confirm_del_no"):
-                            del st.session_state['confirmer_suppression_historique']
-                            st.rerun()
                 
-                st.dataframe(df_recap, use_container_width=True, hide_index=True)
+                    st.dataframe(df_recap, use_container_width=True, hide_index=True)
                 
-                st.divider()
-                st.markdown("**📋 Détail par bordereau**")
+                    st.divider()
+                    st.markdown("**📋 Détail par bordereau**")
                 
-                for i, row in enumerate(res.data):
-                    date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
-                    ref_num = row.get('num_reference', '-')
-                    ref_annee = row.get('annee_reference', datetime.now().year)
-                    ref_full = construire_reference(ref_num, ref_annee)
-                    dest = row.get('destinataire', '-')
+                    for i, row in enumerate(res.data):
+                        date_str = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y %H:%M')
+                        ref_num = row.get('num_reference', '-')
+                        ref_annee = row.get('annee_reference', datetime.now().year)
+                        ref_full = construire_reference(ref_num, ref_annee)
+                        dest = row.get('destinataire', '-')
                     
-                    with st.expander(
-                        f"📝 Bordereau N° {ref_full} — {dest} — {date_str}", 
-                        expanded=(i == 0)
-                    ):
-                        c1, c2, c3, c4, c5 = st.columns(5)
-                        c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '-')}")
-                        c2.markdown(f"**🏛️ departement**\n{row.get('departement', '-')}")
-                        c3.markdown(f"**📤 Expéditeur**\n{row.get('expediteur_qualite', '-')}")
-                        c4.markdown(f"**📅 Date**\n{date_str}")
-                        c5.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '-')}")
+                        with st.expander(
+                            f"📝 Bordereau N° {ref_full} — {dest} — {date_str}", 
+                            expanded=(i == 0)
+                        ):
+                            c1, c2, c3, c4, c5 = st.columns(5)
+                            c1.markdown(f"**👤 Généré par**\n{row.get('generated_by', '-')}")
+                            c2.markdown(f"**🏛️ departement**\n{row.get('departement', '-')}")
+                            c3.markdown(f"**📤 Expéditeur**\n{row.get('expediteur_qualite', '-')}")
+                            c4.markdown(f"**📅 Date**\n{date_str}")
+                            c5.markdown(f"**📎 Fichier**\n{row.get('fichier_nom', '-')}")
                         
-                        st.markdown("---")
-                        st.markdown("**Tableau de transmission :**")
+                            st.markdown("---")
+                            st.markdown("**Tableau de transmission :**")
                         
-                        pieces = row.get('pieces_details', [])
-                        if isinstance(pieces, list) and len(pieces) > 0:
-                            df_pieces = pd.DataFrame(pieces)
-                            cols_ordre = []
-                            for col in ['Désignation des pièces', 'Nbre', 'Observations']:
-                                if col in df_pieces.columns:
-                                    cols_ordre.append(col)
-                            if cols_ordre:
-                                df_pieces = df_pieces[cols_ordre]
-                                st.dataframe(df_pieces, use_container_width=True, hide_index=True)
+                            pieces = row.get('pieces_details', [])
+                            if isinstance(pieces, list) and len(pieces) > 0:
+                                df_pieces = pd.DataFrame(pieces)
+                                cols_ordre = []
+                                for col in ['Désignation des pièces', 'Nbre', 'Observations']:
+                                    if col in df_pieces.columns:
+                                        cols_ordre.append(col)
+                                if cols_ordre:
+                                    df_pieces = df_pieces[cols_ordre]
+                                    st.dataframe(df_pieces, use_container_width=True, hide_index=True)
+                                else:
+                                    st.json(pieces)
                             else:
-                                st.json(pieces)
-                        else:
-                            st.info("Aucune pièce enregistrée pour ce bordereau.")
+                                st.info("Aucune pièce enregistrée pour ce bordereau.")
                             
-            else:
-                st.info("📭 Aucun bordereau enregistré dans l'historique.")
+                else:
+                    st.info("📭 Aucun bordereau enregistré dans l'historique.")
         
-        except Exception as e:
-            st.error(f"Erreur de chargement historique : {e}")
+            except Exception as e:
+                st.error(f"Erreur de chargement historique : {e}")
 
-    # ==========================================
-    # INTERFACE UTILISATEUR STREAMLIT
-    # ==========================================
-    st.caption(TITRE_PLATEFORME)
-    st.title("Gestion Administrative - Bordereaux & PVs")
+        # ==========================================
+        # INTERFACE UTILISATEUR STREAMLIT
+        # ==========================================
+        st.caption(TITRE_PLATEFORME)
+        st.title("Gestion Administrative - Bordereaux & PVs")
 
-    col_dept, col_doc = st.columns(2)
-    with col_dept:
-        dept_choisi = st.selectbox("departement émetteur :", departementS)
-    with col_doc:
-        doc_choisi = st.selectbox("Nature du document à générer :", TYPES_DOCUMENTS)
+        col_dept, col_doc = st.columns(2)
+        with col_dept:
+            dept_choisi = st.selectbox("departement émetteur :", departementS)
+        with col_doc:
+            doc_choisi = st.selectbox("Nature du document à générer :", TYPES_DOCUMENTS)
 
-    st.divider()
-    st.subheader(f"Formulaire d'édition - {doc_choisi}")
+        st.divider()
+        st.subheader(f"Formulaire d'édition - {doc_choisi}")
 
-    donnees_doc = {}
+        donnees_doc = {}
 
-    if doc_choisi == "Bordereau d'envoi":
-        prochaine_ref = get_prochaine_reference()
+        if doc_choisi == "Bordereau d'envoi":
+            prochaine_ref = get_prochaine_reference()
         
-        col_ref, col_date, col_exp = st.columns(3)
+            col_ref, col_date, col_exp = st.columns(3)
         
-        with col_ref:
-            annee_courante = datetime.now().year
-            prochaine_ref_num = get_prochaine_reference()
-            ref_auto = construire_reference(prochaine_ref_num, annee_courante)
+            with col_ref:
+                annee_courante = datetime.now().year
+                prochaine_ref_num = get_prochaine_reference()
+                ref_auto = construire_reference(prochaine_ref_num, annee_courante)
             
-            donnees_doc['num_reference'] = st.text_input(
-                "Référence séquentielle", 
-                value=ref_auto,
-                help="Auto-incrémentée selon l'historique d'envoi"
-            )    
-            try:
-                donnees_doc['num_reference_pur'] = int(str(donnees_doc['num_reference']).split('/')[0])
-            except ValueError:
-                donnees_doc['num_reference_pur'] = prochaine_ref_num
-            donnees_doc['annee_reference'] = annee_courante
-        with col_date:
-            donnees_doc['date_creation'] = st.date_input("Date d'édition", datetime.now())
-        with col_exp:
-            donnees_doc['expediteur_qualite'] = st.selectbox(
-                "Qualité de l'expéditeur :", 
-                OPTIONS_EXPEDITEURS,
+                donnees_doc['num_reference'] = st.text_input(
+                    "Référence séquentielle", 
+                    value=ref_auto,
+                    help="Auto-incrémentée selon l'historique d'envoi"
+                )    
+                try:
+                    donnees_doc['num_reference_pur'] = int(str(donnees_doc['num_reference']).split('/')[0])
+                except ValueError:
+                    donnees_doc['num_reference_pur'] = prochaine_ref_num
+                donnees_doc['annee_reference'] = annee_courante
+            with col_date:
+                donnees_doc['date_creation'] = st.date_input("Date d'édition", datetime.now())
+            with col_exp:
+                donnees_doc['expediteur_qualite'] = st.selectbox(
+                    "Qualité de l'expéditeur :", 
+                    OPTIONS_EXPEDITEURS,
+                    index=0
+                )
+            
+            st.markdown("##### Destinataire officiel")
+            choix_dest = st.selectbox(
+                "Sélectionnez le destinataire dans la liste :", 
+                OPTIONS_DESTINATAIRES,
                 index=0
             )
-            
-        st.markdown("##### Destinataire officiel")
-        choix_dest = st.selectbox(
-            "Sélectionnez le destinataire dans la liste :", 
-            OPTIONS_DESTINATAIRES,
-            index=0
-        )
         
-        if choix_dest == "Autres":
-            donnees_doc['destinataire'] = st.text_input("Veuillez saisir la destination personnalisée :", value="")
-        else:
-            donnees_doc['destinataire'] = choix_dest
-            
-        st.markdown("---")
-        st.write("**Configuration du Tableau de Transmission**")
-        
-        df_initial = pd.DataFrame([
-            {"Désignation des pièces": "Fiches de vœux du second semestre", "Nbre": 12, "Observations": "Pour examen"},
-            {"Désignation des pièces": "Procès-verbal de délibération", "Nbre": 2, "Observations": "Pour affichage"}
-        ])
-        
-        df_edite = st.data_editor(
-            df_initial, 
-            num_rows="dynamic", 
-            use_container_width=True,
-            column_config={
-                "Désignation des pièces": st.column_config.TextColumn(width="medium", required=True),
-                "Nbre": st.column_config.NumberColumn(width="small", min_value=1, required=True),
-                "Observations": st.column_config.TextColumn(width="medium")
-            }
-        )
-        donnees_doc['liste_pieces'] = df_edite.to_dict(orient="records")
-            
-    else:
-        with st.form("form_autres"):
-            donnees_doc['date_creation'] = st.date_input("Date", datetime.now())
-            donnees_doc['contenu'] = st.text_area("Contenu textuel")
-            st.form_submit_button("Valider")
-
-    if doc_choisi == "Bordereau d'envoi":
-        if st.button("Compiler et Générer le Bordereau Officiel"):
-            if not donnees_doc['destinataire'].strip():
-                st.error("Erreur : Le champ de destination personnalisée ne peut pas être vide.")
+            if choix_dest == "Autres":
+                donnees_doc['destinataire'] = st.text_input("Veuillez saisir la destination personnalisée :", value="")
             else:
-                try:
-                    document_final = générer_bordereau_iso(dept_choisi, donnees_doc)
-                    
-                    output_stream = io.BytesIO()
-                    document_final.save(output_stream)
-                    output_stream.seek(0)
-                    
-                    user_email = user.get('email', 'inconnu') if user else 'inconnu'
-                    enregistrer_historique_bordereau(donnees_doc, dept_choisi, user_email)
-                    
-                    st.success(f"✓ Bordereau {donnees_doc['num_reference']} généré et enregistré.")
-                    
-                    nom_fichier_export = f"Bordereau_{dept_choisi.replace(' ', '_')}.docx"
-                    st.download_button(
-                        label="⬇️ Télécharger le document (.docx)",
-                        data=output_stream,
-                        file_name=nom_fichier_export,
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
-                except Exception as error:
-                    st.error(f"Échec de l'opération de génération : {str(error)}")
+                donnees_doc['destinataire'] = choix_dest
+            
+            st.markdown("---")
+            st.write("**Configuration du Tableau de Transmission**")
+        
+            df_initial = pd.DataFrame([
+                {"Désignation des pièces": "Fiches de vœux du second semestre", "Nbre": 12, "Observations": "Pour examen"},
+                {"Désignation des pièces": "Procès-verbal de délibération", "Nbre": 2, "Observations": "Pour affichage"}
+            ])
+        
+            df_edite = st.data_editor(
+                df_initial, 
+                num_rows="dynamic", 
+                use_container_width=True,
+                column_config={
+                    "Désignation des pièces": st.column_config.TextColumn(width="medium", required=True),
+                    "Nbre": st.column_config.NumberColumn(width="small", min_value=1, required=True),
+                    "Observations": st.column_config.TextColumn(width="medium")
+                }
+            )
+            donnees_doc['liste_pieces'] = df_edite.to_dict(orient="records")
+            
+        else:
+            with st.form("form_autres"):
+                donnees_doc['date_creation'] = st.date_input("Date", datetime.now())
+                donnees_doc['contenu'] = st.text_area("Contenu textuel")
+                st.form_submit_button("Valider")
 
-    st.divider()
+        if doc_choisi == "Bordereau d'envoi":
+            if st.button("Compiler et Générer le Bordereau Officiel"):
+                if not donnees_doc['destinataire'].strip():
+                    st.error("Erreur : Le champ de destination personnalisée ne peut pas être vide.")
+                else:
+                    try:
+                        document_final = générer_bordereau_iso(dept_choisi, donnees_doc)
+                    
+                        output_stream = io.BytesIO()
+                        document_final.save(output_stream)
+                        output_stream.seek(0)
+                    
+                        user_email = user.get('email', 'inconnu') if user else 'inconnu'
+                        enregistrer_historique_bordereau(donnees_doc, dept_choisi, user_email)
+                    
+                        st.success(f"✓ Bordereau {donnees_doc['num_reference']} généré et enregistré.")
+                    
+                        nom_fichier_export = f"Bordereau_{dept_choisi.replace(' ', '_')}.docx"
+                        st.download_button(
+                            label="⬇️ Télécharger le document (.docx)",
+                            data=output_stream,
+                            file_name=nom_fichier_export,
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
+                    except Exception as error:
+                        st.error(f"Échec de l'opération de génération : {str(error)}")
 
-    with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
-        afficher_historique_bordereaux()
-# =============================================================================
-# =============================================================================
+        st.divider()
+
+        with st.expander("📜 Historique détaillé des bordereaux générés", expanded=False):
+            afficher_historique_bordereaux()
+    elif portail == "🎓 Répertoire Étudiants":
+        pass  # Le répertoire complet est affiché plus bas, dans sa section dédiée.
+    elif portail == "🧠 EDT par groupe":
+        pass  # Le module EDT intelligent est affiché plus bas, uniquement sur cette page.
+    elif portail == "🎓 Consulter EDT Toutes Promotions":
+        afficher_edt_toutes_promotions(df, user.get("nom_officiel") if not is_admin else None)
+
+
 # POINT D'ENTRÉE PRINCIPAL UNIQUE
 # =============================================================================
-from module_edt_intelligent import run_edt_intelligent
 import streamlit as st
 import pandas as pd
 import io
@@ -29597,373 +32249,376 @@ def run_edt_intelligent():
                 if not df_filtre.empty:
                     st.write("Horaires trouvés :", df_filtre["Horaire"].unique().tolist())
 # =============================================================================
-# RÉPERTOIRE DES MATIÈRES — AFFICHEURS NUMÉRIQUES & MATIÈRES COMMUNES
-# =============================================================================
-
-st.divider()
-st.markdown("""
-    <div style="background: linear-gradient(135deg, #312e81 0%, #6366f1 100%); 
-                padding: 18px; border-radius: 14px; color: white; margin-bottom: 18px;
-                box-shadow: 0 8px 24px rgba(99,102,241,0.25);">
-        <h3 style="margin:0; font-size: 20px;">📚 Répertoire des Matières</h3>
-        <p style="margin:8px 0 0 0; opacity:0.85; font-size:13px;">
-            Sélectionnez une matière pour voir les détails · Matières communes entre promotions
-        </p>
-    </div>
-""", unsafe_allow_html=True)
-
-# ── Chargement des données EDT ──
-_base = Path(__file__).parent.resolve()
-_fichier_edt = str(_base / "dataEDT-ELT-S1-2027.xlsx")
-
-df_matieres_src = pd.DataFrame()
-if os.path.exists(_fichier_edt):
-    try:
-        df_matieres_src = pd.read_excel(_fichier_edt)
-        df_matieres_src.columns = df_matieres_src.columns.str.strip()
-        for col in ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']:
-            if col in df_matieres_src.columns:
-                df_matieres_src[col] = df_matieres_src[col].fillna("Non défini").astype(str).str.strip()
-    except Exception as e:
-        st.error(f"❌ Erreur chargement EDT pour répertoire : {e}")
-
-if not df_matieres_src.empty:
-
-    # ═══════════════════════════════════════════════════════════════
-    # SECTION 1 : SÉLECTION D'UNE MATIÈRE + AFFICHEURS NUMÉRIQUES
-    # ═══════════════════════════════════════════════════════════════
-
-    # Liste des matières uniques (hors "Non défini")
-    matieres_uniques = sorted([
-        m for m in df_matieres_src["Enseignements"].unique()
-        if m and str(m).strip().lower() not in ["", "nan", "none", "non défini", "non defini"]
-    ])
-
-    st.markdown("### 🔍 Sélection d'une matière")
-
-    col_sel, col_info = st.columns([2, 3])
-    with col_sel:
-        matiere_choisie = st.selectbox(
-            "📖 Choisir une matière :",
-            options=["— Sélectionner —"] + matieres_uniques,
-            key="repertoire_matiere_sel"
-        )
-
-    if matiere_choisie and matiere_choisie != "— Sélectionner —":
-        # Filtrage pour la matière sélectionnée
-        df_mat = df_matieres_src[df_matieres_src["Enseignements"] == matiere_choisie].copy()
-
-        # Calculs statistiques
-        nb_seances = len(df_mat)
-        promotions_concernees = [p for p in df_mat["Promotion"].unique() if p.lower() not in ["non défini", "non defini"]]
-        nb_promotions = len(promotions_concernees)
-        enseignants_concernes = [e for e in df_mat["Enseignants"].unique() if e.lower() not in ["non défini", "non defini"]]
-        nb_enseignants = len(enseignants_concernes)
-
-        # Types (Cours / TD / TP)
-        nb_cours = len(df_mat[df_mat["Code"].str.contains("COURS", case=False, na=False)])
-        nb_td = len(df_mat[df_mat["Code"].str.contains("TD", case=False, na=False)])
-        nb_tp = len(df_mat[~df_mat["Code"].str.contains("COURS|TD", case=False, na=False)])
-
-        # Lieux uniques
-        lieux = [l for l in df_mat["Lieu"].unique() if l.lower() not in ["non défini", "non defini"]]
-        nb_lieux = len(lieux)
-
-        # Jours utilisés
-        jours_utilises = [j for j in df_mat["Jours"].unique() if j.lower() not in ["non défini", "non defini"]]
-        nb_jours = len(jours_utilises)
-
-        # ── AFFICHEURS NUMÉRIQUES ──
-        st.markdown(f"#### 📊 Statistiques : **{matiere_choisie}**")
-
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-
-        with c1:
-            st.markdown(f"""
-                <div style="background:#312e8115;border:2px solid #6366f1;border-radius:12px;padding:14px;text-align:center;">
-                    <div style="font-size:28px;font-weight:800;color:#4f46e5;">{nb_seances}</div>
-                    <div style="font-size:11px;color:#64748b;font-weight:600;">📅 Séances</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c2:
-            st.markdown(f"""
-                <div style="background:#1e40af15;border:2px solid #3b82f6;border-radius:12px;padding:14px;text-align:center;">
-                    <div style="font-size:28px;font-weight:800;color:#1e40af;">{nb_cours}</div>
-                    <div style="font-size:11px;color:#64748b;font-weight:600;">📘 Cours</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c3:
-            st.markdown(f"""
-                <div style="background:#16653415;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;">
-                    <div style="font-size:28px;font-weight:800;color:#166534;">{nb_td}</div>
-                    <div style="font-size:11px;color:#64748b;font-weight:600;">📗 TD</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c4:
-            st.markdown(f"""
-                <div style="background:#991b1b15;border:2px solid #ef4444;border-radius:12px;padding:14px;text-align:center;">
-                    <div style="font-size:28px;font-weight:800;color:#991b1b;">{nb_tp}</div>
-                    <div style="font-size:11px;color:#64748b;font-weight:600;">🔴 TP</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c5:
-            st.markdown(f"""
-                <div style="background:#b4530915;border:2px solid #f59e0b;border-radius:12px;padding:14px;text-align:center;">
-                    <div style="font-size:28px;font-weight:800;color:#b45309;">{nb_promotions}</div>
-                    <div style="font-size:11px;color:#64748b;font-weight:600;">🎓 Promotions</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c6:
-            st.markdown(f"""
-                <div style="background:#0f766e15;border:2px solid #14b8a6;border-radius:12px;padding:14px;text-align:center;">
-                    <div style="font-size:28px;font-weight:800;color:#0f766e;">{nb_enseignants}</div>
-                    <div style="font-size:11px;color:#64748b;font-weight:600;">👤 Enseignants</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        # ── Détails ──
-        st.markdown("<br>", unsafe_allow_html=True)
-        col_d1, col_d2 = st.columns(2)
-
-        with col_d1:
-            st.markdown("**🎓 Promotions concernées :**")
-            for p in sorted(promotions_concernees):
-                nb_s = len(df_mat[df_mat["Promotion"] == p])
-                st.markdown(f"<span style='background:#ede9fe;color:#5b21b6;padding:3px 10px;border-radius:12px;margin:2px;display:inline-block;font-size:12px;font-weight:600;'>{p} ({nb_s} séances)</span>", unsafe_allow_html=True)
-
-        with col_d2:
-            st.markdown("**👤 Enseignants chargés :**")
-            for e in sorted(enseignants_concernes):
-                st.markdown(f"<span style='background:#dbeafe;color:#1e40af;padding:3px 10px;border-radius:12px;margin:2px;display:inline-block;font-size:12px;font-weight:600;'>{e}</span>", unsafe_allow_html=True)
-
-        # ── Tableau récapitulatif ──
-        with st.expander("📋 Détail des séances", expanded=False):
-            df_detail = df_mat[["Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion"]].copy()
-            st.dataframe(df_detail, use_container_width=True, hide_index=True)
-
-    # ═══════════════════════════════════════════════════════════════
-    # SECTION 2 : TOUTES LES MATIÈRES AVEC AFFICHEURS
-    # ═══════════════════════════════════════════════════════════════
-
-    st.divider()
-    st.markdown("### 📊 Vue d'ensemble — Toutes les matières")
-
-    # Construction du récap de toutes les matières
-    data_all_matieres = []
-    for mat in matieres_uniques:
-        df_m = df_matieres_src[df_matieres_src["Enseignements"] == mat]
-        promos = [p for p in df_m["Promotion"].unique() if p.lower() not in ["non défini", "non defini"]]
-        ens_list = [e for e in df_m["Enseignants"].unique() if e.lower() not in ["non défini", "non defini"]]
-        n_cours = len(df_m[df_m["Code"].str.contains("COURS", case=False, na=False)])
-        n_td = len(df_m[df_m["Code"].str.contains("TD", case=False, na=False)])
-        n_tp = len(df_m[~df_m["Code"].str.contains("COURS|TD", case=False, na=False)])
-        data_all_matieres.append({
-            "Matière": mat,
-            "📘 Cours": n_cours,
-            "📗 TD": n_td,
-            "🔴 TP": n_tp,
-            "Total séances": len(df_m),
-            "Nb Promotions": len(promos),
-            "Promotions": ", ".join(sorted(promos)),
-            "Enseignants": ", ".join(sorted(ens_list))
-        })
-
-    df_all_mat = pd.DataFrame(data_all_matieres).sort_values(by="Total séances", ascending=False)
-    st.dataframe(df_all_mat, use_container_width=True, hide_index=True)
-
-    # Export
-    buf_mat_rep = io.BytesIO()
-    with pd.ExcelWriter(buf_mat_rep, engine='xlsxwriter') as writer:
-        df_all_mat.to_excel(writer, index=False, sheet_name='Repertoire_Matieres')
-    st.download_button(
-        "📥 Exporter le répertoire matières (Excel)",
-        data=buf_mat_rep.getvalue(),
-        file_name=f"Repertoire_Matieres_ELT_{datetime.now().strftime('%Y%m%d')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-        key="dl_repertoire_matieres"
-    )
-
-    # ═══════════════════════════════════════════════════════════════
-    # SECTION 3 : MATIÈRES COMMUNES ENTRE PROMOTIONS
-    # ═══════════════════════════════════════════════════════════════
+if portail == "📚 Répertoire des Matières":
+    # RÉPERTOIRE DES MATIÈRES — AFFICHEURS NUMÉRIQUES & MATIÈRES COMMUNES
+    # =============================================================================
 
     st.divider()
     st.markdown("""
-        <div style="background: linear-gradient(135deg, #7c2d12 0%, #ea580c 100%); 
-                    padding: 16px; border-radius: 14px; color: white; margin-bottom: 18px;">
-            <h3 style="margin:0; font-size: 18px;">🔗 Matières communes entre Promotions</h3>
-            <p style="margin:6px 0 0 0; opacity:0.85; font-size:12px;">
-                Identifie les matières partagées par plusieurs promotions (enseignement mutualisé)
+        <div style="background: linear-gradient(135deg, #312e81 0%, #6366f1 100%); 
+                    padding: 18px; border-radius: 14px; color: white; margin-bottom: 18px;
+                    box-shadow: 0 8px 24px rgba(99,102,241,0.25);">
+            <h3 style="margin:0; font-size: 20px;">📚 Répertoire des Matières</h3>
+            <p style="margin:8px 0 0 0; opacity:0.85; font-size:13px;">
+                Sélectionnez une matière pour voir les détails · Matières communes entre promotions
             </p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Calculer les matières communes (présentes dans 2+ promotions)
-    matieres_par_promo = {}
-    toutes_promos_edt = sorted([
-        p for p in df_matieres_src["Promotion"].unique()
-        if p and str(p).strip().lower() not in ["", "nan", "none", "non défini", "non defini"]
-    ])
+    # ── Chargement des données EDT ──
+    _base = Path(__file__).parent.resolve()
+    _fichier_edt = str(_base / "dataEDT-ELT-S1-2027.xlsx")
 
-    for promo in toutes_promos_edt:
-        df_promo = df_matieres_src[df_matieres_src["Promotion"] == promo]
-        mats = set([m for m in df_promo["Enseignements"].unique()
-                    if m.lower() not in ["non défini", "non defini"]])
-        matieres_par_promo[promo] = mats
+    df_matieres_src = pd.DataFrame()
+    if os.path.exists(_fichier_edt):
+        try:
+            df_matieres_src = pd.read_excel(_fichier_edt)
+            df_matieres_src.columns = df_matieres_src.columns.str.strip()
+            for col in ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']:
+                if col in df_matieres_src.columns:
+                    df_matieres_src[col] = df_matieres_src[col].fillna("Non défini").astype(str).str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur chargement EDT pour répertoire : {e}")
 
-    # Trouver les matières présentes dans plusieurs promotions
-    from collections import defaultdict
-    matiere_to_promos = defaultdict(set)
-    for promo, mats in matieres_par_promo.items():
-        for m in mats:
-            matiere_to_promos[m].add(promo)
+    if not df_matieres_src.empty:
 
-    matieres_communes = {m: promos for m, promos in matiere_to_promos.items() if len(promos) >= 2}
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 1 : SÉLECTION D'UNE MATIÈRE + AFFICHEURS NUMÉRIQUES
+        # ═══════════════════════════════════════════════════════════════
 
-    if matieres_communes:
-        # Afficheur du nombre de matières communes
-        nb_communes = len(matieres_communes)
-        st.markdown(f"""
-            <div style="display:flex;gap:15px;margin-bottom:20px;flex-wrap:wrap;">
-                <div style="background:#7c2d1215;border:2px solid #ea580c;border-radius:12px;padding:16px 24px;text-align:center;">
-                    <div style="font-size:32px;font-weight:800;color:#ea580c;">{nb_communes}</div>
-                    <div style="font-size:12px;color:#64748b;font-weight:600;">🔗 Matières communes</div>
-                </div>
-                <div style="background:#0f766e15;border:2px solid #14b8a6;border-radius:12px;padding:16px 24px;text-align:center;">
-                    <div style="font-size:32px;font-weight:800;color:#0f766e;">{len(toutes_promos_edt)}</div>
-                    <div style="font-size:12px;color:#64748b;font-weight:600;">🎓 Promotions totales</div>
-                </div>
-                <div style="background:#4f46e515;border:2px solid #6366f1;border-radius:12px;padding:16px 24px;text-align:center;">
-                    <div style="font-size:32px;font-weight:800;color:#4f46e5;">{len(matieres_uniques)}</div>
-                    <div style="font-size:12px;color:#64748b;font-weight:600;">📚 Matières uniques</div>
-                </div>
+        # Liste des matières uniques (hors "Non défini")
+        matieres_uniques = sorted([
+            m for m in df_matieres_src["Enseignements"].unique()
+            if m and str(m).strip().lower() not in ["", "nan", "none", "non défini", "non defini"]
+        ])
+
+        st.markdown("### 🔍 Sélection d'une matière")
+
+        col_sel, col_info = st.columns([2, 3])
+        with col_sel:
+            matiere_choisie = st.selectbox(
+                "📖 Choisir une matière :",
+                options=["— Sélectionner —"] + matieres_uniques,
+                key="repertoire_matiere_sel"
+            )
+
+        if matiere_choisie and matiere_choisie != "— Sélectionner —":
+            # Filtrage pour la matière sélectionnée
+            df_mat = df_matieres_src[df_matieres_src["Enseignements"] == matiere_choisie].copy()
+
+            # Calculs statistiques
+            nb_seances = len(df_mat)
+            promotions_concernees = [p for p in df_mat["Promotion"].unique() if p.lower() not in ["non défini", "non defini"]]
+            nb_promotions = len(promotions_concernees)
+            enseignants_concernes = [e for e in df_mat["Enseignants"].unique() if e.lower() not in ["non défini", "non defini"]]
+            nb_enseignants = len(enseignants_concernes)
+
+            # Types (Cours / TD / TP)
+            nb_cours = len(df_mat[df_mat["Code"].str.contains("COURS", case=False, na=False)])
+            nb_td = len(df_mat[df_mat["Code"].str.contains("TD", case=False, na=False)])
+            nb_tp = len(df_mat[~df_mat["Code"].str.contains("COURS|TD", case=False, na=False)])
+
+            # Lieux uniques
+            lieux = [l for l in df_mat["Lieu"].unique() if l.lower() not in ["non défini", "non defini"]]
+            nb_lieux = len(lieux)
+
+            # Jours utilisés
+            jours_utilises = [j for j in df_mat["Jours"].unique() if j.lower() not in ["non défini", "non defini"]]
+            nb_jours = len(jours_utilises)
+
+            # ── AFFICHEURS NUMÉRIQUES ──
+            st.markdown(f"#### 📊 Statistiques : **{matiere_choisie}**")
+
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
+
+            with c1:
+                st.markdown(f"""
+                    <div style="background:#312e8115;border:2px solid #6366f1;border-radius:12px;padding:14px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#4f46e5;">{nb_seances}</div>
+                        <div style="font-size:11px;color:#64748b;font-weight:600;">📅 Séances</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with c2:
+                st.markdown(f"""
+                    <div style="background:#1e40af15;border:2px solid #3b82f6;border-radius:12px;padding:14px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#1e40af;">{nb_cours}</div>
+                        <div style="font-size:11px;color:#64748b;font-weight:600;">📘 Cours</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with c3:
+                st.markdown(f"""
+                    <div style="background:#16653415;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#166534;">{nb_td}</div>
+                        <div style="font-size:11px;color:#64748b;font-weight:600;">📗 TD</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with c4:
+                st.markdown(f"""
+                    <div style="background:#991b1b15;border:2px solid #ef4444;border-radius:12px;padding:14px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#991b1b;">{nb_tp}</div>
+                        <div style="font-size:11px;color:#64748b;font-weight:600;">🔴 TP</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with c5:
+                st.markdown(f"""
+                    <div style="background:#b4530915;border:2px solid #f59e0b;border-radius:12px;padding:14px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#b45309;">{nb_promotions}</div>
+                        <div style="font-size:11px;color:#64748b;font-weight:600;">🎓 Promotions</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with c6:
+                st.markdown(f"""
+                    <div style="background:#0f766e15;border:2px solid #14b8a6;border-radius:12px;padding:14px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#0f766e;">{nb_enseignants}</div>
+                        <div style="font-size:11px;color:#64748b;font-weight:600;">👤 Enseignants</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            # ── Détails ──
+            st.markdown("<br>", unsafe_allow_html=True)
+            col_d1, col_d2 = st.columns(2)
+
+            with col_d1:
+                st.markdown("**🎓 Promotions concernées :**")
+                for p in sorted(promotions_concernees):
+                    nb_s = len(df_mat[df_mat["Promotion"] == p])
+                    st.markdown(f"<span style='background:#ede9fe;color:#5b21b6;padding:3px 10px;border-radius:12px;margin:2px;display:inline-block;font-size:12px;font-weight:600;'>{p} ({nb_s} séances)</span>", unsafe_allow_html=True)
+
+            with col_d2:
+                st.markdown("**👤 Enseignants chargés :**")
+                for e in sorted(enseignants_concernes):
+                    st.markdown(f"<span style='background:#dbeafe;color:#1e40af;padding:3px 10px;border-radius:12px;margin:2px;display:inline-block;font-size:12px;font-weight:600;'>{e}</span>", unsafe_allow_html=True)
+
+            # ── Tableau récapitulatif ──
+            with st.expander("📋 Détail des séances", expanded=False):
+                df_detail = df_mat[["Enseignements", "Code", "Enseignants", "Horaire", "Jours", "Lieu", "Promotion"]].copy()
+                st.dataframe(df_detail, use_container_width=True, hide_index=True)
+
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 2 : TOUTES LES MATIÈRES AVEC AFFICHEURS
+        # ═══════════════════════════════════════════════════════════════
+
+        st.divider()
+        st.markdown("### 📊 Vue d'ensemble — Toutes les matières")
+
+        # Construction du récap de toutes les matières
+        data_all_matieres = []
+        for mat in matieres_uniques:
+            df_m = df_matieres_src[df_matieres_src["Enseignements"] == mat]
+            promos = [p for p in df_m["Promotion"].unique() if p.lower() not in ["non défini", "non defini"]]
+            ens_list = [e for e in df_m["Enseignants"].unique() if e.lower() not in ["non défini", "non defini"]]
+            n_cours = len(df_m[df_m["Code"].str.contains("COURS", case=False, na=False)])
+            n_td = len(df_m[df_m["Code"].str.contains("TD", case=False, na=False)])
+            n_tp = len(df_m[~df_m["Code"].str.contains("COURS|TD", case=False, na=False)])
+            data_all_matieres.append({
+                "Matière": mat,
+                "📘 Cours": n_cours,
+                "📗 TD": n_td,
+                "🔴 TP": n_tp,
+                "Total séances": len(df_m),
+                "Nb Promotions": len(promos),
+                "Promotions": ", ".join(sorted(promos)),
+                "Enseignants": ", ".join(sorted(ens_list))
+            })
+
+        df_all_mat = pd.DataFrame(data_all_matieres).sort_values(by="Total séances", ascending=False)
+        st.dataframe(df_all_mat, use_container_width=True, hide_index=True)
+
+        # Export
+        buf_mat_rep = io.BytesIO()
+        with pd.ExcelWriter(buf_mat_rep, engine='xlsxwriter') as writer:
+            df_all_mat.to_excel(writer, index=False, sheet_name='Repertoire_Matieres')
+        st.download_button(
+            "📥 Exporter le répertoire matières (Excel)",
+            data=buf_mat_rep.getvalue(),
+            file_name=f"Repertoire_Matieres_ELT_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="dl_repertoire_matieres"
+        )
+
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 3 : MATIÈRES COMMUNES ENTRE PROMOTIONS
+        # ═══════════════════════════════════════════════════════════════
+
+        st.divider()
+        st.markdown("""
+            <div style="background: linear-gradient(135deg, #7c2d12 0%, #ea580c 100%); 
+                        padding: 16px; border-radius: 14px; color: white; margin-bottom: 18px;">
+                <h3 style="margin:0; font-size: 18px;">🔗 Matières communes entre Promotions</h3>
+                <p style="margin:6px 0 0 0; opacity:0.85; font-size:12px;">
+                    Identifie les matières partagées par plusieurs promotions (enseignement mutualisé)
+                </p>
             </div>
         """, unsafe_allow_html=True)
 
-        # Tableau des matières communes trié par nombre de promotions
-        data_communes = []
-        for mat, promos in sorted(matieres_communes.items(), key=lambda x: len(x[1]), reverse=True):
-            data_communes.append({
-                "Matière": mat,
-                "Nb Promotions": len(promos),
-                "Promotions concernées": " | ".join(sorted(promos)),
-                "Type": "Mutualisée" if len(promos) >= 3 else "Partagée"
-            })
+        # Calculer les matières communes (présentes dans 2+ promotions)
+        matieres_par_promo = {}
+        toutes_promos_edt = sorted([
+            p for p in df_matieres_src["Promotion"].unique()
+            if p and str(p).strip().lower() not in ["", "nan", "none", "non défini", "non defini"]
+        ])
 
-        df_communes = pd.DataFrame(data_communes)
-        st.dataframe(df_communes, use_container_width=True, hide_index=True)
+        for promo in toutes_promos_edt:
+            df_promo = df_matieres_src[df_matieres_src["Promotion"] == promo]
+            mats = set([m for m in df_promo["Enseignements"].unique()
+                        if m.lower() not in ["non défini", "non defini"]])
+            matieres_par_promo[promo] = mats
 
-        # ── Analyse croisée : sélection de 2 promotions pour comparaison ──
-        st.markdown("#### 🔄 Comparaison entre deux promotions")
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            promo_a = st.selectbox("Promotion A :", toutes_promos_edt, index=0, key="promo_compare_a")
-        with col_p2:
-            promo_b = st.selectbox("Promotion B :", toutes_promos_edt,
-                                   index=min(1, len(toutes_promos_edt)-1), key="promo_compare_b")
+        # Trouver les matières présentes dans plusieurs promotions
+        from collections import defaultdict
+        matiere_to_promos = defaultdict(set)
+        for promo, mats in matieres_par_promo.items():
+            for m in mats:
+                matiere_to_promos[m].add(promo)
 
-        if promo_a != promo_b:
-            mats_a = matieres_par_promo.get(promo_a, set())
-            mats_b = matieres_par_promo.get(promo_b, set())
-            communes_ab = mats_a & mats_b
-            exclusives_a = mats_a - mats_b
-            exclusives_b = mats_b - mats_a
+        matieres_communes = {m: promos for m, promos in matiere_to_promos.items() if len(promos) >= 2}
 
-            # Afficheurs
-            ca, cb, cc = st.columns(3)
-            with ca:
-                st.markdown(f"""
-                    <div style="background:#dcfce7;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;">
-                        <div style="font-size:28px;font-weight:800;color:#166534;">{len(communes_ab)}</div>
-                        <div style="font-size:11px;color:#64748b;font-weight:600;">🔗 Communes</div>
+        if matieres_communes:
+            # Afficheur du nombre de matières communes
+            nb_communes = len(matieres_communes)
+            st.markdown(f"""
+                <div style="display:flex;gap:15px;margin-bottom:20px;flex-wrap:wrap;">
+                    <div style="background:#7c2d1215;border:2px solid #ea580c;border-radius:12px;padding:16px 24px;text-align:center;">
+                        <div style="font-size:32px;font-weight:800;color:#ea580c;">{nb_communes}</div>
+                        <div style="font-size:12px;color:#64748b;font-weight:600;">🔗 Matières communes</div>
                     </div>
-                """, unsafe_allow_html=True)
-            with cb:
-                st.markdown(f"""
-                    <div style="background:#dbeafe;border:2px solid #3b82f6;border-radius:12px;padding:14px;text-align:center;">
-                        <div style="font-size:28px;font-weight:800;color:#1e40af;">{len(exclusives_a)}</div>
-                        <div style="font-size:11px;color:#64748b;font-weight:600;">🔵 Exclusives {promo_a}</div>
+                    <div style="background:#0f766e15;border:2px solid #14b8a6;border-radius:12px;padding:16px 24px;text-align:center;">
+                        <div style="font-size:32px;font-weight:800;color:#0f766e;">{len(toutes_promos_edt)}</div>
+                        <div style="font-size:12px;color:#64748b;font-weight:600;">🎓 Promotions totales</div>
                     </div>
-                """, unsafe_allow_html=True)
-            with cc:
-                st.markdown(f"""
-                    <div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:12px;padding:14px;text-align:center;">
-                        <div style="font-size:28px;font-weight:800;color:#b45309;">{len(exclusives_b)}</div>
-                        <div style="font-size:11px;color:#64748b;font-weight:600;">🟡 Exclusives {promo_b}</div>
+                    <div style="background:#4f46e515;border:2px solid #6366f1;border-radius:12px;padding:16px 24px;text-align:center;">
+                        <div style="font-size:32px;font-weight:800;color:#4f46e5;">{len(matieres_uniques)}</div>
+                        <div style="font-size:12px;color:#64748b;font-weight:600;">📚 Matières uniques</div>
                     </div>
-                """, unsafe_allow_html=True)
+                </div>
+            """, unsafe_allow_html=True)
 
-            # Détails
-            if communes_ab:
-                st.success(f"**Matières communes ({promo_a} ∩ {promo_b}) :**")
-                for m in sorted(communes_ab):
-                    st.markdown(f"<span style='background:#dcfce7;color:#166534;padding:4px 12px;border-radius:12px;margin:3px;display:inline-block;font-size:12px;font-weight:600;'>🔗 {m}</span>", unsafe_allow_html=True)
+            # Tableau des matières communes trié par nombre de promotions
+            data_communes = []
+            for mat, promos in sorted(matieres_communes.items(), key=lambda x: len(x[1]), reverse=True):
+                data_communes.append({
+                    "Matière": mat,
+                    "Nb Promotions": len(promos),
+                    "Promotions concernées": " | ".join(sorted(promos)),
+                    "Type": "Mutualisée" if len(promos) >= 3 else "Partagée"
+                })
+
+            df_communes = pd.DataFrame(data_communes)
+            st.dataframe(df_communes, use_container_width=True, hide_index=True)
+
+            # ── Analyse croisée : sélection de 2 promotions pour comparaison ──
+            st.markdown("#### 🔄 Comparaison entre deux promotions")
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+                promo_a = st.selectbox("Promotion A :", toutes_promos_edt, index=0, key="promo_compare_a")
+            with col_p2:
+                promo_b = st.selectbox("Promotion B :", toutes_promos_edt,
+                                       index=min(1, len(toutes_promos_edt)-1), key="promo_compare_b")
+
+            if promo_a != promo_b:
+                mats_a = matieres_par_promo.get(promo_a, set())
+                mats_b = matieres_par_promo.get(promo_b, set())
+                communes_ab = mats_a & mats_b
+                exclusives_a = mats_a - mats_b
+                exclusives_b = mats_b - mats_a
+
+                # Afficheurs
+                ca, cb, cc = st.columns(3)
+                with ca:
+                    st.markdown(f"""
+                        <div style="background:#dcfce7;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;">
+                            <div style="font-size:28px;font-weight:800;color:#166534;">{len(communes_ab)}</div>
+                            <div style="font-size:11px;color:#64748b;font-weight:600;">🔗 Communes</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with cb:
+                    st.markdown(f"""
+                        <div style="background:#dbeafe;border:2px solid #3b82f6;border-radius:12px;padding:14px;text-align:center;">
+                            <div style="font-size:28px;font-weight:800;color:#1e40af;">{len(exclusives_a)}</div>
+                            <div style="font-size:11px;color:#64748b;font-weight:600;">🔵 Exclusives {promo_a}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with cc:
+                    st.markdown(f"""
+                        <div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:12px;padding:14px;text-align:center;">
+                            <div style="font-size:28px;font-weight:800;color:#b45309;">{len(exclusives_b)}</div>
+                            <div style="font-size:11px;color:#64748b;font-weight:600;">🟡 Exclusives {promo_b}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                # Détails
+                if communes_ab:
+                    st.success(f"**Matières communes ({promo_a} ∩ {promo_b}) :**")
+                    for m in sorted(communes_ab):
+                        st.markdown(f"<span style='background:#dcfce7;color:#166534;padding:4px 12px;border-radius:12px;margin:3px;display:inline-block;font-size:12px;font-weight:600;'>🔗 {m}</span>", unsafe_allow_html=True)
+                else:
+                    st.info(f"Aucune matière commune entre {promo_a} et {promo_b}.")
+
+                with st.expander(f"📋 Matières exclusives à {promo_a}"):
+                    for m in sorted(exclusives_a):
+                        st.markdown(f"• {m}")
+
+                with st.expander(f"📋 Matières exclusives à {promo_b}"):
+                    for m in sorted(exclusives_b):
+                        st.markdown(f"• {m}")
             else:
-                st.info(f"Aucune matière commune entre {promo_a} et {promo_b}.")
+                st.warning("⚠️ Veuillez sélectionner deux promotions différentes pour la comparaison.")
 
-            with st.expander(f"📋 Matières exclusives à {promo_a}"):
-                for m in sorted(exclusives_a):
-                    st.markdown(f"• {m}")
-
-            with st.expander(f"📋 Matières exclusives à {promo_b}"):
-                for m in sorted(exclusives_b):
-                    st.markdown(f"• {m}")
+            # Export des matières communes
+            buf_comm = io.BytesIO()
+            with pd.ExcelWriter(buf_comm, engine='xlsxwriter') as writer:
+                df_communes.to_excel(writer, index=False, sheet_name='Matieres_Communes')
+            st.download_button(
+                "📥 Exporter les matières communes (Excel)",
+                data=buf_comm.getvalue(),
+                file_name=f"Matieres_Communes_ELT_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="dl_matieres_communes"
+            )
         else:
-            st.warning("⚠️ Veuillez sélectionner deux promotions différentes pour la comparaison.")
+            st.info("ℹ️ Aucune matière commune trouvée entre les promotions.")
 
-        # Export des matières communes
-        buf_comm = io.BytesIO()
-        with pd.ExcelWriter(buf_comm, engine='xlsxwriter') as writer:
-            df_communes.to_excel(writer, index=False, sheet_name='Matieres_Communes')
-        st.download_button(
-            "📥 Exporter les matières communes (Excel)",
-            data=buf_comm.getvalue(),
-            file_name=f"Matieres_Communes_ELT_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-            key="dl_matieres_communes"
-        )
     else:
-        st.info("ℹ️ Aucune matière commune trouvée entre les promotions.")
+        st.warning("⚠️ Données EDT non disponibles pour le répertoire des matières.")
+        st.write("Jours trouvés :", df_filtre["Jours"].unique().tolist())
+    # =============================================================================
+    # EDT PAR GROUPE / SOUS-GROUPE — FONCTIONS UTILITAIRES (affichage + exports)
+    # -----------------------------------------------------------------------------
+    # Ces fonctions reprennent EXACTEMENT la logique de filtrage et de construction
+    # de grille de la vue « EDT Individuel Étudiant », mais pour un couple
+    # (groupe, sous-groupe) donné au lieu d'un étudiant. Elles permettent :
+    #   - d'afficher automatiquement l'EDT d'un groupe + sous-groupe ;
+    #   - de télécharger cet EDT (Excel / HTML / PDF) ;
+    #   - de télécharger TOUS les EDT (un par groupe et sous-groupe) dans UN SEUL
+    #     fichier Excel (une feuille par groupe/sous-groupe), HTML (une section par
+    #     groupe/sous-groupe) ou PDF (une page par groupe/sous-groupe).
+    # =============================================================================
+    import html as _html_grp
+    from xml.sax.saxutils import escape as _xml_escape_grp
 
-else:
-    st.warning("⚠️ Données EDT non disponibles pour le répertoire des matières.")
-    st.write("Jours trouvés :", df_filtre["Jours"].unique().tolist())
-# =============================================================================
-# EDT PAR GROUPE / SOUS-GROUPE — FONCTIONS UTILITAIRES (affichage + exports)
-# -----------------------------------------------------------------------------
-# Ces fonctions reprennent EXACTEMENT la logique de filtrage et de construction
-# de grille de la vue « EDT Individuel Étudiant », mais pour un couple
-# (groupe, sous-groupe) donné au lieu d'un étudiant. Elles permettent :
-#   - d'afficher automatiquement l'EDT d'un groupe + sous-groupe ;
-#   - de télécharger cet EDT (Excel / HTML / PDF) ;
-#   - de télécharger TOUS les EDT (un par groupe et sous-groupe) dans UN SEUL
-#     fichier Excel (une feuille par groupe/sous-groupe), HTML (une section par
-#     groupe/sous-groupe) ou PDF (une page par groupe/sous-groupe).
-# =============================================================================
-import html as _html_grp
-from xml.sax.saxutils import escape as _xml_escape_grp
+    _EDT_GRP_HORAIRES_BASE = [
+        "08h00-09h30", "09h30-11h00", "11h00-12h30",
+        "12h30-14h00", "14h00-15h30", "15h30-17h00"
+    ]
+    _EDT_GRP_HORAIRES_AJOUTES = [
+        "08h00-09h00", "09h00-10h00", "10h00-11h00",
+        "11h00-12h00", "12h00-13h00", "13h00-14h00"
+    ]
+    _EDT_GRP_JOURS_REF = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
+    _EDT_GRP_JOURS_LABELS = {
+        "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
+        "mercredi": "Mercredi", "jeudi": "Jeudi"
+    }
+    _EDT_GRP_TYPES_AFFICHAGE = [
+        "Tous les enseignements",
+        "📘 Cours uniquement",
+        "📗 TD uniquement",
+        "🔴 TP uniquement",
+    ]
 
-_EDT_GRP_HORAIRES_BASE = [
-    "08h00-09h30", "09h30-11h00", "11h00-12h30",
-    "12h30-14h00", "14h00-15h30", "15h30-17h00"
-]
-_EDT_GRP_HORAIRES_AJOUTES = [
-    "08h00-09h00", "09h00-10h00", "10h00-11h00",
-    "11h00-12h00", "12h00-13h00", "13h00-14h00"
-]
-_EDT_GRP_JOURS_REF = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
-_EDT_GRP_JOURS_LABELS = {
-    "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
-    "mercredi": "Mercredi", "jeudi": "Jeudi"
-}
-_EDT_GRP_TYPES_AFFICHAGE = [
-    "Tous les enseignements",
-    "📘 Cours uniquement",
-    "📗 TD uniquement",
-    "🔴 TP uniquement",
-]
+
 
 
 def _edt_grp_norm(x):
@@ -30609,1392 +33264,1403 @@ def _edt_grp_promos_par_departement(df_edt, promos_etu, fonction_mapping, depart
 
 
 # =============================================================================
-# RÉPERTOIRE EDT INDIVIDUEL ÉTUDIANT — PAR GROUPE & SOUS-GROUPE
-# =============================================================================
-
-st.divider()
-st.markdown("""
-    <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); 
-                padding: 18px; border-radius: 14px; color: white; margin-bottom: 18px;
-                box-shadow: 0 8px 24px rgba(37,99,235,0.25);">
-        <h3 style="margin:0; font-size: 20px;">🎓 EDT Individuel Étudiant</h3>
-        <p style="margin:8px 0 0 0; opacity:0.85; font-size:13px;">
-            Sélectionnez un étudiant pour afficher son emploi du temps personnel (filtré par groupe/sous-groupe) — ou choisissez directement un groupe et un sous-groupe plus bas
-        </p>
-    </div>
-""", unsafe_allow_html=True)
-
-# ── Chargement des fichiers sources ──
-_base_rep = Path(__file__).parent.resolve()
-_fichier_edt_rep = str(_base_rep / "dataEDT-ELT-S1-2027.xlsx")
-_fichier_etu_rep = str(_base_rep / "Liste des étudiants_2026-2027.xlsx")
-
-df_edt_rep = pd.DataFrame()
-df_etu_rep_indiv = pd.DataFrame()
-
-if os.path.exists(_fichier_edt_rep):
-    try:
-        df_edt_rep = pd.read_excel(_fichier_edt_rep)
-        df_edt_rep.columns = df_edt_rep.columns.str.strip()
-        for col in ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']:
-            if col in df_edt_rep.columns:
-                df_edt_rep[col] = df_edt_rep[col].fillna("Non défini").astype(str).str.strip()
-    except Exception as e:
-        st.error(f"❌ Erreur chargement EDT : {e}")
-
-if os.path.exists(_fichier_etu_rep):
-    try:
-        df_etu_rep_indiv = lire_excel_robuste(_fichier_etu_rep)
-        df_etu_rep_indiv.columns = df_etu_rep_indiv.columns.str.strip()
-        col_n = next((c for c in df_etu_rep_indiv.columns if c.strip().upper() == "NOM"), None)
-        col_p = next((c for c in df_etu_rep_indiv.columns if c.strip().upper() in ["PRÉNOM", "PRENOM"]), None)
-        if col_n and col_p:
-            df_etu_rep_indiv["Nom_Complet"] = (
-                df_etu_rep_indiv[col_n].astype(str).str.strip().str.upper() + " " +
-                df_etu_rep_indiv[col_p].astype(str).str.strip().str.title()
-            )
-    except Exception as e:
-        st.error(f"❌ Erreur chargement étudiants : {e}")
-
-if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
-
-    # ── Détection des colonnes étudiants ──
-    cols_etu_map = detecter_colonnes_etudiant(df_etu_rep_indiv)
-
-    # ── Sélection de la promotion puis de l'étudiant ──
-    col_promo_etu = cols_etu_map.get('promotion', 'Promotion')
-    
-    if col_promo_etu and col_promo_etu in df_etu_rep_indiv.columns:
-        promos_etu_dispo = sorted(df_etu_rep_indiv[col_promo_etu].dropna().astype(str).str.strip().unique().tolist())
-    else:
-        promos_etu_dispo = []
-
-    col_s1, col_s2 = st.columns([1, 2])
-
-    with col_s1:
-        promo_sel_indiv = st.selectbox(
-            "🎓 Promotion :",
-            options=["— Choisir —"] + promos_etu_dispo,
-            key="edt_indiv_promo_sel"
-        )
-
-    if promo_sel_indiv and promo_sel_indiv != "— Choisir —":
-        # Filtrage des étudiants par promotion
-        df_etu_promo = df_etu_rep_indiv[
-            df_etu_rep_indiv[col_promo_etu].astype(str).str.strip().str.upper() == promo_sel_indiv.upper()
-        ].copy()
-
-        if not df_etu_promo.empty:
-            liste_etu_noms = sorted(df_etu_promo["Nom_Complet"].dropna().unique().tolist())
-
-            with col_s2:
-                etudiant_sel = st.selectbox(
-                    "👤 Étudiant :",
-                    options=["— Choisir —"] + liste_etu_noms,
-                    key="edt_indiv_etu_sel"
-                )
-
-            if etudiant_sel and etudiant_sel != "— Choisir —":
-                # ── Récupération du groupe et sous-groupe ──
-                row_etu = df_etu_promo[df_etu_promo["Nom_Complet"] == etudiant_sel].iloc[0]
-
-                col_groupe = cols_etu_map.get('groupe')
-                col_sous_groupe = cols_etu_map.get('sous_groupe')
-
-                groupe_etu = ""
-                sous_groupe_etu = ""
-
-                if col_groupe and col_groupe in row_etu.index:
-                    val_g = row_etu[col_groupe]
-                    if pd.notna(val_g) and str(val_g).strip().lower() not in ["nan", "none", ""]:
-                        groupe_etu = str(val_g).strip().upper()
-
-                if col_sous_groupe and col_sous_groupe in row_etu.index:
-                    val_sg = row_etu[col_sous_groupe]
-                    if pd.notna(val_sg) and str(val_sg).strip().lower() not in ["nan", "none", ""]:
-                        sous_groupe_etu = str(val_sg).strip().upper()
-
-                # ── Carte d'identité ──
-                mat_bac_val = ""
-                col_mat_bac = cols_etu_map.get('mat_bac')
-                if col_mat_bac and col_mat_bac in row_etu.index:
-                    mb = row_etu[col_mat_bac]
-                    if pd.notna(mb):
-                        mat_bac_val = str(mb).strip()
-
-                st.markdown(f"""
-                    <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); 
-                                padding: 16px; border-radius: 12px; color: white; margin: 15px 0;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-                            <div>
-                                <div style="font-size: 11px; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">EDT Individuel</div>
-                                <div style="font-size: 20px; font-weight: bold; margin-top: 4px;">{etudiant_sel}</div>
-                            </div>
-                            <div style="text-align: right; font-size: 12px; line-height: 1.8;">
-                                <div>🎓 Promotion : <b>{promo_sel_indiv}</b></div>
-                                <div>👥 Groupe : <b>{groupe_etu or 'N/A'}</b> | Sous-groupe : <b>{sous_groupe_etu or 'N/A'}</b></div>
-                                {"<div>🎫 Mat. BAC : <b>" + mat_bac_val + "</b></div>" if mat_bac_val else ""}
-                            </div>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                # ═══════════════════════════════════════════════════════
-                # FILTRAGE DE L'EDT SELON PROMOTION + GROUPE
-                # ═══════════════════════════════════════════════════════
-
-                # 1. Mapper la promotion vers le format EDT
-                promo_mapped_indiv = mapper_promotion(promo_sel_indiv)
-
-                # Chercher la promo dans l'EDT
-                df_edt_rep["Promotion_Mappee"] = df_edt_rep["Promotion"].apply(mapper_promotion)
-                df_edt_etu_filtre = df_edt_rep[df_edt_rep["Promotion_Mappee"] == promo_mapped_indiv].copy()
-
-                # Fallback : correspondance directe
-                if df_edt_etu_filtre.empty:
-                    df_edt_etu_filtre = df_edt_rep[
-                        df_edt_rep["Promotion"].astype(str).str.strip().str.upper() == promo_sel_indiv.upper()
-                    ].copy()
-
-                if not df_edt_etu_filtre.empty:
-                    # ════════════════════════════════════════════════════
-                    # 2. DÉTECTION DU GROUPE (TD) ET DU SOUS-GROUPE (TP)
-                    # ------------------------------------------------------
-                    # Même logique que la vue admin « 👥 EDT par Groupe
-                    # (TD/TP) » : le groupe/sous-groupe est extrait du
-                    # DERNIER segment de l'intitulé de la matière (colonne
-                    # « Enseignements »), et non plus du Lieu :
-                    #   - TD : 'TD-Analyse 3-G4' -> groupe 'G4'
-                    #   - TP : 'TP-Structure des ordinateurs-SG82' ->
-                    #          sous-groupe 'SG82'
-                    # Une ligne SANS tag détecté est commune à toute la
-                    # promotion et reste TOUJOURS affichée, que l'étudiant
-                    # ait un groupe/sous-groupe renseigné ou non.
-                    # ════════════════════════════════════════════════════
-                    def _extraire_groupe_td_etu(val):
-                        """Extrait le GROUPE (TD), tolère tiret/espace
-                        entre 'G' et le numéro ('G4', 'G-4', 'G 4')."""
-                        if pd.isna(val):
-                            return None
-                        val_str = str(val).strip().upper()
-                        m = re.search(r'(?<![A-Z])G[\s\-]?(\d+)\s*$', val_str)
-                        if not m:
-                            return None
-                        return f"G{m.group(1)}"
-
-                    def _extraire_sousgroupes_tp_etu(val):
-                        """Extrait TOUS les sous-groupes (TP) présents dans
-                        l'intitulé, sous forme d'ensemble.
-
-                        CORRECTIF : un TP peut regrouper DEUX sous-groupes
-                        dans le même intitulé, séparés par '/', ex. :
-                        'TP-Structure de la matière-SG11/SG12'. Rechercher
-                        uniquement un motif ancré en fin de chaîne ne
-                        capturait alors QUE le dernier ('SG12'), ratant le
-                        premier ('SG11') — un étudiant en SG11 ne voyait
-                        donc jamais ce TP. On recherche désormais TOUTES
-                        les occurrences 'SG<numéro>' dans l'intitulé.
-                        Retourne un set() vide si aucun sous-groupe trouvé
-                        (TP commun, affiché à tout le monde)."""
-                        if pd.isna(val):
-                            return set()
-                        val_str = str(val).strip().upper()
-                        trouvailles = re.findall(r'SG[\s\-]?(\d+)', val_str)
-                        return {f"SG{n}" for n in trouvailles}
-
-                    def _extraire_groupes_cours_etu(val):
-                        """Extrait les groupes auxquels un COURS est
-                        restreint, lorsqu'ils sont listés entre parenthèses
-                        en fin d'intitulé, ex. :
-                        'Cours-Structure de la matière-Section A
-                        (G1, G2, G3, G4)' -> {'G1','G2','G3','G4'}.
-                        Retourne None si aucune liste de groupes n'est
-                        présente (Cours commun, affiché à tout le monde,
-                        comportement par défaut)."""
-                        if pd.isna(val):
-                            return None
-                        val_str = str(val).strip().upper()
-                        m = re.search(r'\(([^)]*)\)\s*$', val_str)
-                        if not m:
-                            return None
-                        contenu_parenthese = m.group(1)
-                        trouvailles = re.findall(r'G(\d+)', contenu_parenthese)
-                        if not trouvailles:
-                            return None
-                        return {f"G{n}" for n in trouvailles}
-
-                    mask_cours_etu_filtre = df_edt_etu_filtre["Code"].astype(str).str.contains(
-                        "COURS", case=False, na=False
-                    )
-                    mask_td_etu_filtre = df_edt_etu_filtre["Code"].astype(str).str.contains(
-                        "TD", case=False, na=False
-                    ) & ~mask_cours_etu_filtre
-                    mask_tp_etu_filtre = ~mask_cours_etu_filtre & ~mask_td_etu_filtre
-
-                    df_edt_etu_filtre.loc[mask_cours_etu_filtre, "Groupes_Cours"] = df_edt_etu_filtre.loc[
-                        mask_cours_etu_filtre, "Enseignements"
-                    ].apply(_extraire_groupes_cours_etu)
-                    df_edt_etu_filtre.loc[mask_td_etu_filtre, "Groupe_TD"] = df_edt_etu_filtre.loc[
-                        mask_td_etu_filtre, "Enseignements"
-                    ].apply(_extraire_groupe_td_etu)
-                    df_edt_etu_filtre.loc[mask_tp_etu_filtre, "SousGroupes_TP"] = df_edt_etu_filtre.loc[
-                        mask_tp_etu_filtre, "Enseignements"
-                    ].apply(_extraire_sousgroupes_tp_etu)
-
-                    # 3. COURS : affiché par défaut (commun), SAUF s'il
-                    #    précise une liste de groupes entre parenthèses
-                    #    (ex. « Section A (G1, G2, G3, G4) ») — dans ce
-                    #    cas, affiché uniquement si le groupe de
-                    #    l'étudiant figure dans cette liste.
-                    #    TD sans tag = toujours affiché (commun) ; TD avec
-                    #    tag = affiché seulement s'il correspond au groupe
-                    #    de l'étudiant (fichier étudiants source).
-                    #    TP sans sous-groupe détecté = toujours affiché
-                    #    (commun) ; TP avec un ou plusieurs sous-groupes
-                    #    (ex. SG11/SG12) = affiché si le sous-groupe de
-                    #    l'étudiant fait partie de cette liste.
-                    mask_cours_commun_etu = mask_cours_etu_filtre & df_edt_etu_filtre["Groupes_Cours"].apply(
-                        lambda g: not g if isinstance(g, set) else pd.isna(g)
-                    )
-                    mask_cours_choisi_etu = mask_cours_etu_filtre & df_edt_etu_filtre["Groupes_Cours"].apply(
-                        lambda g: bool(groupe_etu) and isinstance(g, set) and groupe_etu in g
-                    )
-
-                    mask_td_commun_etu = df_edt_etu_filtre.get(
-                        "Groupe_TD", pd.Series(index=df_edt_etu_filtre.index, dtype=object)
-                    ).isna() & mask_td_etu_filtre
-                    mask_td_choisi_etu = (
-                        (df_edt_etu_filtre.get("Groupe_TD") == groupe_etu)
-                        if groupe_etu else pd.Series(False, index=df_edt_etu_filtre.index)
-                    )
-
-                    mask_tp_commun_etu = mask_tp_etu_filtre & df_edt_etu_filtre["SousGroupes_TP"].apply(
-                        lambda s: not s if isinstance(s, set) else True
-                    )
-                    mask_tp_choisi_etu = mask_tp_etu_filtre & df_edt_etu_filtre["SousGroupes_TP"].apply(
-                        lambda s: bool(sous_groupe_etu) and isinstance(s, set) and sous_groupe_etu in s
-                    )
-
-                    df_edt_final = df_edt_etu_filtre[
-                        mask_cours_commun_etu | mask_cours_choisi_etu
-                        | mask_td_commun_etu | mask_td_choisi_etu
-                        | mask_tp_commun_etu | mask_tp_choisi_etu
-                    ].copy()
-
-                    if not groupe_etu and not sous_groupe_etu:
-                        st.info(
-                            "ℹ️ Aucun groupe/sous-groupe renseigné pour cet "
-                            "étudiant dans le fichier source : seuls les "
-                            "Cours, TD et TP communs (sans groupe "
-                            "spécifique) sont affichés."
-                        )
-
-                    # ────────────────────────────────────────────────────
-                    # 🔍 DIAGNOSTIC : détection groupe/sous-groupe
-                    # ────────────────────────────────────────────────────
-                    # Une ligne dont le groupe n'est PAS détecté est
-                    # traitée comme COMMUNE et donc TOUJOURS affichée,
-                    # même si elle porte en réalité un tag dans un format
-                    # non reconnu. Ce panneau permet de vérifier
-                    # immédiatement si c'est le cas, sans avoir à fouiller
-                    # le fichier source.
-                    with st.expander("🔍 Diagnostic groupe / sous-groupe (Cours/TD/TP)"):
-                        df_diag_cours = df_edt_etu_filtre[mask_cours_etu_filtre][
-                            ["Enseignements", "Groupes_Cours"]
-                        ].drop_duplicates(subset=["Enseignements"])
-                        df_diag_td = df_edt_etu_filtre[mask_td_etu_filtre][
-                            ["Enseignements", "Groupe_TD"]
-                        ].drop_duplicates()
-                        df_diag_tp = df_edt_etu_filtre[mask_tp_etu_filtre][
-                            ["Enseignements", "SousGroupes_TP"]
-                        ].drop_duplicates(subset=["Enseignements"])
-
-                        st.caption(
-                            f"Groupe étudiant détecté : **{groupe_etu or 'aucun'}** | "
-                            f"Sous-groupe étudiant détecté : **{sous_groupe_etu or 'aucun'}**"
-                        )
-
-                        st.markdown("**Cours de la promotion — groupes restreints détectés (si listés entre parenthèses) :**")
-                        if not df_diag_cours.empty:
-                            st.dataframe(df_diag_cours, use_container_width=True, hide_index=True)
-                        else:
-                            st.caption("Aucun Cours trouvé pour cette promotion.")
-
-                        st.markdown("**TD de la promotion — groupe détecté :**")
-                        if not df_diag_td.empty:
-                            st.dataframe(df_diag_td, use_container_width=True, hide_index=True)
-                            nb_td_non_detectes = df_diag_td["Groupe_TD"].isna().sum()
-                            if nb_td_non_detectes > 0:
-                                st.warning(
-                                    f"⚠️ {nb_td_non_detectes} intitulé(s) de TD sans "
-                                    f"groupe détecté — ils seront affichés pour TOUS "
-                                    f"les étudiants (traités comme communs). Si un "
-                                    f"groupe est pourtant visible dans l'intitulé "
-                                    f"ci-dessus, son format diffère de la convention "
-                                    f"attendue (« ...-G<numéro> ») — merci de me "
-                                    f"signaler l'exemple exact."
-                                )
-                        else:
-                            st.caption("Aucun TD trouvé pour cette promotion.")
-
-                        st.markdown("**TP de la promotion — sous-groupe(s) détecté(s) :**")
-                        if not df_diag_tp.empty:
-                            st.dataframe(df_diag_tp, use_container_width=True, hide_index=True)
-                            nb_tp_non_detectes = df_diag_tp["SousGroupes_TP"].apply(
-                                lambda s: not s if isinstance(s, set) else True
-                            ).sum()
-                            if nb_tp_non_detectes > 0:
-                                st.warning(
-                                    f"⚠️ {nb_tp_non_detectes} intitulé(s) de TP sans "
-                                    f"sous-groupe détecté — ils seront affichés pour "
-                                    f"TOUS les étudiants (traités comme communs). Si "
-                                    f"un sous-groupe est pourtant visible dans "
-                                    f"l'intitulé ci-dessus, son format diffère de la "
-                                    f"convention attendue (« ...-SG<numéro> ») — "
-                                    f"merci de me signaler l'exemple exact."
-                                )
-                        else:
-                            st.caption(
-                                "Aucun TP trouvé pour cette promotion — c'est la "
-                                "cause si aucun TP n'apparaît dans la grille "
-                                "ci-dessous (il n'y en a simplement pas dans le "
-                                "fichier source pour cette promotion)."
-                            )
-
-                    if not df_edt_final.empty:
-                        # ── Afficheurs numériques ──
-                        nb_seances_etu = len(df_edt_final)
-                        nb_cours_etu = len(df_edt_final[df_edt_final["Code"].str.contains("COURS", case=False, na=False)])
-                        nb_td_etu = len(df_edt_final[df_edt_final["Code"].str.contains("TD", case=False, na=False)])
-                        nb_tp_etu = len(df_edt_final[~df_edt_final["Code"].str.contains("COURS|TD", case=False, na=False)])
-                        jours_etu = [j for j in df_edt_final["Jours"].unique() if j.lower() not in ["non défini", "non defini"]]
-                        nb_jours_etu = len(jours_etu)
-                        enseignants_etu = [e for e in df_edt_final["Enseignants"].unique() if e.lower() not in ["non défini", "non defini"]]
-                        nb_ens_etu = len(enseignants_etu)
-
-                        c1, c2, c3, c4, c5, c6 = st.columns(6)
-                        with c1:
-                            st.markdown(f"""
-                                <div style="background:#2563eb15;border:2px solid #2563eb;border-radius:12px;padding:12px;text-align:center;">
-                                    <div style="font-size:26px;font-weight:800;color:#2563eb;">{nb_seances_etu}</div>
-                                    <div style="font-size:10px;color:#64748b;font-weight:600;">📅 Séances</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                        with c2:
-                            st.markdown(f"""
-                                <div style="background:#1e40af15;border:2px solid #3b82f6;border-radius:12px;padding:12px;text-align:center;">
-                                    <div style="font-size:26px;font-weight:800;color:#1e40af;">{nb_cours_etu}</div>
-                                    <div style="font-size:10px;color:#64748b;font-weight:600;">📘 Cours</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                        with c3:
-                            st.markdown(f"""
-                                <div style="background:#16653415;border:2px solid #22c55e;border-radius:12px;padding:12px;text-align:center;">
-                                    <div style="font-size:26px;font-weight:800;color:#166534;">{nb_td_etu}</div>
-                                    <div style="font-size:10px;color:#64748b;font-weight:600;">📗 TD</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                        with c4:
-                            st.markdown(f"""
-                                <div style="background:#991b1b15;border:2px solid #ef4444;border-radius:12px;padding:12px;text-align:center;">
-                                    <div style="font-size:26px;font-weight:800;color:#991b1b;">{nb_tp_etu}</div>
-                                    <div style="font-size:10px;color:#64748b;font-weight:600;">🔴 TP</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                        with c5:
-                            st.markdown(f"""
-                                <div style="background:#b4530915;border:2px solid #f59e0b;border-radius:12px;padding:12px;text-align:center;">
-                                    <div style="font-size:26px;font-weight:800;color:#b45309;">{nb_jours_etu}</div>
-                                    <div style="font-size:10px;color:#64748b;font-weight:600;">🗓️ Jours</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                        with c6:
-                            st.markdown(f"""
-                                <div style="background:#0f766e15;border:2px solid #14b8a6;border-radius:12px;padding:12px;text-align:center;">
-                                    <div style="font-size:26px;font-weight:800;color:#0f766e;">{nb_ens_etu}</div>
-                                    <div style="font-size:10px;color:#64748b;font-weight:600;">👤 Enseignants</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-
-                        st.markdown("<br>", unsafe_allow_html=True)
-
-                        # ═══════════════════════════════════════════════════════
-                        # 🔎 FILTRE PAR TYPE D'ENSEIGNEMENT
-                        # ═══════════════════════════════════════════════════════
-                        st.markdown("### 📋 Emploi du Temps Individuel")
-
-                        type_affiche_etu = st.selectbox(
-                            "📚 Type d'enseignement à afficher :",
-                            [
-                                "Tous les enseignements",
-                                "📘 Cours uniquement",
-                                "📗 TD uniquement",
-                                "🔴 TP uniquement",
-                            ],
-                            key="type_affiche_etu_indiv"
-                        )
-
-                        if type_affiche_etu == "📘 Cours uniquement":
-                            df_edt_final_type = df_edt_final[
-                                df_edt_final["Code"].astype(str).str.contains("COURS", case=False, na=False)
-                            ].copy()
-                        elif type_affiche_etu == "📗 TD uniquement":
-                            df_edt_final_type = df_edt_final[
-                                df_edt_final["Code"].astype(str).str.contains("TD", case=False, na=False)
-                                & ~df_edt_final["Code"].astype(str).str.contains("COURS", case=False, na=False)
-                            ].copy()
-                        elif type_affiche_etu == "🔴 TP uniquement":
-                            df_edt_final_type = df_edt_final[
-                                ~df_edt_final["Code"].astype(str).str.contains("COURS|TD", case=False, na=False)
-                            ].copy()
-                        else:
-                            df_edt_final_type = df_edt_final.copy()
-
-                        def _norm_edt(x):
-                            """Normalise un horaire ou un jour pour la
-                            correspondance avec la grille de référence.
-
-                            CORRECTIF : l'ancienne version enchaînait des
-                            substitutions regex (remplacer ':00'->'h00',
-                            puis ajouter 'h00' après tout 'h' non suivi de
-                            '00') qui corrompait les horaires comportant
-                            des minutes non nulles : '8h - 9h30' devenait
-                            '8h00-9h0030' au lieu de '08h00-09h30',
-                            empêchant toute correspondance avec la grille
-                            de référence ('Impossible de construire la
-                            grille'). Cette version reconstruit proprement
-                            l'horaire à partir de ses heures/minutes de
-                            début et de fin (toujours sur 2 chiffres)."""
-                            if not x or str(x).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
-                                return ""
-
-                            s = str(x).strip().lower()
-
-                            m = re.match(
-                                r'^\s*(\d{1,2})[h:](\d{2})?\s*[-–à]\s*(\d{1,2})[h:](\d{2})?\s*$',
-                                s
-                            )
-                            if m:
-                                h1, m1, h2, m2 = m.groups()
-                                m1 = m1 or "00"
-                                m2 = m2 or "00"
-                                return f"{int(h1):02d}h{m1}-{int(h2):02d}h{m2}"
-
-                            # Pas un horaire (ex. un jour) : normalisation simple.
-                            return re.sub(r'\s+', '', s)
-
-                        # ═══════════════════════════════════════════════════════
-                        # HORAIRES DE LA GRILLE (flexibles)
-                        # ------------------------------------------------------
-                        # La grille contient :
-                        #   1) les créneaux déjà existants ;
-                        #   2) les créneaux d'une heure ajoutés :
-                        #      8h - 9h, 9h - 10h, 10h - 11h, 11h - 12h,
-                        #      12h - 13h, 13h - 14h ;
-                        #   3) tout autre horaire présent dans les séances de
-                        #      l'étudiant (pour qu'aucune séance ne soit
-                        #      masquée).
-                        # Le tout est trié dans l'ordre chronologique.
-                        # ═══════════════════════════════════════════════════
-                        horaires_ref_base_indiv = [
-                            "08h00-09h30", "09h30-11h00", "11h00-12h30",
-                            "12h30-14h00", "14h00-15h30", "15h30-17h00"
-                        ]
-                        horaires_ajoutes_indiv = [
-                            "08h00-09h00", "09h00-10h00", "10h00-11h00",
-                            "11h00-12h00", "12h00-13h00", "13h00-14h00"
-                        ]
-
-                        def _cle_tri_creneau_indiv(h_norm_val):
-                            m_c = re.match(r'^(\d{2})h(\d{2})-(\d{2})h(\d{2})$', str(h_norm_val))
-                            if not m_c:
-                                return (99 * 60, 99 * 60)
-                            a1, b1, a2, b2 = m_c.groups()
-                            return (int(a1) * 60 + int(b1), int(a2) * 60 + int(b2))
-
-                        def _label_creneau_indiv(h_norm_val):
-                            m_c = re.match(r'^(\d{2})h(\d{2})-(\d{2})h(\d{2})$', str(h_norm_val))
-                            if not m_c:
-                                return str(h_norm_val)
-                            a1, b1, a2, b2 = m_c.groups()
-                            debut_lbl = f"{int(a1)}h" + ("" if b1 == "00" else b1)
-                            fin_lbl = f"{int(a2)}h" + ("" if b2 == "00" else b2)
-                            return f"{debut_lbl} - {fin_lbl}"
-
-                        _horaires_donnees_indiv = [
-                            h for h in df_edt_final_type["Horaire"].apply(_norm_edt).unique()
-                            if re.match(r'^\d{2}h\d{2}-\d{2}h\d{2}$', str(h))
-                        ]
-                        horaires_ref_indiv = sorted(
-                            set(horaires_ref_base_indiv)
-                            | set(horaires_ajoutes_indiv)
-                            | set(_horaires_donnees_indiv),
-                            key=_cle_tri_creneau_indiv
-                        )
-                        jours_ref_indiv = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
-
-                        map_h_labels_indiv = {
-                            h: _label_creneau_indiv(h) for h in horaires_ref_indiv
-                        }
-                        map_j_labels_indiv = {
-                            "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
-                            "mercredi": "Mercredi", "jeudi": "Jeudi"
-                        }
-
-                        df_edt_final_type["h_norm"] = df_edt_final_type["Horaire"].apply(_norm_edt)
-                        df_edt_final_type["j_norm"] = df_edt_final_type["Jours"].apply(_norm_edt)
-
-                        # ═══════════════════════════════════════════════════════
-                        # 🔎 CRÉNEAUX HORAIRES À AFFICHER (flexible)
-                        #   - Automatique : seuls les créneaux qui contiennent des
-                        #     séances sont affichés (nouveaux créneaux inclus).
-                        #   - Choisir les créneaux : la grille affiche exactement
-                        #     les créneaux sélectionnés. Sans créneau
-                        #     sélectionné, aucune grille n'est affichée.
-                        # ═══════════════════════════════════════════════════════
-                        mode_creneaux_indiv = st.radio(
-                            "⏰ Créneaux horaires affichés sur la grille :",
-                            ["Automatique (créneaux utilisés)", "Choisir les créneaux"],
-                            horizontal=True,
-                            key="mode_creneaux_etu_indiv"
-                        )
-
-                        creneaux_choisis_indiv = None
-                        if mode_creneaux_indiv == "Choisir les créneaux":
-                            _sig_etu_creneaux = hashlib.md5(
-                                f"{promo_sel_indiv}|{etudiant_sel}".encode("utf-8")
-                            ).hexdigest()[:8]
-                            _labels_creneaux_indiv = [map_h_labels_indiv[h] for h in horaires_ref_indiv]
-                            _labels_utilises_indiv = [
-                                map_h_labels_indiv[h] for h in horaires_ref_indiv
-                                if h in set(df_edt_final_type["h_norm"])
-                            ]
-                            creneaux_choisis_indiv = st.multiselect(
-                                "Choisir les créneaux (sélection progressive) :",
-                                _labels_creneaux_indiv,
-                                default=_labels_utilises_indiv,
-                                key=f"creneaux_etu_indiv_{_sig_etu_creneaux}",
-                                help="Sélectionnez les créneaux à afficher, y compris les "
-                                     "créneaux d'une heure (8h - 9h, 9h - 10h, ...). "
-                                     "Sans créneau sélectionné, aucune grille n'est affichée."
-                            )
-                            # Ordre chronologique, quel que soit l'ordre de sélection
-                            creneaux_choisis_indiv = [
-                                lbl for lbl in _labels_creneaux_indiv if lbl in creneaux_choisis_indiv
-                            ]
-                            _h_norm_choisis_indiv = {
-                                h for h in horaires_ref_indiv
-                                if map_h_labels_indiv[h] in creneaux_choisis_indiv
-                            }
-                            df_edt_final_type = df_edt_final_type[
-                                df_edt_final_type["h_norm"].isin(_h_norm_choisis_indiv)
-                            ].copy()
-
-                        def _fmt_cell_indiv(rows):
-                            items = []
-                            for _, r in rows.iterrows():
-                                code_up = str(r["Code"]).upper()
-                                if "COURS" in code_up:
-                                    nat, color, bg = "📘", "#1e40af", "#dbeafe"
-                                elif "TD" in code_up:
-                                    nat, color, bg = "📗", "#166534", "#dcfce7"
-                                else:
-                                    nat, color, bg = "🔴", "#991b1b", "#fee2e2"
-
-                                badge_grp = ""
-                                if pd.notna(r.get("Groupe_EDT")):
-                                    badge_grp = (f"<div style='display:inline-block;background:#7c3aed;"
-                                                 f"color:white;padding:1px 6px;border-radius:4px;"
-                                                 f"font-size:10px;font-weight:700;margin-bottom:3px;'>"
-                                                 f"👥 {r['Groupe_EDT']}</div><br>")
-
-                                items.append(
-                                    f"<div style='margin-bottom:5px;padding:6px;border-left:4px solid {color};"
-                                    f"background-color:{bg};border-radius:6px;text-align:left;'>"
-                                    f"{badge_grp}"
-                                    f"<b style='color:{color};font-size:12px;'>{nat} {r['Enseignements']}</b><br>"
-                                    f"<span style='font-size:11px;color:#334155;'>👤 {r['Enseignants']}</span><br>"
-                                    f"<span style='font-size:10px;color:#64748b;'>📍 {r['Lieu']}</span>"
-                                    f"</div>"
-                                )
-                            return "".join(items)
-
-                        def _fmt_cell_indiv_texte(rows):
-                            items = []
-                            for _, r in rows.iterrows():
-                                code_up = str(r["Code"]).upper()
-                                nat = "📘" if "COURS" in code_up else ("📗" if "TD" in code_up else "🔴")
-                                items.append(
-                                    f"{nat} {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}"
-                                )
-                            return "\n\n".join(items)
-
-                        if not df_edt_final_type.empty:
-                            grouped_indiv = df_edt_final_type.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv)
-                            grouped_indiv_texte = df_edt_final_type.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv_texte)
-                        else:
-                            grouped_indiv = pd.Series(dtype=object)
-                            grouped_indiv_texte = pd.Series(dtype=object)
-
-                        # ═══════════════════════════════════════════════════════
-                        # GRILLE — JOURS EN VERTICAL (lignes), HORAIRES EN
-                        # HORIZONTAL (colonnes), comme demandé.
-                        # ═══════════════════════════════════════════════════════
-                        grid_indiv = grouped_indiv.unstack("h_norm") if not grouped_indiv.empty else pd.DataFrame()
-                        grid_indiv_texte = grouped_indiv_texte.unstack("h_norm") if not grouped_indiv_texte.empty else pd.DataFrame()
-
-                        jours_present_indiv = [j for j in jours_ref_indiv if j in grid_indiv.index]
-                        if creneaux_choisis_indiv is not None:
-                            # Mode « Choisir les créneaux » : exactement les
-                            # créneaux sélectionnés (même s'ils sont vides).
-                            h_present_indiv = [
-                                h for h in horaires_ref_indiv
-                                if map_h_labels_indiv[h] in creneaux_choisis_indiv
-                            ]
-                        else:
-                            h_present_indiv = [h for h in horaires_ref_indiv if h in grid_indiv.columns]
-
-                        if creneaux_choisis_indiv is not None and not creneaux_choisis_indiv:
-                            st.warning("⚠️ Sélectionnez au moins un créneau pour afficher l'EDT.")
-                        elif creneaux_choisis_indiv is not None and not jours_present_indiv:
-                            st.info("ℹ️ Aucune séance sur les créneaux sélectionnés.")
-                        elif jours_present_indiv and h_present_indiv:
-                            grid_indiv = grid_indiv.reindex(index=jours_present_indiv, columns=h_present_indiv).fillna("")
-                            grid_indiv.index = [map_j_labels_indiv.get(i, i) for i in grid_indiv.index]
-                            grid_indiv.columns = [map_h_labels_indiv.get(c, c) for c in grid_indiv.columns]
-
-                            grid_indiv_texte = grid_indiv_texte.reindex(index=jours_present_indiv, columns=h_present_indiv).fillna("")
-                            grid_indiv_texte.index = [map_j_labels_indiv.get(i, i) for i in grid_indiv_texte.index]
-                            grid_indiv_texte.columns = [map_h_labels_indiv.get(c, c) for c in grid_indiv_texte.columns]
-
-                            st.write(grid_indiv.to_html(escape=False), unsafe_allow_html=True)
-
-                            # ── Liste des enseignements (filtrée selon le type choisi) ──
-                            st.markdown("<br>", unsafe_allow_html=True)
-                            st.markdown("#### 📚 Liste des Enseignements")
-
-                            enseignements_uniques = df_edt_final_type.drop_duplicates(subset=["Enseignements", "Code"]).copy()
-                            for _, row_m in enseignements_uniques.iterrows():
-                                code_up = str(row_m["Code"]).upper()
-                                if "COURS" in code_up:
-                                    badge_bg, badge_color, badge_txt = "#dbeafe", "#1e40af", "📘 COURS"
-                                elif "TD" in code_up:
-                                    badge_bg, badge_color, badge_txt = "#dcfce7", "#166534", "📗 TD"
-                                else:
-                                    badge_bg, badge_color, badge_txt = "#fee2e2", "#991b1b", "🔴 TP"
-
-                                st.markdown(f"""
-                                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #f1f5f9;">
-                                        <span style="background:{badge_bg};color:{badge_color};padding:3px 10px;border-radius:8px;font-size:11px;font-weight:700;">{badge_txt}</span>
-                                        <span style="font-weight:600;color:#1e293b;font-size:14px;">{row_m['Enseignements']}</span>
-                                        <span style="color:#64748b;font-size:12px;">— {row_m['Enseignants']}</span>
-                                        <span style="color:#94a3b8;font-size:11px;margin-left:auto;">📍 {row_m['Lieu']}</span>
-                                    </div>
-                                """, unsafe_allow_html=True)
-
-                            # ═══════════════════════════════════════════════════
-                            # 📥 TÉLÉCHARGEMENTS — EXCEL, HTML, PDF
-                            # ═══════════════════════════════════════════════════
-                            st.markdown("<br>", unsafe_allow_html=True)
-                            st.markdown("#### 📥 Télécharger mon EDT individuel")
-
-                            groupe_suffix = f"_{groupe_etu}" if groupe_etu else ""
-                            sousgroupe_suffix = f"_{sous_groupe_etu}" if sous_groupe_etu else ""
-                            type_suffix = (
-                                "_Cours" if type_affiche_etu == "📘 Cours uniquement" else
-                                "_TD" if type_affiche_etu == "📗 TD uniquement" else
-                                "_TP" if type_affiche_etu == "🔴 TP uniquement" else ""
-                            )
-                            nom_base_fichier_etu = (
-                                f"EDT_{etudiant_sel.replace(' ', '_')}_{promo_sel_indiv}"
-                                f"{groupe_suffix}{sousgroupe_suffix}{type_suffix}"
-                            )
-                            sous_titre_etu = f"Promotion {promo_sel_indiv}"
-                            if groupe_etu:
-                                sous_titre_etu += f" | Groupe {groupe_etu}"
-                            if sous_groupe_etu:
-                                sous_titre_etu += f" | Sous-groupe {sous_groupe_etu}"
-                            if type_affiche_etu != "Tous les enseignements":
-                                sous_titre_etu += f" | {type_affiche_etu}"
-
-                            dl_etu1, dl_etu2, dl_etu3 = st.columns(3)
-
-                            # ---------------- 1) EXCEL ----------------
-                            buf_xl_etu = io.BytesIO()
-                            with pd.ExcelWriter(buf_xl_etu, engine='xlsxwriter') as writer:
-                                grid_indiv_texte.to_excel(writer, sheet_name='Mon_EDT', startrow=2)
-                                wb_etu = writer.book
-                                ws_etu = writer.sheets['Mon_EDT']
-
-                                fmt_titre_etu = wb_etu.add_format({
-                                    'bold': True, 'font_size': 13, 'font_color': 'white',
-                                    'bg_color': '#1E3A8A', 'align': 'center', 'valign': 'vcenter'
-                                })
-                                ws_etu.merge_range(
-                                    0, 0, 0, len(grid_indiv_texte.columns),
-                                    f"📅 EDT Individuel — {etudiant_sel}", fmt_titre_etu
-                                )
-                                ws_etu.merge_range(
-                                    1, 0, 1, len(grid_indiv_texte.columns),
-                                    f"{sous_titre_etu} | Généré le {datetime.now().strftime('%d/%m/%Y')}",
-                                    wb_etu.add_format({'italic': True, 'align': 'center', 'font_size': 9, 'font_color': '#64748b'})
-                                )
-
-                                fmt_hdr_etu = wb_etu.add_format({
-                                    'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
-                                    'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True
-                                })
-                                fmt_jour_etu = wb_etu.add_format({
-                                    'bold': True, 'bg_color': '#f1f5f9', 'border': 1,
-                                    'align': 'center', 'valign': 'vcenter'
-                                })
-                                fmt_cell_etu = wb_etu.add_format({
-                                    'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10
-                                })
-
-                                ws_etu.write(2, 0, "JOUR", fmt_hdr_etu)
-                                for col_num, h in enumerate(grid_indiv_texte.columns, start=1):
-                                    ws_etu.write(2, col_num, h, fmt_hdr_etu)
-                                ws_etu.set_column(0, 0, 14)
-                                ws_etu.set_column(1, len(grid_indiv_texte.columns), 26)
-
-                                for row_num, (jour, ligne) in enumerate(grid_indiv_texte.iterrows(), start=3):
-                                    ws_etu.write(row_num, 0, jour, fmt_jour_etu)
-                                    max_lignes_etu = 1
-                                    for col_num, val in enumerate(ligne, start=1):
-                                        ws_etu.write(row_num, col_num, val, fmt_cell_etu)
-                                        max_lignes_etu = max(max_lignes_etu, str(val).count('\n') + 1)
-                                    ws_etu.set_row(row_num, max(40, max_lignes_etu * 14))
-
-                                ws_etu.freeze_panes(3, 1)
-
-                            dl_etu1.download_button(
-                                "📊 Excel", buf_xl_etu.getvalue(),
-                                f"{nom_base_fichier_etu}.xlsx",
-                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                use_container_width=True, key="dl_edt_indiv_etu_xlsx"
-                            )
-
-                            # ---------------- 2) HTML ----------------
-                            html_edt_indiv = f"""<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<title>EDT — {etudiant_sel}</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-body{{font-family:'Inter','Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#f1f5f9 0%,#e2e8f0 100%);margin:0;padding:30px;color:#1e293b;}}
-.container{{max-width:1200px;margin:auto;background:white;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,0.08);overflow:hidden;}}
-.header{{background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:30px;text-align:center;}}
-.header h1{{margin:0;font-size:22px;}}.header p{{margin:8px 0 0 0;opacity:0.9;font-size:14px;}}
-.badge{{display:inline-block;background:#D4AF37;color:#1E3A8A;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px;}}
-.content{{padding:30px;overflow-x:auto;}}table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
-th{{background-color:#0f172a;color:white;padding:14px;text-align:center;font-size:13px;border:1px solid #e2e8f0;position:sticky;top:0;}}
-td{{padding:14px;border:1px solid #e2e8f0;vertical-align:top;font-size:12px;word-wrap:break-word;}}
-tr:nth-child(even){{background-color:#f8fafc;}}
-.footer{{text-align:center;padding:20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;}}
-@media print{{body{{background:white;padding:0;}}.container{{box-shadow:none;border-radius:0;}}}}
-</style>
-</head>
-<body>
-<div class='container'>
-<div class='header'><h1>📅 EDT Individuel — {etudiant_sel}</h1>
-<p>{sous_titre_etu}</p>
-<span class='badge'>Semestre 01 — 2026-2027</span></div>
-<div class='content'>
-<p style='color:#64748b;font-size:13px;'>Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
-{grid_indiv.to_html(escape=False)}
-</div>
-<div class='footer'>département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA</div>
-</div></body></html>"""
-
-                            dl_etu2.download_button(
-                                label="🌐 HTML",
-                                data=html_edt_indiv,
-                                file_name=f"{nom_base_fichier_etu}.html",
-                                mime="text/html",
-                                use_container_width=True,
-                                key="dl_edt_indiv_etu_repertoire"
-                            )
-
-                            # ---------------- 3) PDF ----------------
-                            try:
-                                from reportlab.lib import colors as rl_colors_etu
-                                from reportlab.lib.pagesizes import landscape, A4
-                                from reportlab.platypus import (
-                                    SimpleDocTemplate, Table, TableStyle, Paragraph,
-                                    Spacer, KeepInFrame
-                                )
-                                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-                                from reportlab.lib.units import mm
-
-                                buf_pdf_etu = io.BytesIO()
-                                doc_etu = SimpleDocTemplate(
-                                    buf_pdf_etu, pagesize=landscape(A4),
-                                    topMargin=15 * mm, bottomMargin=12 * mm,
-                                    leftMargin=10 * mm, rightMargin=10 * mm
-                                )
-                                styles_etu = getSampleStyleSheet()
-                                titre_style_etu = ParagraphStyle(
-                                    'TitreEtu', parent=styles_etu['Heading1'], fontSize=14,
-                                    textColor=rl_colors_etu.HexColor('#1E3A8A'), alignment=1
-                                )
-                                soustitre_style_etu = ParagraphStyle(
-                                    'SousTitreEtu', parent=styles_etu['Normal'], fontSize=9,
-                                    textColor=rl_colors_etu.HexColor('#64748b'), alignment=1
-                                )
-                                cell_style_etu = ParagraphStyle(
-                                    'CellEtu', parent=styles_etu['Normal'], fontSize=7, leading=9
-                                )
-
-                                elements_etu = [
-                                    Paragraph(f"📅 EDT Individuel — {etudiant_sel}", titre_style_etu),
-                                    Paragraph(
-                                        f"{sous_titre_etu} | Généré le {datetime.now().strftime('%d/%m/%Y')}",
-                                        soustitre_style_etu
-                                    ),
-                                    Spacer(1, 8),
-                                ]
-
-                                page_width_etu = landscape(A4)[0] - 20 * mm
-                                col_j_etu = 26 * mm
-                                col_h_etu = (page_width_etu - col_j_etu) / len(grid_indiv_texte.columns)
-                                col_widths_etu = [col_j_etu] + [col_h_etu] * len(grid_indiv_texte.columns)
-
-                                def _cel_pdf_etu(texte, largeur):
-                                    return KeepInFrame(
-                                        max(largeur - 10, 10), 380,
-                                        [Paragraph(str(texte).replace(chr(10), '<br/>'), cell_style_etu)],
-                                        mode='shrink'
-                                    )
-
-                                data_pdf_etu = [
-                                    [Paragraph("<b>JOUR</b>", cell_style_etu)] +
-                                    [Paragraph(f"<b>{h}</b>", cell_style_etu) for h in grid_indiv_texte.columns]
-                                ]
-                                for jour, ligne in grid_indiv_texte.iterrows():
-                                    ligne_pdf_etu = [_cel_pdf_etu(jour, col_j_etu)]
-                                    for val in ligne:
-                                        ligne_pdf_etu.append(_cel_pdf_etu(val, col_h_etu) if val else "")
-                                    data_pdf_etu.append(ligne_pdf_etu)
-
-                                table_etu = Table(data_pdf_etu, colWidths=col_widths_etu, repeatRows=1)
-                                table_etu.setStyle(TableStyle([
-                                    ('BACKGROUND', (0, 0), (-1, 0), rl_colors_etu.HexColor('#1E3A8A')),
-                                    ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors_etu.white),
-                                    ('BACKGROUND', (0, 1), (0, -1), rl_colors_etu.HexColor('#f1f5f9')),
-                                    ('GRID', (0, 0), (-1, -1), 0.5, rl_colors_etu.HexColor('#cbd5e1')),
-                                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                                    ('ALIGN', (0, 0), (0, -1), 'CENTER'),
-                                ]))
-                                elements_etu.append(table_etu)
-                                doc_etu.build(elements_etu)
-
-                                dl_etu3.download_button(
-                                    "📄 PDF", buf_pdf_etu.getvalue(),
-                                    f"{nom_base_fichier_etu}.pdf",
-                                    "application/pdf", use_container_width=True, key="dl_edt_indiv_etu_pdf"
-                                )
-                            except Exception as e:
-                                dl_etu3.warning(f"PDF indisponible : {e}")
-                        else:
-                            st.warning("⚠️ Impossible de construire la grille (données horaires incomplètes).")
-                            with st.expander("🔍 DEBUG - Informations détaillées"):
-                                st.write(f"**Promotion:** {promo_sel_indiv}")
-                                st.write(f"**Groupe étudiant:** {groupe_etu}")
-                                st.write(f"**Nombre de séances:** {len(df_edt_final)}")
-                                st.write(f"**Colonnes disponibles:** {list(df_edt_final.columns)}")
-                                st.write(f"**Premiers cours:**")
-                                st.dataframe(df_edt_final[["Enseignements", "Horaire", "Jours", "Lieu"]].head(10))
-                    else:
-                        st.warning(f"⚠️ Aucun cours trouvé pour le groupe **{groupe_etu or 'non détecté'}** dans la promotion **{promo_sel_indiv}**.")
-                else:
-                    st.error(f"❌ Aucun enseignement trouvé pour la promotion **{promo_sel_indiv}** dans le fichier EDT.")
-        else:
-            st.warning(f"⚠️ Aucun étudiant trouvé pour la promotion {promo_sel_indiv}.")
-
-    # ═════════════════════════════════════════════════════════════════════════
-    # 👥 EDT PAR GROUPE ET SOUS-GROUPE
-    # ---------------------------------------------------------------------
-    # Dès que la promotion, le groupe ET le sous-groupe sont sélectionnés,
-    # l'EDT correspondant s'affiche automatiquement (même logique de filtrage
-    # que l'EDT individuel d'un étudiant). Des boutons permettent de le
-    # télécharger (Excel / HTML / PDF) et de télécharger TOUS les EDT en un
-    # seul fichier par format (une feuille / section / page par groupe et
-    # sous-groupe).
-    # ═════════════════════════════════════════════════════════════════════════
-    st.markdown("<br>", unsafe_allow_html=True)
+if portail == "🎓 Répertoire Étudiants" and is_admin:
+    # RÉPERTOIRE EDT INDIVIDUEL ÉTUDIANT — PAR GROUPE & SOUS-GROUPE
+    # =============================================================================
+
+    st.divider()
     st.markdown("""
-        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
-                    padding: 16px; border-radius: 14px; color: white; margin: 10px 0 14px 0;
+        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); 
+                    padding: 18px; border-radius: 14px; color: white; margin-bottom: 18px;
                     box-shadow: 0 8px 24px rgba(37,99,235,0.25);">
-            <h3 style="margin:0; font-size: 18px;">👥 EDT par Groupe et Sous-groupe</h3>
-            <p style="margin:6px 0 0 0; opacity:0.85; font-size:13px;">
-                Choisissez la promotion, le groupe puis le sous-groupe : l'emploi du temps s'affiche automatiquement.
+            <h3 style="margin:0; font-size: 20px;">🎓 EDT Individuel Étudiant</h3>
+            <p style="margin:8px 0 0 0; opacity:0.85; font-size:13px;">
+                Sélectionnez un étudiant pour afficher son emploi du temps personnel (filtré par groupe/sous-groupe) — ou choisissez directement un groupe et un sous-groupe plus bas
             </p>
         </div>
     """, unsafe_allow_html=True)
 
-    col_groupe_grp = cols_etu_map.get('groupe')
-    col_sous_groupe_grp = cols_etu_map.get('sous_groupe')
+    # ── Chargement des fichiers sources ──
+    _base_rep = Path(__file__).parent.resolve()
+    _fichier_edt_rep = str(_base_rep / "dataEDT-ELT-S1-2027.xlsx")
+    _fichier_etu_rep = str(_base_rep / "Liste des étudiants_2026-2027.xlsx")
 
-    cg1, cg2, cg3 = st.columns(3)
-    with cg1:
-        promo_grp_sel = st.selectbox(
-            "🎓 Promotion :",
-            options=["— Choisir —"] + promos_etu_dispo,
-            key="edt_grp_promo_sel"
-        )
+    df_edt_rep = pd.DataFrame()
+    df_etu_rep_indiv = pd.DataFrame()
 
-    promo_grp_choisie = bool(promo_grp_sel) and promo_grp_sel != "— Choisir —"
+    if os.path.exists(_fichier_edt_rep):
+        try:
+            df_edt_rep = pd.read_excel(_fichier_edt_rep)
+            df_edt_rep.columns = df_edt_rep.columns.str.strip()
+            for col in ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']:
+                if col in df_edt_rep.columns:
+                    df_edt_rep[col] = df_edt_rep[col].fillna("Non défini").astype(str).str.strip()
+        except Exception as e:
+            st.error(f"❌ Erreur chargement EDT : {e}")
 
-    if promo_grp_choisie:
-        df_etu_grp = df_etu_rep_indiv[
-            df_etu_rep_indiv[col_promo_etu].astype(str).str.strip().str.upper() == promo_grp_sel.upper()
-        ].copy()
-        combos_grp = _edt_grp_combinaisons(df_etu_grp, col_groupe_grp, col_sous_groupe_grp)
-        sig_promo_grp = hashlib.md5(promo_grp_sel.encode("utf-8")).hexdigest()[:8]
+    if os.path.exists(_fichier_etu_rep):
+        try:
+            df_etu_rep_indiv = lire_excel_robuste(_fichier_etu_rep)
+            df_etu_rep_indiv.columns = df_etu_rep_indiv.columns.str.strip()
+            col_n = next((c for c in df_etu_rep_indiv.columns if c.strip().upper() == "NOM"), None)
+            col_p = next((c for c in df_etu_rep_indiv.columns if c.strip().upper() in ["PRÉNOM", "PRENOM"]), None)
+            if col_n and col_p:
+                df_etu_rep_indiv["Nom_Complet"] = (
+                    df_etu_rep_indiv[col_n].astype(str).str.strip().str.upper() + " " +
+                    df_etu_rep_indiv[col_p].astype(str).str.strip().str.title()
+                )
+        except Exception as e:
+            st.error(f"❌ Erreur chargement étudiants : {e}")
 
-        if not combos_grp:
-            st.warning(
-                f"⚠️ Aucun groupe / sous-groupe renseigné pour la promotion **{promo_grp_sel}** "
-                f"dans le fichier des étudiants."
-            )
+    if not df_edt_rep.empty and not df_etu_rep_indiv.empty:
+
+        # ── Détection des colonnes étudiants ──
+        cols_etu_map = detecter_colonnes_etudiant(df_etu_rep_indiv)
+
+        # ── Sélection de la promotion puis de l'étudiant ──
+        col_promo_etu = cols_etu_map.get('promotion', 'Promotion')
+    
+        if col_promo_etu and col_promo_etu in df_etu_rep_indiv.columns:
+            promos_etu_dispo = sorted(df_etu_rep_indiv[col_promo_etu].dropna().astype(str).str.strip().unique().tolist())
         else:
-            groupes_grp = sorted({c["groupe"] for c in combos_grp}, key=_edt_grp_tri_naturel)
-            labels_groupes_grp = {_edt_grp_libelle(g, "(sans groupe)"): g for g in groupes_grp}
+            promos_etu_dispo = []
 
-            with cg2:
-                groupe_lbl_sel = st.selectbox(
-                    "👥 Groupe :",
-                    options=["— Choisir —"] + list(labels_groupes_grp.keys()),
-                    key=f"edt_grp_groupe_sel_{sig_promo_grp}"
-                )
+        col_s1, col_s2 = st.columns([1, 2])
 
-            if groupe_lbl_sel != "— Choisir —":
-                groupe_val_grp = labels_groupes_grp[groupe_lbl_sel]
-                sous_groupes_grp = sorted(
-                    {c["sous_groupe"] for c in combos_grp if c["groupe"] == groupe_val_grp},
-                    key=_edt_grp_tri_naturel
-                )
-                labels_sg_grp = {
-                    _edt_grp_libelle(sg, "(sans sous-groupe)"): sg for sg in sous_groupes_grp
-                }
-                sig_groupe_grp = hashlib.md5(
-                    f"{promo_grp_sel}|{groupe_val_grp}".encode("utf-8")
-                ).hexdigest()[:8]
+        with col_s1:
+            promo_sel_indiv = st.selectbox(
+                "🎓 Promotion :",
+                options=["— Choisir —"] + promos_etu_dispo,
+                key="edt_indiv_promo_sel"
+            )
 
-                with cg3:
-                    sg_lbl_sel = st.selectbox(
-                        "🧩 Sous-groupe associé :",
-                        options=["— Choisir —"] + list(labels_sg_grp.keys()),
-                        key=f"edt_grp_sg_sel_{sig_groupe_grp}"
+        if promo_sel_indiv and promo_sel_indiv != "— Choisir —":
+            # Filtrage des étudiants par promotion
+            df_etu_promo = df_etu_rep_indiv[
+                df_etu_rep_indiv[col_promo_etu].astype(str).str.strip().str.upper() == promo_sel_indiv.upper()
+            ].copy()
+
+            if not df_etu_promo.empty:
+                liste_etu_noms = sorted(df_etu_promo["Nom_Complet"].dropna().unique().tolist())
+
+                with col_s2:
+                    etudiant_sel = st.selectbox(
+                        "👤 Étudiant :",
+                        options=["— Choisir —"] + liste_etu_noms,
+                        key="edt_indiv_etu_sel"
                     )
 
-                if sg_lbl_sel != "— Choisir —":
-                    sous_groupe_val_grp = labels_sg_grp[sg_lbl_sel]
-                    sig_sel_grp = hashlib.md5(
-                        f"{promo_grp_sel}|{groupe_val_grp}|{sous_groupe_val_grp}".encode("utf-8")
-                    ).hexdigest()[:8]
+                if etudiant_sel and etudiant_sel != "— Choisir —":
+                    # ── Récupération du groupe et sous-groupe ──
+                    row_etu = df_etu_promo[df_etu_promo["Nom_Complet"] == etudiant_sel].iloc[0]
 
-                    combo_sel_grp = next(
-                        (c for c in combos_grp
-                         if c["groupe"] == groupe_val_grp and c["sous_groupe"] == sous_groupe_val_grp),
-                        None
-                    )
-                    nb_etu_grp = combo_sel_grp["nb_etudiants"] if combo_sel_grp else 0
+                    col_groupe = cols_etu_map.get('groupe')
+                    col_sous_groupe = cols_etu_map.get('sous_groupe')
 
-                    df_edt_promo_grp = _edt_grp_seances_promotion(
-                        df_edt_rep, promo_grp_sel, mapper_promotion
-                    )
+                    groupe_etu = ""
+                    sous_groupe_etu = ""
 
-                    if df_edt_promo_grp.empty:
-                        st.error(
-                            f"❌ Aucun enseignement trouvé pour la promotion **{promo_grp_sel}** "
-                            f"dans le fichier EDT."
-                        )
-                    else:
-                        df_final_grp = _edt_grp_filtrer_seances(
-                            df_edt_promo_grp, groupe_val_grp, sous_groupe_val_grp
-                        )
+                    if col_groupe and col_groupe in row_etu.index:
+                        val_g = row_etu[col_groupe]
+                        if pd.notna(val_g) and str(val_g).strip().lower() not in ["nan", "none", ""]:
+                            groupe_etu = str(val_g).strip().upper()
 
-                        st.markdown(f"""
-                            <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
-                                        padding: 16px; border-radius: 12px; color: white; margin: 15px 0;">
-                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-                                    <div>
-                                        <div style="font-size: 11px; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">EDT du groupe</div>
-                                        <div style="font-size: 20px; font-weight: bold; margin-top: 4px;">
-                                            {promo_grp_sel} — {_edt_grp_libelle(groupe_val_grp, 'sans groupe')} / {_edt_grp_libelle(sous_groupe_val_grp, 'sans sous-groupe')}
-                                        </div>
-                                    </div>
-                                    <div style="text-align: right; font-size: 12px; line-height: 1.8;">
-                                        <div>🎓 Promotion : <b>{promo_grp_sel}</b></div>
-                                        <div>👥 Groupe : <b>{_edt_grp_libelle(groupe_val_grp, 'N/A')}</b> | Sous-groupe : <b>{_edt_grp_libelle(sous_groupe_val_grp, 'N/A')}</b></div>
-                                        <div>🧑‍🎓 Étudiants concernés : <b>{nb_etu_grp}</b></div>
-                                    </div>
+                    if col_sous_groupe and col_sous_groupe in row_etu.index:
+                        val_sg = row_etu[col_sous_groupe]
+                        if pd.notna(val_sg) and str(val_sg).strip().lower() not in ["nan", "none", ""]:
+                            sous_groupe_etu = str(val_sg).strip().upper()
+
+                    # ── Carte d'identité ──
+                    mat_bac_val = ""
+                    col_mat_bac = cols_etu_map.get('mat_bac')
+                    if col_mat_bac and col_mat_bac in row_etu.index:
+                        mb = row_etu[col_mat_bac]
+                        if pd.notna(mb):
+                            mat_bac_val = str(mb).strip()
+
+                    st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); 
+                                    padding: 16px; border-radius: 12px; color: white; margin: 15px 0;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                                <div>
+                                    <div style="font-size: 11px; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">EDT Individuel</div>
+                                    <div style="font-size: 20px; font-weight: bold; margin-top: 4px;">{etudiant_sel}</div>
+                                </div>
+                                <div style="text-align: right; font-size: 12px; line-height: 1.8;">
+                                    <div>🎓 Promotion : <b>{promo_sel_indiv}</b></div>
+                                    <div>👥 Groupe : <b>{groupe_etu or 'N/A'}</b> | Sous-groupe : <b>{sous_groupe_etu or 'N/A'}</b></div>
+                                    {"<div>🎫 Mat. BAC : <b>" + mat_bac_val + "</b></div>" if mat_bac_val else ""}
                                 </div>
                             </div>
-                        """, unsafe_allow_html=True)
+                        </div>
+                    """, unsafe_allow_html=True)
 
-                        if df_final_grp.empty:
-                            st.warning(
-                                f"⚠️ Aucune séance trouvée pour le groupe **{groupe_val_grp or 'non détecté'}** / "
-                                f"sous-groupe **{sous_groupe_val_grp or 'non détecté'}** "
-                                f"dans la promotion **{promo_grp_sel}**."
+                    # ═══════════════════════════════════════════════════════
+                    # FILTRAGE DE L'EDT SELON PROMOTION + GROUPE
+                    # ═══════════════════════════════════════════════════════
+
+                    # 1. Mapper la promotion vers le format EDT
+                    promo_mapped_indiv = mapper_promotion(promo_sel_indiv)
+
+                    # Chercher la promo dans l'EDT
+                    df_edt_rep["Promotion_Mappee"] = df_edt_rep["Promotion"].apply(mapper_promotion)
+                    df_edt_etu_filtre = df_edt_rep[df_edt_rep["Promotion_Mappee"] == promo_mapped_indiv].copy()
+
+                    # Fallback : correspondance directe
+                    if df_edt_etu_filtre.empty:
+                        df_edt_etu_filtre = df_edt_rep[
+                            df_edt_rep["Promotion"].astype(str).str.strip().str.upper() == promo_sel_indiv.upper()
+                        ].copy()
+
+                    if not df_edt_etu_filtre.empty:
+                        # ════════════════════════════════════════════════════
+                        # 2. DÉTECTION DU GROUPE (TD) ET DU SOUS-GROUPE (TP)
+                        # ------------------------------------------------------
+                        # Même logique que la vue admin « 👥 EDT par Groupe
+                        # (TD/TP) » : le groupe/sous-groupe est extrait du
+                        # DERNIER segment de l'intitulé de la matière (colonne
+                        # « Enseignements »), et non plus du Lieu :
+                        #   - TD : 'TD-Analyse 3-G4' -> groupe 'G4'
+                        #   - TP : 'TP-Structure des ordinateurs-SG82' ->
+                        #          sous-groupe 'SG82'
+                        # Une ligne SANS tag détecté est commune à toute la
+                        # promotion et reste TOUJOURS affichée, que l'étudiant
+                        # ait un groupe/sous-groupe renseigné ou non.
+                        # ════════════════════════════════════════════════════
+                        def _extraire_groupe_td_etu(val):
+                            """Extrait le GROUPE (TD), tolère tiret/espace
+                            entre 'G' et le numéro ('G4', 'G-4', 'G 4')."""
+                            if pd.isna(val):
+                                return None
+                            val_str = str(val).strip().upper()
+                            m = re.search(r'(?<![A-Z])G[\s\-]?(\d+)\s*$', val_str)
+                            if not m:
+                                return None
+                            return f"G{m.group(1)}"
+
+                        def _extraire_sousgroupes_tp_etu(val):
+                            """Extrait TOUS les sous-groupes (TP) présents dans
+                            l'intitulé, sous forme d'ensemble.
+
+                            CORRECTIF : un TP peut regrouper DEUX sous-groupes
+                            dans le même intitulé, séparés par '/', ex. :
+                            'TP-Structure de la matière-SG11/SG12'. Rechercher
+                            uniquement un motif ancré en fin de chaîne ne
+                            capturait alors QUE le dernier ('SG12'), ratant le
+                            premier ('SG11') — un étudiant en SG11 ne voyait
+                            donc jamais ce TP. On recherche désormais TOUTES
+                            les occurrences 'SG<numéro>' dans l'intitulé.
+                            Retourne un set() vide si aucun sous-groupe trouvé
+                            (TP commun, affiché à tout le monde)."""
+                            if pd.isna(val):
+                                return set()
+                            val_str = str(val).strip().upper()
+                            trouvailles = re.findall(r'SG[\s\-]?(\d+)', val_str)
+                            return {f"SG{n}" for n in trouvailles}
+
+                        def _extraire_groupes_cours_etu(val):
+                            """Extrait les groupes auxquels un COURS est
+                            restreint, lorsqu'ils sont listés entre parenthèses
+                            en fin d'intitulé, ex. :
+                            'Cours-Structure de la matière-Section A
+                            (G1, G2, G3, G4)' -> {'G1','G2','G3','G4'}.
+                            Retourne None si aucune liste de groupes n'est
+                            présente (Cours commun, affiché à tout le monde,
+                            comportement par défaut)."""
+                            if pd.isna(val):
+                                return None
+                            val_str = str(val).strip().upper()
+                            m = re.search(r'\(([^)]*)\)\s*$', val_str)
+                            if not m:
+                                return None
+                            contenu_parenthese = m.group(1)
+                            trouvailles = re.findall(r'G(\d+)', contenu_parenthese)
+                            if not trouvailles:
+                                return None
+                            return {f"G{n}" for n in trouvailles}
+
+                        mask_cours_etu_filtre = df_edt_etu_filtre["Code"].astype(str).str.contains(
+                            "COURS", case=False, na=False
+                        )
+                        mask_td_etu_filtre = df_edt_etu_filtre["Code"].astype(str).str.contains(
+                            "TD", case=False, na=False
+                        ) & ~mask_cours_etu_filtre
+                        mask_tp_etu_filtre = ~mask_cours_etu_filtre & ~mask_td_etu_filtre
+
+                        df_edt_etu_filtre.loc[mask_cours_etu_filtre, "Groupes_Cours"] = df_edt_etu_filtre.loc[
+                            mask_cours_etu_filtre, "Enseignements"
+                        ].apply(_extraire_groupes_cours_etu)
+                        df_edt_etu_filtre.loc[mask_td_etu_filtre, "Groupe_TD"] = df_edt_etu_filtre.loc[
+                            mask_td_etu_filtre, "Enseignements"
+                        ].apply(_extraire_groupe_td_etu)
+                        df_edt_etu_filtre.loc[mask_tp_etu_filtre, "SousGroupes_TP"] = df_edt_etu_filtre.loc[
+                            mask_tp_etu_filtre, "Enseignements"
+                        ].apply(_extraire_sousgroupes_tp_etu)
+
+                        # 3. COURS : affiché par défaut (commun), SAUF s'il
+                        #    précise une liste de groupes entre parenthèses
+                        #    (ex. « Section A (G1, G2, G3, G4) ») — dans ce
+                        #    cas, affiché uniquement si le groupe de
+                        #    l'étudiant figure dans cette liste.
+                        #    TD sans tag = toujours affiché (commun) ; TD avec
+                        #    tag = affiché seulement s'il correspond au groupe
+                        #    de l'étudiant (fichier étudiants source).
+                        #    TP sans sous-groupe détecté = toujours affiché
+                        #    (commun) ; TP avec un ou plusieurs sous-groupes
+                        #    (ex. SG11/SG12) = affiché si le sous-groupe de
+                        #    l'étudiant fait partie de cette liste.
+                        mask_cours_commun_etu = mask_cours_etu_filtre & df_edt_etu_filtre["Groupes_Cours"].apply(
+                            lambda g: not g if isinstance(g, set) else pd.isna(g)
+                        )
+                        mask_cours_choisi_etu = mask_cours_etu_filtre & df_edt_etu_filtre["Groupes_Cours"].apply(
+                            lambda g: bool(groupe_etu) and isinstance(g, set) and groupe_etu in g
+                        )
+
+                        mask_td_commun_etu = df_edt_etu_filtre.get(
+                            "Groupe_TD", pd.Series(index=df_edt_etu_filtre.index, dtype=object)
+                        ).isna() & mask_td_etu_filtre
+                        mask_td_choisi_etu = (
+                            (df_edt_etu_filtre.get("Groupe_TD") == groupe_etu)
+                            if groupe_etu else pd.Series(False, index=df_edt_etu_filtre.index)
+                        )
+
+                        mask_tp_commun_etu = mask_tp_etu_filtre & df_edt_etu_filtre["SousGroupes_TP"].apply(
+                            lambda s: not s if isinstance(s, set) else True
+                        )
+                        mask_tp_choisi_etu = mask_tp_etu_filtre & df_edt_etu_filtre["SousGroupes_TP"].apply(
+                            lambda s: bool(sous_groupe_etu) and isinstance(s, set) and sous_groupe_etu in s
+                        )
+
+                        df_edt_final = df_edt_etu_filtre[
+                            mask_cours_commun_etu | mask_cours_choisi_etu
+                            | mask_td_commun_etu | mask_td_choisi_etu
+                            | mask_tp_commun_etu | mask_tp_choisi_etu
+                        ].copy()
+
+                        if not groupe_etu and not sous_groupe_etu:
+                            st.info(
+                                "ℹ️ Aucun groupe/sous-groupe renseigné pour cet "
+                                "étudiant dans le fichier source : seuls les "
+                                "Cours, TD et TP communs (sans groupe "
+                                "spécifique) sont affichés."
                             )
-                        else:
+
+                        # ────────────────────────────────────────────────────
+                        # 🔍 DIAGNOSTIC : détection groupe/sous-groupe
+                        # ────────────────────────────────────────────────────
+                        # Une ligne dont le groupe n'est PAS détecté est
+                        # traitée comme COMMUNE et donc TOUJOURS affichée,
+                        # même si elle porte en réalité un tag dans un format
+                        # non reconnu. Ce panneau permet de vérifier
+                        # immédiatement si c'est le cas, sans avoir à fouiller
+                        # le fichier source.
+                        with st.expander("🔍 Diagnostic groupe / sous-groupe (Cours/TD/TP)"):
+                            df_diag_cours = df_edt_etu_filtre[mask_cours_etu_filtre][
+                                ["Enseignements", "Groupes_Cours"]
+                            ].drop_duplicates(subset=["Enseignements"])
+                            df_diag_td = df_edt_etu_filtre[mask_td_etu_filtre][
+                                ["Enseignements", "Groupe_TD"]
+                            ].drop_duplicates()
+                            df_diag_tp = df_edt_etu_filtre[mask_tp_etu_filtre][
+                                ["Enseignements", "SousGroupes_TP"]
+                            ].drop_duplicates(subset=["Enseignements"])
+
+                            st.caption(
+                                f"Groupe étudiant détecté : **{groupe_etu or 'aucun'}** | "
+                                f"Sous-groupe étudiant détecté : **{sous_groupe_etu or 'aucun'}**"
+                            )
+
+                            st.markdown("**Cours de la promotion — groupes restreints détectés (si listés entre parenthèses) :**")
+                            if not df_diag_cours.empty:
+                                st.dataframe(df_diag_cours, use_container_width=True, hide_index=True)
+                            else:
+                                st.caption("Aucun Cours trouvé pour cette promotion.")
+
+                            st.markdown("**TD de la promotion — groupe détecté :**")
+                            if not df_diag_td.empty:
+                                st.dataframe(df_diag_td, use_container_width=True, hide_index=True)
+                                nb_td_non_detectes = df_diag_td["Groupe_TD"].isna().sum()
+                                if nb_td_non_detectes > 0:
+                                    st.warning(
+                                        f"⚠️ {nb_td_non_detectes} intitulé(s) de TD sans "
+                                        f"groupe détecté — ils seront affichés pour TOUS "
+                                        f"les étudiants (traités comme communs). Si un "
+                                        f"groupe est pourtant visible dans l'intitulé "
+                                        f"ci-dessus, son format diffère de la convention "
+                                        f"attendue (« ...-G<numéro> ») — merci de me "
+                                        f"signaler l'exemple exact."
+                                    )
+                            else:
+                                st.caption("Aucun TD trouvé pour cette promotion.")
+
+                            st.markdown("**TP de la promotion — sous-groupe(s) détecté(s) :**")
+                            if not df_diag_tp.empty:
+                                st.dataframe(df_diag_tp, use_container_width=True, hide_index=True)
+                                nb_tp_non_detectes = df_diag_tp["SousGroupes_TP"].apply(
+                                    lambda s: not s if isinstance(s, set) else True
+                                ).sum()
+                                if nb_tp_non_detectes > 0:
+                                    st.warning(
+                                        f"⚠️ {nb_tp_non_detectes} intitulé(s) de TP sans "
+                                        f"sous-groupe détecté — ils seront affichés pour "
+                                        f"TOUS les étudiants (traités comme communs). Si "
+                                        f"un sous-groupe est pourtant visible dans "
+                                        f"l'intitulé ci-dessus, son format diffère de la "
+                                        f"convention attendue (« ...-SG<numéro> ») — "
+                                        f"merci de me signaler l'exemple exact."
+                                    )
+                            else:
+                                st.caption(
+                                    "Aucun TP trouvé pour cette promotion — c'est la "
+                                    "cause si aucun TP n'apparaît dans la grille "
+                                    "ci-dessous (il n'y en a simplement pas dans le "
+                                    "fichier source pour cette promotion)."
+                                )
+
+                        if not df_edt_final.empty:
                             # ── Afficheurs numériques ──
-                            codes_grp = df_final_grp["Code"].astype(str)
-                            mk1, mk2, mk3, mk4 = st.columns(4)
-                            mk1.metric("📅 Séances", len(df_final_grp))
-                            mk2.metric("📘 Cours", int(codes_grp.str.contains("COURS", case=False, na=False).sum()))
-                            mk3.metric("📗 TD", int(codes_grp.str.contains("TD", case=False, na=False).sum()))
-                            mk4.metric("🔴 TP", int((~codes_grp.str.contains("COURS|TD", case=False, na=False)).sum()))
+                            nb_seances_etu = len(df_edt_final)
+                            nb_cours_etu = len(df_edt_final[df_edt_final["Code"].str.contains("COURS", case=False, na=False)])
+                            nb_td_etu = len(df_edt_final[df_edt_final["Code"].str.contains("TD", case=False, na=False)])
+                            nb_tp_etu = len(df_edt_final[~df_edt_final["Code"].str.contains("COURS|TD", case=False, na=False)])
+                            jours_etu = [j for j in df_edt_final["Jours"].unique() if j.lower() not in ["non défini", "non defini"]]
+                            nb_jours_etu = len(jours_etu)
+                            enseignants_etu = [e for e in df_edt_final["Enseignants"].unique() if e.lower() not in ["non défini", "non defini"]]
+                            nb_ens_etu = len(enseignants_etu)
 
-                            # ── Filtre par type d'enseignement ──
-                            type_aff_grp = st.selectbox(
+                            c1, c2, c3, c4, c5, c6 = st.columns(6)
+                            with c1:
+                                st.markdown(f"""
+                                    <div style="background:#2563eb15;border:2px solid #2563eb;border-radius:12px;padding:12px;text-align:center;">
+                                        <div style="font-size:26px;font-weight:800;color:#2563eb;">{nb_seances_etu}</div>
+                                        <div style="font-size:10px;color:#64748b;font-weight:600;">📅 Séances</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+                            with c2:
+                                st.markdown(f"""
+                                    <div style="background:#1e40af15;border:2px solid #3b82f6;border-radius:12px;padding:12px;text-align:center;">
+                                        <div style="font-size:26px;font-weight:800;color:#1e40af;">{nb_cours_etu}</div>
+                                        <div style="font-size:10px;color:#64748b;font-weight:600;">📘 Cours</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+                            with c3:
+                                st.markdown(f"""
+                                    <div style="background:#16653415;border:2px solid #22c55e;border-radius:12px;padding:12px;text-align:center;">
+                                        <div style="font-size:26px;font-weight:800;color:#166534;">{nb_td_etu}</div>
+                                        <div style="font-size:10px;color:#64748b;font-weight:600;">📗 TD</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+                            with c4:
+                                st.markdown(f"""
+                                    <div style="background:#991b1b15;border:2px solid #ef4444;border-radius:12px;padding:12px;text-align:center;">
+                                        <div style="font-size:26px;font-weight:800;color:#991b1b;">{nb_tp_etu}</div>
+                                        <div style="font-size:10px;color:#64748b;font-weight:600;">🔴 TP</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+                            with c5:
+                                st.markdown(f"""
+                                    <div style="background:#b4530915;border:2px solid #f59e0b;border-radius:12px;padding:12px;text-align:center;">
+                                        <div style="font-size:26px;font-weight:800;color:#b45309;">{nb_jours_etu}</div>
+                                        <div style="font-size:10px;color:#64748b;font-weight:600;">🗓️ Jours</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+                            with c6:
+                                st.markdown(f"""
+                                    <div style="background:#0f766e15;border:2px solid #14b8a6;border-radius:12px;padding:12px;text-align:center;">
+                                        <div style="font-size:26px;font-weight:800;color:#0f766e;">{nb_ens_etu}</div>
+                                        <div style="font-size:10px;color:#64748b;font-weight:600;">👤 Enseignants</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+
+                            st.markdown("<br>", unsafe_allow_html=True)
+
+                            # ═══════════════════════════════════════════════════════
+                            # 🔎 FILTRE PAR TYPE D'ENSEIGNEMENT
+                            # ═══════════════════════════════════════════════════════
+                            st.markdown("### 📋 Emploi du Temps Individuel")
+
+                            type_affiche_etu = st.selectbox(
                                 "📚 Type d'enseignement à afficher :",
-                                _EDT_GRP_TYPES_AFFICHAGE,
-                                key="edt_grp_type_affiche"
+                                [
+                                    "Tous les enseignements",
+                                    "📘 Cours uniquement",
+                                    "📗 TD uniquement",
+                                    "🔴 TP uniquement",
+                                ],
+                                key="type_affiche_etu_indiv"
                             )
 
-                            # ── Créneaux horaires affichés (flexible) ──
-                            df_pour_creneaux_grp = _edt_grp_appliquer_type(df_final_grp, type_aff_grp)
-                            refs_grp, labels_h_grp = _edt_grp_horaires_reference(df_pour_creneaux_grp)
+                            if type_affiche_etu == "📘 Cours uniquement":
+                                df_edt_final_type = df_edt_final[
+                                    df_edt_final["Code"].astype(str).str.contains("COURS", case=False, na=False)
+                                ].copy()
+                            elif type_affiche_etu == "📗 TD uniquement":
+                                df_edt_final_type = df_edt_final[
+                                    df_edt_final["Code"].astype(str).str.contains("TD", case=False, na=False)
+                                    & ~df_edt_final["Code"].astype(str).str.contains("COURS", case=False, na=False)
+                                ].copy()
+                            elif type_affiche_etu == "🔴 TP uniquement":
+                                df_edt_final_type = df_edt_final[
+                                    ~df_edt_final["Code"].astype(str).str.contains("COURS|TD", case=False, na=False)
+                                ].copy()
+                            else:
+                                df_edt_final_type = df_edt_final.copy()
 
-                            mode_creneaux_grp = st.radio(
+                            def _norm_edt(x):
+                                """Normalise un horaire ou un jour pour la
+                                correspondance avec la grille de référence.
+
+                                CORRECTIF : l'ancienne version enchaînait des
+                                substitutions regex (remplacer ':00'->'h00',
+                                puis ajouter 'h00' après tout 'h' non suivi de
+                                '00') qui corrompait les horaires comportant
+                                des minutes non nulles : '8h - 9h30' devenait
+                                '8h00-9h0030' au lieu de '08h00-09h30',
+                                empêchant toute correspondance avec la grille
+                                de référence ('Impossible de construire la
+                                grille'). Cette version reconstruit proprement
+                                l'horaire à partir de ses heures/minutes de
+                                début et de fin (toujours sur 2 chiffres)."""
+                                if not x or str(x).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
+                                    return ""
+
+                                s = str(x).strip().lower()
+
+                                m = re.match(
+                                    r'^\s*(\d{1,2})[h:](\d{2})?\s*[-–à]\s*(\d{1,2})[h:](\d{2})?\s*$',
+                                    s
+                                )
+                                if m:
+                                    h1, m1, h2, m2 = m.groups()
+                                    m1 = m1 or "00"
+                                    m2 = m2 or "00"
+                                    return f"{int(h1):02d}h{m1}-{int(h2):02d}h{m2}"
+
+                                # Pas un horaire (ex. un jour) : normalisation simple.
+                                return re.sub(r'\s+', '', s)
+
+                            # ═══════════════════════════════════════════════════════
+                            # HORAIRES DE LA GRILLE (flexibles)
+                            # ------------------------------------------------------
+                            # La grille contient :
+                            #   1) les créneaux déjà existants ;
+                            #   2) les créneaux d'une heure ajoutés :
+                            #      8h - 9h, 9h - 10h, 10h - 11h, 11h - 12h,
+                            #      12h - 13h, 13h - 14h ;
+                            #   3) tout autre horaire présent dans les séances de
+                            #      l'étudiant (pour qu'aucune séance ne soit
+                            #      masquée).
+                            # Le tout est trié dans l'ordre chronologique.
+                            # ═══════════════════════════════════════════════════
+                            horaires_ref_base_indiv = [
+                                "08h00-09h30", "09h30-11h00", "11h00-12h30",
+                                "12h30-14h00", "14h00-15h30", "15h30-17h00"
+                            ]
+                            horaires_ajoutes_indiv = [
+                                "08h00-09h00", "09h00-10h00", "10h00-11h00",
+                                "11h00-12h00", "12h00-13h00", "13h00-14h00"
+                            ]
+
+                            def _cle_tri_creneau_indiv(h_norm_val):
+                                m_c = re.match(r'^(\d{2})h(\d{2})-(\d{2})h(\d{2})$', str(h_norm_val))
+                                if not m_c:
+                                    return (99 * 60, 99 * 60)
+                                a1, b1, a2, b2 = m_c.groups()
+                                return (int(a1) * 60 + int(b1), int(a2) * 60 + int(b2))
+
+                            def _label_creneau_indiv(h_norm_val):
+                                m_c = re.match(r'^(\d{2})h(\d{2})-(\d{2})h(\d{2})$', str(h_norm_val))
+                                if not m_c:
+                                    return str(h_norm_val)
+                                a1, b1, a2, b2 = m_c.groups()
+                                debut_lbl = f"{int(a1)}h" + ("" if b1 == "00" else b1)
+                                fin_lbl = f"{int(a2)}h" + ("" if b2 == "00" else b2)
+                                return f"{debut_lbl} - {fin_lbl}"
+
+                            _horaires_donnees_indiv = [
+                                h for h in df_edt_final_type["Horaire"].apply(_norm_edt).unique()
+                                if re.match(r'^\d{2}h\d{2}-\d{2}h\d{2}$', str(h))
+                            ]
+                            horaires_ref_indiv = sorted(
+                                set(horaires_ref_base_indiv)
+                                | set(horaires_ajoutes_indiv)
+                                | set(_horaires_donnees_indiv),
+                                key=_cle_tri_creneau_indiv
+                            )
+                            jours_ref_indiv = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
+
+                            map_h_labels_indiv = {
+                                h: _label_creneau_indiv(h) for h in horaires_ref_indiv
+                            }
+                            map_j_labels_indiv = {
+                                "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
+                                "mercredi": "Mercredi", "jeudi": "Jeudi"
+                            }
+
+                            df_edt_final_type["h_norm"] = df_edt_final_type["Horaire"].apply(_norm_edt)
+                            df_edt_final_type["j_norm"] = df_edt_final_type["Jours"].apply(_norm_edt)
+
+                            # ═══════════════════════════════════════════════════════
+                            # 🔎 CRÉNEAUX HORAIRES À AFFICHER (flexible)
+                            #   - Automatique : seuls les créneaux qui contiennent des
+                            #     séances sont affichés (nouveaux créneaux inclus).
+                            #   - Choisir les créneaux : la grille affiche exactement
+                            #     les créneaux sélectionnés. Sans créneau
+                            #     sélectionné, aucune grille n'est affichée.
+                            # ═══════════════════════════════════════════════════════
+                            mode_creneaux_indiv = st.radio(
                                 "⏰ Créneaux horaires affichés sur la grille :",
                                 ["Automatique (créneaux utilisés)", "Choisir les créneaux"],
                                 horizontal=True,
-                                key="edt_grp_mode_creneaux"
+                                key="mode_creneaux_etu_indiv"
                             )
 
-                            creneaux_grp = None
-                            if mode_creneaux_grp == "Choisir les créneaux":
-                                labels_liste_grp = [labels_h_grp[h] for h in refs_grp]
-                                h_utilises_grp = (
-                                    set(df_pour_creneaux_grp["Horaire"].apply(_edt_grp_norm))
-                                    if not df_pour_creneaux_grp.empty else set()
-                                )
-                                creneaux_grp = st.multiselect(
+                            creneaux_choisis_indiv = None
+                            if mode_creneaux_indiv == "Choisir les créneaux":
+                                _sig_etu_creneaux = hashlib.md5(
+                                    f"{promo_sel_indiv}|{etudiant_sel}".encode("utf-8")
+                                ).hexdigest()[:8]
+                                _labels_creneaux_indiv = [map_h_labels_indiv[h] for h in horaires_ref_indiv]
+                                _labels_utilises_indiv = [
+                                    map_h_labels_indiv[h] for h in horaires_ref_indiv
+                                    if h in set(df_edt_final_type["h_norm"])
+                                ]
+                                creneaux_choisis_indiv = st.multiselect(
                                     "Choisir les créneaux (sélection progressive) :",
-                                    labels_liste_grp,
-                                    default=[labels_h_grp[h] for h in refs_grp if h in h_utilises_grp],
-                                    key=f"edt_grp_creneaux_{sig_sel_grp}",
-                                    help="Sélectionnez les créneaux à afficher, y compris les créneaux "
-                                         "d'une heure (8h - 9h, 9h - 10h, ...). Sans créneau "
-                                         "sélectionné, aucune grille n'est affichée."
+                                    _labels_creneaux_indiv,
+                                    default=_labels_utilises_indiv,
+                                    key=f"creneaux_etu_indiv_{_sig_etu_creneaux}",
+                                    help="Sélectionnez les créneaux à afficher, y compris les "
+                                         "créneaux d'une heure (8h - 9h, 9h - 10h, ...). "
+                                         "Sans créneau sélectionné, aucune grille n'est affichée."
                                 )
-                                creneaux_grp = [l for l in labels_liste_grp if l in creneaux_grp]
+                                # Ordre chronologique, quel que soit l'ordre de sélection
+                                creneaux_choisis_indiv = [
+                                    lbl for lbl in _labels_creneaux_indiv if lbl in creneaux_choisis_indiv
+                                ]
+                                _h_norm_choisis_indiv = {
+                                    h for h in horaires_ref_indiv
+                                    if map_h_labels_indiv[h] in creneaux_choisis_indiv
+                                }
+                                df_edt_final_type = df_edt_final_type[
+                                    df_edt_final_type["h_norm"].isin(_h_norm_choisis_indiv)
+                                ].copy()
 
-                            if creneaux_grp is not None and not creneaux_grp:
-                                st.warning("⚠️ Sélectionnez au moins un créneau pour afficher l'EDT.")
+                            def _fmt_cell_indiv(rows):
+                                items = []
+                                for _, r in rows.iterrows():
+                                    code_up = str(r["Code"]).upper()
+                                    if "COURS" in code_up:
+                                        nat, color, bg = "📘", "#1e40af", "#dbeafe"
+                                    elif "TD" in code_up:
+                                        nat, color, bg = "📗", "#166534", "#dcfce7"
+                                    else:
+                                        nat, color, bg = "🔴", "#991b1b", "#fee2e2"
+
+                                    badge_grp = ""
+                                    if pd.notna(r.get("Groupe_EDT")):
+                                        badge_grp = (f"<div style='display:inline-block;background:#7c3aed;"
+                                                     f"color:white;padding:1px 6px;border-radius:4px;"
+                                                     f"font-size:10px;font-weight:700;margin-bottom:3px;'>"
+                                                     f"👥 {r['Groupe_EDT']}</div><br>")
+
+                                    items.append(
+                                        f"<div style='margin-bottom:5px;padding:6px;border-left:4px solid {color};"
+                                        f"background-color:{bg};border-radius:6px;text-align:left;'>"
+                                        f"{badge_grp}"
+                                        f"<b style='color:{color};font-size:12px;'>{nat} {r['Enseignements']}</b><br>"
+                                        f"<span style='font-size:11px;color:#334155;'>👤 {r['Enseignants']}</span><br>"
+                                        f"<span style='font-size:10px;color:#64748b;'>📍 {r['Lieu']}</span>"
+                                        f"</div>"
+                                    )
+                                return "".join(items)
+
+                            def _fmt_cell_indiv_texte(rows):
+                                items = []
+                                for _, r in rows.iterrows():
+                                    code_up = str(r["Code"]).upper()
+                                    nat = "📘" if "COURS" in code_up else ("📗" if "TD" in code_up else "🔴")
+                                    items.append(
+                                        f"{nat} {r['Enseignements']}\n👤 {r['Enseignants']} | 📍 {r['Lieu']}"
+                                    )
+                                return "\n\n".join(items)
+
+                            if not df_edt_final_type.empty:
+                                grouped_indiv = df_edt_final_type.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv)
+                                grouped_indiv_texte = df_edt_final_type.groupby(["j_norm", "h_norm"]).apply(_fmt_cell_indiv_texte)
                             else:
-                                grilles_grp = _edt_grp_construire_grilles(
-                                    df_final_grp, type_aff_grp, creneaux_grp
+                                grouped_indiv = pd.Series(dtype=object)
+                                grouped_indiv_texte = pd.Series(dtype=object)
+
+                            # ═══════════════════════════════════════════════════════
+                            # GRILLE — JOURS EN VERTICAL (lignes), HORAIRES EN
+                            # HORIZONTAL (colonnes), comme demandé.
+                            # ═══════════════════════════════════════════════════════
+                            grid_indiv = grouped_indiv.unstack("h_norm") if not grouped_indiv.empty else pd.DataFrame()
+                            grid_indiv_texte = grouped_indiv_texte.unstack("h_norm") if not grouped_indiv_texte.empty else pd.DataFrame()
+
+                            jours_present_indiv = [j for j in jours_ref_indiv if j in grid_indiv.index]
+                            if creneaux_choisis_indiv is not None:
+                                # Mode « Choisir les créneaux » : exactement les
+                                # créneaux sélectionnés (même s'ils sont vides).
+                                h_present_indiv = [
+                                    h for h in horaires_ref_indiv
+                                    if map_h_labels_indiv[h] in creneaux_choisis_indiv
+                                ]
+                            else:
+                                h_present_indiv = [h for h in horaires_ref_indiv if h in grid_indiv.columns]
+
+                            if creneaux_choisis_indiv is not None and not creneaux_choisis_indiv:
+                                st.warning("⚠️ Sélectionnez au moins un créneau pour afficher l'EDT.")
+                            elif creneaux_choisis_indiv is not None and not jours_present_indiv:
+                                st.info("ℹ️ Aucune séance sur les créneaux sélectionnés.")
+                            elif jours_present_indiv and h_present_indiv:
+                                grid_indiv = grid_indiv.reindex(index=jours_present_indiv, columns=h_present_indiv).fillna("")
+                                grid_indiv.index = [map_j_labels_indiv.get(i, i) for i in grid_indiv.index]
+                                grid_indiv.columns = [map_h_labels_indiv.get(c, c) for c in grid_indiv.columns]
+
+                                grid_indiv_texte = grid_indiv_texte.reindex(index=jours_present_indiv, columns=h_present_indiv).fillna("")
+                                grid_indiv_texte.index = [map_j_labels_indiv.get(i, i) for i in grid_indiv_texte.index]
+                                grid_indiv_texte.columns = [map_h_labels_indiv.get(c, c) for c in grid_indiv_texte.columns]
+
+                                st.write(grid_indiv.to_html(escape=False), unsafe_allow_html=True)
+
+                                # ── Liste des enseignements (filtrée selon le type choisi) ──
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                st.markdown("#### 📚 Liste des Enseignements")
+
+                                enseignements_uniques = df_edt_final_type.drop_duplicates(subset=["Enseignements", "Code"]).copy()
+                                for _, row_m in enseignements_uniques.iterrows():
+                                    code_up = str(row_m["Code"]).upper()
+                                    if "COURS" in code_up:
+                                        badge_bg, badge_color, badge_txt = "#dbeafe", "#1e40af", "📘 COURS"
+                                    elif "TD" in code_up:
+                                        badge_bg, badge_color, badge_txt = "#dcfce7", "#166534", "📗 TD"
+                                    else:
+                                        badge_bg, badge_color, badge_txt = "#fee2e2", "#991b1b", "🔴 TP"
+
+                                    st.markdown(f"""
+                                        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #f1f5f9;">
+                                            <span style="background:{badge_bg};color:{badge_color};padding:3px 10px;border-radius:8px;font-size:11px;font-weight:700;">{badge_txt}</span>
+                                            <span style="font-weight:600;color:#1e293b;font-size:14px;">{row_m['Enseignements']}</span>
+                                            <span style="color:#64748b;font-size:12px;">— {row_m['Enseignants']}</span>
+                                            <span style="color:#94a3b8;font-size:11px;margin-left:auto;">📍 {row_m['Lieu']}</span>
+                                        </div>
+                                    """, unsafe_allow_html=True)
+
+                                # ═══════════════════════════════════════════════════
+                                # 📥 TÉLÉCHARGEMENTS — EXCEL, HTML, PDF
+                                # ═══════════════════════════════════════════════════
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                st.markdown("#### 📥 Télécharger mon EDT individuel")
+
+                                groupe_suffix = f"_{groupe_etu}" if groupe_etu else ""
+                                sousgroupe_suffix = f"_{sous_groupe_etu}" if sous_groupe_etu else ""
+                                type_suffix = (
+                                    "_Cours" if type_affiche_etu == "📘 Cours uniquement" else
+                                    "_TD" if type_affiche_etu == "📗 TD uniquement" else
+                                    "_TP" if type_affiche_etu == "🔴 TP uniquement" else ""
+                                )
+                                nom_base_fichier_etu = (
+                                    f"EDT_{etudiant_sel.replace(' ', '_')}_{promo_sel_indiv}"
+                                    f"{groupe_suffix}{sousgroupe_suffix}{type_suffix}"
+                                )
+                                sous_titre_etu = f"Promotion {promo_sel_indiv}"
+                                if groupe_etu:
+                                    sous_titre_etu += f" | Groupe {groupe_etu}"
+                                if sous_groupe_etu:
+                                    sous_titre_etu += f" | Sous-groupe {sous_groupe_etu}"
+                                if type_affiche_etu != "Tous les enseignements":
+                                    sous_titre_etu += f" | {type_affiche_etu}"
+
+                                dl_etu1, dl_etu2, dl_etu3 = st.columns(3)
+
+                                # ---------------- 1) EXCEL ----------------
+                                buf_xl_etu = io.BytesIO()
+                                with pd.ExcelWriter(buf_xl_etu, engine='xlsxwriter') as writer:
+                                    grid_indiv_texte.to_excel(writer, sheet_name='Mon_EDT', startrow=2)
+                                    wb_etu = writer.book
+                                    ws_etu = writer.sheets['Mon_EDT']
+
+                                    fmt_titre_etu = wb_etu.add_format({
+                                        'bold': True, 'font_size': 13, 'font_color': 'white',
+                                        'bg_color': '#1E3A8A', 'align': 'center', 'valign': 'vcenter'
+                                    })
+                                    ws_etu.merge_range(
+                                        0, 0, 0, len(grid_indiv_texte.columns),
+                                        f"📅 EDT Individuel — {etudiant_sel}", fmt_titre_etu
+                                    )
+                                    ws_etu.merge_range(
+                                        1, 0, 1, len(grid_indiv_texte.columns),
+                                        f"{sous_titre_etu} | Généré le {datetime.now().strftime('%d/%m/%Y')}",
+                                        wb_etu.add_format({'italic': True, 'align': 'center', 'font_size': 9, 'font_color': '#64748b'})
+                                    )
+
+                                    fmt_hdr_etu = wb_etu.add_format({
+                                        'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white',
+                                        'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True
+                                    })
+                                    fmt_jour_etu = wb_etu.add_format({
+                                        'bold': True, 'bg_color': '#f1f5f9', 'border': 1,
+                                        'align': 'center', 'valign': 'vcenter'
+                                    })
+                                    fmt_cell_etu = wb_etu.add_format({
+                                        'border': 1, 'valign': 'top', 'text_wrap': True, 'font_size': 10
+                                    })
+
+                                    ws_etu.write(2, 0, "JOUR", fmt_hdr_etu)
+                                    for col_num, h in enumerate(grid_indiv_texte.columns, start=1):
+                                        ws_etu.write(2, col_num, h, fmt_hdr_etu)
+                                    ws_etu.set_column(0, 0, 14)
+                                    ws_etu.set_column(1, len(grid_indiv_texte.columns), 26)
+
+                                    for row_num, (jour, ligne) in enumerate(grid_indiv_texte.iterrows(), start=3):
+                                        ws_etu.write(row_num, 0, jour, fmt_jour_etu)
+                                        max_lignes_etu = 1
+                                        for col_num, val in enumerate(ligne, start=1):
+                                            ws_etu.write(row_num, col_num, val, fmt_cell_etu)
+                                            max_lignes_etu = max(max_lignes_etu, str(val).count('\n') + 1)
+                                        ws_etu.set_row(row_num, max(40, max_lignes_etu * 14))
+
+                                    ws_etu.freeze_panes(3, 1)
+
+                                dl_etu1.download_button(
+                                    "📊 Excel", buf_xl_etu.getvalue(),
+                                    f"{nom_base_fichier_etu}.xlsx",
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True, key="dl_edt_indiv_etu_xlsx"
                                 )
 
-                                if grilles_grp is None:
-                                    st.info("ℹ️ Aucune séance à afficher pour ce choix (type / créneaux).")
-                                else:
-                                    st.markdown("### 📋 Emploi du Temps du Groupe")
-                                    st.write(grilles_grp["html"].to_html(escape=False), unsafe_allow_html=True)
+                                # ---------------- 2) HTML ----------------
+                                html_edt_indiv = f"""<!DOCTYPE html>
+    <html lang="fr">
+    <head>
+    <meta charset="UTF-8">
+    <title>EDT — {etudiant_sel}</title>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    body{{font-family:'Inter','Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#f1f5f9 0%,#e2e8f0 100%);margin:0;padding:30px;color:#1e293b;}}
+    .container{{max-width:1200px;margin:auto;background:white;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,0.08);overflow:hidden;}}
+    .header{{background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:30px;text-align:center;}}
+    .header h1{{margin:0;font-size:22px;}}.header p{{margin:8px 0 0 0;opacity:0.9;font-size:14px;}}
+    .badge{{display:inline-block;background:#D4AF37;color:#1E3A8A;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px;}}
+    .content{{padding:30px;overflow-x:auto;}}table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+    th{{background-color:#0f172a;color:white;padding:14px;text-align:center;font-size:13px;border:1px solid #e2e8f0;position:sticky;top:0;}}
+    td{{padding:14px;border:1px solid #e2e8f0;vertical-align:top;font-size:12px;word-wrap:break-word;}}
+    tr:nth-child(even){{background-color:#f8fafc;}}
+    .footer{{text-align:center;padding:20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;}}
+    @media print{{body{{background:white;padding:0;}}.container{{box-shadow:none;border-radius:0;}}}}
+    </style>
+    </head>
+    <body>
+    <div class='container'>
+    <div class='header'><h1>📅 EDT Individuel — {etudiant_sel}</h1>
+    <p>{sous_titre_etu}</p>
+    <span class='badge'>Semestre 01 — 2026-2027</span></div>
+    <div class='content'>
+    <p style='color:#64748b;font-size:13px;'>Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
+    {grid_indiv.to_html(escape=False)}
+    </div>
+    <div class='footer'>département d'Électrotechnique — Faculté de Génie Électrique — UDL-SBA</div>
+    </div></body></html>"""
 
-                                    # ── Étudiants concernés ──
-                                    if combo_sel_grp and combo_sel_grp["etudiants"]:
-                                        with st.expander(f"🧑‍🎓 Étudiants du groupe ({nb_etu_grp})"):
-                                            st.write(", ".join(combo_sel_grp["etudiants"]))
+                                dl_etu2.download_button(
+                                    label="🌐 HTML",
+                                    data=html_edt_indiv,
+                                    file_name=f"{nom_base_fichier_etu}.html",
+                                    mime="text/html",
+                                    use_container_width=True,
+                                    key="dl_edt_indiv_etu_repertoire"
+                                )
 
-                                    # ── Téléchargements de cet EDT ──
-                                    st.markdown("#### 📥 Télécharger cet EDT")
-                                    element_grp = _edt_grp_construire_element(
-                                        promo_grp_sel, groupe_val_grp, sous_groupe_val_grp,
-                                        grilles_grp, nb_etu_grp, False, type_aff_grp
+                                # ---------------- 3) PDF ----------------
+                                try:
+                                    from reportlab.lib import colors as rl_colors_etu
+                                    from reportlab.lib.pagesizes import landscape, A4
+                                    from reportlab.platypus import (
+                                        SimpleDocTemplate, Table, TableStyle, Paragraph,
+                                        Spacer, KeepInFrame
                                     )
-                                    type_suffix_grp = (
-                                        "_Cours" if type_aff_grp == "📘 Cours uniquement" else
-                                        "_TD" if type_aff_grp == "📗 TD uniquement" else
-                                        "_TP" if type_aff_grp == "🔴 TP uniquement" else ""
+                                    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                                    from reportlab.lib.units import mm
+
+                                    buf_pdf_etu = io.BytesIO()
+                                    doc_etu = SimpleDocTemplate(
+                                        buf_pdf_etu, pagesize=landscape(A4),
+                                        topMargin=15 * mm, bottomMargin=12 * mm,
+                                        leftMargin=10 * mm, rightMargin=10 * mm
                                     )
-                                    nom_base_grp = _edt_grp_nom_fichier(
-                                        f"EDT_{promo_grp_sel}_{groupe_val_grp or 'SansGroupe'}_"
-                                        f"{sous_groupe_val_grp or 'SansSousGroupe'}{type_suffix_grp}"
+                                    styles_etu = getSampleStyleSheet()
+                                    titre_style_etu = ParagraphStyle(
+                                        'TitreEtu', parent=styles_etu['Heading1'], fontSize=14,
+                                        textColor=rl_colors_etu.HexColor('#1E3A8A'), alignment=1
                                     )
-                                    dgl1, dgl2, dgl3 = st.columns(3)
+                                    soustitre_style_etu = ParagraphStyle(
+                                        'SousTitreEtu', parent=styles_etu['Normal'], fontSize=9,
+                                        textColor=rl_colors_etu.HexColor('#64748b'), alignment=1
+                                    )
+                                    cell_style_etu = ParagraphStyle(
+                                        'CellEtu', parent=styles_etu['Normal'], fontSize=7, leading=9
+                                    )
 
-                                    try:
-                                        dgl1.download_button(
-                                            "📊 Excel", _edt_grp_export_excel([element_grp]),
-                                            f"{nom_base_grp}.xlsx",
-                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                            use_container_width=True, key="dl_edt_grp_xlsx"
+                                    elements_etu = [
+                                        Paragraph(f"📅 EDT Individuel — {etudiant_sel}", titre_style_etu),
+                                        Paragraph(
+                                            f"{sous_titre_etu} | Généré le {datetime.now().strftime('%d/%m/%Y')}",
+                                            soustitre_style_etu
+                                        ),
+                                        Spacer(1, 8),
+                                    ]
+
+                                    page_width_etu = landscape(A4)[0] - 20 * mm
+                                    col_j_etu = 26 * mm
+                                    col_h_etu = (page_width_etu - col_j_etu) / len(grid_indiv_texte.columns)
+                                    col_widths_etu = [col_j_etu] + [col_h_etu] * len(grid_indiv_texte.columns)
+
+                                    def _cel_pdf_etu(texte, largeur):
+                                        return KeepInFrame(
+                                            max(largeur - 10, 10), 380,
+                                            [Paragraph(str(texte).replace(chr(10), '<br/>'), cell_style_etu)],
+                                            mode='shrink'
                                         )
-                                    except Exception as e:
-                                        dgl1.warning(f"Excel indisponible : {e}")
 
-                                    try:
-                                        dgl2.download_button(
-                                            "🌐 HTML",
-                                            _edt_grp_export_html([element_grp], element_grp["titre"]),
-                                            f"{nom_base_grp}.html", "text/html",
-                                            use_container_width=True, key="dl_edt_grp_html"
-                                        )
-                                    except Exception as e:
-                                        dgl2.warning(f"HTML indisponible : {e}")
+                                    data_pdf_etu = [
+                                        [Paragraph("<b>JOUR</b>", cell_style_etu)] +
+                                        [Paragraph(f"<b>{h}</b>", cell_style_etu) for h in grid_indiv_texte.columns]
+                                    ]
+                                    for jour, ligne in grid_indiv_texte.iterrows():
+                                        ligne_pdf_etu = [_cel_pdf_etu(jour, col_j_etu)]
+                                        for val in ligne:
+                                            ligne_pdf_etu.append(_cel_pdf_etu(val, col_h_etu) if val else "")
+                                        data_pdf_etu.append(ligne_pdf_etu)
 
-                                    try:
-                                        dgl3.download_button(
-                                            "📄 PDF", _edt_grp_export_pdf([element_grp]),
-                                            f"{nom_base_grp}.pdf", "application/pdf",
-                                            use_container_width=True, key="dl_edt_grp_pdf"
-                                        )
-                                    except Exception as e:
-                                        dgl3.warning(f"PDF indisponible : {e}")
+                                    table_etu = Table(data_pdf_etu, colWidths=col_widths_etu, repeatRows=1)
+                                    table_etu.setStyle(TableStyle([
+                                        ('BACKGROUND', (0, 0), (-1, 0), rl_colors_etu.HexColor('#1E3A8A')),
+                                        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors_etu.white),
+                                        ('BACKGROUND', (0, 1), (0, -1), rl_colors_etu.HexColor('#f1f5f9')),
+                                        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors_etu.HexColor('#cbd5e1')),
+                                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                                        ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+                                    ]))
+                                    elements_etu.append(table_etu)
+                                    doc_etu.build(elements_etu)
 
-    # ═════════════════════════════════════════════════════════════════════════
-    # 🗂️ TÉLÉCHARGER TOUS LES EDT — UN SEUL FICHIER PAR FORMAT
-    # ---------------------------------------------------------------------
-    #   Excel : une feuille par groupe / sous-groupe (+ feuille « Sommaire »)
-    #   HTML  : une section par groupe / sous-groupe (+ sommaire cliquable)
-    #   PDF   : une page par groupe / sous-groupe
-    # ═════════════════════════════════════════════════════════════════════════
-    st.markdown("---")
-    st.markdown("#### 🗂️ Télécharger tous les EDT — un seul fichier (par groupe et sous-groupe)")
+                                    dl_etu3.download_button(
+                                        "📄 PDF", buf_pdf_etu.getvalue(),
+                                        f"{nom_base_fichier_etu}.pdf",
+                                        "application/pdf", use_container_width=True, key="dl_edt_indiv_etu_pdf"
+                                    )
+                                except Exception as e:
+                                    dl_etu3.warning(f"PDF indisponible : {e}")
+                            else:
+                                st.warning("⚠️ Impossible de construire la grille (données horaires incomplètes).")
+                                with st.expander("🔍 DEBUG - Informations détaillées"):
+                                    st.write(f"**Promotion:** {promo_sel_indiv}")
+                                    st.write(f"**Groupe étudiant:** {groupe_etu}")
+                                    st.write(f"**Nombre de séances:** {len(df_edt_final)}")
+                                    st.write(f"**Colonnes disponibles:** {list(df_edt_final.columns)}")
+                                    st.write(f"**Premiers cours:**")
+                                    st.dataframe(df_edt_final[["Enseignements", "Horaire", "Jours", "Lieu"]].head(10))
+                        else:
+                            st.warning(f"⚠️ Aucun cours trouvé pour le groupe **{groupe_etu or 'non détecté'}** dans la promotion **{promo_sel_indiv}**.")
+                    else:
+                        st.error(f"❌ Aucun enseignement trouvé pour la promotion **{promo_sel_indiv}** dans le fichier EDT.")
+            else:
+                st.warning(f"⚠️ Aucun étudiant trouvé pour la promotion {promo_sel_indiv}.")
 
-    # ── Filtre par département : le fichier global ne contient que les enseignements
-    #    du ou des départements choisis (liste déroulante : tous / un / plusieurs) ──
-    depts_edt_dispo = _edt_grp_departements_disponibles(df_edt_rep)
-    departements_globaux = []          # liste vide = tous les départements (aucun filtre)
-    if depts_edt_dispo:
-        mode_dept_global = st.radio(
-            "Mode d'affichage des départements :",
-            ["Tous les départements", "Un département", "Plusieurs départements"],
-            horizontal=True,
-            key="edt_grp_dept_mode"
-        )
-        if mode_dept_global == "Un département":
-            dept_unique_global = st.selectbox(
-                "Choisir le département :",
-                depts_edt_dispo,
-                key="edt_grp_dept_unique"
+        # ═════════════════════════════════════════════════════════════════════════
+        # 👥 EDT PAR GROUPE ET SOUS-GROUPE
+        # ---------------------------------------------------------------------
+        # Dès que la promotion, le groupe ET le sous-groupe sont sélectionnés,
+        # l'EDT correspondant s'affiche automatiquement (même logique de filtrage
+        # que l'EDT individuel d'un étudiant). Des boutons permettent de le
+        # télécharger (Excel / HTML / PDF) et de télécharger TOUS les EDT en un
+        # seul fichier par format (une feuille / section / page par groupe et
+        # sous-groupe).
+        # ═════════════════════════════════════════════════════════════════════════
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("""
+            <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+                        padding: 16px; border-radius: 14px; color: white; margin: 10px 0 14px 0;
+                        box-shadow: 0 8px 24px rgba(37,99,235,0.25);">
+                <h3 style="margin:0; font-size: 18px;">👥 EDT par Groupe et Sous-groupe</h3>
+                <p style="margin:6px 0 0 0; opacity:0.85; font-size:13px;">
+                    Choisissez la promotion, le groupe puis le sous-groupe : l'emploi du temps s'affiche automatiquement.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        col_groupe_grp = cols_etu_map.get('groupe')
+        col_sous_groupe_grp = cols_etu_map.get('sous_groupe')
+
+        cg1, cg2, cg3 = st.columns(3)
+        with cg1:
+            promo_grp_sel = st.selectbox(
+                "🎓 Promotion :",
+                options=["— Choisir —"] + promos_etu_dispo,
+                key="edt_grp_promo_sel"
             )
-            departements_globaux = [dept_unique_global]
-        elif mode_dept_global == "Plusieurs départements":
-            departements_globaux = st.multiselect(
-                "Choisir les départements (2, 3 ou plus) :",
-                depts_edt_dispo,
-                default=depts_edt_dispo[:2],
-                key="edt_grp_dept_multi"
-            )
-            if not departements_globaux:
-                st.warning("⚠️ Aucun département sélectionné : tous les départements sont pris en compte.")
-        if len(departements_globaux) >= len(depts_edt_dispo):
-            departements_globaux = []  # tous sélectionnés = aucun filtre
-    else:
-        st.caption("ℹ️ Colonne « Département » absente du fichier EDT : filtre par département indisponible.")
 
-    sig_dept_global = hashlib.md5("|".join(sorted(departements_globaux)).encode("utf-8")).hexdigest()[:6]
-    if departements_globaux:
-        _noms_dept_sur = [re.sub(r"[^\w\-]", "", d) for d in departements_globaux]
-        suffixe_dept_global = (
-            "_" + "_".join(_noms_dept_sur) if len(_noms_dept_sur) <= 3
-            else f"_{len(_noms_dept_sur)}departements"
-        )
-        promos_dept_dispo = _edt_grp_promos_par_departement(
-            df_edt_rep, promos_etu_dispo, mapper_promotion, departements_globaux
-        )
-        st.caption(
-            f"🏛️ Le fichier global ne contiendra que les enseignements du département : "
-            f"**{', '.join(departements_globaux)}** ({len(promos_dept_dispo)} promotion(s) concernée(s))."
-        )
-    else:
-        suffixe_dept_global = ""
-        promos_dept_dispo = list(promos_etu_dispo)
+        promo_grp_choisie = bool(promo_grp_sel) and promo_grp_sel != "— Choisir —"
 
-    portee_globale = st.radio(
-        "Portée du fichier global :",
-        ["Promotion sélectionnée", "Une ou plusieurs promotions", "Toutes les promotions"],
-        horizontal=True,
-        key="edt_grp_portee_globale"
-    )
+        if promo_grp_choisie:
+            df_etu_grp = df_etu_rep_indiv[
+                df_etu_rep_indiv[col_promo_etu].astype(str).str.strip().str.upper() == promo_grp_sel.upper()
+            ].copy()
+            combos_grp = _edt_grp_combinaisons(df_etu_grp, col_groupe_grp, col_sous_groupe_grp)
+            sig_promo_grp = hashlib.md5(promo_grp_sel.encode("utf-8")).hexdigest()[:8]
 
-    promos_multi_globales = []
-    if portee_globale == "Une ou plusieurs promotions":
-        promos_multi_globales = st.multiselect(
-            "🎓 Promotions (une ou plusieurs) :",
-            promos_dept_dispo,
-            default=[],
-            key=f"edt_grp_promos_multi_{sig_dept_global}",
-            help="Seules les promotions ayant des enseignements dans le ou les départements "
-                 "choisis sont proposées."
-        )
-
-    if portee_globale == "Promotion sélectionnée" and not promo_grp_choisie:
-        st.info("ℹ️ Choisissez une promotion ci-dessus pour générer tous ses EDT (groupes et sous-groupes).")
-    elif portee_globale == "Une ou plusieurs promotions" and not promos_multi_globales:
-        st.info("ℹ️ Choisissez une ou plusieurs promotions pour générer leurs EDT (groupes et sous-groupes).")
-    elif portee_globale == "Toutes les promotions" and not promos_dept_dispo:
-        st.warning("⚠️ Aucune promotion ne contient d'enseignement du ou des départements sélectionnés.")
-    else:
-        promos_cibles_grp = (
-            [promo_grp_sel] if portee_globale == "Promotion sélectionnée"
-            else list(promos_multi_globales) if portee_globale == "Une ou plusieurs promotions"
-            else list(promos_dept_dispo)
-        )
-        signature_globale = (
-            f"{portee_globale}|{'|'.join(promos_cibles_grp)}|"
-            f"{'+'.join(sorted(departements_globaux)) or 'TOUS'}"
-        )
-
-        if st.button(
-            "⚙️ Générer tous les EDT (Excel + HTML + PDF)",
-            key="btn_edt_grp_generer_tous",
-            use_container_width=True,
-            type="primary"
-        ):
-            elements_globaux = []
-            ignores_globaux = []
-            barre_globale = st.progress(0.0, text="Préparation des EDT...")
-
-            for i_promo, promo_cible in enumerate(promos_cibles_grp):
-                barre_globale.progress(
-                    i_promo / max(len(promos_cibles_grp), 1),
-                    text=f"Promotion {promo_cible}..."
+            if not combos_grp:
+                st.warning(
+                    f"⚠️ Aucun groupe / sous-groupe renseigné pour la promotion **{promo_grp_sel}** "
+                    f"dans le fichier des étudiants."
                 )
-                df_etu_cible = df_etu_rep_indiv[
-                    df_etu_rep_indiv[col_promo_etu].astype(str).str.strip().str.upper() == promo_cible.upper()
-                ].copy()
-                combos_cible = _edt_grp_combinaisons(df_etu_cible, col_groupe_grp, col_sous_groupe_grp)
-                df_edt_cible = _edt_grp_seances_promotion(df_edt_rep, promo_cible, mapper_promotion)
-                # Uniquement les enseignements du ou des départements sélectionnés
-                df_edt_cible = _edt_grp_filtrer_departements(df_edt_cible, departements_globaux)
+            else:
+                groupes_grp = sorted({c["groupe"] for c in combos_grp}, key=_edt_grp_tri_naturel)
+                labels_groupes_grp = {_edt_grp_libelle(g, "(sans groupe)"): g for g in groupes_grp}
 
-                if df_edt_cible.empty:
-                    ignores_globaux.append(
-                        f"{promo_cible} (aucun enseignement du département {', '.join(departements_globaux)})"
-                        if departements_globaux
-                        else f"{promo_cible} (aucun enseignement dans le fichier EDT)"
+                with cg2:
+                    groupe_lbl_sel = st.selectbox(
+                        "👥 Groupe :",
+                        options=["— Choisir —"] + list(labels_groupes_grp.keys()),
+                        key=f"edt_grp_groupe_sel_{sig_promo_grp}"
                     )
-                    continue
-                if not combos_cible:
-                    ignores_globaux.append(f"{promo_cible} (aucun groupe/sous-groupe renseigné)")
-                    continue
 
-                for combo_cible in combos_cible:
-                    df_f_cible = _edt_grp_filtrer_seances(
-                        df_edt_cible, combo_cible["groupe"], combo_cible["sous_groupe"]
+                if groupe_lbl_sel != "— Choisir —":
+                    groupe_val_grp = labels_groupes_grp[groupe_lbl_sel]
+                    sous_groupes_grp = sorted(
+                        {c["sous_groupe"] for c in combos_grp if c["groupe"] == groupe_val_grp},
+                        key=_edt_grp_tri_naturel
                     )
-                    grilles_cible = _edt_grp_construire_grilles(df_f_cible)
-                    if grilles_cible is None:
+                    labels_sg_grp = {
+                        _edt_grp_libelle(sg, "(sans sous-groupe)"): sg for sg in sous_groupes_grp
+                    }
+                    sig_groupe_grp = hashlib.md5(
+                        f"{promo_grp_sel}|{groupe_val_grp}".encode("utf-8")
+                    ).hexdigest()[:8]
+
+                    with cg3:
+                        sg_lbl_sel = st.selectbox(
+                            "🧩 Sous-groupe associé :",
+                            options=["— Choisir —"] + list(labels_sg_grp.keys()),
+                            key=f"edt_grp_sg_sel_{sig_groupe_grp}"
+                        )
+
+                    if sg_lbl_sel != "— Choisir —":
+                        sous_groupe_val_grp = labels_sg_grp[sg_lbl_sel]
+                        sig_sel_grp = hashlib.md5(
+                            f"{promo_grp_sel}|{groupe_val_grp}|{sous_groupe_val_grp}".encode("utf-8")
+                        ).hexdigest()[:8]
+
+                        combo_sel_grp = next(
+                            (c for c in combos_grp
+                             if c["groupe"] == groupe_val_grp and c["sous_groupe"] == sous_groupe_val_grp),
+                            None
+                        )
+                        nb_etu_grp = combo_sel_grp["nb_etudiants"] if combo_sel_grp else 0
+
+                        df_edt_promo_grp = _edt_grp_seances_promotion(
+                            df_edt_rep, promo_grp_sel, mapper_promotion
+                        )
+
+                        if df_edt_promo_grp.empty:
+                            st.error(
+                                f"❌ Aucun enseignement trouvé pour la promotion **{promo_grp_sel}** "
+                                f"dans le fichier EDT."
+                            )
+                        else:
+                            df_final_grp = _edt_grp_filtrer_seances(
+                                df_edt_promo_grp, groupe_val_grp, sous_groupe_val_grp
+                            )
+
+                            st.markdown(f"""
+                                <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+                                            padding: 16px; border-radius: 12px; color: white; margin: 15px 0;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                                        <div>
+                                            <div style="font-size: 11px; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">EDT du groupe</div>
+                                            <div style="font-size: 20px; font-weight: bold; margin-top: 4px;">
+                                                {promo_grp_sel} — {_edt_grp_libelle(groupe_val_grp, 'sans groupe')} / {_edt_grp_libelle(sous_groupe_val_grp, 'sans sous-groupe')}
+                                            </div>
+                                        </div>
+                                        <div style="text-align: right; font-size: 12px; line-height: 1.8;">
+                                            <div>🎓 Promotion : <b>{promo_grp_sel}</b></div>
+                                            <div>👥 Groupe : <b>{_edt_grp_libelle(groupe_val_grp, 'N/A')}</b> | Sous-groupe : <b>{_edt_grp_libelle(sous_groupe_val_grp, 'N/A')}</b></div>
+                                            <div>🧑‍🎓 Étudiants concernés : <b>{nb_etu_grp}</b></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            """, unsafe_allow_html=True)
+
+                            if df_final_grp.empty:
+                                st.warning(
+                                    f"⚠️ Aucune séance trouvée pour le groupe **{groupe_val_grp or 'non détecté'}** / "
+                                    f"sous-groupe **{sous_groupe_val_grp or 'non détecté'}** "
+                                    f"dans la promotion **{promo_grp_sel}**."
+                                )
+                            else:
+                                # ── Afficheurs numériques ──
+                                codes_grp = df_final_grp["Code"].astype(str)
+                                mk1, mk2, mk3, mk4 = st.columns(4)
+                                mk1.metric("📅 Séances", len(df_final_grp))
+                                mk2.metric("📘 Cours", int(codes_grp.str.contains("COURS", case=False, na=False).sum()))
+                                mk3.metric("📗 TD", int(codes_grp.str.contains("TD", case=False, na=False).sum()))
+                                mk4.metric("🔴 TP", int((~codes_grp.str.contains("COURS|TD", case=False, na=False)).sum()))
+
+                                # ── Filtre par type d'enseignement ──
+                                type_aff_grp = st.selectbox(
+                                    "📚 Type d'enseignement à afficher :",
+                                    _EDT_GRP_TYPES_AFFICHAGE,
+                                    key="edt_grp_type_affiche"
+                                )
+
+                                # ── Créneaux horaires affichés (flexible) ──
+                                df_pour_creneaux_grp = _edt_grp_appliquer_type(df_final_grp, type_aff_grp)
+                                refs_grp, labels_h_grp = _edt_grp_horaires_reference(df_pour_creneaux_grp)
+
+                                mode_creneaux_grp = st.radio(
+                                    "⏰ Créneaux horaires affichés sur la grille :",
+                                    ["Automatique (créneaux utilisés)", "Choisir les créneaux"],
+                                    horizontal=True,
+                                    key="edt_grp_mode_creneaux"
+                                )
+
+                                creneaux_grp = None
+                                if mode_creneaux_grp == "Choisir les créneaux":
+                                    labels_liste_grp = [labels_h_grp[h] for h in refs_grp]
+                                    h_utilises_grp = (
+                                        set(df_pour_creneaux_grp["Horaire"].apply(_edt_grp_norm))
+                                        if not df_pour_creneaux_grp.empty else set()
+                                    )
+                                    creneaux_grp = st.multiselect(
+                                        "Choisir les créneaux (sélection progressive) :",
+                                        labels_liste_grp,
+                                        default=[labels_h_grp[h] for h in refs_grp if h in h_utilises_grp],
+                                        key=f"edt_grp_creneaux_{sig_sel_grp}",
+                                        help="Sélectionnez les créneaux à afficher, y compris les créneaux "
+                                             "d'une heure (8h - 9h, 9h - 10h, ...). Sans créneau "
+                                             "sélectionné, aucune grille n'est affichée."
+                                    )
+                                    creneaux_grp = [l for l in labels_liste_grp if l in creneaux_grp]
+
+                                if creneaux_grp is not None and not creneaux_grp:
+                                    st.warning("⚠️ Sélectionnez au moins un créneau pour afficher l'EDT.")
+                                else:
+                                    grilles_grp = _edt_grp_construire_grilles(
+                                        df_final_grp, type_aff_grp, creneaux_grp
+                                    )
+
+                                    if grilles_grp is None:
+                                        st.info("ℹ️ Aucune séance à afficher pour ce choix (type / créneaux).")
+                                    else:
+                                        st.markdown("### 📋 Emploi du Temps du Groupe")
+                                        st.write(grilles_grp["html"].to_html(escape=False), unsafe_allow_html=True)
+
+                                        # ── Étudiants concernés ──
+                                        if combo_sel_grp and combo_sel_grp["etudiants"]:
+                                            with st.expander(f"🧑‍🎓 Étudiants du groupe ({nb_etu_grp})"):
+                                                st.write(", ".join(combo_sel_grp["etudiants"]))
+
+                                        # ── Téléchargements de cet EDT ──
+                                        st.markdown("#### 📥 Télécharger cet EDT")
+                                        element_grp = _edt_grp_construire_element(
+                                            promo_grp_sel, groupe_val_grp, sous_groupe_val_grp,
+                                            grilles_grp, nb_etu_grp, False, type_aff_grp
+                                        )
+                                        type_suffix_grp = (
+                                            "_Cours" if type_aff_grp == "📘 Cours uniquement" else
+                                            "_TD" if type_aff_grp == "📗 TD uniquement" else
+                                            "_TP" if type_aff_grp == "🔴 TP uniquement" else ""
+                                        )
+                                        nom_base_grp = _edt_grp_nom_fichier(
+                                            f"EDT_{promo_grp_sel}_{groupe_val_grp or 'SansGroupe'}_"
+                                            f"{sous_groupe_val_grp or 'SansSousGroupe'}{type_suffix_grp}"
+                                        )
+                                        dgl1, dgl2, dgl3 = st.columns(3)
+
+                                        try:
+                                            dgl1.download_button(
+                                                "📊 Excel", _edt_grp_export_excel([element_grp]),
+                                                f"{nom_base_grp}.xlsx",
+                                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                                use_container_width=True, key="dl_edt_grp_xlsx"
+                                            )
+                                        except Exception as e:
+                                            dgl1.warning(f"Excel indisponible : {e}")
+
+                                        try:
+                                            dgl2.download_button(
+                                                "🌐 HTML",
+                                                _edt_grp_export_html([element_grp], element_grp["titre"]),
+                                                f"{nom_base_grp}.html", "text/html",
+                                                use_container_width=True, key="dl_edt_grp_html"
+                                            )
+                                        except Exception as e:
+                                            dgl2.warning(f"HTML indisponible : {e}")
+
+                                        try:
+                                            dgl3.download_button(
+                                                "📄 PDF", _edt_grp_export_pdf([element_grp]),
+                                                f"{nom_base_grp}.pdf", "application/pdf",
+                                                use_container_width=True, key="dl_edt_grp_pdf"
+                                            )
+                                        except Exception as e:
+                                            dgl3.warning(f"PDF indisponible : {e}")
+
+        # ═════════════════════════════════════════════════════════════════════════
+        # 🗂️ TÉLÉCHARGER TOUS LES EDT — UN SEUL FICHIER PAR FORMAT
+        # ---------------------------------------------------------------------
+        #   Excel : une feuille par groupe / sous-groupe (+ feuille « Sommaire »)
+        #   HTML  : une section par groupe / sous-groupe (+ sommaire cliquable)
+        #   PDF   : une page par groupe / sous-groupe
+        # ═════════════════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.markdown("#### 🗂️ Télécharger tous les EDT — un seul fichier (par groupe et sous-groupe)")
+
+        # ── Filtre par département : le fichier global ne contient que les enseignements
+        #    du ou des départements choisis (liste déroulante : tous / un / plusieurs) ──
+        depts_edt_dispo = _edt_grp_departements_disponibles(df_edt_rep)
+        departements_globaux = []          # liste vide = tous les départements (aucun filtre)
+        if depts_edt_dispo:
+            mode_dept_global = st.radio(
+                "Mode d'affichage des départements :",
+                ["Tous les départements", "Un département", "Plusieurs départements"],
+                horizontal=True,
+                key="edt_grp_dept_mode"
+            )
+            if mode_dept_global == "Un département":
+                dept_unique_global = st.selectbox(
+                    "Choisir le département :",
+                    depts_edt_dispo,
+                    key="edt_grp_dept_unique"
+                )
+                departements_globaux = [dept_unique_global]
+            elif mode_dept_global == "Plusieurs départements":
+                departements_globaux = st.multiselect(
+                    "Choisir les départements (2, 3 ou plus) :",
+                    depts_edt_dispo,
+                    default=depts_edt_dispo[:2],
+                    key="edt_grp_dept_multi"
+                )
+                if not departements_globaux:
+                    st.warning("⚠️ Aucun département sélectionné : tous les départements sont pris en compte.")
+            if len(departements_globaux) >= len(depts_edt_dispo):
+                departements_globaux = []  # tous sélectionnés = aucun filtre
+        else:
+            st.caption("ℹ️ Colonne « Département » absente du fichier EDT : filtre par département indisponible.")
+
+        sig_dept_global = hashlib.md5("|".join(sorted(departements_globaux)).encode("utf-8")).hexdigest()[:6]
+        if departements_globaux:
+            _noms_dept_sur = [re.sub(r"[^\w\-]", "", d) for d in departements_globaux]
+            suffixe_dept_global = (
+                "_" + "_".join(_noms_dept_sur) if len(_noms_dept_sur) <= 3
+                else f"_{len(_noms_dept_sur)}departements"
+            )
+            promos_dept_dispo = _edt_grp_promos_par_departement(
+                df_edt_rep, promos_etu_dispo, mapper_promotion, departements_globaux
+            )
+            st.caption(
+                f"🏛️ Le fichier global ne contiendra que les enseignements du département : "
+                f"**{', '.join(departements_globaux)}** ({len(promos_dept_dispo)} promotion(s) concernée(s))."
+            )
+        else:
+            suffixe_dept_global = ""
+            promos_dept_dispo = list(promos_etu_dispo)
+
+        portee_globale = st.radio(
+            "Portée du fichier global :",
+            ["Promotion sélectionnée", "Une ou plusieurs promotions", "Toutes les promotions"],
+            horizontal=True,
+            key="edt_grp_portee_globale"
+        )
+
+        promos_multi_globales = []
+        if portee_globale == "Une ou plusieurs promotions":
+            promos_multi_globales = st.multiselect(
+                "🎓 Promotions (une ou plusieurs) :",
+                promos_dept_dispo,
+                default=[],
+                key=f"edt_grp_promos_multi_{sig_dept_global}",
+                help="Seules les promotions ayant des enseignements dans le ou les départements "
+                     "choisis sont proposées."
+            )
+
+        if portee_globale == "Promotion sélectionnée" and not promo_grp_choisie:
+            st.info("ℹ️ Choisissez une promotion ci-dessus pour générer tous ses EDT (groupes et sous-groupes).")
+        elif portee_globale == "Une ou plusieurs promotions" and not promos_multi_globales:
+            st.info("ℹ️ Choisissez une ou plusieurs promotions pour générer leurs EDT (groupes et sous-groupes).")
+        elif portee_globale == "Toutes les promotions" and not promos_dept_dispo:
+            st.warning("⚠️ Aucune promotion ne contient d'enseignement du ou des départements sélectionnés.")
+        else:
+            promos_cibles_grp = (
+                [promo_grp_sel] if portee_globale == "Promotion sélectionnée"
+                else list(promos_multi_globales) if portee_globale == "Une ou plusieurs promotions"
+                else list(promos_dept_dispo)
+            )
+            signature_globale = (
+                f"{portee_globale}|{'|'.join(promos_cibles_grp)}|"
+                f"{'+'.join(sorted(departements_globaux)) or 'TOUS'}"
+            )
+
+            if st.button(
+                "⚙️ Générer tous les EDT (Excel + HTML + PDF)",
+                key="btn_edt_grp_generer_tous",
+                use_container_width=True,
+                type="primary"
+            ):
+                elements_globaux = []
+                ignores_globaux = []
+                barre_globale = st.progress(0.0, text="Préparation des EDT...")
+
+                for i_promo, promo_cible in enumerate(promos_cibles_grp):
+                    barre_globale.progress(
+                        i_promo / max(len(promos_cibles_grp), 1),
+                        text=f"Promotion {promo_cible}..."
+                    )
+                    df_etu_cible = df_etu_rep_indiv[
+                        df_etu_rep_indiv[col_promo_etu].astype(str).str.strip().str.upper() == promo_cible.upper()
+                    ].copy()
+                    combos_cible = _edt_grp_combinaisons(df_etu_cible, col_groupe_grp, col_sous_groupe_grp)
+                    df_edt_cible = _edt_grp_seances_promotion(df_edt_rep, promo_cible, mapper_promotion)
+                    # Uniquement les enseignements du ou des départements sélectionnés
+                    df_edt_cible = _edt_grp_filtrer_departements(df_edt_cible, departements_globaux)
+
+                    if df_edt_cible.empty:
                         ignores_globaux.append(
-                            f"{promo_cible} {combo_cible['groupe'] or '-'}/{combo_cible['sous_groupe'] or '-'} (aucune séance)"
+                            f"{promo_cible} (aucun enseignement du département {', '.join(departements_globaux)})"
+                            if departements_globaux
+                            else f"{promo_cible} (aucun enseignement dans le fichier EDT)"
                         )
                         continue
-                    elements_globaux.append(
-                        _edt_grp_construire_element(
-                            promo_cible, combo_cible["groupe"], combo_cible["sous_groupe"],
-                            grilles_cible, combo_cible["nb_etudiants"],
-                            portee_globale != "Promotion sélectionnée"
+                    if not combos_cible:
+                        ignores_globaux.append(f"{promo_cible} (aucun groupe/sous-groupe renseigné)")
+                        continue
+
+                    for combo_cible in combos_cible:
+                        df_f_cible = _edt_grp_filtrer_seances(
+                            df_edt_cible, combo_cible["groupe"], combo_cible["sous_groupe"]
                         )
-                    )
+                        grilles_cible = _edt_grp_construire_grilles(df_f_cible)
+                        if grilles_cible is None:
+                            ignores_globaux.append(
+                                f"{promo_cible} {combo_cible['groupe'] or '-'}/{combo_cible['sous_groupe'] or '-'} (aucune séance)"
+                            )
+                            continue
+                        elements_globaux.append(
+                            _edt_grp_construire_element(
+                                promo_cible, combo_cible["groupe"], combo_cible["sous_groupe"],
+                                grilles_cible, combo_cible["nb_etudiants"],
+                                portee_globale != "Promotion sélectionnée"
+                            )
+                        )
 
-            barre_globale.progress(1.0, text="Génération des fichiers...")
+                barre_globale.progress(1.0, text="Génération des fichiers...")
 
-            if not elements_globaux:
-                st.session_state.pop("edt_grp_fichiers_globaux", None)
-                st.warning("⚠️ Aucun EDT à exporter pour cette sélection.")
-            else:
-                if portee_globale == "Promotion sélectionnée":
-                    titre_global = f"EDT par groupe et sous-groupe — {promo_grp_sel}"
-                    base_nom_global = f"EDT_Tous_Groupes_{promo_grp_sel}"
-                elif portee_globale == "Une ou plusieurs promotions":
-                    titre_global = f"EDT par groupe et sous-groupe — {', '.join(promos_cibles_grp)}"
-                    base_nom_global = (
-                        "EDT_Tous_Groupes_" + "_".join(promos_cibles_grp)
-                        if len(promos_cibles_grp) <= 3
-                        else f"EDT_Tous_Groupes_{len(promos_cibles_grp)}_Promotions"
-                    )
+                if not elements_globaux:
+                    st.session_state.pop("edt_grp_fichiers_globaux", None)
+                    st.warning("⚠️ Aucun EDT à exporter pour cette sélection.")
                 else:
-                    titre_global = "EDT par groupe et sous-groupe — Toutes les promotions"
-                    base_nom_global = "EDT_Tous_Groupes_Toutes_Promotions"
-                if departements_globaux:
-                    titre_global += f" — Département {', '.join(departements_globaux)}"
-                    base_nom_global += suffixe_dept_global
-                fichiers_globaux = {
-                    "signature": signature_globale,
-                    "nb_edt": len(elements_globaux),
-                    "ignores": ignores_globaux,
-                    "nom_base": _edt_grp_nom_fichier(base_nom_global),
-                    "xlsx": None, "html": None, "pdf": None,
-                    "erreurs": {},
-                }
-                try:
-                    fichiers_globaux["xlsx"] = _edt_grp_export_excel(elements_globaux)
-                except Exception as e:
-                    fichiers_globaux["erreurs"]["Excel"] = str(e)
-                try:
-                    fichiers_globaux["html"] = _edt_grp_export_html(
-                        elements_globaux, titre_global
-                    ).encode("utf-8")
-                except Exception as e:
-                    fichiers_globaux["erreurs"]["HTML"] = str(e)
-                try:
-                    fichiers_globaux["pdf"] = _edt_grp_export_pdf(elements_globaux)
-                except Exception as e:
-                    fichiers_globaux["erreurs"]["PDF"] = str(e)
+                    if portee_globale == "Promotion sélectionnée":
+                        titre_global = f"EDT par groupe et sous-groupe — {promo_grp_sel}"
+                        base_nom_global = f"EDT_Tous_Groupes_{promo_grp_sel}"
+                    elif portee_globale == "Une ou plusieurs promotions":
+                        titre_global = f"EDT par groupe et sous-groupe — {', '.join(promos_cibles_grp)}"
+                        base_nom_global = (
+                            "EDT_Tous_Groupes_" + "_".join(promos_cibles_grp)
+                            if len(promos_cibles_grp) <= 3
+                            else f"EDT_Tous_Groupes_{len(promos_cibles_grp)}_Promotions"
+                        )
+                    else:
+                        titre_global = "EDT par groupe et sous-groupe — Toutes les promotions"
+                        base_nom_global = "EDT_Tous_Groupes_Toutes_Promotions"
+                    if departements_globaux:
+                        titre_global += f" — Département {', '.join(departements_globaux)}"
+                        base_nom_global += suffixe_dept_global
+                    fichiers_globaux = {
+                        "signature": signature_globale,
+                        "nb_edt": len(elements_globaux),
+                        "ignores": ignores_globaux,
+                        "nom_base": _edt_grp_nom_fichier(base_nom_global),
+                        "xlsx": None, "html": None, "pdf": None,
+                        "erreurs": {},
+                    }
+                    try:
+                        fichiers_globaux["xlsx"] = _edt_grp_export_excel(elements_globaux)
+                    except Exception as e:
+                        fichiers_globaux["erreurs"]["Excel"] = str(e)
+                    try:
+                        fichiers_globaux["html"] = _edt_grp_export_html(
+                            elements_globaux, titre_global
+                        ).encode("utf-8")
+                    except Exception as e:
+                        fichiers_globaux["erreurs"]["HTML"] = str(e)
+                    try:
+                        fichiers_globaux["pdf"] = _edt_grp_export_pdf(elements_globaux)
+                    except Exception as e:
+                        fichiers_globaux["erreurs"]["PDF"] = str(e)
 
-                st.session_state["edt_grp_fichiers_globaux"] = fichiers_globaux
+                    st.session_state["edt_grp_fichiers_globaux"] = fichiers_globaux
 
-            barre_globale.empty()
+                barre_globale.empty()
 
-        fichiers_prets = st.session_state.get("edt_grp_fichiers_globaux")
-        if fichiers_prets and fichiers_prets.get("signature") == signature_globale:
-            st.success(
-                f"✅ {fichiers_prets['nb_edt']} EDT prêts (un par groupe et sous-groupe). "
-                f"Téléchargez le fichier global dans le format souhaité :"
-            )
-            if fichiers_prets["ignores"]:
-                with st.expander(f"ℹ️ {len(fichiers_prets['ignores'])} élément(s) ignoré(s)"):
-                    for ig in fichiers_prets["ignores"]:
-                        st.write(f"- {ig}")
-            for nom_format, msg_erreur in fichiers_prets["erreurs"].items():
-                st.warning(f"{nom_format} indisponible : {msg_erreur}")
-
-            dga1, dga2, dga3 = st.columns(3)
-            if fichiers_prets["xlsx"] is not None:
-                dga1.download_button(
-                    "📊 Excel (une feuille par groupe)", fichiers_prets["xlsx"],
-                    f"{fichiers_prets['nom_base']}.xlsx",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True, key="dl_edt_grp_tous_xlsx"
+            fichiers_prets = st.session_state.get("edt_grp_fichiers_globaux")
+            if fichiers_prets and fichiers_prets.get("signature") == signature_globale:
+                st.success(
+                    f"✅ {fichiers_prets['nb_edt']} EDT prêts (un par groupe et sous-groupe). "
+                    f"Téléchargez le fichier global dans le format souhaité :"
                 )
-            if fichiers_prets["html"] is not None:
-                dga2.download_button(
-                    "🌐 HTML (une section par groupe)", fichiers_prets["html"],
-                    f"{fichiers_prets['nom_base']}.html", "text/html",
-                    use_container_width=True, key="dl_edt_grp_tous_html"
-                )
-            if fichiers_prets["pdf"] is not None:
-                dga3.download_button(
-                    "📄 PDF (une page par groupe)", fichiers_prets["pdf"],
-                    f"{fichiers_prets['nom_base']}.pdf", "application/pdf",
-                    use_container_width=True, key="dl_edt_grp_tous_pdf"
-                )
-        elif fichiers_prets:
-            st.caption(
-                "ℹ️ Le fichier généré précédemment correspond à une autre sélection : "
-                "cliquez sur « Générer » pour le mettre à jour."
-            )
-else:
-    st.warning("⚠️ Fichiers sources (EDT et/ou Étudiants) non disponibles pour le répertoire EDT individuel.")
+                if fichiers_prets["ignores"]:
+                    with st.expander(f"ℹ️ {len(fichiers_prets['ignores'])} élément(s) ignoré(s)"):
+                        for ig in fichiers_prets["ignores"]:
+                            st.write(f"- {ig}")
+                for nom_format, msg_erreur in fichiers_prets["erreurs"].items():
+                    st.warning(f"{nom_format} indisponible : {msg_erreur}")
 
-if __name__ == "__main__":
+                dga1, dga2, dga3 = st.columns(3)
+                if fichiers_prets["xlsx"] is not None:
+                    dga1.download_button(
+                        "📊 Excel (une feuille par groupe)", fichiers_prets["xlsx"],
+                        f"{fichiers_prets['nom_base']}.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True, key="dl_edt_grp_tous_xlsx"
+                    )
+                if fichiers_prets["html"] is not None:
+                    dga2.download_button(
+                        "🌐 HTML (une section par groupe)", fichiers_prets["html"],
+                        f"{fichiers_prets['nom_base']}.html", "text/html",
+                        use_container_width=True, key="dl_edt_grp_tous_html"
+                    )
+                if fichiers_prets["pdf"] is not None:
+                    dga3.download_button(
+                        "📄 PDF (une page par groupe)", fichiers_prets["pdf"],
+                        f"{fichiers_prets['nom_base']}.pdf", "application/pdf",
+                        use_container_width=True, key="dl_edt_grp_tous_pdf"
+                    )
+            elif fichiers_prets:
+                st.caption(
+                    "ℹ️ Le fichier généré précédemment correspond à une autre sélection : "
+                    "cliquez sur « Générer » pour le mettre à jour."
+                )
+    else:
+        st.warning("⚠️ Fichiers sources (EDT et/ou Étudiants) non disponibles pour le répertoire EDT individuel.")
+
+
+
+# Les espaces Étudiant / Assiduité restent accessibles même si le fichier EDT est momentanément indisponible.
+if (df is None or df.empty) and portail in {"📝 Suivi d'Assiduité", "🔐 Portail Étudiant"}:
+    run_Assiduité(
+        preview_teacher=_preview_teacher if espace_choisi == "Enseignant" and _is_admin_auth else None,
+        preview_student=_preview_student if espace_choisi == "Étudiant" and _is_admin_auth else None,
+    )
+
+if __name__ == "__main__" and portail == "🧠 EDT par groupe":
+    from module_edt_intelligent import run_edt_intelligent
     run_edt_intelligent()
 # ═════════════════════════════════════════════════════════════════════════════
 # >>> TABLEAU DE BORD RÉPERTOIRE ENSEIGNANTS (ADMIN UNIQUEMENT) <<<
 # ═════════════════════════════════════════════════════════════════════════════
-if df_contacts is not None and not df_contacts.empty:
+if portail == "👥 Portail Enseignants" and is_admin and df_contacts is not None and not df_contacts.empty:
     st.divider()
     st.markdown("""
         <div style="background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); 
@@ -32829,7 +35495,7 @@ if df_etu_edt.empty and os.path.exists(FILE_ETUDIANTS):
     except Exception as e:
         st.warning(f"⚠️ Chargement étudiants impossible : {e}")
         df_etu_edt = pd.DataFrame()
-if df_etu_edt is not None and not df_etu_edt.empty:
+if portail == "🎓 Répertoire Étudiants" and is_admin and df_etu_edt is not None and not df_etu_edt.empty:
     st.divider()
     st.markdown("""
         <div style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%); 
@@ -33239,19 +35905,7 @@ def page_messages():
             st.form_submit_button("Envoyer", use_container_width=True)
 
 
-# Routeur Portail Étudiant
-if module_sel == "🔐 Portail Étudiant":
-    page_active = st.session_state.get("page_active", "mon_compte")
-    if page_active == "mon_compte":
-        page_mon_compte()
-    elif page_active == "mon_edt":
-        page_mon_edt()
-    elif page_active == "download_edt_pdf":
-        page_download_edt_pdf()
-    elif page_active == "mes_absences":
-        page_mes_absences()
-    elif page_active == "messages":
-        page_messages()
+# Les anciennes pages étudiantes de démonstration (données fictives) ne sont plus utilisées.
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -33497,33 +36151,34 @@ def generer_pdf_promotion(df_etudiants, promotion, identifiants_db=None):
 #   - génération du PV Word.
 # =============================================================================
 
-st.markdown("---")
-st.markdown(
-    """
-    <div style="
-        margin-top:35px;
-        margin-bottom:20px;
-        padding:22px 26px;
-        border-radius:18px;
-        background:linear-gradient(135deg,#eff6ff 0%,#ffffff 55%,#f5f3ff 100%);
-        border:2px solid #c7d2fe;
-        box-shadow:0 5px 18px rgba(15,23,42,.08);
-    ">
-        <div style="font-size:28px;font-weight:800;color:#1e3a8a;">
-            📝 Génération automatique des PV des Comités Pédagogiques
+if portail == "📢 Gestion Administrative - Bordereaux & PVs" and is_admin:
+    st.markdown("---")
+    st.markdown(
+        """
+        <div style="
+            margin-top:35px;
+            margin-bottom:20px;
+            padding:22px 26px;
+            border-radius:18px;
+            background:linear-gradient(135deg,#eff6ff 0%,#ffffff 55%,#f5f3ff 100%);
+            border:2px solid #c7d2fe;
+            box-shadow:0 5px 18px rgba(15,23,42,.08);
+        ">
+            <div style="font-size:28px;font-weight:800;color:#1e3a8a;">
+                📝 Génération automatique des PV des Comités Pédagogiques
+            </div>
+            <div style="font-size:14px;color:#475569;margin-top:8px;">
+                Cette rubrique est intégrée directement à la fin de la page de la
+                plateforme pour préparer et générer les PV complets en Word.
+            </div>
         </div>
-        <div style="font-size:14px;color:#475569;margin-top:8px;">
-            Cette rubrique est intégrée directement à la fin de la page de la
-            plateforme pour préparer et générer les PV complets en Word.
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+        """,
+        unsafe_allow_html=True
+    )
 
-with st.expander(
-    "📂 Ouvrir le répertoire — Générateur des PV des Comités Pédagogiques",
-    expanded=True
-):
-    run_pv_pedagogique()
+    with st.expander(
+        "📂 Ouvrir le répertoire — Générateur des PV des Comités Pédagogiques",
+        expanded=True
+    ):
+        run_pv_pedagogique()
 
