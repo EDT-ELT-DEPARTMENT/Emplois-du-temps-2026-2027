@@ -24551,7 +24551,7 @@ _NAV_MODE_BY_LABEL = {
 with st.container():
     st.markdown(f"""<div class="elt-hero" style="background:linear-gradient(118deg,#14213d 0%,#1e40af 58%,#4f46e5 100%);">
       <div class="eyebrow">Université Djillali Liabès · Faculté de génie électrique</div>
-      <div class="headline">🏛️ CAMPUS Universitaire</div>
+      <div class="headline">🏛️ ELT CAMPUS</div>
       <div class="subline">Plateforme intelligente de gestion pédagogique et des emplois du temps</div>
       <div class="identity">👤 { _user_auth.get('nom_officiel', 'Utilisateur') } &nbsp;·&nbsp; Portail sécurisé</div>
     </div>""", unsafe_allow_html=True)
@@ -27526,9 +27526,11 @@ if df is not None:
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                key="dl_stats_effectifs")
 
-        if dep_selected not in {"Tous les départements", "ELT"} and not df_ens.empty:
+        # Utiliser le DataFrame réellement chargé pour les statistiques du personnel.
+        # df_ens n'existe pas dans cette portée ; la source est df_stats_ens.
+        if dep_selected not in {"Tous les départements", "ELT"} and not df_stats_ens.empty:
             st.info("ℹ️ Le fichier personnel fourni est « Permanents-Vacataires-ELT2-2026-2027.xlsx » : il couvre principalement ELT. Les chiffres des autres départements ne peuvent compter que les personnes rapprochées de cette source et ne constituent donc pas un recensement exhaustif.")
-        elif dep_selected == "Tous les départements" and not df_ens.empty:
+        elif dep_selected == "Tous les départements" and not df_stats_ens.empty:
             st.info("ℹ️ Le fichier personnel fourni est centré sur ELT. Le total « Tous les départements » compte les enseignants de ce fichier qui ont une charge dans au moins un département de l'EDT, et non tous les personnels des quatre départements.")
 
         st.divider()
