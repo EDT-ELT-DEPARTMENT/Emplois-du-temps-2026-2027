@@ -436,9 +436,11 @@ def envoyer_email_notification_admin(demande_info, fichier_bytes=None):
 
         SMTP_SERVER = 'smtp.gmail.com'
         SMTP_PORT = 587
-        SMTP_USER = "chef.department.elt.fge@gmail.com"
-        SMTP_PASS = "gkzs pdza yodb icvd"
-        EMAIL_ADMIN = "chef.department.elt.fge@gmail.com"
+        SMTP_USER = st.secrets.get("SMTP_USER", "chef.department.elt.fge@gmail.com")
+        SMTP_PASS = st.secrets.get("SMTP_PASS", "")
+        EMAIL_ADMIN = st.secrets.get("EMAIL_ADMIN", SMTP_USER)
+        if not SMTP_PASS:
+            raise RuntimeError("Le secret SMTP_PASS est absent des Secrets Streamlit.")
 
         nom_ens = demande_info.get('enseignant_nom', 'Inconnu')
         email_ens = demande_info.get('enseignant_email', 'N/A')
@@ -3598,7 +3600,7 @@ def run_Assiduité():
             msg["To"] = str(email_dest).strip()
             server = smtplib.SMTP('smtp.gmail.com', 587)
             server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
             server.send_message(msg)
             server.quit()
             return True
@@ -3692,7 +3694,7 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             msg.attach(MIMEText(html_body, "html"))
             server = smtplib.SMTP('smtp.gmail.com', 587)
             server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
             server.send_message(msg)
             server.quit()
             return True
@@ -3741,7 +3743,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             msg.attach(MIMEText(msg_body, "html"))
             server = smtplib.SMTP('smtp.gmail.com', 587)
             server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
             server.send_message(msg)
             server.quit()
             return True
@@ -3793,7 +3795,7 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
             msg.attach(MIMEText(msg_body, "html"))
             server = smtplib.SMTP('smtp.gmail.com', 587)
             server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
             server.send_message(msg)
             server.quit()
             return True
@@ -17428,8 +17430,10 @@ def _pv_envoyer_invitation_email(destinataires, objet, corps_html):
     try:
         SMTP_SERVER = "smtp.gmail.com"
         SMTP_PORT = 587
-        SMTP_USER = "chef.department.elt.fge@gmail.com"
-        SMTP_PASS = "gkzs pdza yodb icvd"
+        SMTP_USER = st.secrets.get("SMTP_USER", "chef.department.elt.fge@gmail.com")
+        SMTP_PASS = st.secrets.get("SMTP_PASS", "")
+        if not SMTP_PASS:
+            raise RuntimeError("Le secret SMTP_PASS est absent des Secrets Streamlit.")
         msg = MIMEMultipart("alternative")
         msg["Subject"] = objet
         msg["From"] = SMTP_USER
@@ -21274,7 +21278,7 @@ Réinitialiser mon mot de passe
                                 msg.attach(MIMEText(body_html, "html"))
                                 server = smtplib.SMTP('smtp.gmail.com', 587)
                                 server.starttls()
-                                server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+                                server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
                                 server.send_message(msg)
                                 server.quit()
                                 
@@ -21488,7 +21492,7 @@ Activer mon compte
                                 msg.attach(MIMEText(body_html, 'html'))
                                 server = smtplib.SMTP('smtp.gmail.com', 587)
                                 server.starttls()
-                                server.login("chef.department.elt.fge@gmail.com", "gkzs pdza yodb icvd")
+                                server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
                                 server.send_message(msg)
                                 server.quit()
                                 st.success("✅ Lien envoyé ! Consultez votre boîte mail.")
@@ -25143,7 +25147,7 @@ if df is not None:
                     
                     # --- CONFIGURATION EXPÉDITEUR ---
                     expediteur_email = "chef.department.elt.fge@gmail.com"
-                    mot_de_passe = "gkzs pdza yodb icvd"
+                    mot_de_passe = st.secrets.get("SMTP_PASS", "")
                     nom_affichage = "département d'Électrotechnique UDL-SBA"
                     
                     server.login(expediteur_email, mot_de_passe)
@@ -25381,7 +25385,7 @@ if is_admin:
 
     # --- CONFIGURATION SMTP ---
     EMAIL_EXPEDITEUR = "chef.department.elt.fge@gmail.com"
-    SECRET_APP = "gkzs pdza yodb icvd"
+    SECRET_APP = st.secrets.get("SMTP_PASS", "")
     
     # --- EMAILS SAISIS MANUELLEMENT DANS LE TABLEAU (conservés pendant la session) ---
     if "emails_saisis" not in st.session_state:
@@ -27142,9 +27146,14 @@ if is_admin:
         _dlg_c_prenom = _dlg_col(_dlg_frame, ["Prénom", "Prenom", "PRENOM", "الإسم", "الاسم"])
         _dlg_c_promo = _dlg_col(_dlg_frame, ["Promotion", "Promo"])
         _dlg_c_email = _envoi_etudiant_colonne_email(_dlg_frame)
+        # IMPORTANT : l'intitulé exact du fichier source est « N° de téléphone ».
+        # Il est ajouté explicitement aux alias (le code précédent ne cherchait
+        # que « N° téléphone », sans le mot « de »).
         _dlg_c_tel = _dlg_col(_dlg_frame, [
-            "Téléphone", "Telephone", "Tel", "Mobile", "N° téléphone",
-            "Numéro de téléphone", "Téléphone étudiant", "Phone"
+            "N° de téléphone", "N° de telephone",
+            "Téléphone", "Telephone", "Tel", "Mobile",
+            "N° téléphone", "Numéro de téléphone", "Numero de telephone",
+            "Téléphone étudiant", "Phone"
         ])
         _dlg_c_mat = _dlg_col(_dlg_frame, [
             "Mat. Etudiant", "Matricule étudiant", "Matricule etudiant",
@@ -27165,7 +27174,24 @@ if is_admin:
             _dlg_frame["__dlg_prenom"] = _dlg_frame[_dlg_c_prenom].map(_dlg_clean)
             _dlg_frame["__dlg_promo"] = _dlg_frame[_dlg_c_promo].map(_dlg_clean)
             _dlg_frame["__dlg_email"] = _dlg_frame[_dlg_c_email].map(_dlg_clean) if _dlg_c_email else ""
-            _dlg_frame["__dlg_tel"] = _dlg_frame[_dlg_c_tel].map(_dlg_clean) if _dlg_c_tel else ""
+            def _dlg_clean_telephone(v):
+                """Nettoie le téléphone sans perdre le zéro initial des mobiles algériens."""
+                valeur = _dlg_clean(v)
+                if not valeur:
+                    return ""
+                # pandas peut lire certaines cellules Excel numériques en 784461165.0.
+                if re.fullmatch(r"\\d+\\.0+", valeur):
+                    valeur = valeur.split(".", 1)[0]
+                chiffres = re.sub(r"\\D", "", valeur)
+                # Un numéro mobile local à 9 chiffres a souvent perdu son 0
+                # initial lors de la lecture Excel d'une cellule numérique.
+                if valeur.isdigit() and len(chiffres) == 9:
+                    valeur = "0" + chiffres
+                return valeur
+
+            _dlg_frame["__dlg_tel"] = (
+                _dlg_frame[_dlg_c_tel].map(_dlg_clean_telephone) if _dlg_c_tel else ""
+            )
             _dlg_frame["__dlg_mat"] = _dlg_frame[_dlg_c_mat].map(_dlg_clean) if _dlg_c_mat else ""
             _dlg_frame = _dlg_frame[
                 (_dlg_frame["__dlg_nom"] != "") &
@@ -27229,8 +27255,59 @@ if is_admin:
             if _dlg_db is not None:
                 try:
                     _dlg_delegues = _dlg_charger_delegues()
+
+                    # RÉPARATION DES ANCIENS ENREGISTREMENTS :
+                    # les délégués déjà dans Supabase peuvent avoir telephone vide,
+                    # car l'ancien alias ne reconnaissait pas « N° de téléphone ».
+                    # On rapproche par Mat. Etudiant (pas par le nom) et on met à
+                    # jour uniquement le champ telephone de la ligne Supabase.
+                    def _dlg_cle_matricule(v):
+                        valeur = _dlg_clean(v)
+                        if not valeur:
+                            return ""
+                        if re.fullmatch(r"\\d+\\.0+", valeur):
+                            valeur = valeur.split(".", 1)[0]
+                        return re.sub(r"\\s+", "", valeur).upper()
+
+                    _dlg_tel_par_matricule = {}
+                    if _dlg_c_mat and not _dlg_frame.empty:
+                        for _, _dlg_src_row in _dlg_frame.iterrows():
+                            _dlg_mat_source = _dlg_cle_matricule(_dlg_src_row.get("__dlg_mat", ""))
+                            _dlg_tel_source = _dlg_clean_telephone(_dlg_src_row.get("__dlg_tel", ""))
+                            if _dlg_mat_source and _dlg_tel_source:
+                                _dlg_tel_par_matricule[_dlg_mat_source] = _dlg_tel_source
+
+                    _dlg_nb_telephones_maj = 0
+                    _dlg_erreurs_telephones = []
+                    for _dlg_delegue in _dlg_delegues:
+                        _dlg_mat_db = _dlg_cle_matricule(_dlg_delegue.get("matricule", ""))
+                        _dlg_tel_source = _dlg_tel_par_matricule.get(_dlg_mat_db, "")
+                        _dlg_tel_db = _dlg_clean_telephone(_dlg_delegue.get("telephone", ""))
+                        if _dlg_tel_source and _dlg_tel_source != _dlg_tel_db:
+                            try:
+                                _dlg_db.table("delegues_promotions").update({
+                                    "telephone": _dlg_tel_source,
+                                    "updated_at": _dlg_datetime.now(_dlg_timezone.utc).isoformat()
+                                }).eq("promotion", _dlg_delegue.get("promotion", "")).execute()
+                                _dlg_delegue["telephone"] = _dlg_tel_source
+                                _dlg_nb_telephones_maj += 1
+                            except Exception as _dlg_tel_exc:
+                                _dlg_erreurs_telephones.append(
+                                    f"{_dlg_delegue.get('promotion', '')}: {str(_dlg_tel_exc)[:120]}"
+                                )
+
                     _dlg_historique = _dlg_charger_historique()
                     _dlg_db_ok = True
+                    if _dlg_nb_telephones_maj:
+                        st.success(
+                            f"📞 {_dlg_nb_telephones_maj} numéro(s) de téléphone récupéré(s) "
+                            "depuis la colonne « N° de téléphone » et mis à jour dans Supabase."
+                        )
+                    if _dlg_erreurs_telephones:
+                        st.warning(
+                            "Certains numéros n'ont pas pu être actualisés dans Supabase : "
+                            + " | ".join(_dlg_erreurs_telephones[:5])
+                        )
                     st.success("Connexion Supabase opérationnelle : délégués et historique accessibles.")
                 except Exception as _dlg_exc:
                     _dlg_db_erreur = str(_dlg_exc)[:350]
@@ -27536,7 +27613,7 @@ if is_admin:
         
         with col_auth2:
             codes_secrets = {
-                "Chef de departement": "gkzs pdza yodb icvd", 
+                "Chef de departement": st.secrets.get("SMTP_PASS", ""), 
                 "Chef de départemet ELT": "kmtk zmkd kwpd cqzz",
                 "Chef de departement Adjoint": "",
                 "Secrétariat ELT": ""
