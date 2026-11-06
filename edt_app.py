@@ -25359,8 +25359,10 @@ if is_admin and mode_view == "✍️ Éditeur de données":
             == _sel_prof_ap.casefold()
         ].copy()
 
+    # Le champ technique "Code" (ex. TP-THT-M2MCIL) est volontairement
+    # masqué dans l'aperçu EDT et dans ses exports détaillés.
     _colonnes_apercu = [
-        c for c in ["Jours", "Horaire", "Enseignements", "Code",
+        c for c in ["Jours", "Horaire", "Enseignements",
                     "Enseignants", "Lieu", "Promotion"]
         if c in _df_apercu.columns
     ]
@@ -25460,10 +25462,10 @@ if is_admin and mode_view == "✍️ Éditeur de données":
             _prof_cell = str(_r_grille.get("Enseignants", ""))
             _promo_cell = str(_r_grille.get("Promotion", ""))
             _lieu_cell = str(_r_grille.get("Lieu", ""))
-            _code_cell = str(_r_grille.get("Code", ""))
+            # Ne pas afficher le code technique/type-groupe dans les cellules
+            # de la grille (ex. TP-THT-M2MCIL).
             _bloc_cell = "\n".join(x for x in [
                 _matiere_cell,
-                ("Type / groupe : " + _code_cell) if _code_cell and _code_cell.lower() != "nan" else "",
                 ("Enseignant : " + _prof_cell) if _prof_cell and _prof_cell.lower() != "nan" else "",
                 ("Promotion : " + _promo_cell) if _promo_cell and _promo_cell.lower() != "nan" else "",
                 ("Lieu : " + _lieu_cell) if _lieu_cell and _lieu_cell.lower() != "nan" else "",
