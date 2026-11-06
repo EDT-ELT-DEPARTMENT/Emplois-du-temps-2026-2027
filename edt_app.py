@@ -27053,6 +27053,447 @@ if is_admin:
             "Emails_Tous_les_Departements_S1_2027.xlsx",
         )
     
+
+    # =============================================================================
+    # DÉLÉGUÉS DE PROMOTION — RÉPERTOIRE, AFFECTATION ET ENVOI AUTOMATIQUE
+    # Historique durable : Supabase (tables delegues_promotions et
+    # historique_envois_delegues). Le SQL de création est affiché ci-dessous.
+    # =============================================================================
+    st.divider()
+    st.subheader("🎓 Délégués de promotion — répertoire et envois personnalisés")
+    st.caption(
+        "Choisissez un étudiant dans la liste générale, consultez ses coordonnées, "
+        "exportez sa fiche Excel et désignez-le comme délégué de sa promotion. "
+        "Les envois aux délégués sont individuels et chaque tentative est historisée."
+    )
+
+    import uuid as _dlg_uuid
+    import html as _dlg_html
+    from datetime import datetime as _dlg_datetime, timezone as _dlg_timezone
+
+    _dlg_sql = """create table if not exists public.delegues_promotions (
+        promotion text primary key,
+        matricule text,
+        nom text,
+        prenom text,
+        email text,
+        telephone text,
+        updated_at timestamptz default now()
+    );
+
+    create table if not exists public.historique_envois_delegues (
+        id text primary key,
+        promotion text,
+        matricule text,
+        nom text,
+        prenom text,
+        email text,
+        telephone text,
+        sujet text,
+        message text,
+        date_envoi timestamptz default now(),
+        statut text,
+        message_erreur text,
+        utilisateur text
+    );"""
+
+    with st.expander("⚙️ Configuration nécessaire — conservation permanente de l'historique", expanded=False):
+        st.markdown(
+            "Pour conserver les délégués et **tout l'historique après redémarrage de Streamlit**, "
+            "les deux tables Supabase ci-dessous doivent exister. Exécutez ce SQL une seule fois "
+            "dans l'éditeur SQL de votre projet Supabase."
+        )
+        st.code(_dlg_sql, language="sql")
+        st.caption(
+            "Le module bloque l'envoi si l'historique ne peut pas être enregistré dans Supabase : "
+            "cela évite d'envoyer des messages sans trace durable."
+        )
+
+    def _dlg_clean(v):
+        try:
+            if pd.isna(v):
+                return ""
+        except Exception:
+            pass
+        v = str(v).strip()
+        return "" if v.lower() in {"nan", "none", "null", "nat"} else v
+
+    def _dlg_col(frame, aliases):
+        return _envoi_colonne(frame, aliases)
+
+    _dlg_frame = df_etu.copy() if isinstance(df_etu, pd.DataFrame) else pd.DataFrame()
+    if _dlg_frame.empty:
+        st.error("Le fichier des étudiants n'est pas chargé. Vérifiez « Liste des étudiants_2026-2027.xlsx ».")
+    else:
+        _dlg_frame.columns = [str(c).strip() for c in _dlg_frame.columns]
+        _dlg_c_nom = _dlg_col(_dlg_frame, ["Nom", "NOM", "Nom de famille", "اللّقب", "اللقب"])
+        _dlg_c_prenom = _dlg_col(_dlg_frame, ["Prénom", "Prenom", "PRENOM", "الإسم", "الاسم"])
+        _dlg_c_promo = _dlg_col(_dlg_frame, ["Promotion", "Promo"])
+        _dlg_c_email = _envoi_etudiant_colonne_email(_dlg_frame)
+        _dlg_c_tel = _dlg_col(_dlg_frame, [
+            "Téléphone", "Telephone", "Tel", "Mobile", "N° téléphone",
+            "Numéro de téléphone", "Téléphone étudiant", "Phone"
+        ])
+        _dlg_c_mat = _dlg_col(_dlg_frame, [
+            "Mat. Etudiant", "Matricule étudiant", "Matricule etudiant",
+            "Matricule", "Matricule Étudiant"
+        ])
+
+        _dlg_missing = [
+            label for label, col in [
+                ("Nom", _dlg_c_nom), ("Prénom", _dlg_c_prenom),
+                ("Promotion", _dlg_c_promo)
+            ] if not col
+        ]
+        if _dlg_missing:
+            st.error("Colonnes obligatoires absentes du fichier étudiant : " + ", ".join(_dlg_missing))
+        else:
+            _dlg_frame = _dlg_frame.copy()
+            _dlg_frame["__dlg_nom"] = _dlg_frame[_dlg_c_nom].map(_dlg_clean)
+            _dlg_frame["__dlg_prenom"] = _dlg_frame[_dlg_c_prenom].map(_dlg_clean)
+            _dlg_frame["__dlg_promo"] = _dlg_frame[_dlg_c_promo].map(_dlg_clean)
+            _dlg_frame["__dlg_email"] = _dlg_frame[_dlg_c_email].map(_dlg_clean) if _dlg_c_email else ""
+            _dlg_frame["__dlg_tel"] = _dlg_frame[_dlg_c_tel].map(_dlg_clean) if _dlg_c_tel else ""
+            _dlg_frame["__dlg_mat"] = _dlg_frame[_dlg_c_mat].map(_dlg_clean) if _dlg_c_mat else ""
+            _dlg_frame = _dlg_frame[
+                (_dlg_frame["__dlg_nom"] != "") &
+                (_dlg_frame["__dlg_prenom"] != "") &
+                (_dlg_frame["__dlg_promo"] != "")
+            ].copy()
+
+            def _dlg_key(row):
+                mat = _dlg_clean(row.get("__dlg_mat", ""))
+                if mat:
+                    return "MAT:" + mat
+                return "ROW:" + str(row.name)
+
+            _dlg_frame["__dlg_id"] = _dlg_frame.apply(_dlg_key, axis=1)
+            _dlg_frame["__dlg_label"] = _dlg_frame.apply(
+                lambda r: (
+                    f"{r['__dlg_nom']} {r['__dlg_prenom']} — {r['__dlg_promo']} "
+                    f"— {r['__dlg_mat'] or ('ligne ' + str(r.name + 2))}"
+                ), axis=1
+            )
+            # Évite les collisions de libellés en cas d'homonymes ou de matricules absents.
+            _dlg_frame["__dlg_label"] = _dlg_frame.apply(
+                lambda r: r["__dlg_label"] + f" — ligne {r.name + 2}"
+                if (_dlg_frame["__dlg_label"] == r["__dlg_label"]).sum() > 1
+                else r["__dlg_label"], axis=1
+            )
+
+            def _dlg_charger_delegues():
+                if _dlg_db is None:
+                    raise RuntimeError("Connexion Supabase non configurée.")
+                rep = _dlg_db.table("delegues_promotions").select("*").order("promotion").execute()
+                return rep.data or []
+
+            def _dlg_charger_historique():
+                if _dlg_db is None:
+                    raise RuntimeError("Connexion Supabase non configurée.")
+                # Pagination pour récupérer l'historique entier, au-delà de la
+                # limite habituelle de 1 000 lignes renvoyées par Supabase.
+                toutes_lignes = []
+                debut = 0
+                taille_page = 1000
+                while True:
+                    rep = (
+                        _dlg_db.table("historique_envois_delegues")
+                        .select("*").order("date_envoi", desc=True)
+                        .range(debut, debut + taille_page - 1).execute()
+                    )
+                    page = rep.data or []
+                    toutes_lignes.extend(page)
+                    if len(page) < taille_page:
+                        break
+                    debut += taille_page
+                return toutes_lignes
+
+            _dlg_delegues = []
+            _dlg_historique = []
+            _dlg_db_ok = False
+            _dlg_db_erreur = ""
+            if supabase is not None:
+                try:
+                    _dlg_delegues = _dlg_charger_delegues()
+                    _dlg_historique = _dlg_charger_historique()
+                    _dlg_db_ok = True
+                    st.success("Connexion Supabase opérationnelle : délégués et historique accessibles.")
+                except Exception as _dlg_exc:
+                    _dlg_db_erreur = str(_dlg_exc)[:350]
+                    st.error(
+                        "Les tables Supabase du module ne sont pas accessibles. "
+                        "Exécutez le SQL présenté dans le panneau de configuration."
+                    )
+                    st.caption(_dlg_db_erreur)
+            else:
+                st.error("Supabase n'est pas configuré. Aucun envoi ne sera autorisé sans historique durable.")
+
+            st.markdown("#### 1. Choisir un étudiant et consulter ses coordonnées")
+            if _dlg_frame.empty:
+                st.warning("Aucun étudiant exploitable n'a été trouvé.")
+            else:
+                _dlg_options = _dlg_frame["__dlg_label"].tolist()
+                _dlg_label_sel = st.selectbox(
+                    "🎓 Sélectionner un étudiant (toutes promotions) :",
+                    _dlg_options,
+                    key="dlg_etudiant_selection_global"
+                )
+                _dlg_row = _dlg_frame.loc[_dlg_frame["__dlg_label"] == _dlg_label_sel].iloc[0]
+                _dlg_info = {
+                    "Nom": _dlg_row["__dlg_nom"],
+                    "Prénom": _dlg_row["__dlg_prenom"],
+                    "Email": _dlg_row["__dlg_email"],
+                    "Téléphone": _dlg_row["__dlg_tel"],
+                    "Promotion": _dlg_row["__dlg_promo"],
+                    "Mat. Etudiant": _dlg_row["__dlg_mat"]
+                }
+                _dlg_cols = st.columns(5)
+                for _dlg_col_ui, (_dlg_label, _dlg_value) in zip(
+                    _dlg_cols,
+                    [
+                        ("Nom", _dlg_info["Nom"]),
+                        ("Prénom", _dlg_info["Prénom"]),
+                        ("Email", _dlg_info["Email"] or "Non renseigné"),
+                        ("Téléphone", _dlg_info["Téléphone"] or "Non renseigné"),
+                        ("Promotion", _dlg_info["Promotion"])
+                    ]
+                ):
+                    _dlg_col_ui.metric(_dlg_label, _dlg_value)
+
+                _dlg_excel = pd.DataFrame([_dlg_info])
+                _dlg_buf = io.BytesIO()
+                with pd.ExcelWriter(_dlg_buf, engine="xlsxwriter") as _dlg_writer:
+                    _dlg_excel.to_excel(_dlg_writer, index=False, sheet_name="Fiche étudiant")
+                    _dlg_ws = _dlg_writer.sheets["Fiche étudiant"]
+                    for _dlg_i, _dlg_c in enumerate(_dlg_excel.columns):
+                        _dlg_ws.set_column(_dlg_i, _dlg_i, min(max(len(str(_dlg_c)), len(str(_dlg_excel.iloc[0, _dlg_i])) + 2), 42))
+                    _dlg_ws.freeze_panes(1, 0)
+                st.download_button(
+                    "📥 Télécharger la fiche de cet étudiant (Excel)",
+                    data=_dlg_buf.getvalue(),
+                    file_name=f"Fiche_{re.sub(r'[^A-Za-z0-9_-]+', '_', _dlg_info['Nom'] + '_' + _dlg_info['Prénom'])}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dlg_dl_fiche_etudiant"
+                )
+
+                st.markdown("#### 2. Désigner le délégué de sa promotion")
+                st.caption(
+                    "La désignation est enregistrée par promotion. Un nouveau choix pour la même promotion "
+                    "remplace le délégué précédent, sans supprimer l'historique des envois."
+                )
+                _dlg_deja = next(
+                    (d for d in _dlg_delegues if _dlg_clean(d.get("promotion")) == _dlg_info["Promotion"]),
+                    None
+                )
+                if _dlg_deja:
+                    st.info(
+                        f"Délégué actuellement enregistré pour {_dlg_info['Promotion']} : "
+                        f"{_dlg_deja.get('nom', '')} {_dlg_deja.get('prenom', '')} — {_dlg_deja.get('email', '')}"
+                    )
+                if st.button(
+                    f"💾 Enregistrer { _dlg_info['Nom'] } { _dlg_info['Prénom'] } comme délégué de {_dlg_info['Promotion']}",
+                    type="primary", use_container_width=True, key="dlg_enregistrer_delegue"
+                ):
+                    if not _dlg_db_ok:
+                        st.error("Enregistrement impossible : vérifiez la connexion et les tables Supabase.")
+                    elif not _dlg_info["Email"] or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", _dlg_info["Email"]):
+                        st.error("Cet étudiant n'a pas d'adresse email valide dans le fichier source.")
+                    else:
+                        try:
+                            _dlg_payload = {
+                                "promotion": _dlg_info["Promotion"],
+                                "matricule": _dlg_info["Mat. Etudiant"],
+                                "nom": _dlg_info["Nom"],
+                                "prenom": _dlg_info["Prénom"],
+                                "email": _dlg_info["Email"],
+                                "telephone": _dlg_info["Téléphone"],
+                                "updated_at": _dlg_datetime.now(_dlg_timezone.utc).isoformat()
+                            }
+                            _dlg_db.table("delegues_promotions").upsert(
+                                _dlg_payload, on_conflict="promotion"
+                            ).execute()
+                            st.success("Délégué enregistré durablement pour cette promotion.")
+                            st.rerun()
+                        except Exception as _dlg_exc:
+                            st.error(f"Erreur d'enregistrement du délégué : {str(_dlg_exc)[:250]}")
+
+            st.markdown("#### 3. Répertoire des délégués enregistrés")
+            if _dlg_delegues:
+                _dlg_df_delegues = pd.DataFrame(_dlg_delegues)
+                _dlg_cols_show = [c for c in ["promotion", "nom", "prenom", "email", "telephone", "matricule", "updated_at"] if c in _dlg_df_delegues.columns]
+                st.dataframe(_dlg_df_delegues[_dlg_cols_show], use_container_width=True, hide_index=True)
+                _dlg_buf_all = io.BytesIO()
+                with pd.ExcelWriter(_dlg_buf_all, engine="xlsxwriter") as _dlg_writer:
+                    _dlg_df_delegues[_dlg_cols_show].to_excel(_dlg_writer, index=False, sheet_name="Delegues")
+                st.download_button(
+                    "📥 Télécharger tous les délégués (Excel)",
+                    data=_dlg_buf_all.getvalue(),
+                    file_name="Repertoire_delegues_par_promotion.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dlg_dl_tous_delegues"
+                )
+            else:
+                st.info("Aucun délégué n'est encore enregistré.")
+
+            st.markdown("#### 4. Envoyer automatiquement le même message à chaque délégué")
+            _dlg_sujet = st.text_input(
+                "Objet du message :", value="Information du département — UDL-SBA",
+                key="dlg_sujet_envoi"
+            )
+            _dlg_corps = st.text_area(
+                "Message à transmettre :", height=130,
+                placeholder="Rédigez ici le message destiné aux délégués de promotion…",
+                key="dlg_corps_envoi"
+            )
+            _dlg_destinataires = [
+                d for d in _dlg_delegues
+                if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", _dlg_clean(d.get("email")))
+            ]
+            st.metric("Délégués avec email valide", f"{len(_dlg_destinataires)} / {len(_dlg_delegues)}")
+            _dlg_confirmer = st.checkbox(
+                f"Je confirme l'envoi individuel à {len(_dlg_destinataires)} délégué(s), un message séparé par promotion.",
+                key="dlg_confirmation_envoi"
+            )
+            if st.button(
+                "📨 ENVOYER À TOUS LES DÉLÉGUÉS ENREGISTRÉS",
+                type="primary", use_container_width=True, key="dlg_bouton_envoi_global"
+            ):
+                if not _dlg_db_ok:
+                    st.error("Envoi bloqué : Supabase et l'historique ne sont pas accessibles.")
+                elif not _dlg_destinataires:
+                    st.warning("Aucun délégué avec une adresse email valide.")
+                elif not _dlg_sujet.strip() or not _dlg_corps.strip():
+                    st.warning("L'objet et le message sont obligatoires.")
+                elif not _dlg_confirmer:
+                    st.warning("Cochez la confirmation avant de lancer l'envoi.")
+                else:
+                    _dlg_smtp_user = st.secrets.get("SMTP_USER", EMAIL_EXPEDITEUR)
+                    _dlg_smtp_pass = st.secrets.get("SMTP_APP_PASSWORD", "")
+                    if not _dlg_smtp_pass:
+                        st.error(
+                            "Mot de passe SMTP absent : ajoutez SMTP_APP_PASSWORD dans "
+                            "les Secrets de Streamlit avant tout envoi."
+                        )
+                        st.stop()
+                    _dlg_serveur = None
+                    _dlg_ok = 0
+                    _dlg_erreurs = []
+                    _dlg_barre = st.progress(0)
+                    try:
+                        _dlg_serveur = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
+                        _dlg_serveur.starttls()
+                        _dlg_serveur.login(_dlg_smtp_user, _dlg_smtp_pass)
+                        for _dlg_i, _dlg_dest in enumerate(_dlg_destinataires, 1):
+                            _dlg_id_histo = str(_dlg_uuid.uuid4())
+                            _dlg_date = _dlg_datetime.now(_dlg_timezone.utc).isoformat()
+                            _dlg_user = (st.session_state.get("user_data") or {}).get("email", "administrateur")
+                            _dlg_nom_dest = f"{_dlg_dest.get('nom', '')} {_dlg_dest.get('prenom', '')}".strip()
+                            _dlg_base_histo = {
+                                "id": _dlg_id_histo,
+                                "promotion": _dlg_dest.get("promotion", ""),
+                                "matricule": _dlg_dest.get("matricule", ""),
+                                "nom": _dlg_dest.get("nom", ""),
+                                "prenom": _dlg_dest.get("prenom", ""),
+                                "email": _dlg_dest.get("email", ""),
+                                "telephone": _dlg_dest.get("telephone", ""),
+                                "sujet": _dlg_sujet.strip(),
+                                "message": _dlg_corps.strip(),
+                                "date_envoi": _dlg_date,
+                                "statut": "EN COURS",
+                                "message_erreur": "",
+                                "utilisateur": _dlg_user
+                            }
+                            # Inscrire la tentative AVANT l'envoi : aucune tentative sans trace durable.
+                            try:
+                                _dlg_db.table("historique_envois_delegues").insert(_dlg_base_histo).execute()
+                            except Exception as _dlg_hist_exc:
+                                _dlg_erreurs.append(
+                                    f"{_dlg_dest.get('promotion', '')} — {_dlg_nom_dest} : "
+                                    f"historique impossible, message non envoyé ({str(_dlg_hist_exc)[:160]})"
+                                )
+                                _dlg_barre.progress(_dlg_i / len(_dlg_destinataires))
+                                continue
+                            try:
+                                _dlg_msg = MIMEMultipart()
+                                _dlg_msg["From"] = f"Département d'Électrotechnique <{_dlg_smtp_user}>"
+                                _dlg_msg["To"] = _dlg_clean(_dlg_dest.get("email"))
+                                _dlg_msg["Subject"] = _dlg_sujet.strip()
+                                _dlg_html_body = (
+                                    "<html><body style='font-family:Arial,sans-serif;color:#1f2937;line-height:1.6'>"
+                                    f"<p>Bonjour <b>{_dlg_html.escape(_dlg_nom_dest)}</b>,</p>"
+                                    f"<p>{_dlg_html.escape(_dlg_corps.strip()).replace(chr(10), '<br>')}</p>"
+                                    f"<p><b>Promotion :</b> {_dlg_html.escape(str(_dlg_dest.get('promotion', '')))}</p>"
+                                    "<p>Cordialement,<br><b>Département d'Électrotechnique — FGE / UDL-SBA</b></p>"
+                                    "</body></html>"
+                                )
+                                _dlg_msg.attach(MIMEText(_dlg_html_body, "html", "utf-8"))
+                                _dlg_serveur.send_message(_dlg_msg)
+                                _dlg_db.table("historique_envois_delegues").update({
+                                    "statut": "ENVOYÉ",
+                                    "message_erreur": ""
+                                }).eq("id", _dlg_id_histo).execute()
+                                _dlg_ok += 1
+                            except Exception as _dlg_send_exc:
+                                _dlg_err_txt = str(_dlg_send_exc)[:500]
+                                _dlg_erreurs.append(f"{_dlg_dest.get('promotion', '')} — {_dlg_nom_dest} : {_dlg_err_txt}")
+                                try:
+                                    _dlg_db.table("historique_envois_delegues").update({
+                                        "statut": "ÉCHEC",
+                                        "message_erreur": _dlg_err_txt
+                                    }).eq("id", _dlg_id_histo).execute()
+                                except Exception:
+                                    pass
+                            _dlg_barre.progress(_dlg_i / len(_dlg_destinataires))
+                    except Exception as _dlg_smtp_exc:
+                        st.error(f"Connexion SMTP impossible : {str(_dlg_smtp_exc)[:250]}")
+                    finally:
+                        if _dlg_serveur is not None:
+                            try:
+                                _dlg_serveur.quit()
+                            except Exception:
+                                pass
+                    st.success(f"Envoi terminé : {_dlg_ok} message(s) envoyé(s) sur {len(_dlg_destinataires)} délégué(s).")
+                    if _dlg_erreurs:
+                        with st.expander(f"⚠️ Envois non aboutis ({len(_dlg_erreurs)})"):
+                            for _dlg_err in _dlg_erreurs:
+                                st.write("• " + _dlg_err)
+                    st.rerun()
+
+            st.markdown("#### 5. Historique complet des envois")
+            if _dlg_db_ok:
+                try:
+                    _dlg_histo_frais = _dlg_charger_historique()
+                    if _dlg_histo_frais:
+                        _dlg_df_hist = pd.DataFrame(_dlg_histo_frais)
+                        _dlg_filtre_promo = st.selectbox(
+                            "Filtrer l'historique par promotion :",
+                            ["Toutes les promotions"] + sorted({
+                                _dlg_clean(x) for x in _dlg_df_hist.get("promotion", pd.Series(dtype=str)).tolist()
+                                if _dlg_clean(x)
+                            }),
+                            key="dlg_filtre_historique"
+                        )
+                        if _dlg_filtre_promo != "Toutes les promotions":
+                            _dlg_df_hist = _dlg_df_hist[
+                                _dlg_df_hist["promotion"].astype(str) == _dlg_filtre_promo
+                            ]
+                        st.dataframe(_dlg_df_hist, use_container_width=True, hide_index=True)
+                        _dlg_hist_buf = io.BytesIO()
+                        with pd.ExcelWriter(_dlg_hist_buf, engine="xlsxwriter") as _dlg_writer:
+                            _dlg_df_hist.to_excel(_dlg_writer, index=False, sheet_name="Historique envois")
+                        st.download_button(
+                            "📥 Télécharger l'historique des envois (Excel)",
+                            data=_dlg_hist_buf.getvalue(),
+                            file_name="Historique_complet_envois_delegues.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="dlg_dl_historique"
+                        )
+                    else:
+                        st.info("Aucun envoi enregistré dans l'historique.")
+                except Exception as _dlg_hist_read_exc:
+                    st.error(f"Impossible de lire l'historique : {str(_dlg_hist_read_exc)[:250]}")
+
+
     # =============================================================================
     # SECTION COURRIER OFFICIEL : MULTI-EXPÉDITEURS (CHEF / ADJOINT / SEC)
     # =============================================================================
