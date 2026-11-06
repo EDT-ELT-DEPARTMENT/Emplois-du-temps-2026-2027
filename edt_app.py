@@ -3,6 +3,8 @@
 # =============================================================================
 import urllib.parse
 import unicodedata
+import html as _html_grp
+from xml.sax.saxutils import escape as _xml_escape_grp
 import streamlit as st
 
 # Dénomination officielle
