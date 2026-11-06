@@ -34740,12 +34740,34 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
         col_groupe_grp = cols_etu_map.get('groupe')
         col_sous_groupe_grp = cols_etu_map.get('sous_groupe')
 
-        cg1, cg2, cg3 = st.columns(3)
-        with cg1:
+        # IMPORTANT : une promotion (ex. ING2) peut exister dans plusieurs
+        # départements. On choisit donc le département AVANT la promotion et
+        # on filtre l'EDT sur le département exact avant tout mapping de promo.
+        depts_grp_dispo = _edt_grp_departements_disponibles(df_edt_rep)
+        df_edt_grp_dept = df_edt_rep.copy()
+        dept_grp_sel = "Tous les départements"
+        cg1, cg2, cg3, cg4 = st.columns(4)
+        if depts_grp_dispo:
+            with cg1:
+                dept_grp_sel = st.selectbox(
+                    "🏛️ Département :",
+                    options=depts_grp_dispo,
+                    key="edt_grp_dept_sel"
+                )
+            df_edt_grp_dept = _edt_grp_filtrer_departements(df_edt_rep, [dept_grp_sel])
+            promos_grp_options = _edt_grp_promos_par_departement(
+                df_edt_grp_dept, promos_etu_dispo, mapper_promotion, [dept_grp_sel]
+            )
+        else:
+            with cg1:
+                st.warning("La colonne « Département » est absente du fichier EDT : séparation par département impossible.")
+            promos_grp_options = list(promos_etu_dispo)
+
+        with cg2:
             promo_grp_sel = st.selectbox(
                 "🎓 Promotion :",
-                options=["— Choisir —"] + promos_etu_dispo,
-                key="edt_grp_promo_sel"
+                options=["— Choisir —"] + promos_grp_options,
+                key="edt_grp_promo_sel_dept"
             )
 
         promo_grp_choisie = bool(promo_grp_sel) and promo_grp_sel != "— Choisir —"
@@ -34754,8 +34776,17 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
             df_etu_grp = df_etu_rep_indiv[
                 df_etu_rep_indiv[col_promo_etu].astype(str).str.strip().str.upper() == promo_grp_sel.upper()
             ].copy()
+            # Si le fichier étudiants contient une colonne Département, appliquer
+            # également ce filtre afin de ne pas mélanger les effectifs/groupes.
+            _col_dept_etu_grp = next((c for c in df_etu_grp.columns if str(c).strip().casefold() in
+                                      {"département", "departement", "department", "dept"}), None)
+            if depts_grp_dispo and _col_dept_etu_grp:
+                df_etu_grp = df_etu_grp[
+                    df_etu_grp[_col_dept_etu_grp].fillna("").astype(str).str.strip().str.upper()
+                    == str(dept_grp_sel).strip().upper()
+                ].copy()
             combos_grp = _edt_grp_combinaisons(df_etu_grp, col_groupe_grp, col_sous_groupe_grp)
-            sig_promo_grp = hashlib.md5(promo_grp_sel.encode("utf-8")).hexdigest()[:8]
+            sig_promo_grp = hashlib.md5(f"{dept_grp_sel}|{promo_grp_sel}".encode("utf-8")).hexdigest()[:8]
 
             if not combos_grp:
                 st.warning(
@@ -34766,7 +34797,7 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
                 groupes_grp = sorted({c["groupe"] for c in combos_grp}, key=_edt_grp_tri_naturel)
                 labels_groupes_grp = {_edt_grp_libelle(g, "(sans groupe)"): g for g in groupes_grp}
 
-                with cg2:
+                with cg3:
                     groupe_lbl_sel = st.selectbox(
                         "👥 Groupe :",
                         options=["— Choisir —"] + list(labels_groupes_grp.keys()),
@@ -34783,10 +34814,10 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
                         _edt_grp_libelle(sg, "(sans sous-groupe)"): sg for sg in sous_groupes_grp
                     }
                     sig_groupe_grp = hashlib.md5(
-                        f"{promo_grp_sel}|{groupe_val_grp}".encode("utf-8")
+                        f"{dept_grp_sel}|{promo_grp_sel}|{groupe_val_grp}".encode("utf-8")
                     ).hexdigest()[:8]
 
-                    with cg3:
+                    with cg4:
                         sg_lbl_sel = st.selectbox(
                             "🧩 Sous-groupe associé :",
                             options=["— Choisir —"] + list(labels_sg_grp.keys()),
@@ -34796,7 +34827,7 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
                     if sg_lbl_sel != "— Choisir —":
                         sous_groupe_val_grp = labels_sg_grp[sg_lbl_sel]
                         sig_sel_grp = hashlib.md5(
-                            f"{promo_grp_sel}|{groupe_val_grp}|{sous_groupe_val_grp}".encode("utf-8")
+                            f"{dept_grp_sel}|{promo_grp_sel}|{groupe_val_grp}|{sous_groupe_val_grp}".encode("utf-8")
                         ).hexdigest()[:8]
 
                         combo_sel_grp = next(
@@ -34806,8 +34837,11 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
                         )
                         nb_etu_grp = combo_sel_grp["nb_etudiants"] if combo_sel_grp else 0
 
+                        # Le mapping de promotion est effectué uniquement dans
+                        # le sous-ensemble du département choisi : ING2 d'un autre
+                        # département ne peut donc jamais entrer dans cette grille.
                         df_edt_promo_grp = _edt_grp_seances_promotion(
-                            df_edt_rep, promo_grp_sel, mapper_promotion
+                            df_edt_grp_dept, promo_grp_sel, mapper_promotion
                         )
 
                         if df_edt_promo_grp.empty:
@@ -34831,6 +34865,7 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
                                             </div>
                                         </div>
                                         <div style="text-align: right; font-size: 12px; line-height: 1.8;">
+                                            <div>🏛️ Département : <b>{dept_grp_sel}</b></div>
                                             <div>🎓 Promotion : <b>{promo_grp_sel}</b></div>
                                             <div>👥 Groupe : <b>{_edt_grp_libelle(groupe_val_grp, 'N/A')}</b> | Sous-groupe : <b>{_edt_grp_libelle(sous_groupe_val_grp, 'N/A')}</b></div>
                                             <div>🧑‍🎓 Étudiants concernés : <b>{nb_etu_grp}</b></div>
@@ -34920,7 +34955,7 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
                                             "_TP" if type_aff_grp == "🔴 TP uniquement" else ""
                                         )
                                         nom_base_grp = _edt_grp_nom_fichier(
-                                            f"EDT_{promo_grp_sel}_{groupe_val_grp or 'SansGroupe'}_"
+                                            f"EDT_{_edt_grp_nom_fichier(dept_grp_sel)}_{promo_grp_sel}_{groupe_val_grp or 'SansGroupe'}_"
                                             f"{sous_groupe_val_grp or 'SansSousGroupe'}{type_suffix_grp}"
                                         )
                                         dgl1, dgl2, dgl3 = st.columns(3)
