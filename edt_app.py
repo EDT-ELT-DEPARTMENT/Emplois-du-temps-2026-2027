@@ -24676,6 +24676,56 @@ if df is not None:
             nom_affichage_complet = repertoire_noms_complets.get(cible.strip().upper(), cible)
             grade_enseignant = repertoire_grades.get(cible.strip().upper(), "Grade non spécifié")
             statut_enseignant = repertoire_qualites.get(cible.strip().upper(), "Statut non spécifié")
+            # Charger toutes les fonctions institutionnelles attribuées à cet enseignant.
+            fonctions_statut = []
+            try:
+                _fonc_client_profil = _client_persistant_postes_superieurs()
+                if _fonc_client_profil is not None:
+                    _fonc_rows_profil = (
+                        _fonc_client_profil.table("attributions_responsabilites")
+                        .select("enseignant,fonction,promotion,laboratoire").execute().data or []
+                    )
+                    def _fonc_norm_profil(v):
+                        _v = unicodedata.normalize("NFKD", str(v or "").upper())
+                        _v = "".join(ch for ch in _v if not unicodedata.combining(ch))
+                        return re.sub(r"[^A-Z0-9]+", "", _v)
+                    _cle_cible_fonc = _fonc_norm_profil(cible)
+                    for _fr in _fonc_rows_profil:
+                        if _fonc_norm_profil(_fr.get("enseignant", "")) != _cle_cible_fonc:
+                            continue
+                        _fonction = str(_fr.get("fonction", "")).strip()
+                        _promotion = str(_fr.get("promotion", "") or "").strip()
+                        _laboratoire = str(_fr.get("laboratoire", "") or "").strip()
+                        if _fonction == "Responsable de l'équipe de formation" and _promotion:
+                            fonctions_statut.append(f"Responsable de l'équipe de formation { _promotion }")
+                        elif _fonction in {"Directeur de laboratoire", "Chef d'équipe de laboratoire"} and _laboratoire:
+                            fonctions_statut.append(f"{_fonction} — {_laboratoire}")
+                        elif _fonction:
+                            fonctions_statut.append(_fonction)
+            except Exception:
+                fonctions_statut = []
+            # Compatibilité : reprendre les anciennes affectations de l'ancien répertoire.
+            try:
+                _ancien_client_profil = _client_persistant_postes_superieurs()
+                if _ancien_client_profil is not None:
+                    _anciennes = (_ancien_client_profil.table("responsables_equipes_formation")
+                                  .select("enseignant,promotion").execute().data or [])
+                    def _ancien_norm(v):
+                        _v = unicodedata.normalize("NFKD", str(v or "").upper())
+                        _v = "".join(ch for ch in _v if not unicodedata.combining(ch))
+                        return re.sub(r"[^A-Z0-9]+", "", _v)
+                    _cle_ancien = _ancien_norm(cible)
+                    for _a in _anciennes:
+                        _p = str(_a.get("promotion", "") or "").strip()
+                        if _ancien_norm(_a.get("enseignant", "")) == _cle_ancien and _p:
+                            _lib = f"Responsable de l'équipe de formation {_p}"
+                            if _lib not in fonctions_statut:
+                                fonctions_statut.append(_lib)
+            except Exception:
+                pass
+            statut_enseignant_affichage = statut_enseignant
+            if fonctions_statut:
+                statut_enseignant_affichage += " · " + " · ".join(sorted(set(fonctions_statut)))
             email_ens = user.get('email', 'Non renseigné')
             tel_ens = repertoire_telephones.get(cible.strip().upper(), user.get('telephone', 'Non renseigné'))
         
@@ -24697,7 +24747,7 @@ if df is not None:
                                     {grade_enseignant}
                                 </span>
                                 <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
-                                    {statut_enseignant}
+                                    {statut_enseignant_affichage}
                                 </span>
                             </div>
                         </div>
@@ -27359,6 +27409,224 @@ if is_admin:
                     st.caption(_dlg_db_erreur)
             else:
                 st.error("Supabase n'est pas configuré. Aucun envoi ne sera autorisé sans historique durable.")
+
+            # =============================================================================
+            # RÉPERTOIRE GÉNÉRAL DES RESPONSABILITÉS INSTITUTIONNELLES
+            # Un enseignant peut cumuler plusieurs fonctions.
+            # =============================================================================
+            st.divider()
+            st.subheader("🏛️ Répertoire général des responsabilités institutionnelles")
+            st.caption(
+                "Sélectionnez un enseignant permanent puis attribuez-lui une ou plusieurs fonctions. "
+                "Les fonctions déjà enregistrées sont conservées ; vous pouvez ajouter ou retirer chaque attribution séparément."
+            )
+
+            _fonctions_disponibles = [
+                "Responsable de l'équipe de formation",
+                "Chef de département",
+                "Chef de département Adjoint chargé de la pédagogie",
+                "Chef de département adjoint chargé de la poste graduation",
+                "Vice doyen de la graduation",
+                "Vice Doyen de la poste graduation",
+                "Vice-recteur de la graduation",
+                "Directeur de laboratoire",
+                "Chef d'équipe de laboratoire",
+                "Président du CSF",
+                "Président du CSD",
+                "Responsable du CFD",
+            ]
+            _laboratoires_disponibles = ["APELEC", "ICEPS", "IRECOM"]
+            _fonc_sql = """CREATE TABLE IF NOT EXISTS public.attributions_responsabilites (
+                id TEXT PRIMARY KEY,
+                enseignant TEXT NOT NULL,
+                fonction TEXT NOT NULL,
+                promotion TEXT NOT NULL DEFAULT '',
+                laboratoire TEXT NOT NULL DEFAULT '',
+                email TEXT,
+                telephone TEXT,
+                grade TEXT,
+                qualite TEXT,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            ALTER TABLE public.attributions_responsabilites ADD COLUMN IF NOT EXISTS promotion TEXT NOT NULL DEFAULT '';
+            ALTER TABLE public.attributions_responsabilites ADD COLUMN IF NOT EXISTS laboratoire TEXT NOT NULL DEFAULT '';
+            ALTER TABLE public.attributions_responsabilites ADD COLUMN IF NOT EXISTS email TEXT;
+            ALTER TABLE public.attributions_responsabilites ADD COLUMN IF NOT EXISTS telephone TEXT;
+            ALTER TABLE public.attributions_responsabilites ADD COLUMN IF NOT EXISTS grade TEXT;
+            ALTER TABLE public.attributions_responsabilites ADD COLUMN IF NOT EXISTS qualite TEXT;
+            ALTER TABLE public.attributions_responsabilites ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+            CREATE INDEX IF NOT EXISTS idx_attributions_responsabilites_enseignant
+                ON public.attributions_responsabilites (enseignant);
+            """
+            with st.expander("⚙️ SQL Supabase — répertoire général des responsabilités", expanded=False):
+                st.markdown("Exécutez le script SQL fourni dans Supabase → SQL Editor avant d'utiliser le répertoire.")
+                st.code(_fonc_sql, language="sql")
+
+            _fonc_lignes = []
+            _fonc_ok = False
+            _fonc_erreur = ""
+            if _dlg_db is not None:
+                try:
+                    _fonc_lignes = (_dlg_db.table("attributions_responsabilites").select("*")
+                                    .order("enseignant").order("fonction").execute().data or [])
+                    _fonc_ok = True
+                    # Migration douce des affectations déjà présentes dans l'ancien répertoire.
+                    _anciennes_affectations = (_dlg_db.table("responsables_equipes_formation")
+                                               .select("*").execute().data or [])
+                    for _old in _anciennes_affectations:
+                        _old_ens = str(_old.get("enseignant", "")).strip()
+                        _old_promo = str(_old.get("promotion", "")).strip()
+                        if not _old_ens or not _old_promo:
+                            continue
+                        _old_id = hashlib.md5(f"{_old_ens}|Responsable de l'équipe de formation|{_old_promo}|".encode("utf-8")).hexdigest()
+                        if not any(x.get("id") == _old_id for x in _fonc_lignes):
+                            _old_payload = {
+                                "id": _old_id, "enseignant": _old_ens,
+                                "fonction": "Responsable de l'équipe de formation",
+                                "promotion": _old_promo, "laboratoire": "",
+                                "email": _old.get("email", ""), "telephone": _old.get("telephone", ""),
+                                "grade": _old.get("grade", ""), "qualite": _old.get("qualite", ""),
+                                "updated_at": _dlg_datetime.now(_dlg_timezone.utc).isoformat()
+                            }
+                            _dlg_db.table("attributions_responsabilites").upsert(_old_payload).execute()
+                            _fonc_lignes.append(_old_payload)
+                except Exception as _fonc_exc:
+                    _fonc_erreur = str(_fonc_exc)[:300]
+            else:
+                _fonc_erreur = "Connexion Supabase indisponible."
+
+            # La liste est issue du fichier officiel des permanents déjà chargé par l'application.
+            _fonc_enseignants = []
+            if isinstance(df_contacts, pd.DataFrame) and not df_contacts.empty:
+                _fc_nom = _envoi_colonne(df_contacts, ["NOM", "Nom"])
+                _fc_prenom = _envoi_colonne(df_contacts, ["PRÉNOM", "PRENOM", "Prénom"])
+                _fc_qualite = _envoi_colonne(df_contacts, ["Qualité", "Qualite", "Statut"])
+                _fc_email = _envoi_colonne(df_contacts, _alias_email)
+                _fc_tel = _envoi_colonne(df_contacts, _alias_telephone)
+                _fc_grade = _envoi_colonne(df_contacts, ["Grade", "Rang", "Titre"])
+                if _fc_nom and _fc_prenom and _fc_qualite:
+                    for _, _frw in df_contacts.iterrows():
+                        _n = _envoi_valeur_propre(_frw.get(_fc_nom, "")).upper()
+                        _p = _envoi_valeur_propre(_frw.get(_fc_prenom, ""))
+                        _q = _envoi_valeur_propre(_frw.get(_fc_qualite, ""))
+                        if not _n or not _p or "PERMANENT" not in _q.upper():
+                            continue
+                        _fonc_enseignants.append({
+                            "enseignant": f"{_n} {_p}".strip(), "email": _envoi_valeur_propre(_frw.get(_fc_email, "")) if _fc_email else "",
+                            "telephone": _envoi_valeur_propre(_frw.get(_fc_tel, "")) if _fc_tel else "",
+                            "grade": _envoi_valeur_propre(_frw.get(_fc_grade, "")) if _fc_grade else "", "qualite": _q
+                        })
+            _fonc_idx = {x["enseignant"].upper(): x for x in _fonc_enseignants}
+            _fonc_enseignants = sorted(_fonc_idx.values(), key=lambda x: x["enseignant"])
+            _fonc_promotions = sorted({_dlg_clean(x) for x in _dlg_frame.get("__dlg_promo", pd.Series(dtype=str)).tolist() if _dlg_clean(x)})
+
+            if not _fonc_ok:
+                st.error("La table des responsabilités n'est pas accessible. Exécutez le script SQL ci-dessus.")
+                if _fonc_erreur:
+                    st.caption(_fonc_erreur)
+            elif not _fonc_enseignants:
+                st.warning("Aucun enseignant permanent n'a été trouvé dans le fichier du personnel.")
+            else:
+                st.markdown("#### 1. Attribuer plusieurs fonctions à un enseignant")
+                _fonc_nom = st.selectbox("👨‍🏫 Enseignant permanent :", [x["enseignant"] for x in _fonc_enseignants], key="fonc_enseignant_selection")
+                _fonc_fiche = next(x for x in _fonc_enseignants if x["enseignant"] == _fonc_nom)
+                _fonc_actuelles = [x for x in _fonc_lignes if str(x.get("enseignant", "")).strip().upper() == _fonc_nom.upper()]
+                _fonc_deja = sorted({str(x.get("fonction", "")) for x in _fonc_actuelles if x.get("fonction")})
+                st.caption(f"Qualité : {_fonc_fiche['qualite']} · Grade : {_fonc_fiche['grade'] or 'Non renseigné'} · Email : {_fonc_fiche['email'] or 'Non renseigné'} · Téléphone : {_fonc_fiche['telephone'] or 'Non renseigné'}")
+                _fonc_selection = st.multiselect(
+                    "📋 Fonctions à attribuer (cumulables) :", _fonctions_disponibles,
+                    default=[x for x in _fonc_deja if x in _fonctions_disponibles], key=f"fonc_selection_multiple_{hashlib.md5(_fonc_nom.encode('utf-8')).hexdigest()[:10]}"
+                )
+                _fonc_promos_sel = []
+                if "Responsable de l'équipe de formation" in _fonc_selection:
+                    _promos_deja = [str(x.get("promotion", "")) for x in _fonc_actuelles if x.get("fonction") == "Responsable de l'équipe de formation" and x.get("promotion")]
+                    _fonc_promos_sel = st.multiselect(
+                        "🎓 Promotions dont il est responsable :", _fonc_promotions,
+                        default=[p for p in _promos_deja if p in _fonc_promotions], key=f"fonc_promotions_selection_{hashlib.md5(_fonc_nom.encode('utf-8')).hexdigest()[:10]}"
+                    )
+                _fonc_labs_sel = []
+                _fonc_roles_labo = {"Directeur de laboratoire", "Chef d'équipe de laboratoire"}
+                if _fonc_roles_labo.intersection(_fonc_selection):
+                    _labs_deja = [str(x.get("laboratoire", "")) for x in _fonc_actuelles if x.get("fonction") in _fonc_roles_labo and x.get("laboratoire")]
+                    _fonc_labs_sel = st.multiselect(
+                        "🧪 Laboratoire(s) concerné(s) :", _laboratoires_disponibles,
+                        default=[p for p in _labs_deja if p in _laboratoires_disponibles], key=f"fonc_laboratoires_selection_{hashlib.md5(_fonc_nom.encode('utf-8')).hexdigest()[:10]}"
+                    )
+                    st.caption("Le choix du laboratoire s'applique aux fonctions Directeur de laboratoire et/ou Chef d'équipe de laboratoire sélectionnées.")
+                if st.button("💾 Enregistrer / compléter les fonctions", type="primary", use_container_width=True, key="fonc_enregistrer_attributions"):
+                    _erreurs_validation = []
+                    if "Responsable de l'équipe de formation" in _fonc_selection and not _fonc_promos_sel:
+                        _erreurs_validation.append("Sélectionnez au moins une promotion pour le responsable d'équipe de formation.")
+                    if _fonc_roles_labo.intersection(_fonc_selection) and not _fonc_labs_sel:
+                        _erreurs_validation.append("Sélectionnez au moins un laboratoire pour la fonction de laboratoire.")
+                    if not _fonc_selection:
+                        _erreurs_validation.append("Sélectionnez au moins une fonction.")
+                    if _erreurs_validation:
+                        for _msg in _erreurs_validation: st.warning(_msg)
+                    else:
+                        try:
+                            _now_fonc = _dlg_datetime.now(_dlg_timezone.utc).isoformat()
+                            _a_creer = []
+                            for _fonction in _fonc_selection:
+                                if _fonction == "Responsable de l'équipe de formation":
+                                    for _promo in _fonc_promos_sel:
+                                        _a_creer.append((_fonction, _promo, ""))
+                                elif _fonction in _fonc_roles_labo:
+                                    for _lab in _fonc_labs_sel:
+                                        _a_creer.append((_fonction, "", _lab))
+                                else:
+                                    _a_creer.append((_fonction, "", ""))
+                            _nb_nouvelles = 0
+                            for _fonction, _promo, _lab in _a_creer:
+                                _identifiant = hashlib.sha256(f"{_fonc_nom}|{_fonction}|{_promo}|{_lab}".encode("utf-8")).hexdigest()
+                                _payload_fonc = {
+                                    "id": _identifiant, "enseignant": _fonc_nom, "fonction": _fonction,
+                                    "promotion": _promo, "laboratoire": _lab,
+                                    "email": _fonc_fiche["email"], "telephone": _fonc_fiche["telephone"],
+                                    "grade": _fonc_fiche["grade"], "qualite": _fonc_fiche["qualite"], "updated_at": _now_fonc
+                                }
+                                _dlg_db.table("attributions_responsabilites").upsert(_payload_fonc).execute()
+                                _nb_nouvelles += 1
+                            st.success(f"{_nb_nouvelles} attribution(s) enregistrée(s) ou actualisée(s) pour {_fonc_nom}.")
+                            st.rerun()
+                        except Exception as _save_fonc_exc:
+                            st.error(f"Erreur pendant l'enregistrement : {str(_save_fonc_exc)[:250]}")
+
+                st.markdown("#### 2. Répertoire général et export Excel")
+                _fonc_df = pd.DataFrame(_fonc_lignes)
+                if not _fonc_df.empty:
+                    _fonc_aff = _fonc_df.rename(columns={"enseignant":"Enseignant", "fonction":"Fonction", "promotion":"Promotion", "laboratoire":"Laboratoire", "email":"Email", "telephone":"Téléphone", "grade":"Grade", "qualite":"Qualité", "updated_at":"Dernière mise à jour"})
+                    _fonc_cols = [c for c in ["Enseignant", "Fonction", "Promotion", "Laboratoire", "Email", "Téléphone", "Grade", "Qualité", "Dernière mise à jour"] if c in _fonc_aff.columns]
+                    _fonc_aff = _fonc_aff[_fonc_cols].sort_values(["Enseignant", "Fonction"])
+                    st.dataframe(_fonc_aff, use_container_width=True, hide_index=True)
+                    _fonc_buf = io.BytesIO()
+                    with pd.ExcelWriter(_fonc_buf, engine="openpyxl") as _fonc_writer:
+                        _fonc_aff.to_excel(_fonc_writer, index=False, sheet_name="Toutes_les_attributions")
+                        _fonc_synth = (_fonc_aff.groupby("Enseignant", dropna=False).agg({"Fonction": lambda x: " ; ".join(sorted(set(map(str, x))),), "Promotion": lambda x: " ; ".join(sorted({str(v) for v in x if str(v).strip()})), "Laboratoire": lambda x: " ; ".join(sorted({str(v) for v in x if str(v).strip()})), "Email":"first", "Téléphone":"first", "Grade":"first", "Qualité":"first"}).reset_index())
+                        _fonc_synth.to_excel(_fonc_writer, index=False, sheet_name="Synthese_par_enseignant")
+                        for _ws in _fonc_writer.book.worksheets:
+                            _ws.freeze_panes = "A2"
+                            _ws.auto_filter.ref = _ws.dimensions
+                            for _cells in _ws.columns:
+                                _letter = _cells[0].column_letter
+                                _ws.column_dimensions[_letter].width = min(max(max(len(str(c.value or "")) for c in _cells)+2, 14), 48)
+                    st.download_button("📥 Télécharger le répertoire général des responsabilités (Excel)", _fonc_buf.getvalue(), "Repertoire_general_responsabilites_enseignants.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="fonc_telecharger_excel")
+                else:
+                    st.info("Aucune responsabilité n'est encore attribuée.")
+
+                st.markdown("#### 3. Retirer une attribution précise")
+                if _fonc_lignes:
+                    _fonc_opts_supp = [f"{x.get('enseignant','')} — {x.get('fonction','')}" + (f" — {x.get('promotion')}" if x.get('promotion') else "") + (f" — {x.get('laboratoire')}" if x.get('laboratoire') else "") for x in _fonc_lignes]
+                    _fonc_sel_supp = st.selectbox("Attribution à retirer :", _fonc_opts_supp, key="fonc_suppression_selection")
+                    if st.button("🗑️ Retirer uniquement cette attribution", key="fonc_supprimer_attribution"):
+                        _ix = _fonc_opts_supp.index(_fonc_sel_supp)
+                        _cible = _fonc_lignes[_ix]
+                        try:
+                            _dlg_db.table("attributions_responsabilites").delete().eq("id", _cible.get("id", "")).execute()
+                            st.success("Attribution retirée. Les autres fonctions de cet enseignant sont conservées.")
+                            st.rerun()
+                        except Exception as _del_fonc_exc:
+                            st.error(f"Impossible de retirer cette attribution : {str(_del_fonc_exc)[:220]}")
 
             st.markdown("#### 1. Choisir un étudiant et consulter ses coordonnées")
             if _dlg_frame.empty:
