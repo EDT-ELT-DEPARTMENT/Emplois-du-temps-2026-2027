@@ -27072,7 +27072,7 @@ if is_admin:
     st.subheader("🎓 Délégués de promotion — répertoire et envois personnalisés")
     st.caption(
         "Choisissez un étudiant dans la liste générale, consultez ses coordonnées, "
-        "exportez sa fiche Excel et désignez-le comme délégué de sa promotion. "
+        "exportez sa fiche Excel et désignez-le comme délégué de sa promotion ou de sa section. "
         "Les envois aux délégués sont individuels et chaque tentative est historisée."
     )
 
@@ -27080,8 +27080,10 @@ if is_admin:
     import html as _dlg_html
     from datetime import datetime as _dlg_datetime, timezone as _dlg_timezone
 
-    _dlg_sql = """create table if not exists public.delegues_promotions (
-        promotion text primary key,
+    _dlg_sql = """-- 1) Table des délégués : une ligne par promotion ET par section
+    create table if not exists public.delegues_promotions (
+        promotion text not null,
+        section text,
         matricule text,
         nom text,
         prenom text,
@@ -27090,9 +27092,45 @@ if is_admin:
         updated_at timestamptz default now()
     );
 
+    -- 2) Mise à niveau de la table déjà existante sans perdre les délégués.
+    alter table public.delegues_promotions add column if not exists section text;
+
+    -- Le délégué L1MCIL déjà enregistré est conservé comme délégué de Section B.
+    update public.delegues_promotions
+       set section = 'Section B'
+     where upper(trim(promotion)) = 'L1MCIL'
+       and (section is null or trim(section) = '' or section = 'Unique');
+
+    -- Les autres promotions restent avec un seul délégué.
+    update public.delegues_promotions
+       set section = 'Unique'
+     where section is null or trim(section) = '';
+
+    alter table public.delegues_promotions alter column section set default 'Unique';
+    alter table public.delegues_promotions alter column section set not null;
+
+    -- Remplacer l'ancienne clé primaire (promotion seule) par (promotion, section).
+    do $$
+    declare c record;
+    begin
+        for c in
+            select conname
+              from pg_constraint
+             where conrelid = 'public.delegues_promotions'::regclass
+               and contype = 'p'
+        loop
+            execute format('alter table public.delegues_promotions drop constraint %I', c.conname);
+        end loop;
+    end $$;
+
+    alter table public.delegues_promotions
+      add constraint delegues_promotions_pkey primary key (promotion, section);
+
+    -- 3) Historique : conserver également la section du destinataire.
     create table if not exists public.historique_envois_delegues (
         id text primary key,
         promotion text,
+        section text,
         matricule text,
         nom text,
         prenom text,
@@ -27104,13 +27142,14 @@ if is_admin:
         statut text,
         message_erreur text,
         utilisateur text
-    );"""
+    );
+    alter table public.historique_envois_delegues add column if not exists section text;"""
 
     with st.expander("⚙️ Configuration nécessaire — conservation permanente de l'historique", expanded=False):
         st.markdown(
-            "Pour conserver les délégués et **tout l'historique après redémarrage de Streamlit**, "
-            "les deux tables Supabase ci-dessous doivent exister. Exécutez ce SQL une seule fois "
-            "dans l'éditeur SQL de votre projet Supabase."
+            "Pour autoriser plusieurs délégués dans une même promotion (notamment L1MCIL Section A et Section B), "
+            "exécutez ce script de migration une seule fois dans Supabase. Il conserve le délégué L1MCIL existant "
+            "et le classe en Section B ; les autres promotions gardent un délégué unique."
         )
         st.code(_dlg_sql, language="sql")
         st.caption(
@@ -27288,7 +27327,9 @@ if is_admin:
                                 _dlg_db.table("delegues_promotions").update({
                                     "telephone": _dlg_tel_source,
                                     "updated_at": _dlg_datetime.now(_dlg_timezone.utc).isoformat()
-                                }).eq("promotion", _dlg_delegue.get("promotion", "")).execute()
+                                }).eq("promotion", _dlg_delegue.get("promotion", "")).eq(
+                                    "section", _dlg_delegue.get("section", "Unique")
+                                ).execute()
                                 _dlg_delegue["telephone"] = _dlg_tel_source
                                 _dlg_nb_telephones_maj += 1
                             except Exception as _dlg_tel_exc:
@@ -27367,32 +27408,63 @@ if is_admin:
                     key="dlg_dl_fiche_etudiant"
                 )
 
-                st.markdown("#### 2. Désigner le délégué de sa promotion")
-                st.caption(
-                    "La désignation est enregistrée par promotion. Un nouveau choix pour la même promotion "
-                    "remplace le délégué précédent, sans supprimer l'historique des envois."
-                )
+                st.markdown("#### 2. Désigner le délégué de sa promotion / section")
+                _dlg_is_l1mcil = _dlg_info["Promotion"].strip().upper() == "L1MCIL"
+                if _dlg_is_l1mcil:
+                    st.info(
+                        "La promotion L1MCIL comporte deux sections. Le délégué déjà enregistré "
+                        "est conservé en Section B. Vous pouvez maintenant ajouter séparément le délégué de Section A."
+                    )
+                    _dlg_sections_existantes = {
+                        _dlg_clean(d.get("section", "")): d
+                        for d in _dlg_delegues
+                        if _dlg_clean(d.get("promotion", "")).upper() == "L1MCIL"
+                    }
+                    _dlg_section_defaut = (
+                        "Section A" if "Section B" in _dlg_sections_existantes and "Section A" not in _dlg_sections_existantes
+                        else "Section B" if "Section B" not in _dlg_sections_existantes
+                        else "Section A"
+                    )
+                    _dlg_section = st.selectbox(
+                        "📚 Section du délégué L1MCIL :",
+                        ["Section A", "Section B"],
+                        index=["Section A", "Section B"].index(_dlg_section_defaut),
+                        key="dlg_section_l1mcil"
+                    )
+                else:
+                    _dlg_section = "Unique"
+                    st.caption("Cette promotion est gérée avec un seul délégué.")
+
                 _dlg_deja = next(
-                    (d for d in _dlg_delegues if _dlg_clean(d.get("promotion")) == _dlg_info["Promotion"]),
+                    (
+                        d for d in _dlg_delegues
+                        if _dlg_clean(d.get("promotion", "")).upper() == _dlg_info["Promotion"].upper()
+                        and _dlg_clean(d.get("section", "Unique")) == _dlg_section
+                    ),
                     None
                 )
                 if _dlg_deja:
-                    st.info(
-                        f"Délégué actuellement enregistré pour {_dlg_info['Promotion']} : "
-                        f"{_dlg_deja.get('nom', '')} {_dlg_deja.get('prenom', '')} — {_dlg_deja.get('email', '')}"
+                    st.warning(
+                        f"Un délégué est déjà enregistré pour {_dlg_info['Promotion']} — {_dlg_section} : "
+                        f"{_dlg_deja.get('nom', '')} {_dlg_deja.get('prenom', '')} — {_dlg_deja.get('email', '')}. "
+                        "Si vous continuez, il sera remplacé pour cette section uniquement."
                     )
+                elif _dlg_is_l1mcil:
+                    st.success(f"Aucun délégué n'est encore enregistré pour {_dlg_info['Promotion']} — {_dlg_section}.")
+
                 if st.button(
-                    f"💾 Enregistrer { _dlg_info['Nom'] } { _dlg_info['Prénom'] } comme délégué de {_dlg_info['Promotion']}",
+                    f"💾 Enregistrer { _dlg_info['Nom'] } { _dlg_info['Prénom'] } comme délégué de {_dlg_info['Promotion']} — {_dlg_section}",
                     type="primary", use_container_width=True, key="dlg_enregistrer_delegue"
                 ):
                     if not _dlg_db_ok:
-                        st.error("Enregistrement impossible : vérifiez la connexion et les tables Supabase.")
+                        st.error("Enregistrement impossible : vérifiez la connexion et les tables Supabase. Exécutez d'abord le script de migration affiché dans la configuration.")
                     elif not _dlg_info["Email"] or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", _dlg_info["Email"]):
                         st.error("Cet étudiant n'a pas d'adresse email valide dans le fichier source.")
                     else:
                         try:
                             _dlg_payload = {
                                 "promotion": _dlg_info["Promotion"],
+                                "section": _dlg_section,
                                 "matricule": _dlg_info["Mat. Etudiant"],
                                 "nom": _dlg_info["Nom"],
                                 "prenom": _dlg_info["Prénom"],
@@ -27401,9 +27473,11 @@ if is_admin:
                                 "updated_at": _dlg_datetime.now(_dlg_timezone.utc).isoformat()
                             }
                             _dlg_db.table("delegues_promotions").upsert(
-                                _dlg_payload, on_conflict="promotion"
+                                _dlg_payload, on_conflict="promotion,section"
                             ).execute()
-                            st.success("Délégué enregistré durablement pour cette promotion.")
+                            st.success(
+                                f"Délégué enregistré durablement pour {_dlg_info['Promotion']} — {_dlg_section}."
+                            )
                             st.rerun()
                         except Exception as _dlg_exc:
                             st.error(f"Erreur d'enregistrement du délégué : {str(_dlg_exc)[:250]}")
@@ -27411,7 +27485,7 @@ if is_admin:
             st.markdown("#### 3. Répertoire des délégués enregistrés")
             if _dlg_delegues:
                 _dlg_df_delegues = pd.DataFrame(_dlg_delegues)
-                _dlg_cols_show = [c for c in ["promotion", "nom", "prenom", "email", "telephone", "matricule", "updated_at"] if c in _dlg_df_delegues.columns]
+                _dlg_cols_show = [c for c in ["promotion", "section", "nom", "prenom", "email", "telephone", "matricule", "updated_at"] if c in _dlg_df_delegues.columns]
                 st.dataframe(_dlg_df_delegues[_dlg_cols_show], use_container_width=True, hide_index=True)
                 _dlg_buf_all = io.BytesIO()
                 with pd.ExcelWriter(_dlg_buf_all, engine="xlsxwriter") as _dlg_writer:
@@ -27442,7 +27516,7 @@ if is_admin:
             ]
             st.metric("Délégués avec email valide", f"{len(_dlg_destinataires)} / {len(_dlg_delegues)}")
             _dlg_confirmer = st.checkbox(
-                f"Je confirme l'envoi individuel à {len(_dlg_destinataires)} délégué(s), un message séparé par promotion.",
+                f"Je confirme l'envoi individuel à {len(_dlg_destinataires)} délégué(s), un message séparé par délégué et section.",
                 key="dlg_confirmation_envoi"
             )
             if st.button(
@@ -27482,6 +27556,7 @@ if is_admin:
                             _dlg_base_histo = {
                                 "id": _dlg_id_histo,
                                 "promotion": _dlg_dest.get("promotion", ""),
+                                "section": _dlg_dest.get("section", "Unique"),
                                 "matricule": _dlg_dest.get("matricule", ""),
                                 "nom": _dlg_dest.get("nom", ""),
                                 "prenom": _dlg_dest.get("prenom", ""),
@@ -27499,7 +27574,7 @@ if is_admin:
                                 _dlg_db.table("historique_envois_delegues").insert(_dlg_base_histo).execute()
                             except Exception as _dlg_hist_exc:
                                 _dlg_erreurs.append(
-                                    f"{_dlg_dest.get('promotion', '')} — {_dlg_nom_dest} : "
+                                    f"{_dlg_dest.get('promotion', '')} — {_dlg_dest.get('section', 'Unique')} — {_dlg_nom_dest} : "
                                     f"historique impossible, message non envoyé ({str(_dlg_hist_exc)[:160]})"
                                 )
                                 _dlg_barre.progress(_dlg_i / len(_dlg_destinataires))
@@ -27526,7 +27601,7 @@ if is_admin:
                                 _dlg_ok += 1
                             except Exception as _dlg_send_exc:
                                 _dlg_err_txt = str(_dlg_send_exc)[:500]
-                                _dlg_erreurs.append(f"{_dlg_dest.get('promotion', '')} — {_dlg_nom_dest} : {_dlg_err_txt}")
+                                _dlg_erreurs.append(f"{_dlg_dest.get('promotion', '')} — {_dlg_dest.get('section', 'Unique')} — {_dlg_nom_dest} : {_dlg_err_txt}")
                                 try:
                                     _dlg_db.table("historique_envois_delegues").update({
                                         "statut": "ÉCHEC",
