@@ -27121,7 +27121,9 @@ if is_admin:
     def _dlg_col(frame, aliases):
         return _envoi_colonne(frame, aliases)
 
-    _dlg_frame = df_etu.copy() if isinstance(df_etu, pd.DataFrame) else pd.DataFrame()
+    # Réutiliser exclusivement le DataFrame déjà chargé dans la section d'envoi EDT.
+    # Ne pas relire le fichier et ne pas dépendre d'une variable df_etu inexistante.
+    _dlg_frame = df_etudiants_envoi if isinstance(df_etudiants_envoi, pd.DataFrame) else pd.DataFrame()
     if _dlg_frame.empty:
         st.error("Le fichier des étudiants n'est pas chargé. Vérifiez « Liste des étudiants_2026-2027.xlsx ».")
     else:
@@ -27148,7 +27150,7 @@ if is_admin:
         if _dlg_missing:
             st.error("Colonnes obligatoires absentes du fichier étudiant : " + ", ".join(_dlg_missing))
         else:
-            _dlg_frame = _dlg_frame.copy()
+            # Les colonnes techniques sont ajoutées au tableau étudiant déjà chargé.
             _dlg_frame["__dlg_nom"] = _dlg_frame[_dlg_c_nom].map(_dlg_clean)
             _dlg_frame["__dlg_prenom"] = _dlg_frame[_dlg_c_prenom].map(_dlg_clean)
             _dlg_frame["__dlg_promo"] = _dlg_frame[_dlg_c_promo].map(_dlg_clean)
@@ -27212,7 +27214,9 @@ if is_admin:
             _dlg_historique = []
             _dlg_db_ok = False
             _dlg_db_erreur = ""
-            if supabase is not None:
+            # Même client Supabase persistant que les autres fonctions de l'application.
+            _dlg_db = _client_persistant_postes_superieurs()
+            if _dlg_db is not None:
                 try:
                     _dlg_delegues = _dlg_charger_delegues()
                     _dlg_historique = _dlg_charger_historique()
