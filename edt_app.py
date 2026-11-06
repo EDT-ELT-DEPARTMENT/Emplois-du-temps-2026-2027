@@ -24499,7 +24499,7 @@ ADMIN_NAV = {
         ("Consulter toutes les promotions", "🎓 Consulter EDT Toutes Promotions"),
     ],
     "Gestion pédagogique": [
-        ("Envoi Automatisé", "👥 Portail Enseignants"),
+        ("Portail enseignants et responsabilités", "👥 Portail Enseignants"),
         ("Surveillances des examens", "📅 Surveillances Examens"),
         ("Générateur automatique des surveillances", "🤖 Générateur Automatique"),
         ("Demandes de mise à jour EDT", "📝 Demandes de Mise à Jour EDT"),
@@ -32671,6 +32671,29 @@ if portail == "📚 Répertoire des Matières":
 
 
 
+
+# Constantes du module EDT par groupe/sous-groupe.
+# Elles sont définies au niveau global pour rester disponibles quel que soit
+# le chemin de navigation Streamlit exécuté lors du rerun.
+_EDT_GRP_HORAIRES_BASE = [
+    "08h00-09h30", "09h30-11h00", "11h00-12h30",
+    "12h30-14h00", "14h00-15h30", "15h30-17h00"
+]
+_EDT_GRP_HORAIRES_AJOUTES = [
+    "08h00-09h00", "09h00-10h00", "10h00-11h00",
+    "11h00-12h00", "12h00-13h00", "13h00-14h00"
+]
+_EDT_GRP_JOURS_REF = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
+_EDT_GRP_JOURS_LABELS = {
+    "dimanche": "Dimanche", "lundi": "Lundi", "mardi": "Mardi",
+    "mercredi": "Mercredi", "jeudi": "Jeudi"
+}
+_EDT_GRP_TYPES_AFFICHAGE = [
+    "Tous les enseignements",
+    "📘 Cours uniquement",
+    "📗 TD uniquement",
+    "🔴 TP uniquement",
+]
 
 def _edt_grp_norm(x):
     """Normalise un horaire ou un jour (même logique que la vue étudiant) :
