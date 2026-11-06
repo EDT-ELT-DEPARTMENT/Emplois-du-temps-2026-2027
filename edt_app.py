@@ -24681,11 +24681,22 @@ with st.container():
     portail = _portail_map[_page_choisie]
     mode_view = _NAV_MODE_BY_LABEL.get(_page_choisie, "Personnel")
 
+    # Le callback s'exécute avant la reconstruction des widgets au prochain rerun.
+    # Modifier directement la clé d'un selectbox après sa création déclenche
+    # StreamlitWidgetAlreadyInstantiatedError.
+    def _reinitialiser_categorie_navigation(_key=_categorie_key, _structure=nav_structure):
+        _categories_accueil = list(_structure.keys())
+        if _categories_accueil:
+            st.session_state[_key] = _categories_accueil[0]
+
     _action_home, _action_logout, _action_spacer = st.columns([1, 1, 3])
     with _action_home:
-        if st.button("🏠 Accueil", use_container_width=True, key="nav_home_v3"):
-            st.session_state[_categorie_key] = list(nav_structure.keys())[0]
-            st.rerun()
+        st.button(
+            "🏠 Accueil",
+            use_container_width=True,
+            key="nav_home_v3",
+            on_click=_reinitialiser_categorie_navigation,
+        )
     with _action_logout:
         if st.button("🚪 Déconnexion", use_container_width=True, key="nav_logout_v3"):
             st.session_state["user_data"] = None
