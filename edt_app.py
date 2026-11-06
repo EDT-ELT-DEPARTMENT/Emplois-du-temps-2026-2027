@@ -24499,7 +24499,7 @@ ADMIN_NAV = {
         ("Consulter toutes les promotions", "🎓 Consulter EDT Toutes Promotions"),
     ],
     "Gestion pédagogique": [
-        ("Portail enseignants et responsabilités", "👥 Portail Enseignants"),
+        ("Envoi Automatisé", "👥 Portail Enseignants"),
         ("Surveillances des examens", "📅 Surveillances Examens"),
         ("Générateur automatique des surveillances", "🤖 Générateur Automatique"),
         ("Demandes de mise à jour EDT", "📝 Demandes de Mise à Jour EDT"),
