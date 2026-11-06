@@ -3352,6 +3352,11 @@ def run_Assiduité():
         st.error(f"❌ Colonnes 'Nom' et 'Prénom' introuvables dans le fichier étudiants. Colonnes trouvées : {list(df_etu.columns)}")
         return
 
+    # Partage du DataFrame étudiant déjà chargé avec les autres espaces de l'application.
+    # On conserve la même source et le même tableau : aucune nouvelle lecture Excel
+    # et aucune nouvelle table d'étudiants ne sont créées pour les délégués.
+    st.session_state["_df_etu_source_partagee"] = df_etu
+
     # =============================================================================
     # INITIALISATION SESSION STATE
     # =============================================================================
@@ -27121,11 +27126,14 @@ if is_admin:
     def _dlg_col(frame, aliases):
         return _envoi_colonne(frame, aliases)
 
-    # Réutiliser exclusivement le DataFrame déjà chargé dans la section d'envoi EDT.
-    # Ne pas relire le fichier et ne pas dépendre d'une variable df_etu inexistante.
-    _dlg_frame = df_etu.copy() if isinstance(df_etu, pd.DataFrame) else pd.DataFrame()
-    # Réutilise le tableau principal df_etu, chargé au début de run_Assiduité().
-    # Aucune nouvelle lecture ni création d’une source de données étudiants.
+    # Réutiliser exclusivement le DataFrame principal déjà chargé par run_Assiduité().
+    # df_etu est local à cette fonction : on récupère sa référence via session_state,
+    # sans relire le fichier Excel et sans créer un nouveau tableau d'étudiants.
+    _dlg_source_partagee = st.session_state.get("_df_etu_source_partagee")
+    if isinstance(_dlg_source_partagee, pd.DataFrame):
+        _dlg_frame = _dlg_source_partagee.copy()
+    else:
+        _dlg_frame = pd.DataFrame()
     if _dlg_frame.empty:
         st.error("Le fichier des étudiants n'est pas chargé. Vérifiez « Liste des étudiants_2026-2027.xlsx ».")
     else:
