@@ -27123,7 +27123,9 @@ if is_admin:
 
     # Réutiliser exclusivement le DataFrame déjà chargé dans la section d'envoi EDT.
     # Ne pas relire le fichier et ne pas dépendre d'une variable df_etu inexistante.
-    _dlg_frame = df_etudiants_envoi if isinstance(df_etudiants_envoi, pd.DataFrame) else pd.DataFrame()
+    _dlg_frame = df_etu.copy() if isinstance(df_etu, pd.DataFrame) else pd.DataFrame()
+    # Réutilise le tableau principal df_etu, chargé au début de run_Assiduité().
+    # Aucune nouvelle lecture ni création d’une source de données étudiants.
     if _dlg_frame.empty:
         st.error("Le fichier des étudiants n'est pas chargé. Vérifiez « Liste des étudiants_2026-2027.xlsx ».")
     else:
