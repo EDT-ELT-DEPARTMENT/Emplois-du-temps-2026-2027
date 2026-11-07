@@ -990,8 +990,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Affichage du QR code dans la barre latérale après la configuration Streamlit.
-render_sidebar_qr_api()
+# Empêche le rendu multiple du module Assiduité au cours d'une même exécution.
+st.session_state["_assiduite_rendered_this_run"] = False
+
+# Le QR code mobile est désactivé dans l'interface principale afin que
+# l'espace étudiant commence directement par l'en-tête de la plateforme.
 
 
 
@@ -3108,8 +3111,7 @@ def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
     from reportlab.lib.pagesizes import landscape, A4
     from reportlab.lib.units import mm
     from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
-    st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
-    st.caption("département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - année 2026-2027")
+    # L'en-tête général est affiché une seule fois par le routeur principal.
     
     # =============================================================================
     # CHARGEMENT DES DONNÉES (UNIFIÉ)
@@ -5975,8 +5977,7 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
     from reportlab.lib.pagesizes import landscape, A4
     from reportlab.lib.units import mm
     from openpyxl.styles import Alignment, Border, Side, PatternFill, Font
-    st.title("📊 Plateforme de gestion des emplois du temps & Suivi d'Assiduité des Étudiants")
-    st.caption("département d'Electrotechnique - Faculté de génie Electrique - UDL-SBA - année 2026-2027")
+    # L'en-tête général est affiché une seule fois par le routeur principal.
     
     # =============================================================================
     # CHARGEMENT DES DONNÉES (UNIFIÉ)
@@ -20002,6 +20003,14 @@ def run_Assiduité(preview_teacher=None, preview_student=None):
     return run_Assiduité_complet()
 
 
+def run_Assiduité_une_fois(preview_teacher=None, preview_student=None):
+    """Affiche le module Assiduité au maximum une fois par exécution Streamlit."""
+    if st.session_state.get("_assiduite_rendered_this_run", False):
+        return
+    st.session_state["_assiduite_rendered_this_run"] = True
+    return run_Assiduité(preview_teacher=preview_teacher, preview_student=preview_student)
+
+
 # MODULE : GÉNÉRATION AUTOMATIQUE DES PV DES COMITÉS PÉDAGOGIQUES
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -24352,7 +24361,7 @@ Activer mon compte
     with t_etu:
         st.markdown("### 🎓 Accès étudiant")
         st.caption("Connectez-vous avec votre Mat. Étudiant et le code reçu par email.")
-        run_Assiduité()
+        run_Assiduité_une_fois()
 
     st.stop()
 
@@ -24895,7 +24904,9 @@ if portail == "👤 Mon Espace Enseignant":
 
 # La vue avancée de chevauchements par lieu est conservée depuis le module complet historique.
 if _page_choisie == "Conflits et chevauchements de lieux" and is_admin:
-    run_Assiduité_complet(forced_portal="📖 Emploi du Temps", forced_mode_view="🏢 Chevauchements par Lieu")
+    if not st.session_state.get("_assiduite_rendered_this_run", False):
+        st.session_state["_assiduite_rendered_this_run"] = True
+        run_Assiduité_complet(forced_portal="📖 Emploi du Temps", forced_mode_view="🏢 Chevauchements par Lieu")
     st.stop()
 
 # =============================================================================
@@ -31771,7 +31782,7 @@ if is_admin and portail == "👥 Portail Enseignants":
 # Route secondaire : modules qui ne relèvent pas du premier groupe de pages.
 if df is not None:
     if portail == "📝 Suivi d'Assiduité":
-        run_Assiduité(
+        run_Assiduité_une_fois(
             preview_teacher=_preview_teacher if espace_choisi == "Enseignant" and _is_admin_auth else None,
             preview_student=_preview_student if espace_choisi == "Étudiant" and _is_admin_auth else None,
         )
@@ -31779,7 +31790,7 @@ if df is not None:
         if _is_admin_auth and _preview_student is None:
             st.warning("Sélectionnez un étudiant dans la navigation centrale pour afficher son espace.")
         else:
-            run_Assiduité(preview_student=_preview_student if _is_admin_auth else None)
+            run_Assiduité_une_fois(preview_student=_preview_student if _is_admin_auth else None)
     elif portail == "📢 Gestion Administrative - Bordereaux & PVs" and is_admin:
         # ==========================================
         # IMPORTS SPÉCIFIQUES (idéalement à déplacer en haut du fichier)
@@ -35454,7 +35465,7 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
 
 # Les espaces Étudiant / Assiduité restent accessibles même si le fichier EDT est momentanément indisponible.
 if (df is None or df.empty) and portail in {"📝 Suivi d'Assiduité", "🔐 Portail Étudiant"}:
-    run_Assiduité(
+    run_Assiduité_une_fois(
         preview_teacher=_preview_teacher if espace_choisi == "Enseignant" and _is_admin_auth else None,
         preview_student=_preview_student if espace_choisi == "Étudiant" and _is_admin_auth else None,
     )
