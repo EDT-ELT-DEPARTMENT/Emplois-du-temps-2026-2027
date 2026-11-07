@@ -6552,11 +6552,18 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
     # AUTHENTIFICATION ETUDIANT (Mat. BAC + OTP)
     # =============================================================================
     # Récupération connexion enseignant (depuis Module 2 EDT)
-    user = st.session_state.get("user_data")
-    is_enseignant_connecte = user is not None and user.get("role") != "admin"
-    is_admin_edt = user is not None and user.get("role") == "admin"
+    user = st.session_state.get("user_data") or {}
+    role_utilisateur = str(user.get("role", "")).strip().lower()
 
-    étudiant_connecte = st.session_state.get("étudiant_auth")
+    # Séparation stricte des trois profils : un étudiant ne doit JAMAIS
+    # être considéré comme enseignant simplement parce qu'il n'est pas admin.
+    is_enseignant_connecte = role_utilisateur == "enseignant"
+    is_admin_edt = role_utilisateur == "admin"
+
+    étudiant_connecte = (
+        st.session_state.get("étudiant_auth")
+        or (user if role_utilisateur == "etudiant" else None)
+    )
 
     if not is_enseignant_connecte and not étudiant_connecte and not is_admin_edt:
         st.markdown("<h3 style='text-align:center;color:#1E3A8A;'>🔐 Portail Étudiant</h3>", unsafe_allow_html=True)
@@ -9310,11 +9317,22 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
         st.warning("⚠️ Veuillez vous connecter ci-dessus pour accéder au Module 2.")
         return
 
-    user = st.session_state.get("user_data")
-    is_admin = user.get("role") == "admin"
+    user = st.session_state.get("user_data") or {}
+    role_utilisateur = str(user.get("role", "")).strip().lower()
+    is_admin = role_utilisateur == "admin"
+    is_enseignant = role_utilisateur == "enseignant"
+    is_etudiant = role_utilisateur == "etudiant"
 
     # --- INTERFACE PRINCIPALE APRÈS CONNEXION ---
-    st.markdown(f"<div class='portal-badge'>MODE ACTIF : {'ADMINISTRATEUR' if is_admin else 'ENSEIGNANT'}</div>", unsafe_allow_html=True)
+    libelle_mode = {
+        "admin": "ADMINISTRATEUR",
+        "enseignant": "ENSEIGNANT",
+        "etudiant": "ÉTUDIANT",
+    }.get(role_utilisateur, "ACCÈS NON IDENTIFIÉ")
+    st.markdown(
+        f"<div class='portal-badge'>MODE ACTIF : {libelle_mode}</div>",
+        unsafe_allow_html=True
+    )
 
 
     # --- MENU DE NAVIGATION INTERNE (Main Panel) ---
@@ -9334,12 +9352,19 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             "📊 Statistiques & Données",
             "🎓 Recherche Étudiant"
         ]
-    else:
+    elif is_enseignant:
         options_portail = [
             "👤 Mon Espace Enseignant",
             "📅 Surveillances Examens",
             "🎓 Recherche Étudiant"
         ]
+    elif is_etudiant:
+        options_portail = [
+            "🔐 Portail Étudiant"
+        ]
+    else:
+        st.error("Rôle utilisateur non reconnu. Veuillez vous déconnecter puis vous reconnecter.")
+        return
     
     portail = forced_portal if forced_portal is not None else st.selectbox("🚀 Sélectionner Espace", options_portail, key="portal_main_selector")
     
