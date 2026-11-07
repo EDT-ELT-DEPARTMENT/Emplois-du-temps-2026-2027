@@ -17,6 +17,211 @@ URL_PLATEFORME = (
 )
 
 
+
+# =============================================================================
+# FILE PERSISTANTE DES NOTIFICATIONS D'ABSENCE (SUPABASE)
+# Table requise : notifications_email_2026 (SQL fourni à la fin du fichier).
+# L'absence reste enregistrée même si Gmail refuse l'e-mail.
+# =============================================================================
+def _cle_notification_absence(destinataire, nom_etud, matiere, enseignant,
+                              jour, horaire, date_abs, notification_admin=False):
+    import hashlib
+    base = "|".join(str(x or "").strip().lower() for x in (
+        destinataire, nom_etud, matiere, enseignant, jour, horaire,
+        date_abs, bool(notification_admin)
+    ))
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+
+def _mettre_en_file_et_envoyer_notification_absence(
+    sender, email_dest, nom_etud, matiere, enseignant, jour, horaire,
+    date_abs, cause, absences_etudiant=None, notification_admin=False
+):
+    """Insère une notification une seule fois, puis tente un envoi unique."""
+    if not email_dest:
+        return {"statut": "NON_CONFIGUREE", "message": "Adresse destinataire absente."}
+
+    if not globals().get("MODE_SUPABASE", False) or globals().get("supabase") is None:
+        # Mode local : pas de stockage durable possible, mais ne pas bloquer l'absence.
+        ok = sender(email_dest, nom_etud, matiere, enseignant, jour, horaire,
+                    date_abs, cause, absences_etudiant, notification_admin)
+        return {"statut": "ENVOYEE" if ok else "EN_ECHEC",
+                "message": "Mode local : file persistante indisponible."}
+
+    client = globals().get("supabase")
+    cle = _cle_notification_absence(
+        email_dest, nom_etud, matiere, enseignant, jour, horaire,
+        date_abs, notification_admin
+    )
+    args = {
+        "email_dest": str(email_dest).strip(),
+        "nom_etud": str(nom_etud),
+        "matiere": str(matiere),
+        "enseignant": str(enseignant),
+        "jour": str(jour),
+        "horaire": str(horaire),
+        "date_abs": str(date_abs),
+        "cause": str(cause or ""),
+        "absences_etudiant": absences_etudiant or [],
+        "notification_admin": bool(notification_admin),
+    }
+    # Normalisation JSON : évite les erreurs de sérialisation sur dates/valeurs pandas.
+    args = json.loads(json.dumps(args, ensure_ascii=False, default=str))
+    try:
+        existant = (client.table("notifications_email_2026")
+                    .select("id,statut")
+                    .eq("cle_unique", cle).limit(1).execute())
+        if existant.data:
+            statut = str(existant.data[0].get("statut", "EN_ATTENTE"))
+            return {
+                "statut": statut,
+                "message": "Notification déjà présente dans la file : aucun doublon créé."
+            }
+
+        ins = client.table("notifications_email_2026").insert({
+            "cle_unique": cle,
+            "destinataire": str(email_dest).strip(),
+            "nom_etudiant": str(nom_etud),
+            "matiere": str(matiere),
+            "date_absence": str(date_abs),
+            "payload": args,
+            "statut": "EN_ATTENTE",
+            "tentatives": 0,
+            "derniere_erreur": None,
+        }).execute()
+        if not ins.data:
+            # Certaines versions du client Supabase ne renvoient pas la ligne insérée.
+            ins = (client.table("notifications_email_2026")
+                   .select("id,statut").eq("cle_unique", cle).limit(1).execute())
+        if not ins.data:
+            return {"statut": "EN_ECHEC",
+                    "message": "Impossible de confirmer l'ajout dans la file de notifications."}
+        notif_id = ins.data[0]["id"]
+
+        globals().get("st").session_state["_dernier_echec_notification_email"] = ""
+        ok = sender(
+            args["email_dest"], args["nom_etud"], args["matiere"],
+            args["enseignant"], args["jour"], args["horaire"],
+            args["date_abs"], args["cause"], args["absences_etudiant"],
+            args["notification_admin"]
+        )
+        erreur = globals().get("st").session_state.get(
+            "_dernier_echec_notification_email", ""
+        )
+        maj = {
+            "statut": "ENVOYEE" if ok else "EN_ECHEC",
+            "tentatives": 1,
+            "derniere_erreur": None if ok else (erreur or "Échec SMTP sans détail."),
+            "sent_at": datetime.now(timezone.utc).isoformat() if ok else None,
+        }
+        client.table("notifications_email_2026").update(maj).eq("id", notif_id).execute()
+        return {"statut": maj["statut"], "message": maj["derniere_erreur"] or ""}
+    except Exception as e:
+        # L'absence reste valide. L'erreur de file est visible et peut être corrigée.
+        try:
+            globals().get("st").warning(
+                "Absence enregistrée, mais la file de notifications n'est pas accessible : "
+                + str(e)
+            )
+        except Exception:
+            pass
+        return {"statut": "FILE_INDISPONIBLE", "message": str(e)}
+
+
+def _afficher_gestion_file_notifications_absence(sender):
+    """Panneau réservé à l'administration : suivi et renvoi des e-mails en échec."""
+    user = st.session_state.get("user_data") or {}
+    if str(user.get("role", "")).strip().lower() != "admin":
+        return
+    if not globals().get("MODE_SUPABASE", False) or globals().get("supabase") is None:
+        return
+
+    with st.expander("📧 Suivi des notifications e-mail d'absence", expanded=False):
+        try:
+            res = (supabase.table("notifications_email_2026").select("*")
+                   .order("created_at", desc=True).limit(100).execute())
+            lignes = [
+                x for x in (res.data or [])
+                if not bool((x.get("payload") or {}).get("notification_admin", False))
+            ]
+        except Exception as e:
+            st.warning(
+                "La file des notifications n'est pas encore disponible. "
+                "Vérifiez la création de la table SQL notifications_email_2026. "
+                f"Détail : {e}"
+            )
+            return
+
+        if not lignes:
+            st.info("Aucune notification enregistrée pour le moment.")
+            return
+
+        df_notif = pd.DataFrame([{
+            "Date": x.get("created_at", ""),
+            "Étudiant": x.get("nom_etudiant", ""),
+            "Matière": x.get("matiere", ""),
+            "Destinataire": x.get("destinataire", ""),
+            "Statut": x.get("statut", ""),
+            "Tentatives": x.get("tentatives", 0),
+            "Dernière erreur": x.get("derniere_erreur", "") or "",
+        } for x in lignes])
+        st.dataframe(df_notif, use_container_width=True, hide_index=True)
+
+        a_renvoyer = [
+            x for x in lignes
+            if str(x.get("statut", "")).upper() in ("EN_ECHEC", "EN_ATTENTE")
+        ]
+        if not a_renvoyer:
+            st.success("Toutes les notifications de cette liste ont été envoyées.")
+            return
+
+        choix = {
+            f'{x.get("nom_etudiant", "Étudiant")} — {x.get("matiere", "")} — '
+            f'{x.get("destinataire", "")} — {x.get("statut", "")}': x
+            for x in a_renvoyer
+        }
+        libelle = st.selectbox(
+            "Notification à renvoyer",
+            list(choix.keys()),
+            key="notif_absence_a_renvoyer"
+        )
+        if st.button("🔁 Renvoyer cet e-mail", key="btn_renvoi_notif_absence"):
+            ligne = choix[libelle]
+            args = ligne.get("payload") or {}
+            try:
+                st.session_state["_dernier_echec_notification_email"] = ""
+                ok = sender(
+                    args.get("email_dest", ligne.get("destinataire", "")),
+                    args.get("nom_etud", ligne.get("nom_etudiant", "")),
+                    args.get("matiere", ligne.get("matiere", "")),
+                    args.get("enseignant", ""),
+                    args.get("jour", ""),
+                    args.get("horaire", ""),
+                    args.get("date_abs", ligne.get("date_absence", "")),
+                    args.get("cause", ""),
+                    args.get("absences_etudiant", []),
+                    bool(args.get("notification_admin", False))
+                )
+                erreur = st.session_state.get("_dernier_echec_notification_email", "")
+                update = {
+                    "statut": "ENVOYEE" if ok else "EN_ECHEC",
+                    "tentatives": int(ligne.get("tentatives") or 0) + 1,
+                    "derniere_erreur": None if ok else (erreur or "Échec SMTP sans détail."),
+                    "sent_at": datetime.now(timezone.utc).isoformat() if ok else None,
+                }
+                supabase.table("notifications_email_2026").update(update).eq(
+                    "id", ligne["id"]
+                ).execute()
+                if ok:
+                    st.success("E-mail envoyé. La notification est marquée ENVOYÉE.")
+                else:
+                    st.error("E-mail toujours non envoyé : " + update["derniere_erreur"])
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erreur pendant le renvoi : {e}")
+
+
+
 def render_sidebar_qr_api():
     """Affiche le QR code via une API web sans nécessiter le module 'qrcode'."""
     st.sidebar.markdown("---")
@@ -1020,7 +1225,7 @@ supabase = None
 if create_client:
     try:
         SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
-        SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+        SUPABASE_KEY = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", st.secrets.get("SUPABASE_KEY", ""))
         if SUPABASE_URL and SUPABASE_KEY:
             supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
             MODE_SUPABASE = True
@@ -3458,15 +3663,11 @@ def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
             st.error(f"Erreur envoi email : {e}")
             return False
 
-    # Adresses de supervision utilisées uniquement si l'étudiant n'a pas d'adresse email connue.
-    # Modifiables par l'administrateur selon les besoins du département.
-    EMAILS_NOTIFICATION_ABSENCE_DEFAUT = [
-        "medhadjera4@gmail.com",
-        "nass_ka@yahoo.fr",
-        "milouaf@yahoo.fr",
-    ]
 
     def envoyer_notification_absence_étudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause, absences_étudiant=None, notification_admin=False):
+        # Les notifications d'absence sont exclusivement destinées à l'étudiant.
+        if notification_admin:
+            return False
         try:
             import smtplib
             from email.mime.text import MIMEText
@@ -3549,8 +3750,16 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             server.quit()
             return True
         except Exception as e:
+            # L'échec SMTP ne remet jamais en cause l'enregistrement de l'absence.
+            try:
+                st.session_state["_dernier_echec_notification_email"] = str(e)
+            except Exception:
+                pass
             st.warning(f"Notification email non envoyee : {e}")
             return False
+
+    # Tableau de bord administrateur des notifications d'absence.
+    _afficher_gestion_file_notifications_absence(envoyer_notification_absence_étudiant)
 
     def envoyer_notification_decision_etudiant(email_dest, nom_etud, matiere, statut, motif=""):
         """Envoie une notification à l'étudiant après décision admin (Favorable/Défavorable)."""
@@ -4591,30 +4800,32 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                         # Envoi notification instantanee a l'étudiant
                                         email_etu = trouver_email_étudiant(etud_non, df_etu)
                                         if email_etu:
-                                            envoyer_notification_absence_étudiant(
+                                            resultat_notif = _mettre_en_file_et_envoyer_notification_absence(
+                                                envoyer_notification_absence_étudiant,
                                                 email_etu, etud_non, sel_mat, sel_prof,
                                                 jour_abs, horaire_abs, str(date_abs),
                                                 cause_s if cause_s else "Non justifie",
                                                 get_absences_étudiant(etud_non)
                                             )
-                                            st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
-                                        else:
-                                            st.warning(f"ℹ️ Aucun email personnel trouvé pour {etud_non}. Envoi de la notification aux adresses de supervision par défaut…")
-                                            notifications_envoyees = []
-                                            for email_defaut in EMAILS_NOTIFICATION_ABSENCE_DEFAUT:
-                                                ok_notification = envoyer_notification_absence_étudiant(
-                                                    email_defaut, etud_non, sel_mat, sel_prof,
-                                                    jour_abs, horaire_abs, str(date_abs),
-                                                    cause_s if cause_s else "Non justifie",
-                                                    get_absences_étudiant(etud_non),
-                                                    notification_admin=True
+                                            if resultat_notif["statut"] == "ENVOYEE":
+                                                st.success(f"📧 E-mail envoyé à {etud_non} ({email_etu}).")
+                                            elif resultat_notif["statut"] in ("EN_ECHEC", "FILE_INDISPONIBLE"):
+                                                st.warning(
+                                                    f"⚠️ Absence enregistrée. E-mail non envoyé "
+                                                    f"({resultat_notif['statut']}). "
+                                                    f"{resultat_notif.get('message', '')} "
+                                                    "La notification est conservée si la file Supabase est disponible."
                                                 )
-                                                if ok_notification:
-                                                    notifications_envoyees.append(email_defaut)
-                                            if notifications_envoyees:
-                                                st.info("📧 Notification de supervision envoyée à : " + ", ".join(notifications_envoyees))
                                             else:
-                                                st.error("❌ La notification n'a pu être envoyée à aucune adresse de supervision. Vérifiez la configuration SMTP.")
+                                                st.info(
+                                                    f"ℹ️ Notification déjà suivie : "
+                                                    f"{resultat_notif['statut']}."
+                                                )
+                                        else:
+                                            st.warning(
+                                                f"ℹ️ Aucun e-mail étudiant trouvé pour {etud_non}. "
+                                                "L'absence est enregistrée, mais aucun e-mail ne sera envoyé aux adresses de supervision."
+                                            )
                                         st.success(f"✅ Absence enregistrée pour {etud_non} !")
                                         time.sleep(0.5)
                                         st.rerun()
@@ -4624,30 +4835,22 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     # Envoi notification instantanee a l'étudiant
                                     email_etu = trouver_email_étudiant(etud_non, df_etu)
                                     if email_etu:
-                                        envoyer_notification_absence_étudiant(
+                                        resultat_notif = _mettre_en_file_et_envoyer_notification_absence(
+                                            envoyer_notification_absence_étudiant,
                                             email_etu, etud_non, sel_mat, sel_prof,
                                             jour_abs, horaire_abs, str(date_abs),
                                             cause_s if cause_s else "Non justifie",
                                             get_absences_étudiant(etud_non)
                                         )
-                                        st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
-                                    else:
-                                        st.warning(f"ℹ️ Aucun email personnel trouvé pour {etud_non}. Envoi de la notification aux adresses de supervision par défaut…")
-                                        notifications_envoyees = []
-                                        for email_defaut in EMAILS_NOTIFICATION_ABSENCE_DEFAUT:
-                                            ok_notification = envoyer_notification_absence_étudiant(
-                                                email_defaut, etud_non, sel_mat, sel_prof,
-                                                jour_abs, horaire_abs, str(date_abs),
-                                                cause_s if cause_s else "Non justifie",
-                                                get_absences_étudiant(etud_non),
-                                                notification_admin=True
-                                            )
-                                            if ok_notification:
-                                                notifications_envoyees.append(email_defaut)
-                                        if notifications_envoyees:
-                                            st.info("📧 Notification de supervision envoyée à : " + ", ".join(notifications_envoyees))
+                                        if resultat_notif["statut"] == "ENVOYEE":
+                                            st.info(f"📧 E-mail envoyé à {etud_non} ({email_etu}).")
                                         else:
-                                            st.error("❌ La notification n'a pu être envoyée à aucune adresse de supervision. Vérifiez la configuration SMTP.")
+                                            st.warning("Absence enregistrée ; e-mail non envoyé. " + resultat_notif.get("message", ""))
+                                    else:
+                                        st.warning(
+                                            f"ℹ️ Aucun e-mail étudiant trouvé pour {etud_non}. "
+                                            "L'absence est enregistrée, mais aucun e-mail ne sera envoyé aux adresses de supervision."
+                                        )
                                     st.success(f"✅ Absence enregistrée (mode locale) pour {etud_non} !")
                                     time.sleep(0.5)
                                     st.rerun()
@@ -6324,15 +6527,11 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
             st.error(f"Erreur envoi email : {e}")
             return False
 
-    # Adresses de supervision utilisées uniquement si l'étudiant n'a pas d'adresse email connue.
-    # Modifiables par l'administrateur selon les besoins du département.
-    EMAILS_NOTIFICATION_ABSENCE_DEFAUT = [
-        "medhadjera4@gmail.com",
-        "nass_ka@yahoo.fr",
-        "milouaf@yahoo.fr",
-    ]
 
     def envoyer_notification_absence_étudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause, absences_étudiant=None, notification_admin=False):
+        # Les notifications d'absence sont exclusivement destinées à l'étudiant.
+        if notification_admin:
+            return False
         try:
             import smtplib
             from email.mime.text import MIMEText
@@ -6415,8 +6614,16 @@ Cet email est genere automatiquement - merci de ne pas y repondre.
             server.quit()
             return True
         except Exception as e:
+            # L'échec SMTP ne remet jamais en cause l'enregistrement de l'absence.
+            try:
+                st.session_state["_dernier_echec_notification_email"] = str(e)
+            except Exception:
+                pass
             st.warning(f"Notification email non envoyee : {e}")
             return False
+
+    # Tableau de bord administrateur des notifications d'absence.
+    _afficher_gestion_file_notifications_absence(envoyer_notification_absence_étudiant)
 
     def envoyer_notification_decision_etudiant(email_dest, nom_etud, matiere, statut, motif=""):
         """Envoie une notification à l'étudiant après décision admin (Favorable/Défavorable)."""
@@ -7459,30 +7666,32 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                         # Envoi notification instantanee a l'étudiant
                                         email_etu = trouver_email_étudiant(etud_non, df_etu)
                                         if email_etu:
-                                            envoyer_notification_absence_étudiant(
+                                            resultat_notif = _mettre_en_file_et_envoyer_notification_absence(
+                                                envoyer_notification_absence_étudiant,
                                                 email_etu, etud_non, sel_mat, sel_prof,
                                                 jour_abs, horaire_abs, str(date_abs),
                                                 cause_s if cause_s else "Non justifie",
                                                 get_absences_étudiant(etud_non)
                                             )
-                                            st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
-                                        else:
-                                            st.warning(f"ℹ️ Aucun email personnel trouvé pour {etud_non}. Envoi de la notification aux adresses de supervision par défaut…")
-                                            notifications_envoyees = []
-                                            for email_defaut in EMAILS_NOTIFICATION_ABSENCE_DEFAUT:
-                                                ok_notification = envoyer_notification_absence_étudiant(
-                                                    email_defaut, etud_non, sel_mat, sel_prof,
-                                                    jour_abs, horaire_abs, str(date_abs),
-                                                    cause_s if cause_s else "Non justifie",
-                                                    get_absences_étudiant(etud_non),
-                                                    notification_admin=True
+                                            if resultat_notif["statut"] == "ENVOYEE":
+                                                st.success(f"📧 E-mail envoyé à {etud_non} ({email_etu}).")
+                                            elif resultat_notif["statut"] in ("EN_ECHEC", "FILE_INDISPONIBLE"):
+                                                st.warning(
+                                                    f"⚠️ Absence enregistrée. E-mail non envoyé "
+                                                    f"({resultat_notif['statut']}). "
+                                                    f"{resultat_notif.get('message', '')} "
+                                                    "La notification est conservée si la file Supabase est disponible."
                                                 )
-                                                if ok_notification:
-                                                    notifications_envoyees.append(email_defaut)
-                                            if notifications_envoyees:
-                                                st.info("📧 Notification de supervision envoyée à : " + ", ".join(notifications_envoyees))
                                             else:
-                                                st.error("❌ La notification n'a pu être envoyée à aucune adresse de supervision. Vérifiez la configuration SMTP.")
+                                                st.info(
+                                                    f"ℹ️ Notification déjà suivie : "
+                                                    f"{resultat_notif['statut']}."
+                                                )
+                                        else:
+                                            st.warning(
+                                                f"ℹ️ Aucun e-mail étudiant trouvé pour {etud_non}. "
+                                                "L'absence est enregistrée, mais aucun e-mail ne sera envoyé aux adresses de supervision."
+                                            )
                                         st.success(f"✅ Absence enregistrée pour {etud_non} !")
                                         time.sleep(0.5)
                                         st.rerun()
@@ -7492,30 +7701,22 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                     # Envoi notification instantanee a l'étudiant
                                     email_etu = trouver_email_étudiant(etud_non, df_etu)
                                     if email_etu:
-                                        envoyer_notification_absence_étudiant(
+                                        resultat_notif = _mettre_en_file_et_envoyer_notification_absence(
+                                            envoyer_notification_absence_étudiant,
                                             email_etu, etud_non, sel_mat, sel_prof,
                                             jour_abs, horaire_abs, str(date_abs),
                                             cause_s if cause_s else "Non justifie",
                                             get_absences_étudiant(etud_non)
                                         )
-                                        st.info(f"📧 Notification envoyée à {etud_non} ({email_etu})")
-                                    else:
-                                        st.warning(f"ℹ️ Aucun email personnel trouvé pour {etud_non}. Envoi de la notification aux adresses de supervision par défaut…")
-                                        notifications_envoyees = []
-                                        for email_defaut in EMAILS_NOTIFICATION_ABSENCE_DEFAUT:
-                                            ok_notification = envoyer_notification_absence_étudiant(
-                                                email_defaut, etud_non, sel_mat, sel_prof,
-                                                jour_abs, horaire_abs, str(date_abs),
-                                                cause_s if cause_s else "Non justifie",
-                                                get_absences_étudiant(etud_non),
-                                                notification_admin=True
-                                            )
-                                            if ok_notification:
-                                                notifications_envoyees.append(email_defaut)
-                                        if notifications_envoyees:
-                                            st.info("📧 Notification de supervision envoyée à : " + ", ".join(notifications_envoyees))
+                                        if resultat_notif["statut"] == "ENVOYEE":
+                                            st.info(f"📧 E-mail envoyé à {etud_non} ({email_etu}).")
                                         else:
-                                            st.error("❌ La notification n'a pu être envoyée à aucune adresse de supervision. Vérifiez la configuration SMTP.")
+                                            st.warning("Absence enregistrée ; e-mail non envoyé. " + resultat_notif.get("message", ""))
+                                    else:
+                                        st.warning(
+                                            f"ℹ️ Aucun e-mail étudiant trouvé pour {etud_non}. "
+                                            "L'absence est enregistrée, mais aucun e-mail ne sera envoyé aux adresses de supervision."
+                                        )
                                     st.success(f"✅ Absence enregistrée (mode locale) pour {etud_non} !")
                                     time.sleep(0.5)
                                     st.rerun()
@@ -36998,3 +37199,28 @@ if portail == "📢 Gestion Administrative - Bordereaux & PVs" and is_admin:
     ):
         run_pv_pedagogique()
 
+
+
+# =============================================================================
+# INSTALLATION SUPABASE — À EXÉCUTER UNE SEULE FOIS DANS SQL EDITOR
+# =============================================================================
+# create table if not exists public.notifications_email_2026 (
+#     id bigint generated by default as identity primary key,
+#     cle_unique text not null unique,
+#     destinataire text not null,
+#     nom_etudiant text,
+#     matiere text,
+#     date_absence text,
+#     payload jsonb not null default '{}'::jsonb,
+#     statut text not null default 'EN_ATTENTE'
+#         check (statut in ('EN_ATTENTE','EN_COURS','ENVOYEE','EN_ECHEC')),
+#     tentatives integer not null default 0,
+#     derniere_erreur text,
+#     created_at timestamptz not null default now(),
+#     sent_at timestamptz
+# );
+#
+# alter table public.notifications_email_2026 enable row level security;
+# -- La plateforme utilise le client Supabase serveur déjà configuré.
+# -- Ne créez PAS de policy publique/anonyme pour cette table.
+# =============================================================================
