@@ -5425,46 +5425,45 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 return f"{int(h1):02d}h{m1 or '00'}-{int(h2):02d}h{m2 or '00'}"
                             return re.sub(r'\s+', '', s)
 
-                        # Référentiel horaire dynamique : inclut TOUS les créneaux
-                        # réellement présents dans l'EDT source, notamment les créneaux
-                        # d'une heure (08h-09h, 09h-10h, etc.) et les durées atypiques.
-                        horaires_standard_justif = [
+                        # Même normalisation et même présentation que dans le compte
+                        # enseignant : tri chronologique et libellés 8h - 9h / 11h - 12h30.
+                        horaires_ref_base_justif = [
                             "08h00-09h30", "09h30-11h00", "11h00-12h30",
                             "12h30-14h00", "14h00-15h30", "15h30-17h00"
                         ]
+                        horaires_ajoutes_justif = [
+                            "08h00-09h00", "09h00-10h00", "10h00-11h00",
+                            "11h00-12h00", "12h00-13h00", "13h00-14h00"
+                        ]
 
                         def _cle_tri_horaire_justif(val):
-                            m = re.match(r"^(\\d{2})h(\\d{2})-(\\d{2})h(\\d{2})$", str(val))
-                            if m:
-                                h1, mn1, h2, mn2 = map(int, m.groups())
-                                return h1 * 60 + mn1, h2 * 60 + mn2
-                            return (9999, 9999)
+                            m = re.match(r"^(\d{2})h(\d{2})-(\d{2})h(\d{2})$", str(val))
+                            if not m:
+                                return (99 * 60, 99 * 60)
+                            h1, mn1, h2, mn2 = map(int, m.groups())
+                            return h1 * 60 + mn1, h2 * 60 + mn2
 
                         def _label_horaire_justif(val):
-                            m = re.match(r"^(\\d{2})h(\\d{2})-(\\d{2})h(\\d{2})$", str(val))
+                            m = re.match(r"^(\d{2})h(\d{2})-(\d{2})h(\d{2})$", str(val))
                             if not m:
                                 return str(val)
-                            h1, mn1, h2, mn2 = map(int, m.groups())
-                            debut = f"{h1}h" + (f"{mn1:02d}" if mn1 else "")
-                            fin = f"{h2}h" + (f"{mn2:02d}" if mn2 else "")
+                            h1, mn1, h2, mn2 = m.groups()
+                            debut = f"{int(h1)}h" + ("" if mn1 == "00" else mn1)
+                            fin = f"{int(h2)}h" + ("" if mn2 == "00" else mn2)
                             return f"{debut} - {fin}"
 
-                        horaires_utilises_justif = (
-                            set(df_edt_indiv_justif["Horaire"].apply(_norm_edt_justif).dropna().astype(str))
-                            if not df_edt_indiv_justif.empty else set()
-                        )
+                        # Ajouter tous les horaires effectivement présents dans l'EDT
+                        # individuel, en plus des créneaux standards de la grille.
+                        horaires_donnees_justif = {
+                            h for h in df_edt_justif_promo["Horaire"].apply(_norm_edt_justif).dropna().astype(str)
+                            if re.match(r"^\d{2}h\d{2}-\d{2}h\d{2}$", h)
+                        } if not df_edt_justif_promo.empty else set()
                         horaires_ref_justif = sorted(
-                            {h for h in horaires_standard_justif if h in horaires_utilises_justif}
-                            | {h for h in horaires_utilises_justif if re.match(r"^\\d{2}h\\d{2}-\\d{2}h\\d{2}$", h)},
+                            set(horaires_ref_base_justif)
+                            | set(horaires_ajoutes_justif)
+                            | horaires_donnees_justif,
                             key=_cle_tri_horaire_justif
                         )
-                        # Si le filtre ne retourne aucune séance, garder les horaires
-                        # source de la promotion afin de ne pas masquer les créneaux.
-                        if not horaires_ref_justif and not df_edt_justif_promo.empty:
-                            horaires_ref_justif = sorted(
-                                set(df_edt_justif_promo["Horaire"].apply(_norm_edt_justif).dropna().astype(str)),
-                                key=_cle_tri_horaire_justif
-                            )
 
                         jours_ref_justif = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
                         map_h_labels_justif = {h: _label_horaire_justif(h) for h in horaires_ref_justif}
@@ -8323,46 +8322,45 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 return f"{int(h1):02d}h{m1 or '00'}-{int(h2):02d}h{m2 or '00'}"
                             return re.sub(r'\s+', '', s)
 
-                        # Référentiel horaire dynamique : inclut TOUS les créneaux
-                        # réellement présents dans l'EDT source, notamment les créneaux
-                        # d'une heure (08h-09h, 09h-10h, etc.) et les durées atypiques.
-                        horaires_standard_justif = [
+                        # Même normalisation et même présentation que dans le compte
+                        # enseignant : tri chronologique et libellés 8h - 9h / 11h - 12h30.
+                        horaires_ref_base_justif = [
                             "08h00-09h30", "09h30-11h00", "11h00-12h30",
                             "12h30-14h00", "14h00-15h30", "15h30-17h00"
                         ]
+                        horaires_ajoutes_justif = [
+                            "08h00-09h00", "09h00-10h00", "10h00-11h00",
+                            "11h00-12h00", "12h00-13h00", "13h00-14h00"
+                        ]
 
                         def _cle_tri_horaire_justif(val):
-                            m = re.match(r"^(\\d{2})h(\\d{2})-(\\d{2})h(\\d{2})$", str(val))
-                            if m:
-                                h1, mn1, h2, mn2 = map(int, m.groups())
-                                return h1 * 60 + mn1, h2 * 60 + mn2
-                            return (9999, 9999)
+                            m = re.match(r"^(\d{2})h(\d{2})-(\d{2})h(\d{2})$", str(val))
+                            if not m:
+                                return (99 * 60, 99 * 60)
+                            h1, mn1, h2, mn2 = map(int, m.groups())
+                            return h1 * 60 + mn1, h2 * 60 + mn2
 
                         def _label_horaire_justif(val):
-                            m = re.match(r"^(\\d{2})h(\\d{2})-(\\d{2})h(\\d{2})$", str(val))
+                            m = re.match(r"^(\d{2})h(\d{2})-(\d{2})h(\d{2})$", str(val))
                             if not m:
                                 return str(val)
-                            h1, mn1, h2, mn2 = map(int, m.groups())
-                            debut = f"{h1}h" + (f"{mn1:02d}" if mn1 else "")
-                            fin = f"{h2}h" + (f"{mn2:02d}" if mn2 else "")
+                            h1, mn1, h2, mn2 = m.groups()
+                            debut = f"{int(h1)}h" + ("" if mn1 == "00" else mn1)
+                            fin = f"{int(h2)}h" + ("" if mn2 == "00" else mn2)
                             return f"{debut} - {fin}"
 
-                        horaires_utilises_justif = (
-                            set(df_edt_indiv_justif["Horaire"].apply(_norm_edt_justif).dropna().astype(str))
-                            if not df_edt_indiv_justif.empty else set()
-                        )
+                        # Ajouter tous les horaires effectivement présents dans l'EDT
+                        # individuel, en plus des créneaux standards de la grille.
+                        horaires_donnees_justif = {
+                            h for h in df_edt_justif_promo["Horaire"].apply(_norm_edt_justif).dropna().astype(str)
+                            if re.match(r"^\d{2}h\d{2}-\d{2}h\d{2}$", h)
+                        } if not df_edt_justif_promo.empty else set()
                         horaires_ref_justif = sorted(
-                            {h for h in horaires_standard_justif if h in horaires_utilises_justif}
-                            | {h for h in horaires_utilises_justif if re.match(r"^\\d{2}h\\d{2}-\\d{2}h\\d{2}$", h)},
+                            set(horaires_ref_base_justif)
+                            | set(horaires_ajoutes_justif)
+                            | horaires_donnees_justif,
                             key=_cle_tri_horaire_justif
                         )
-                        # Si le filtre ne retourne aucune séance, garder les horaires
-                        # source de la promotion afin de ne pas masquer les créneaux.
-                        if not horaires_ref_justif and not df_edt_justif_promo.empty:
-                            horaires_ref_justif = sorted(
-                                set(df_edt_justif_promo["Horaire"].apply(_norm_edt_justif).dropna().astype(str)),
-                                key=_cle_tri_horaire_justif
-                            )
 
                         jours_ref_justif = ["dimanche", "lundi", "mardi", "mercredi", "jeudi"]
                         map_h_labels_justif = {h: _label_horaire_justif(h) for h in horaires_ref_justif}
