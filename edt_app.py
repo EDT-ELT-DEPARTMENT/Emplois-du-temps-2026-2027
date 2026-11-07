@@ -1068,6 +1068,112 @@ FILE_ENS = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
 NOM_FICHIER_FIXE = FILE_EDT
 NOM_FICHIER_CONTACTS = FILE_ENS
 
+# =============================================================================
+# SOURCES CENTRALISÉES DANS SUPABASE STORAGE
+# =============================================================================
+# Les fichiers ci-dessous sont conservés dans le bucket privé `elt-sources`.
+# Le cache local n'est qu'un cache d'exécution : la version Supabase est la
+# référence et est rechargée au démarrage de chaque session.
+SUPABASE_BUCKET_SOURCES = "elt-sources"
+FICHIERS_SOURCES_PLATEFORME = [
+    "dataEDT-ELT-S1-2027.xlsx",
+    "dataEDT-ELT-S1-2027(1).xlsx",
+    "Liste des étudiants_2026-2027.xlsx",
+    "Permanents-Vacataires-ELT2-2026-2027.xlsx",
+    "Vos coordonnées (réponses).xlsx",
+    "surveillances_2027.xlsx",
+    "surveillances_Semestre 01-2026-2027.xlsx",
+    "Historique_modifications_etudiants.csv",
+    "enseignants_postes_superieurs.json",
+    "demandes_edt_locales.json",
+    "logo.PNG",
+    "comptes_etudiants_groupe_ING_ETT.pdf",
+    "comptes_etudiants_groupe_MCIL_ETT.pdf",
+]
+
+
+_ALIAS_SOURCES_SUPABASE = {
+    "Liste des étudiants_2026-2027.xlsx": ["Liste des étudiants_2026-2027(5).xlsx", "Liste des étudiants_2026-2027(4).xlsx"],
+    "Permanents-Vacataires-ELT2-2026-2027.xlsx": ["Permanents-Vacataires-ELT2-2026-2027(2).xlsx"],
+    "dataEDT-ELT-S1-2027.xlsx": ["dataEDT-ELT-S1-2027(3).xlsx", "dataEDT-ELT-S1-2027(1).xlsx"],
+    "Vos coordonnées (réponses).xlsx": ["Vos coordonnées (réponses)(1).xlsx"],
+}
+
+def _supabase_source_download(nom_fichier):
+    """Télécharge une source Supabase en acceptant les anciens noms versionnés."""
+    if not supabase:
+        return None
+    candidats = [str(nom_fichier)] + _ALIAS_SOURCES_SUPABASE.get(str(nom_fichier), [])
+    for candidat in candidats:
+        try:
+            contenu = supabase.storage.from_(SUPABASE_BUCKET_SOURCES).download(candidat)
+            if hasattr(contenu, "read"):
+                contenu = contenu.read()
+            if isinstance(contenu, bytearray):
+                contenu = bytes(contenu)
+            if isinstance(contenu, bytes) and contenu:
+                return contenu
+        except Exception:
+            continue
+    return None
+
+
+def _supabase_source_upload(nom_fichier, contenu, content_type=None):
+    """Enregistre/remplace un fichier source dans Supabase Storage."""
+    if not supabase:
+        raise RuntimeError("Connexion Supabase indisponible.")
+    if not isinstance(contenu, (bytes, bytearray)):
+        raise TypeError("Le contenu du fichier doit être fourni en octets.")
+    options = {"upsert": "true"}
+    if content_type:
+        options["content-type"] = content_type
+    try:
+        supabase.storage.from_(SUPABASE_BUCKET_SOURCES).upload(
+            path=str(nom_fichier), file=bytes(contenu), file_options=options
+        )
+    except TypeError:
+        # Compatibilité avec certaines versions du client supabase-py.
+        supabase.storage.from_(SUPABASE_BUCKET_SOURCES).update(
+            path=str(nom_fichier), file=bytes(contenu), file_options=options
+        )
+    return True
+
+
+def _synchroniser_sources_supabase_vers_cache():
+    """Recharge les fichiers connus depuis Supabase vers le cache local."""
+    if not supabase:
+        return
+    for _nom_source in FICHIERS_SOURCES_PLATEFORME:
+        _octets_source = _supabase_source_download(_nom_source)
+        if _octets_source:
+            try:
+                (_BASE_DIR / _nom_source).write_bytes(_octets_source)
+            except Exception:
+                pass
+
+
+def sauvegarder_dataframe_source_supabase(df_source, nom_fichier, index=False):
+    """Sérialise un DataFrame Excel et le sauvegarde dans Supabase Storage."""
+    import io as _io_source
+    _buffer_source = _io_source.BytesIO()
+    df_source.to_excel(_buffer_source, index=index, engine="openpyxl")
+    _octets_source = _buffer_source.getvalue()
+    _supabase_source_upload(
+        nom_fichier, _octets_source,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    # Mise à jour du cache local pour les fonctions historiques qui attendent
+    # encore un chemin de fichier.
+    try:
+        (_BASE_DIR / nom_fichier).write_bytes(_octets_source)
+    except Exception:
+        pass
+    return True
+
+
+# Synchronisation au démarrage : aucune dépendance aux fichiers présents dans GitHub.
+_synchroniser_sources_supabase_vers_cache()
+
 # ============================================================
 # FICHIER PARTAGÉ DE SECOURS POUR LES DEMANDES EDT
 # ------------------------------------------------------------
@@ -9920,7 +10026,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     for colonne_technique in ["h_norm", "j_norm", "Type"]:
                         if colonne_technique in df_sauvegarde.columns:
                             df_sauvegarde = df_sauvegarde.drop(columns=[colonne_technique])
-                    df_sauvegarde.to_excel(NOM_FICHIER_FIXE, index=False)
+                    sauvegarder_dataframe_source_supabase(df_sauvegarde, "dataEDT-ELT-S1-2027.xlsx", index=False)
 
                 # Grille interactive : uniquement les créneaux occupés par
                 # les enseignants sélectionnés (df_f_complet, non filtré
@@ -11332,7 +11438,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     for colonne_technique in ["h_norm", "j_norm", "_type_affichage_admin"]:
                         if colonne_technique in df_sauvegarde.columns:
                             df_sauvegarde = df_sauvegarde.drop(columns=[colonne_technique])
-                    df_sauvegarde.to_excel(NOM_FICHIER_FIXE, index=False)
+                    sauvegarder_dataframe_source_supabase(df_sauvegarde, "dataEDT-ELT-S1-2027.xlsx", index=False)
 
                 def _info_ligne_edt(idx_ligne):
                     """Retourne une description courte de la ligne (pour les confirmations)."""
@@ -11811,7 +11917,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 if colonne_technique in df_retour_dnd.columns:
                                     df_retour_dnd = df_retour_dnd.drop(columns=[colonne_technique])
                             try:
-                                df_retour_dnd.to_excel(NOM_FICHIER_FIXE, index=False)
+                                sauvegarder_dataframe_source_supabase(df_retour_dnd, "dataEDT-ELT-S1-2027.xlsx", index=False)
                                 st.session_state["edt_dnd_annuler"] = None
                                 st.session_state["edt_dnd_dernier_deplace"] = None
                                 st.session_state["edt_dnd_message"] = (
@@ -12117,7 +12223,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                      nouvelle_ligne],
                                     ignore_index=True
                                 )
-                                global_df_tmp.to_excel(NOM_FICHIER_FIXE, index=False)
+                                sauvegarder_dataframe_source_supabase(global_df_tmp, "dataEDT-ELT-S1-2027.xlsx", index=False)
                                 st.success(
                                     f"\u2705 Ajout\u00e9 : {ajout_enseignement} "
                                     f"({ajout_jour} \u2014 {ajout_horaire})"
@@ -12446,7 +12552,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                         ],
                                         ignore_index=True,
                                     )
-                                    global_df_dup.to_excel(NOM_FICHIER_FIXE, index=False)
+                                    sauvegarder_dataframe_source_supabase(global_df_dup, "dataEDT-ELT-S1-2027.xlsx", index=False)
                                     st.success(
                                         f"✅ {len(lignes_dupliquees)} enseignement(s) "
                                         f"dupliqué(s) vers {dup_dest_jour} — "
@@ -12631,7 +12737,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                         ],
                                         ignore_index=True,
                                     )
-                                    global_df_charge.to_excel(NOM_FICHIER_FIXE, index=False)
+                                    sauvegarder_dataframe_source_supabase(global_df_charge, "dataEDT-ELT-S1-2027.xlsx", index=False)
                                     st.success(
                                         f"✅ {len(lignes_valides_chargees)} enseignement(s) "
                                         f"généré(s) dans {chargement_dest_jour} — "
@@ -14292,7 +14398,9 @@ td{{word-wrap:break-word;}}
                                         df_a_sauvegarder = df_a_sauvegarder.drop(
                                             columns=[colonne_technique]
                                         )
-                                df_a_sauvegarder.to_excel(chemin_excel_source, index=False)
+                                sauvegarder_dataframe_source_supabase(
+                                    df_a_sauvegarder, "dataEDT-ELT-S1-2027.xlsx", index=False
+                                )
                                 sauvegarde_locale_ok = True
                             except Exception as erreur_locale:
                                 erreur_sauvegarde_locale = erreur_locale
@@ -16155,8 +16263,8 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
             if c1.button("💾 Sauvegarder", use_container_width=True):
                 st.session_state.df_admin = edited
                 try:
-                    edited.to_excel(NOM_FICHIER_FIXE, index=False)
-                    st.success("✅ Sauvegardé !")
+                    sauvegarder_dataframe_source_supabase(edited, "dataEDT-ELT-S1-2027.xlsx", index=False)
+                    st.success("✅ Sauvegardé dans Supabase !")
                 except Exception as e:
                     st.error(f"Erreur sauvegarde : {e}")
             if c2.button("🔄 Réinitialiser", use_container_width=True):
@@ -18901,8 +19009,21 @@ td,th{{word-wrap:break-word;}}
                             on_click=_cb_log_export_ed,
                             args=(_nm_ed, _ns_ed, _na_ed)
                         )
-                        st.caption("ℹ️ Le fichier téléchargé contient toutes les colonnes et feuilles du fichier source. "
-                                   "Remplacez le fichier « Liste des étudiants_2026-2027.xlsx » du serveur par ce fichier pour appliquer les changements à la plateforme.")
+                        st.caption("ℹ️ Le fichier téléchargé contient toutes les colonnes et feuilles du fichier source.")
+                        if st.button("☁️ Enregistrer directement les modifications étudiantes dans Supabase", key="btn_save_students_supabase", use_container_width=True):
+                            try:
+                                _supabase_source_upload(
+                                    "Liste des étudiants_2026-2027.xlsx", _octets_ed,
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
+                                try:
+                                    Path(FILE_ETUDIANTS).write_bytes(_octets_ed)
+                                except Exception:
+                                    pass
+                                st.success("✅ Fichier étudiants enregistré dans Supabase. Les prochaines sessions utiliseront cette version.")
+                                st.rerun()
+                            except Exception as _err_save_students:
+                                st.error(f"❌ Enregistrement Supabase impossible : {_err_save_students}")
                     except Exception as e:
                         st.error(f"❌ Erreur génération du fichier édité : {str(e)[:150]}")
 
@@ -23502,7 +23623,7 @@ st.markdown(f"""
 NOM_FICHIER_FIXE = FILE_EDT if os.path.exists(FILE_EDT) else str(
     Path(__file__).resolve().parent / "dataEDT-ELT-S1-2027(1).xlsx"
 )
-NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
+NOM_FICHIER_CONTACTS = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
 
 df = None
 repertoire_source = {}        # Pour stocker les Emails : { "NOM": "email" }
@@ -23518,18 +23639,27 @@ def normalize(s):
 
 # --- ÉTAPE 2 : CHARGEMENT DEPUIS LA BASE DE DONNÉES (SUPABASE) ---
 def charger_donnees_supabase():
+    """Charge l'EDT depuis le fichier maître Supabase, puis table historique."""
     try:
-        reponse = supabase.table("edt_data").select("*").execute()
-        if reponse.data:
-            df_temp = pd.DataFrame(reponse.data)
-            df_temp['h_norm'] = df_temp['Horaire'].apply(normalize)
-            df_temp['j_norm'] = df_temp['Jours'].apply(normalize)
-            return df_temp
+        _octets_edt_cloud = _supabase_source_download("dataEDT-ELT-S1-2027.xlsx")
+        if not _octets_edt_cloud:
+            _octets_edt_cloud = _supabase_source_download("dataEDT-ELT-S1-2027(1).xlsx")
+        if _octets_edt_cloud:
+            df_temp = pd.read_excel(io.BytesIO(_octets_edt_cloud))
         else:
-            colonnes = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']
-            return pd.DataFrame(columns=colonnes)
+            reponse = supabase.table("edt_data").select("*").execute()
+            df_temp = pd.DataFrame(reponse.data) if reponse.data else pd.DataFrame()
+        if not df_temp.empty:
+            df_temp.columns = [str(c).strip() for c in df_temp.columns]
+            if "Horaire" in df_temp.columns:
+                df_temp['h_norm'] = df_temp['Horaire'].apply(normalize)
+            if "Jours" in df_temp.columns:
+                df_temp['j_norm'] = df_temp['Jours'].apply(normalize)
+            return df_temp
+        colonnes = ['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion', 'Département']
+        return pd.DataFrame(columns=colonnes)
     except Exception as e:
-        st.error(f"Erreur lors du chargement Supabase : {e}")
+        st.error(f"Erreur lors du chargement des données EDT depuis Supabase : {e}")
         return None
 
 # Initialisation du DataFrame principal
@@ -23548,7 +23678,7 @@ repertoire_telephones = {}
 repertoire_departements_affiliation = {}
 df_contacts = None
 
-NOM_FICHIER_CONTACTS = "Permanents-Vacataires-ELT2-2026-2027.xlsx"
+NOM_FICHIER_CONTACTS = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
 
 def extraire_nom_famille(nom_complet):
     """Extrait le nom de famille (premier mot) pour la correspondance."""
@@ -24124,14 +24254,78 @@ if user is None:
     st.stop() 
 
 is_admin = user.get("role") == "admin"
+
+
+# Gestion centralisée des fichiers sources : migration initiale et remplacement
+# depuis l'interface, sans commit GitHub.
+if is_admin and supabase:
+    with st.sidebar.expander("☁️ Sources de données — Supabase", expanded=False):
+        st.caption("Les fichiers déposés ici deviennent les sources officielles de la plateforme.")
+        _sources_a_deposer = st.file_uploader(
+            "Importer/remplacer un fichier source",
+            type=["xlsx", "xls", "xlsb", "csv", "json", "png", "jpg", "jpeg", "pdf"],
+            accept_multiple_files=True,
+            key="gestion_sources_supabase_upload"
+        )
+        if _sources_a_deposer:
+            for _f_source in _sources_a_deposer:
+                st.write(f"📄 {_f_source.name} — {round(_f_source.size / 1024, 1)} Ko")
+            if st.button("☁️ Enregistrer les fichiers dans Supabase", key="btn_sources_supabase_upload", use_container_width=True):
+                _nb_sources_ok = 0
+                _erreurs_sources = []
+                for _f_source in _sources_a_deposer:
+                    try:
+                        _ct_source = _f_source.type or "application/octet-stream"
+                        _supabase_source_upload(_f_source.name, _f_source.getvalue(), _ct_source)
+                        try:
+                            (_BASE_DIR / _f_source.name).write_bytes(_f_source.getvalue())
+                        except Exception:
+                            pass
+                        _nb_sources_ok += 1
+                    except Exception as _err_source:
+                        _erreurs_sources.append(f"{_f_source.name} : {_err_source}")
+                if _nb_sources_ok:
+                    st.success(f"{_nb_sources_ok} fichier(s) enregistré(s) dans Supabase.")
+                for _msg_source in _erreurs_sources:
+                    st.error(_msg_source)
+                if _nb_sources_ok:
+                    st.rerun()
+        if st.button("🔄 Recharger les sources depuis Supabase", key="btn_sources_supabase_refresh", use_container_width=True):
+            _synchroniser_sources_supabase_vers_cache()
+            st.success("Sources rechargées depuis Supabase.")
+            st.rerun()
+
+# Gestion CRUD des sources : étudiants, enseignants, EDT et coordonnées.
+if is_admin and supabase:
+    if st.sidebar.button("🗂️ Ouvrir la gestion générale des données", use_container_width=True):
+        st.session_state["ouvrir_gestion_sources"] = True
+    if st.session_state.get("ouvrir_gestion_sources"):
+        try:
+            from gestion_sources_supabase import render_admin_data_manager
+            render_admin_data_manager(
+                storage=supabase.storage,
+                base_dir=_BASE_DIR,
+                bucket=SUPABASE_BUCKET_SOURCES,
+                supabase_client=supabase,
+                actor=user.get("email") or user.get("nom_officiel") or "Administrateur",
+            )
+            st.stop()
+        except Exception as _err_gestion_sources:
+            st.error(f"Impossible d'ouvrir le gestionnaire des données : {_err_gestion_sources}")
+
 # --- CONFIGURATION DE LA PAGE ---
 # Configuration déjà définie au début du fichier.
 
 
 # --- CONNEXION BASE DE DONNÉES ---
-URL = st.secrets["SUPABASE_URL"]
-KEY = st.secrets["SUPABASE_KEY"]
-supabase = create_client(URL, KEY)
+URL = st.secrets.get("SUPABASE_URL", "")
+KEY = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", st.secrets.get("SUPABASE_KEY", ""))
+if URL and KEY and create_client:
+    # Conserver le client centralisé déjà initialisé ; le recréer seulement
+    # si la configuration précédente n'était pas disponible.
+    if supabase is None:
+        supabase = create_client(URL, KEY)
+        MODE_SUPABASE = True
 
 def hash_pw(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
@@ -24235,7 +24429,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- CHARGEMENT DES DONNÉES ---
-NOM_FICHIER_FIXE = "dataEDT-ELT-S1-2027.xlsx"
+NOM_FICHIER_FIXE = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
 df = None
 
 def normalize(s):
@@ -25088,10 +25282,17 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                     }
                     
                     try:
-                        # 1. Envoi à la base de données Cloud
-                        supabase.table("edt_data").insert(nouvelle_ligne_db).execute()
-                        
-                        st.success(f"✅ Félicitations ! Le cours de {n_ensg} pour la promotion {n_promo} est désormais enregistré dans la base de données Cloud.")
+                        # Le classeur complet dans Supabase Storage est la source de vérité.
+                        _df_ajout_cloud = st.session_state.df_admin.copy()
+                        _df_ajout_cloud = pd.concat([_df_ajout_cloud, pd.DataFrame([nouvelle_ligne_db])], ignore_index=True)
+                        _df_ajout_cloud = _df_ajout_cloud.drop(columns=["h_norm", "j_norm", "Chevauchement"], errors="ignore")
+                        sauvegarder_dataframe_source_supabase(_df_ajout_cloud, "dataEDT-ELT-S1-2027.xlsx", index=False)
+                        try:
+                            supabase.table("edt_data").upsert(nouvelle_ligne_db).execute()
+                        except Exception:
+                            pass
+
+                        st.success(f"✅ Le cours de {n_ensg} pour la promotion {n_promo} est enregistré dans Supabase Storage.")
                         
                         # 2. On efface la version temporaire pour forcer le rechargement depuis le Cloud
                         if 'df_admin' in st.session_state:
@@ -25203,7 +25404,7 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                 columns=["h_norm", "j_norm", "_type_affichage_admin", "Chevauchement"],
                 errors="ignore"
             )
-            _df_export.to_excel(NOM_FICHIER_FIXE, index=False)
+            sauvegarder_dataframe_source_supabase(_df_export, "dataEDT-ELT-S1-2027.xlsx", index=False)
 
             st.session_state.df_admin = _admin_apres
             df = _df_maitre
@@ -25672,11 +25873,12 @@ if is_admin and mode_view == "✍️ Éditeur de données":
                         _df_save_admin[_c] = ""
                     if _c in _df_admin_save.columns:
                         _df_save_admin[_c] = _df_admin_save[_c].reindex(range(len(_df_save_admin))).fillna("").values
-                _df_save_admin.drop(
+                _df_save_final = _df_save_admin.drop(
                     columns=["h_norm", "j_norm", "_type_affichage_admin", "Chevauchement"],
                     errors="ignore"
-                ).to_excel(NOM_FICHIER_FIXE, index=False)
-                st.success("✅ Modifications enregistrées dans le fichier EDT source.")
+                )
+                sauvegarder_dataframe_source_supabase(_df_save_final, "dataEDT-ELT-S1-2027.xlsx", index=False)
+                st.success("✅ Modifications enregistrées dans Supabase. Aucun remplacement GitHub n'est nécessaire.")
                 st.balloons()
                 st.rerun()
             except Exception as e:
