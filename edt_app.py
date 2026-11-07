@@ -25046,9 +25046,12 @@ with st.container():
         "Étudiant": ("#2563eb", "#0891b2", "🎓", "Votre parcours universitaire en un seul endroit"),
     }
     _c1, _c2, _ico, _desc = _espace_style[espace_choisi]
-    st.markdown(f"""<div class="elt-hero" style="background:linear-gradient(115deg,{_c1} 0%,{_c2} 100%);padding:17px 21px;margin:0 0 15px;">
-      <div class="eyebrow">Espace actif</div><div style="font-size:21px;font-weight:850;margin:3px 0;">{_ico} {espace_choisi}</div>
-      <div class="subline">{_desc}</div></div>""", unsafe_allow_html=True)
+    # Dans le portail étudiant, masquer le bandeau « Espace actif / Étudiant »
+    # et sa description. Les espaces Administration et Enseignant restent inchangés.
+    if espace_choisi != "Étudiant":
+        st.markdown(f"""<div class="elt-hero" style="background:linear-gradient(115deg,{_c1} 0%,{_c2} 100%);padding:17px 21px;margin:0 0 15px;">
+          <div class="eyebrow">Espace actif</div><div style="font-size:21px;font-weight:850;margin:3px 0;">{_ico} {espace_choisi}</div>
+          <div class="subline">{_desc}</div></div>""", unsafe_allow_html=True)
     _categorie_key = f"nav_categorie_{_espace_key}_v3"
     _nav_col1, _nav_col2 = st.columns([1, 1.35], gap="medium")
     with _nav_col1:
@@ -25070,19 +25073,22 @@ with st.container():
         if _categories_accueil:
             st.session_state[_key] = _categories_accueil[0]
 
-    _action_home, _action_logout, _action_spacer = st.columns([1, 1, 3])
-    with _action_home:
-        st.button(
-            "🏠 Accueil",
-            use_container_width=True,
-            key="nav_home_v3",
-            on_click=_reinitialiser_categorie_navigation,
-        )
-    with _action_logout:
-        if st.button("🚪 Déconnexion", use_container_width=True, key="nav_logout_v3"):
-            st.session_state["user_data"] = None
-            st.session_state.pop("étudiant_auth", None)
-            st.rerun()
+    # Les boutons Accueil et Déconnexion sont masqués dans le portail étudiant,
+    # conformément à la présentation demandée. Ils restent disponibles ailleurs.
+    if espace_choisi != "Étudiant":
+        _action_home, _action_logout, _action_spacer = st.columns([1, 1, 3])
+        with _action_home:
+            st.button(
+                "🏠 Accueil",
+                use_container_width=True,
+                key="nav_home_v3",
+                on_click=_reinitialiser_categorie_navigation,
+            )
+        with _action_logout:
+            if st.button("🚪 Déconnexion", use_container_width=True, key="nav_logout_v3"):
+                st.session_state["user_data"] = None
+                st.session_state.pop("étudiant_auth", None)
+                st.rerun()
 
 # Identité simulée uniquement en mémoire pour l'affichage ; le compte administrateur
 # reste inchangé dans st.session_state et conserve ses droits de retour.
