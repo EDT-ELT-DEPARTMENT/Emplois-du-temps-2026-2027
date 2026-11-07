@@ -5857,6 +5857,8 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
         st.session_state.confirm_reset = False
     if "confirm_reset_abs" not in st.session_state:
         st.session_state.confirm_reset_abs = False
+    if "demandes_suppression_absences" not in st.session_state:
+        st.session_state.demandes_suppression_absences = []
 
     # =============================================================================
     if 'étudiant_auth' not in st.session_state:
@@ -5962,6 +5964,109 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
         except Exception as e:
             st.error(f"Erreur Supabase (reset) : {e}")
             return False
+
+
+    # -------------------------------------------------------------------------
+    # DEMANDES DE SUPPRESSION D'ABSENCES : l'enseignant demande, l'administration décide.
+    # La table dédiée conserve la trace de la demande et de la décision, même après
+    # suppression de la ligne d'absence de suivi_assiduite_2026.
+    # -------------------------------------------------------------------------
+    def charger_demandes_suppression_absences(statut=None, promotion=None):
+        if MODE_SUPABASE:
+            try:
+                query = supabase.table("demandes_suppression_absences").select("*")
+                if statut:
+                    query = query.eq("statut", statut)
+                if promotion:
+                    query = query.eq("promotion", promotion)
+                res = query.order("id", desc=True).execute()
+                return res.data if res.data else []
+            except Exception as e:
+                st.error("La table des demandes de suppression n'est pas accessible. "
+                         "Vérifiez que le script SQL fourni a été exécuté dans Supabase. "
+                         f"Détail : {e}")
+                return []
+        demandes = list(st.session_state.demandes_suppression_absences)
+        if statut:
+            demandes = [d for d in demandes if d.get("statut") == statut]
+        if promotion:
+            demandes = [d for d in demandes if d.get("promotion") == promotion]
+        return demandes
+
+    def enregistrer_demande_suppression_absence(payload):
+        if MODE_SUPABASE:
+            try:
+                supabase.table("demandes_suppression_absences").insert(payload).execute()
+                return True
+            except Exception as e:
+                st.error(f"Impossible d'enregistrer la demande de suppression : {e}")
+                return False
+        payload = dict(payload)
+        payload["id"] = max([int(d.get("id", 0) or 0) for d in st.session_state.demandes_suppression_absences] + [0]) + 1
+        st.session_state.demandes_suppression_absences.append(payload)
+        return True
+
+    def traiter_demande_suppression_absence(demande, decision_admin, nom_admin):
+        """Valide/refuse une demande. Une absence n'est supprimée qu'après validation admin."""
+        absence_id = demande.get("absence_id")
+        if decision_admin == "Refusée":
+            maj = {
+                "statut": "Refusée",
+                "date_decision": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "decide_par": str(nom_admin or "Administration"),
+                "observation_admin": str(demande.get("observation_admin", ""))
+            }
+            if MODE_SUPABASE:
+                try:
+                    supabase.table("demandes_suppression_absences").update(maj).eq("id", demande.get("id")).execute()
+                    return True
+                except Exception as e:
+                    st.error(f"Erreur lors du refus de la demande : {e}")
+                    return False
+            for d in st.session_state.demandes_suppression_absences:
+                if str(d.get("id")) == str(demande.get("id")):
+                    d.update(maj)
+                    return True
+            return False
+
+        # Vérifier que la ligne existe encore avant de valider la suppression.
+        if MODE_SUPABASE:
+            try:
+                absence_id_db = int(absence_id) if str(absence_id).isdigit() else absence_id
+                res = supabase.table("suivi_assiduite_2026").select("id").eq("id", absence_id_db).limit(1).execute()
+                if not res.data:
+                    st.warning("Cette absence n'existe déjà plus. La demande est clôturée sans nouvelle suppression.")
+                    maj = {"statut": "Déjà supprimée", "date_decision": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "decide_par": str(nom_admin or "Administration"), "observation_admin": str(demande.get("observation_admin", ""))}
+                    supabase.table("demandes_suppression_absences").update(maj).eq("id", demande.get("id")).execute()
+                    return True
+                supabase.table("suivi_assiduite_2026").delete().eq("id", absence_id_db).execute()
+                maj = {
+                    "statut": "Supprimée",
+                    "date_decision": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "decide_par": str(nom_admin or "Administration"),
+                    "observation_admin": str(demande.get("observation_admin", ""))
+                }
+                supabase.table("demandes_suppression_absences").update(maj).eq("id", demande.get("id")).execute()
+                return True
+            except Exception as e:
+                st.error(f"Erreur pendant la suppression de l'absence : {e}")
+                return False
+
+        cible = next((a for a in st.session_state.absences if str(a.get("id")) == str(absence_id)), None)
+        if cible is None:
+            return False
+        st.session_state.absences.remove(cible)
+        maj = {
+            "statut": "Supprimée",
+            "date_decision": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "decide_par": str(nom_admin or "Administration"),
+            "observation_admin": str(demande.get("observation_admin", ""))
+        }
+        for d in st.session_state.demandes_suppression_absences:
+            if str(d.get("id")) == str(demande.get("id")):
+                d.update(maj)
+                return True
+        return False
 
     
     def get_absences_étudiant(nom_etudiant):
@@ -7070,7 +7175,7 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
                                     st.rerun()
 
                 with col_btn2:
-                    if etud_non and st.button("🔄 ANNULER LA DERNIERE ABSENCE", use_container_width=True):
+                    if etud_non and not is_enseignant_connecte and st.button("🔄 ANNULER LA DERNIERE ABSENCE", use_container_width=True):
                         if MODE_SUPABASE:
                             if supprimer_derniere_absence_supabase(etud_non, sel_mat, promo_c):
                                 st.success(f"✅ Dernière absence annulée pour {etud_non} dans {sel_mat} ! L'exclusion est levée si applicable.")
@@ -7087,7 +7192,7 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
                                 st.warning("⚠️ Aucune absence à annuler pour cet étudiant dans cette matiere.")
 
                 with col_btn3:
-                    if sel_abs_a_annuler and st.button("❌ ANNULER L'ABSENCE CHOISIE", use_container_width=True):
+                    if sel_abs_a_annuler and not is_enseignant_connecte and st.button("❌ ANNULER L'ABSENCE CHOISIE", use_container_width=True):
                         abs_cible = options_annulation[sel_abs_a_annuler]
                         if MODE_SUPABASE:
                             try:
@@ -7236,6 +7341,69 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
 
                         df_suivi = pd.DataFrame(data_suivi)
                         st.dataframe(df_suivi, use_container_width=True, hide_index=True)
+
+                        # L'enseignant ne peut demander la suppression que si :
+                        # 1) l'absence est justifiée dans le compte étudiant ;
+                        # 2) l'avis administratif du justificatif est Favorable.
+                        st.markdown("#### 📨 Demander à l'administration la suppression d'une absence")
+                        absences_eligibles_supp = []
+                        for absence in abs_ens:
+                            req_abs = trouver_derniere_requete(
+                                absence.get("etud_non_eligible", ""), sel_mat,
+                                absence.get("date_absence"), absence.get("jour_absence"),
+                                absence.get("horaire_absence")
+                            )
+                            if absence.get("justifie") is True and req_abs and str(req_abs.get("statut", "")).strip().lower() == "favorable":
+                                absences_eligibles_supp.append((absence, req_abs))
+
+                        demandes_existantes_ens = charger_demandes_suppression_absences(promotion=promo_c)
+                        demandes_par_abs_id = {str(d.get("absence_id")): d for d in demandes_existantes_ens
+                                               if str(d.get("statut", "")).lower() in ("en attente", "acceptée", "refusée", "supprimée", "déjà supprimée")}
+                        options_abs_supp = {}
+                        for absence, req_abs in absences_eligibles_supp:
+                            aid = str(absence.get("id", ""))
+                            if not aid or aid in demandes_par_abs_id:
+                                continue
+                            lib = (f"{absence.get('etud_non_eligible','')} — {absence.get('date_absence','')} — "
+                                   f"{absence.get('jour_absence','')} {absence.get('horaire_absence','')} — {sel_mat}")
+                            options_abs_supp[lib] = absence
+
+                        if options_abs_supp:
+                            choix_abs_supp = st.selectbox(
+                                "Absence justifiée avec avis administratif favorable :",
+                                [""] + list(options_abs_supp.keys()),
+                                key=f"choix_demande_supp_{sel_prof}_{sel_mat}_{promo_c}"
+                            )
+                            motif_demande_supp = st.text_area(
+                                "Motif détaillé de la demande de suppression (obligatoire) :",
+                                key=f"motif_demande_supp_{sel_prof}_{sel_mat}_{promo_c}",
+                                placeholder="Expliquez pourquoi cette absence doit être supprimée..."
+                            )
+                            if st.button("📨 TRANSMETTRE LA DEMANDE À L'ADMINISTRATION", key=f"btn_demande_supp_{sel_prof}_{sel_mat}_{promo_c}", use_container_width=True, disabled=preview_teacher is not None):
+                                if not choix_abs_supp:
+                                    st.warning("Sélectionnez d'abord une absence.")
+                                elif not motif_demande_supp.strip():
+                                    st.error("Le motif de la demande est obligatoire.")
+                                else:
+                                    absence_cible_supp = options_abs_supp[choix_abs_supp]
+                                    payload_demande_supp = {
+                                        "absence_id": str(absence_cible_supp.get("id")),
+                                        "enseignant": str(sel_prof),
+                                        "etudiant": str(absence_cible_supp.get("etud_non_eligible", "")),
+                                        "matiere": str(absence_cible_supp.get("matiere", sel_mat)),
+                                        "promotion": str(absence_cible_supp.get("promotion", promo_c)),
+                                        "date_absence": str(absence_cible_supp.get("date_absence", "")),
+                                        "jour_absence": str(absence_cible_supp.get("jour_absence", "")),
+                                        "horaire_absence": str(absence_cible_supp.get("horaire_absence", "")),
+                                        "motif_enseignant": motif_demande_supp.strip(),
+                                        "statut": "En attente",
+                                        "date_demande": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    }
+                                    if enregistrer_demande_suppression_absence(payload_demande_supp):
+                                        st.success("Demande transmise à l'administration. L'absence reste visible chez l'étudiant jusqu'à la décision administrative.")
+                                        st.rerun()
+                        else:
+                            st.info("Aucune absence ne remplit actuellement les conditions. Il faut une justification déposée par l'étudiant et un avis administratif favorable. Les demandes déjà transmises ne peuvent pas être doublées.")
 
                         # ─── EXPORT EXCEL DU SUIVI ───
                         buf_suivi = io.BytesIO()
@@ -8196,6 +8364,73 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 data_hist = charger_requetes_supabase(promotion=promo_filtre)
             else:
                 data_hist = [r for r in st.session_state.requetes if r.get("promotion") == promo_filtre]
+
+            # Traitement administratif des demandes motivées de suppression.
+            st.markdown("#### 🗑️ Demandes motivées de suppression d'absences")
+            demandes_supp_admin = charger_demandes_suppression_absences(
+                statut="En attente", promotion=promo_filtre
+            )
+            if demandes_supp_admin:
+                st.info(f"{len(demandes_supp_admin)} demande(s) attend(ent) votre décision. Aucune absence n'est supprimée avant votre validation.")
+                choix_admin_supp = {}
+                for dem in demandes_supp_admin:
+                    lib_dem = (f"{dem.get('etudiant','')} — {dem.get('matiere','')} — "
+                               f"{dem.get('date_absence','')} — {dem.get('jour_absence','')} {dem.get('horaire_absence','')} "
+                               f"(enseignant : {dem.get('enseignant','')})")
+                    choix_admin_supp[lib_dem] = dem
+                selection_admin_supp = st.multiselect(
+                    "Cocher une ou plusieurs demandes à traiter :",
+                    options=list(choix_admin_supp.keys()),
+                    key=f"multi_supp_admin_{promo_filtre}"
+                )
+                motif_selection_admin = st.text_input(
+                    "Observation administrative (facultative) :",
+                    key=f"obs_supp_admin_{promo_filtre}"
+                )
+                col_val_supp, col_ref_supp = st.columns(2)
+                with col_val_supp:
+                    if st.button("✅ VALIDER ET SUPPRIMER LES ABSENCES COCHÉES", key=f"valider_supp_admin_{promo_filtre}", use_container_width=True, disabled=not selection_admin_supp):
+                        nb_ok = 0
+                        for lib_dem in selection_admin_supp:
+                            dem = choix_admin_supp[lib_dem]
+                            dem["observation_admin"] = motif_selection_admin.strip()
+                            if traiter_demande_suppression_absence(dem, "Supprimée", "Administration"):
+                                nb_ok += 1
+                        st.success(f"{nb_ok} demande(s) traitée(s). Les absences validées ne sont plus visibles dans les comptes étudiants.")
+                        st.rerun()
+                with col_ref_supp:
+                    if st.button("❌ REFUSER LES DEMANDES COCHÉES", key=f"refuser_supp_admin_{promo_filtre}", use_container_width=True, disabled=not selection_admin_supp):
+                        nb_ref = 0
+                        for lib_dem in selection_admin_supp:
+                            if traiter_demande_suppression_absence(choix_admin_supp[lib_dem], "Refusée", "Administration"):
+                                nb_ref += 1
+                        st.warning(f"{nb_ref} demande(s) refusée(s). Les absences restent enregistrées dans les comptes étudiants.")
+                        st.rerun()
+
+                for idx_dem, (lib_dem, dem) in enumerate(choix_admin_supp.items()):
+                    with st.expander(f"📄 {lib_dem}"):
+                        st.write(f"**Motif de l'enseignant :** {dem.get('motif_enseignant','—')}")
+                        st.write(f"**Date de la demande :** {dem.get('date_demande','—')}")
+                        ca, cr = st.columns(2)
+                        if ca.button("✅ Valider cette demande", key=f"admin_val_one_{dem.get('id',idx_dem)}", use_container_width=True):
+                            if traiter_demande_suppression_absence(dem, "Supprimée", "Administration"):
+                                st.success("Absence supprimée et demande archivée.")
+                                st.rerun()
+                        if cr.button("❌ Refuser cette demande", key=f"admin_ref_one_{dem.get('id',idx_dem)}", use_container_width=True):
+                            if traiter_demande_suppression_absence(dem, "Refusée", "Administration"):
+                                st.warning("Demande refusée. L'absence reste dans le compte étudiant.")
+                                st.rerun()
+            else:
+                st.success("Aucune demande de suppression en attente pour cette promotion.")
+
+            # Historique consultable : la ligne d'absence est retirée, mais la demande et la décision restent archivées.
+            historique_supp_admin = [d for d in charger_demandes_suppression_absences(promotion=promo_filtre)
+                                      if str(d.get("statut", "")).lower() != "en attente"]
+            if historique_supp_admin:
+                with st.expander("🗂️ Historique des demandes de suppression traitées"):
+                    cols_hist = [c for c in ["date_demande", "enseignant", "etudiant", "matiere", "date_absence", "motif_enseignant", "statut", "date_decision", "decide_par"] if c in pd.DataFrame(historique_supp_admin).columns]
+                    st.dataframe(pd.DataFrame(historique_supp_admin)[cols_hist], use_container_width=True, hide_index=True)
+
 
             if data_hist:
                 df_tab = pd.DataFrame(data_hist)
