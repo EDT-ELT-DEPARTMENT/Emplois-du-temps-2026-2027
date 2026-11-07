@@ -34708,37 +34708,53 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
                                 df_edt_final_type = df_edt_final.copy()
 
                             def _norm_edt(x):
-                                """Normalise un horaire ou un jour pour la
-                                correspondance avec la grille de référence.
+                                """Normalise les horaires du fichier source sans imposer
+                                une durée fixe (1 h, 1 h 30, etc.).
 
-                                CORRECTIF : l'ancienne version enchaînait des
-                                substitutions regex (remplacer ':00'->'h00',
-                                puis ajouter 'h00' après tout 'h' non suivi de
-                                '00') qui corrompait les horaires comportant
-                                des minutes non nulles : '8h - 9h30' devenait
-                                '8h00-9h0030' au lieu de '08h00-09h30',
-                                empêchant toute correspondance avec la grille
-                                de référence ('Impossible de construire la
-                                grille'). Cette version reconstruit proprement
-                                l'horaire à partir de ses heures/minutes de
-                                début et de fin (toujours sur 2 chiffres)."""
-                                if not x or str(x).strip().lower() in ["non defini", "nan", "none", "", "non défini"]:
+                                Formats acceptés notamment : 8h-9h, 08h00-09h00,
+                                08:00 - 09:00, 8h à 9h, 08h00–09h30.
+                                Les jours et autres valeurs non horaires restent
+                                simplement normalisés en minuscules/sans espaces.
+                                """
+                                if x is None:
                                     return ""
+                                try:
+                                    if pd.isna(x):
+                                        return ""
+                                except Exception:
+                                    pass
 
                                 s = str(x).strip().lower()
+                                if s in ["non defini", "nan", "none", "", "non défini"]:
+                                    return ""
 
-                                m = re.match(
-                                    r'^\s*(\d{1,2})[h:](\d{2})?\s*[-–à]\s*(\d{1,2})[h:](\d{2})?\s*$',
-                                    s
+                                # Tolère les tirets usuels et les séparateurs
+                                # rencontrés dans les cellules Excel.
+                                motif_horaire = re.compile(
+                                    r"(?<!\d)(\d{1,2})\s*[h:]\s*(\d{1,2})?"
+                                    r"(?:\s*[:]?\d{2})?\s*"
+                                    r"(?:-|–|—|−|à|\ba\b|/|\bau\b)\s*"
+                                    r"(\d{1,2})\s*[h:]\s*(\d{1,2})?",
+                                    flags=re.IGNORECASE
                                 )
+                                m = motif_horaire.search(s)
                                 if m:
                                     h1, m1, h2, m2 = m.groups()
-                                    m1 = m1 or "00"
-                                    m2 = m2 or "00"
+                                    m1 = (m1 or "00").zfill(2)
+                                    m2 = (m2 or "00").zfill(2)
+                                    # Les heures/minutes sont conservées telles
+                                    # qu'indiquées ; aucune conversion en créneau
+                                    # standard de 1 h 30 n'est effectuée.
                                     return f"{int(h1):02d}h{m1}-{int(h2):02d}h{m2}"
 
-                                # Pas un horaire (ex. un jour) : normalisation simple.
-                                return re.sub(r'\s+', '', s)
+                                # Deuxième tolérance : certains fichiers utilisent
+                                # 08:00-09:00 ou 08h00 / 09h00 avec séparateur atypique.
+                                heures = re.findall(r"(?<!\d)(\d{1,2})\s*[h:]\s*(\d{2})(?!\d)", s)
+                                if len(heures) >= 2:
+                                    (h1, m1), (h2, m2) = heures[:2]
+                                    return f"{int(h1):02d}h{m1}-{int(h2):02d}h{m2}"
+
+                                return re.sub(r"\s+", "", s)
 
                             # ═══════════════════════════════════════════════════════
                             # HORAIRES DE LA GRILLE (flexibles)
@@ -34778,10 +34794,13 @@ if portail == "🎓 Répertoire Étudiants" and is_admin:
                                 fin_lbl = f"{int(a2)}h" + ("" if b2 == "00" else b2)
                                 return f"{debut_lbl} - {fin_lbl}"
 
-                            _horaires_donnees_indiv = [
+                            # Tous les créneaux réellement présents dans les lignes
+                            # de l'étudiant sont intégrés à la grille, y compris les
+                            # créneaux d'une heure et toute durée non standard.
+                            _horaires_donnees_indiv = sorted({
                                 h for h in df_edt_final_type["Horaire"].apply(_norm_edt).unique()
                                 if re.match(r'^\d{2}h\d{2}-\d{2}h\d{2}$', str(h))
-                            ]
+                            }, key=_cle_tri_creneau_indiv)
                             horaires_ref_indiv = sorted(
                                 set(horaires_ref_base_indiv)
                                 | set(horaires_ajoutes_indiv)
