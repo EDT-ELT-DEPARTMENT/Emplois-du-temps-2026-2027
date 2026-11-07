@@ -25053,17 +25053,30 @@ with st.container():
           <div class="eyebrow">Espace actif</div><div style="font-size:21px;font-weight:850;margin:3px 0;">{_ico} {espace_choisi}</div>
           <div class="subline">{_desc}</div></div>""", unsafe_allow_html=True)
     _categorie_key = f"nav_categorie_{_espace_key}_v3"
-    _nav_col1, _nav_col2 = st.columns([1, 1.35], gap="medium")
-    with _nav_col1:
-        _categorie = st.selectbox("📂 Rubrique", list(nav_structure.keys()), key=_categorie_key)
-    _pages_nav = nav_structure[_categorie]
-    _page_labels = [x[0] for x in _pages_nav]
-    _page_key = f"nav_page_{_espace_key}_{re.sub(r'[^a-z0-9]+', '_', _categorie.casefold())}_v3"
-    with _nav_col2:
-        _page_choisie = st.selectbox("📄 Ouvrir une fonctionnalité", _page_labels, key=_page_key)
-    _portail_map = {label: legacy for label, legacy in _pages_nav}
-    portail = _portail_map[_page_choisie]
-    mode_view = _NAV_MODE_BY_LABEL.get(_page_choisie, "Personnel")
+
+    # Dans le portail étudiant, les deux listes de navigation (Rubrique et
+    # Ouvrir une fonctionnalité) sont entièrement masquées. Toutes les entrées
+    # étudiantes ouvrent le même portail sécurisé : on fixe donc directement
+    # la destination interne sans afficher de menus de sélection.
+    if espace_choisi == "Étudiant":
+        _categorie = "Mon parcours universitaire"
+        _pages_nav = nav_structure[_categorie]
+        _page_choisie = "Mon compte étudiant"
+        _portail_map = {label: legacy for label, legacy in _pages_nav}
+        portail = _portail_map[_page_choisie]
+        mode_view = _NAV_MODE_BY_LABEL.get(_page_choisie, "Personnel")
+    else:
+        _nav_col1, _nav_col2 = st.columns([1, 1.35], gap="medium")
+        with _nav_col1:
+            _categorie = st.selectbox("📂 Rubrique", list(nav_structure.keys()), key=_categorie_key)
+        _pages_nav = nav_structure[_categorie]
+        _page_labels = [x[0] for x in _pages_nav]
+        _page_key = f"nav_page_{_espace_key}_{re.sub(r'[^a-z0-9]+', '_', _categorie.casefold())}_v3"
+        with _nav_col2:
+            _page_choisie = st.selectbox("📄 Ouvrir une fonctionnalité", _page_labels, key=_page_key)
+        _portail_map = {label: legacy for label, legacy in _pages_nav}
+        portail = _portail_map[_page_choisie]
+        mode_view = _NAV_MODE_BY_LABEL.get(_page_choisie, "Personnel")
 
     # Le callback s'exécute avant la reconstruction des widgets au prochain rerun.
     # Modifier directement la clé d'un selectbox après sa création déclenche
