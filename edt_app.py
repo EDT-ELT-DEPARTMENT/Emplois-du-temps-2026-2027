@@ -19,207 +19,26 @@ URL_PLATEFORME = (
 
 
 # =============================================================================
-# FILE PERSISTANTE DES NOTIFICATIONS D'ABSENCE (SUPABASE)
-# Table requise : notifications_email_2026 (SQL fourni à la fin du fichier).
-# L'absence reste enregistrée même si Gmail refuse l'e-mail.
+# NOTIFICATIONS D'ABSENCE : MODE 100 % INTERNE À LA PLATEFORME
+# Aucun e-mail n'est envoyé pour les absences. Les enregistrements sont
+# conservés dans suivi_assiduite_2026 (Supabase) et consultés depuis les
+# espaces Enseignant, Étudiant et Administrateur.
 # =============================================================================
-def _cle_notification_absence(destinataire, nom_etud, matiere, enseignant,
-                              jour, horaire, date_abs, notification_admin=False):
-    import hashlib
-    base = "|".join(str(x or "").strip().lower() for x in (
-        destinataire, nom_etud, matiere, enseignant, jour, horaire,
-        date_abs, bool(notification_admin)
-    ))
-    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+NOTIFICATIONS_ABSENCE_EMAIL_ACTIVES = False
 
 
-def _mettre_en_file_et_envoyer_notification_absence(
-    sender, email_dest, nom_etud, matiere, enseignant, jour, horaire,
-    date_abs, cause, absences_etudiant=None, notification_admin=False
-):
-    """Insère une notification une seule fois, puis tente un envoi unique."""
-    if not email_dest:
-        return {"statut": "NON_CONFIGUREE", "message": "Adresse destinataire absente."}
-
-    if not globals().get("MODE_SUPABASE", False) or globals().get("supabase") is None:
-        # Mode local : pas de stockage durable possible, mais ne pas bloquer l'absence.
-        ok = sender(email_dest, nom_etud, matiere, enseignant, jour, horaire,
-                    date_abs, cause, absences_etudiant, notification_admin)
-        return {"statut": "ENVOYEE" if ok else "EN_ECHEC",
-                "message": "Mode local : file persistante indisponible."}
-
-    client = globals().get("supabase")
-    cle = _cle_notification_absence(
-        email_dest, nom_etud, matiere, enseignant, jour, horaire,
-        date_abs, notification_admin
-    )
-    args = {
-        "email_dest": str(email_dest).strip(),
-        "nom_etud": str(nom_etud),
-        "matiere": str(matiere),
-        "enseignant": str(enseignant),
-        "jour": str(jour),
-        "horaire": str(horaire),
-        "date_abs": str(date_abs),
-        "cause": str(cause or ""),
-        "absences_etudiant": absences_etudiant or [],
-        "notification_admin": bool(notification_admin),
+def _mettre_en_file_et_envoyer_notification_absence(*args, **kwargs):
+    """Compatibilité avec d'anciens appels : ne crée aucune file et n'envoie rien."""
+    return {
+        "statut": "DESACTIVEES",
+        "message": "Les notifications e-mail d'absence sont désactivées. "
+                   "L'absence reste consultable dans les espaces de la plateforme."
     }
-    # Normalisation JSON : évite les erreurs de sérialisation sur dates/valeurs pandas.
-    args = json.loads(json.dumps(args, ensure_ascii=False, default=str))
-    try:
-        existant = (client.table("notifications_email_2026")
-                    .select("id,statut")
-                    .eq("cle_unique", cle).limit(1).execute())
-        if existant.data:
-            statut = str(existant.data[0].get("statut", "EN_ATTENTE"))
-            return {
-                "statut": statut,
-                "message": "Notification déjà présente dans la file : aucun doublon créé."
-            }
-
-        ins = client.table("notifications_email_2026").insert({
-            "cle_unique": cle,
-            "destinataire": str(email_dest).strip(),
-            "nom_etudiant": str(nom_etud),
-            "matiere": str(matiere),
-            "date_absence": str(date_abs),
-            "payload": args,
-            "statut": "EN_ATTENTE",
-            "tentatives": 0,
-            "derniere_erreur": None,
-        }).execute()
-        if not ins.data:
-            # Certaines versions du client Supabase ne renvoient pas la ligne insérée.
-            ins = (client.table("notifications_email_2026")
-                   .select("id,statut").eq("cle_unique", cle).limit(1).execute())
-        if not ins.data:
-            return {"statut": "EN_ECHEC",
-                    "message": "Impossible de confirmer l'ajout dans la file de notifications."}
-        notif_id = ins.data[0]["id"]
-
-        globals().get("st").session_state["_dernier_echec_notification_email"] = ""
-        ok = sender(
-            args["email_dest"], args["nom_etud"], args["matiere"],
-            args["enseignant"], args["jour"], args["horaire"],
-            args["date_abs"], args["cause"], args["absences_etudiant"],
-            args["notification_admin"]
-        )
-        erreur = globals().get("st").session_state.get(
-            "_dernier_echec_notification_email", ""
-        )
-        maj = {
-            "statut": "ENVOYEE" if ok else "EN_ECHEC",
-            "tentatives": 1,
-            "derniere_erreur": None if ok else (erreur or "Échec SMTP sans détail."),
-            "sent_at": datetime.now(timezone.utc).isoformat() if ok else None,
-        }
-        client.table("notifications_email_2026").update(maj).eq("id", notif_id).execute()
-        return {"statut": maj["statut"], "message": maj["derniere_erreur"] or ""}
-    except Exception as e:
-        # L'absence reste valide. L'erreur de file est visible et peut être corrigée.
-        try:
-            globals().get("st").warning(
-                "Absence enregistrée, mais la file de notifications n'est pas accessible : "
-                + str(e)
-            )
-        except Exception:
-            pass
-        return {"statut": "FILE_INDISPONIBLE", "message": str(e)}
 
 
-def _afficher_gestion_file_notifications_absence(sender):
-    """Panneau réservé à l'administration : suivi et renvoi des e-mails en échec."""
-    user = st.session_state.get("user_data") or {}
-    if str(user.get("role", "")).strip().lower() != "admin":
-        return
-    if not globals().get("MODE_SUPABASE", False) or globals().get("supabase") is None:
-        return
-
-    with st.expander("📧 Suivi des notifications e-mail d'absence", expanded=False):
-        try:
-            res = (supabase.table("notifications_email_2026").select("*")
-                   .order("created_at", desc=True).limit(100).execute())
-            lignes = [
-                x for x in (res.data or [])
-                if not bool((x.get("payload") or {}).get("notification_admin", False))
-            ]
-        except Exception as e:
-            st.warning(
-                "La file des notifications n'est pas encore disponible. "
-                "Vérifiez la création de la table SQL notifications_email_2026. "
-                f"Détail : {e}"
-            )
-            return
-
-        if not lignes:
-            st.info("Aucune notification enregistrée pour le moment.")
-            return
-
-        df_notif = pd.DataFrame([{
-            "Date": x.get("created_at", ""),
-            "Étudiant": x.get("nom_etudiant", ""),
-            "Matière": x.get("matiere", ""),
-            "Destinataire": x.get("destinataire", ""),
-            "Statut": x.get("statut", ""),
-            "Tentatives": x.get("tentatives", 0),
-            "Dernière erreur": x.get("derniere_erreur", "") or "",
-        } for x in lignes])
-        st.dataframe(df_notif, use_container_width=True, hide_index=True)
-
-        a_renvoyer = [
-            x for x in lignes
-            if str(x.get("statut", "")).upper() in ("EN_ECHEC", "EN_ATTENTE")
-        ]
-        if not a_renvoyer:
-            st.success("Toutes les notifications de cette liste ont été envoyées.")
-            return
-
-        choix = {
-            f'{x.get("nom_etudiant", "Étudiant")} — {x.get("matiere", "")} — '
-            f'{x.get("destinataire", "")} — {x.get("statut", "")}': x
-            for x in a_renvoyer
-        }
-        libelle = st.selectbox(
-            "Notification à renvoyer",
-            list(choix.keys()),
-            key="notif_absence_a_renvoyer"
-        )
-        if st.button("🔁 Renvoyer cet e-mail", key="btn_renvoi_notif_absence"):
-            ligne = choix[libelle]
-            args = ligne.get("payload") or {}
-            try:
-                st.session_state["_dernier_echec_notification_email"] = ""
-                ok = sender(
-                    args.get("email_dest", ligne.get("destinataire", "")),
-                    args.get("nom_etud", ligne.get("nom_etudiant", "")),
-                    args.get("matiere", ligne.get("matiere", "")),
-                    args.get("enseignant", ""),
-                    args.get("jour", ""),
-                    args.get("horaire", ""),
-                    args.get("date_abs", ligne.get("date_absence", "")),
-                    args.get("cause", ""),
-                    args.get("absences_etudiant", []),
-                    bool(args.get("notification_admin", False))
-                )
-                erreur = st.session_state.get("_dernier_echec_notification_email", "")
-                update = {
-                    "statut": "ENVOYEE" if ok else "EN_ECHEC",
-                    "tentatives": int(ligne.get("tentatives") or 0) + 1,
-                    "derniere_erreur": None if ok else (erreur or "Échec SMTP sans détail."),
-                    "sent_at": datetime.now(timezone.utc).isoformat() if ok else None,
-                }
-                supabase.table("notifications_email_2026").update(update).eq(
-                    "id", ligne["id"]
-                ).execute()
-                if ok:
-                    st.success("E-mail envoyé. La notification est marquée ENVOYÉE.")
-                else:
-                    st.error("E-mail toujours non envoyé : " + update["derniere_erreur"])
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erreur pendant le renvoi : {e}")
-
+def _afficher_gestion_file_notifications_absence(sender=None):
+    """L'ancien panneau de renvoi d'e-mails d'absence est volontairement désactivé."""
+    return None
 
 
 def render_sidebar_qr_api():
@@ -3664,204 +3483,18 @@ def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
             return False
 
 
-    def envoyer_notification_absence_étudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause, absences_étudiant=None, notification_admin=False):
-        # Les notifications d'absence sont exclusivement destinées à l'étudiant.
-        if notification_admin:
-            return False
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-
-            # ═══ RÉCAPITULATIF DES ABSENCES PAR matiere ═══
-            recap_html = ""
-            if absences_étudiant:
-                matieres_abs = [a.get("matiere", "Inconnue") for a in absences_étudiant]
-                compteur = Counter(matieres_abs)
-                if compteur:
-                    recap_rows = ""
-                    for mat, count in sorted(compteur.items()):
-                        couleur = "#b91c1c" if count >= 5 else "#d97706" if count >= 3 else "#1e293b"
-                        alerte = " 🚨 EXCLU" if count >= 5 else (" ⚠️ Attention" if count >= 3 else "")
-                        recap_rows += f"<tr><td style='padding:8px;border-bottom:1px solid #e2e8f0;'>{mat}</td><td style='padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:bold;color:{couleur};'>{count}{alerte}</td></tr>"
-
-                    recap_html = f"""
-                    <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:15px;margin:20px 0;">
-                        <h3 style="margin:0 0 10px 0;color:#9a3412;font-size:15px;">📊 Récapitulatif de vos absences</h3>
-                        <table style="width:100%;border-collapse:collapse;font-size:13px;">
-                            <thead><tr style="background:#ffedd5;">
-                                <th style="padding:8px;text-align:left;border-bottom:2px solid #fdba74;">matiere</th>
-                                <th style="padding:8px;text-align:center;border-bottom:2px solid #fdba74;">Nombre d'absences</th>
-                            </tr></thead>
-                            <tbody>{recap_rows}</tbody>
-                        </table>
-                    </div>
-                    """
-
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"Signalement d'absence - {matiere}"
-            msg["From"] = "chef.department.elt.fge@gmail.com"
-            msg["To"] = str(email_dest).strip()
-
-            html_body = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
-<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
-<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
-<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
-</div>
-<div style="background:#fef2f2;border-left:5px solid #ef4444;padding:15px;margin:20px;color:#991b1b;font-weight:600;">
-{"Signalement : l'étudiant " + str(nom_etud) + " a été déclaré absent lors d'une séance obligatoire." if notification_admin else "Vous avez été signalé(e) absent(e) lors d'une séance obligatoire."}
-</div>
-<div style="padding:20px 30px;">
-<p style="color:#334155;margin-bottom:20px;">{"Bonjour, équipe de suivi de l'assiduité," if notification_admin else "Salem " + str(nom_etud) + ","}</p>
-<p style="color:#64748b;font-size:14px;">{"Un enseignant a enregistré l'absence de l'étudiant " + str(nom_etud) + ". Voici les détails de la séance :" if notification_admin else "L'enseignant ci-dessous a enregistré votre absence. Voici les details de la séance :"}</p>
-<table style="width:100%;border-collapse:collapse;margin-top:15px;">
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">matiere</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{matiere}</td></tr>
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Charge de cours</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{enseignant}</td></tr>
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Date</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{date_abs}</td></tr>
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Jour</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{jour}</td></tr>
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Horaire</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{horaire}</td></tr>
-<tr><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Motif enregistre</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{cause}</td></tr>
-</table>
-
-{recap_html}
-
-<div style="background:#fee2e2;border:1px solid #ef4444;border-radius:8px;padding:15px;margin:20px 0;color:#991b1b;font-size:13px;">
-    <strong>⏰ Délais de justification :</strong><br>
-    Vous disposez d'un délai de <strong>72 heures</strong> à compter de la date d'absence pour déposer un justificatif via l'onglet <strong>Justificatifs</strong> de la plateforme. Passé ce délai, l'absence sera considérée comme <strong>définitivement non justifiee</strong>.
-</div>
-
-<p style="color:#64748b;font-size:13px;margin-top:20px;">Accédez à la plateforme (https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app) pour déposer votre justificatif : onglet <strong>Justificatifs</strong>.</p>
-</div>
-<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
-Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
-Cet email est genere automatiquement - merci de ne pas y repondre.
-</div>
-</div>
-</body>
-</html>"""
-            msg.attach(MIMEText(html_body, "html"))
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
-            server.send_message(msg)
-            server.quit()
-            return True
-        except Exception as e:
-            # L'échec SMTP ne remet jamais en cause l'enregistrement de l'absence.
-            try:
-                st.session_state["_dernier_echec_notification_email"] = str(e)
-            except Exception:
-                pass
-            st.warning(f"Notification email non envoyee : {e}")
-            return False
+    def envoyer_notification_absence_étudiant(*args, **kwargs):
+        """Désactivé : les absences sont consultées dans la plateforme, sans e-mail."""
+        return False
 
     # Tableau de bord administrateur des notifications d'absence.
-    _afficher_gestion_file_notifications_absence(envoyer_notification_absence_étudiant)
 
-    def envoyer_notification_decision_etudiant(email_dest, nom_etud, matiere, statut, motif=""):
-        """Envoie une notification à l'étudiant après décision admin (Favorable/Défavorable)."""
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-
-            couleur = "#166534" if "Favorable" in statut else "#991b1b"
-            icone = "✅" if "Favorable" in statut else "❌"
-            titre = "Justificatif ACCEPTÉ" if "Favorable" in statut else "Justificatif REJETÉ"
-            msg_body = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
-<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
-<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
-<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
-</div>
-<div style="padding:30px;">
-<p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_etud}</strong>,</p>
-<div style="background:{'#dcfce7' if 'Favorable' in statut else '#fee2e2'};border-left:5px solid {couleur};padding:15px;margin:20px 0;color:{couleur};font-weight:600;border-radius:0 8px 8px 0;">
-    {icone} <strong>{titre}</strong><br>
-    matière concernée : <strong>{matiere}</strong>
-</div>
-<p style="color:#64748b;font-size:14px;"><strong>Motif du justificatif :</strong> {motif if motif else "Non précisé"}</p>
-{"<p style='color:#166534;font-size:14px;font-weight:600;'>🎓 Votre absence est désormais justifiee. Vous conservez votre éligibilité à l'examen et vous avez le droit à un <strong>examen de remplacement (rattrapage)</strong> si nécessaire.</p>" if "Favorable" in statut else "<p style='color:#991b1b;font-size:14px;'>Votre demande de justification a été rejetée. L'absence reste non justifiee et les sanctions réglementaires s'appliquent.</p>"}
-</div>
-<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
-Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
-Cet email est généré automatiquement - merci de ne pas y répondre.
-</div>
-</div>
-</body>
-</html>"""
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"{titre} - {matiere}"
-            msg["From"] = "chef.department.elt.fge@gmail.com"
-            msg["To"] = str(email_dest).strip()
-            msg.attach(MIMEText(msg_body, "html"))
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
-            server.send_message(msg)
-            server.quit()
-            return True
-        except Exception as e:
-            st.warning(f"Notification décision étudiant non envoyée : {e}")
-            return False
-
-    def envoyer_notification_decision_enseignant(email_dest, nom_ens, nom_etud, matiere, statut, promotion=""):
-        """Envoie une notification à l'enseignant après décision admin sur une justification."""
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-
-            couleur = "#166534" if "Favorable" in statut else "#991b1b"
-            icone = "✅" if "Favorable" in statut else "❌"
-            titre = "Justificatif ACCEPTÉ" if "Favorable" in statut else "Justificatif REJETÉ"
-
-            msg_body = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
-<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
-<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
-<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
-</div>
-<div style="padding:30px;">
-<p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_ens}</strong>,</p>
-<p style="color:#64748b;font-size:14px;">L'administration a rendu son avis sur une demande de justification d'absence concernant un étudiant de votre enseignement.</p>
-<div style="background:{'#dcfce7' if 'Favorable' in statut else '#fee2e2'};border-left:5px solid {couleur};padding:15px;margin:20px 0;color:{couleur};font-weight:600;border-radius:0 8px 8px 0;">
-    {icone} <strong>{titre}</strong><br>
-    <strong>Étudiant :</strong> {nom_etud}<br>
-    <strong>matiere :</strong> {matiere}<br>
-    <strong>Promotion :</strong> {promotion}
-</div>
-{"<div style='background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:15px;margin:20px 0;color:#1e40af;font-size:13px;'><strong>📋 Information importante :</strong><br>Cet étudiant a obtenu un avis <strong>favorable</strong> pour la justification de son absence. Il est désormais réhabilité et <strong>a le droit à un examen de remplacement (rattrapage)</strong> s'il le souhaite, conformément au règlement intérieur.</div>" if "Favorable" in statut else "<div style='background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:15px;margin:20px 0;color:#9a3412;font-size:13px;'><strong>📋 Information :</strong><br>La demande de justification a été <strong>rejetée</strong>. L'absence reste enregistrée comme non justifiee et l'étudiant reste sous le seuil d'exclusion si applicable.</div>"}
-</div>
-<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
-Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
-Cet email est généré automatiquement - merci de ne pas y répondre.
-</div>
-</div>
-</body>
-</html>"""
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"[{titre}] {nom_etud} - {matiere}"
-            msg["From"] = "chef.department.elt.fge@gmail.com"
-            msg["To"] = str(email_dest).strip()
-            msg.attach(MIMEText(msg_body, "html"))
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
-            server.send_message(msg)
-            server.quit()
-            return True
-        except Exception as e:
-            st.warning(f"Notification décision enseignant non envoyée : {e}")
-            return False
-
+    def envoyer_notification_decision_etudiant(*args, **kwargs):
+        """Les décisions de justificatifs sont consultables dans le portail, sans e-mail."""
+        return False
+    def envoyer_notification_decision_enseignant(*args, **kwargs):
+        """Les décisions sont consultables dans la plateforme, sans e-mail."""
+        return False
     def trouver_email_étudiant(nom_etudiant, df_étudiants):
         # 1. Priorité : base de données Supabase (email saisi lors de connexion étudiant)
         if MODE_SUPABASE:
@@ -4297,6 +3930,13 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     .astype(str)
                     .drop_duplicates()
                 ) if "Promotion_Mappee" in df_matiere.columns else pd.DataFrame(columns=["Enseignements", "Promotion_Mappee"])
+                # Les Cours ne sont pas obligatoires : aucune absence de Cours
+                # ne peut être signalée ni comptabilisée. Seuls TD et TP sont suivis.
+                if not couples_matiere_promo_abs.empty:
+                    _type_abs = couples_matiere_promo_abs["Enseignements"].str.strip().str.upper()
+                    couples_matiere_promo_abs = couples_matiere_promo_abs[
+                        _type_abs.str.match(r"^(TD|TP)\s*[-:]", na=False)
+                    ].copy()
 
                 for _, ligne_couple_abs in couples_matiere_promo_abs.iterrows():
                     mat_abs_option = str(ligne_couple_abs["Enseignements"]).strip()
@@ -4797,61 +4437,20 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 }
                                 if MODE_SUPABASE:
                                     if enregistrer_absence_supabase(payload):
-                                        # Envoi notification instantanee a l'étudiant
-                                        email_etu = trouver_email_étudiant(etud_non, df_etu)
-                                        if email_etu:
-                                            resultat_notif = _mettre_en_file_et_envoyer_notification_absence(
-                                                envoyer_notification_absence_étudiant,
-                                                email_etu, etud_non, sel_mat, sel_prof,
-                                                jour_abs, horaire_abs, str(date_abs),
-                                                cause_s if cause_s else "Non justifie",
-                                                get_absences_étudiant(etud_non)
-                                            )
-                                            if resultat_notif["statut"] == "ENVOYEE":
-                                                st.success(f"📧 E-mail envoyé à {etud_non} ({email_etu}).")
-                                            elif resultat_notif["statut"] in ("EN_ECHEC", "FILE_INDISPONIBLE"):
-                                                st.warning(
-                                                    f"⚠️ Absence enregistrée. E-mail non envoyé "
-                                                    f"({resultat_notif['statut']}). "
-                                                    f"{resultat_notif.get('message', '')} "
-                                                    "La notification est conservée si la file Supabase est disponible."
-                                                )
-                                            else:
-                                                st.info(
-                                                    f"ℹ️ Notification déjà suivie : "
-                                                    f"{resultat_notif['statut']}."
-                                                )
-                                        else:
-                                            st.warning(
-                                                f"ℹ️ Aucun e-mail étudiant trouvé pour {etud_non}. "
-                                                "L'absence est enregistrée, mais aucun e-mail ne sera envoyé aux adresses de supervision."
-                                            )
-                                        st.success(f"✅ Absence enregistrée pour {etud_non} !")
+                                        st.success(
+                                            f"✅ Absence enregistrée pour {etud_non}. "
+                                            "Elle est disponible dans les espaces Enseignant, Étudiant et Administrateur. "
+                                            "Aucun e-mail n'a été envoyé."
+                                        )
                                         time.sleep(0.5)
                                         st.rerun()
                                 else:
                                     payload["id"] = len(st.session_state.absences) + 1
                                     st.session_state.absences.append(payload)
-                                    # Envoi notification instantanee a l'étudiant
-                                    email_etu = trouver_email_étudiant(etud_non, df_etu)
-                                    if email_etu:
-                                        resultat_notif = _mettre_en_file_et_envoyer_notification_absence(
-                                            envoyer_notification_absence_étudiant,
-                                            email_etu, etud_non, sel_mat, sel_prof,
-                                            jour_abs, horaire_abs, str(date_abs),
-                                            cause_s if cause_s else "Non justifie",
-                                            get_absences_étudiant(etud_non)
-                                        )
-                                        if resultat_notif["statut"] == "ENVOYEE":
-                                            st.info(f"📧 E-mail envoyé à {etud_non} ({email_etu}).")
-                                        else:
-                                            st.warning("Absence enregistrée ; e-mail non envoyé. " + resultat_notif.get("message", ""))
-                                    else:
-                                        st.warning(
-                                            f"ℹ️ Aucun e-mail étudiant trouvé pour {etud_non}. "
-                                            "L'absence est enregistrée, mais aucun e-mail ne sera envoyé aux adresses de supervision."
-                                        )
-                                    st.success(f"✅ Absence enregistrée (mode locale) pour {etud_non} !")
+                                    st.success(
+                                        f"✅ Absence enregistrée (mode local) pour {etud_non}. "
+                                        "Aucun e-mail n'a été envoyé."
+                                    )
                                     time.sleep(0.5)
                                     st.rerun()
 
@@ -5926,41 +5525,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                                 a["justifie"] = True
                                                 a["cause_non_eligibilite"] = "justifiee - " + str(a.get("cause_non_eligibilite", ""))
 
-                                    # ═══ NOTIFICATIONS EMAIL ═══
-                                    # 1. Notification à l'étudiant
-                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
-                                    if email_etu:
-                                        envoyer_notification_decision_etudiant(
-                                            email_etu, req['nom_etudiant'], req['matiere'],
-                                            "Favorable", req.get('motif', '')
-                                        )
-                                        st.info(f"📧 Notification envoyée à l'étudiant {req['nom_etudiant']}")
-
-                                    # 2. Notification à l'enseignant responsable
-                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
-                                    if ens_rows.empty:
-                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
-                                    if not ens_rows.empty:
-                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
-                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                            # Recherche email dans df_ens directement
-                                            email_ens = None
-                                            nom_fam_cible = extraire_nom_famille(nom_ens)
-                                            for _, row_ens in df_ens.iterrows():
-                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
-                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
-                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                    if email_ens and "@" in email_ens:
-                                                        break
-                                            if email_ens and "@" in str(email_ens):
-                                                envoyer_notification_decision_enseignant(
-                                                    email_ens, nom_ens, req['nom_etudiant'],
-                                                    req['matiere'], "Favorable", req.get('promotion', '')
-                                                )
-                                                st.info(f"📧 Notification envoyée à l'enseignant {nom_ens}")
-                                            else:
-                                                st.caption(f"ℹ️ Email de l'enseignant {nom_ens} non trouvé dans le répertoire.")
-
                                     st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
                                     time.sleep(0.5)
                                     st.rerun()
@@ -5972,39 +5536,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                         for r in st.session_state.requetes:
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Defavorable"
-
-                                    # ═══ NOTIFICATIONS EMAIL (REJET) ═══
-                                    # 1. Notification à l'étudiant
-                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
-                                    if email_etu:
-                                        envoyer_notification_decision_etudiant(
-                                            email_etu, req['nom_etudiant'], req['matiere'],
-                                            "Defavorable", req.get('motif', '')
-                                        )
-                                        st.info(f"📧 Notification de rejet envoyée à l'étudiant {req['nom_etudiant']}")
-
-                                    # 2. Notification à l'enseignant responsable
-                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
-                                    if ens_rows.empty:
-                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
-                                    if not ens_rows.empty:
-                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
-                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                            # Recherche email dans df_ens directement
-                                            email_ens = None
-                                            nom_fam_cible = extraire_nom_famille(nom_ens)
-                                            for _, row_ens in df_ens.iterrows():
-                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
-                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
-                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                    if email_ens and "@" in email_ens:
-                                                        break
-                                            if email_ens and "@" in str(email_ens):
-                                                envoyer_notification_decision_enseignant(
-                                                    email_ens, nom_ens, req['nom_etudiant'],
-                                                    req['matiere'], "Defavorable", req.get('promotion', '')
-                                                )
-                                                st.info(f"📧 Notification de rejet envoyée à l'enseignant {nom_ens}")
 
                                     st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
                                     time.sleep(0.5)
@@ -6565,204 +6096,18 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
             return False
 
 
-    def envoyer_notification_absence_étudiant(email_dest, nom_etud, matiere, enseignant, jour, horaire, date_abs, cause, absences_étudiant=None, notification_admin=False):
-        # Les notifications d'absence sont exclusivement destinées à l'étudiant.
-        if notification_admin:
-            return False
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-
-            # ═══ RÉCAPITULATIF DES ABSENCES PAR matiere ═══
-            recap_html = ""
-            if absences_étudiant:
-                matieres_abs = [a.get("matiere", "Inconnue") for a in absences_étudiant]
-                compteur = Counter(matieres_abs)
-                if compteur:
-                    recap_rows = ""
-                    for mat, count in sorted(compteur.items()):
-                        couleur = "#b91c1c" if count >= 5 else "#d97706" if count >= 3 else "#1e293b"
-                        alerte = " 🚨 EXCLU" if count >= 5 else (" ⚠️ Attention" if count >= 3 else "")
-                        recap_rows += f"<tr><td style='padding:8px;border-bottom:1px solid #e2e8f0;'>{mat}</td><td style='padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:bold;color:{couleur};'>{count}{alerte}</td></tr>"
-
-                    recap_html = f"""
-                    <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:15px;margin:20px 0;">
-                        <h3 style="margin:0 0 10px 0;color:#9a3412;font-size:15px;">📊 Récapitulatif de vos absences</h3>
-                        <table style="width:100%;border-collapse:collapse;font-size:13px;">
-                            <thead><tr style="background:#ffedd5;">
-                                <th style="padding:8px;text-align:left;border-bottom:2px solid #fdba74;">matiere</th>
-                                <th style="padding:8px;text-align:center;border-bottom:2px solid #fdba74;">Nombre d'absences</th>
-                            </tr></thead>
-                            <tbody>{recap_rows}</tbody>
-                        </table>
-                    </div>
-                    """
-
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"Signalement d'absence - {matiere}"
-            msg["From"] = "chef.department.elt.fge@gmail.com"
-            msg["To"] = str(email_dest).strip()
-
-            html_body = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
-<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
-<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
-<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
-</div>
-<div style="background:#fef2f2;border-left:5px solid #ef4444;padding:15px;margin:20px;color:#991b1b;font-weight:600;">
-{"Signalement : l'étudiant " + str(nom_etud) + " a été déclaré absent lors d'une séance obligatoire." if notification_admin else "Vous avez été signalé(e) absent(e) lors d'une séance obligatoire."}
-</div>
-<div style="padding:20px 30px;">
-<p style="color:#334155;margin-bottom:20px;">{"Bonjour, équipe de suivi de l'assiduité," if notification_admin else "Salem " + str(nom_etud) + ","}</p>
-<p style="color:#64748b;font-size:14px;">{"Un enseignant a enregistré l'absence de l'étudiant " + str(nom_etud) + ". Voici les détails de la séance :" if notification_admin else "L'enseignant ci-dessous a enregistré votre absence. Voici les details de la séance :"}</p>
-<table style="width:100%;border-collapse:collapse;margin-top:15px;">
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">matiere</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{matiere}</td></tr>
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Charge de cours</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{enseignant}</td></tr>
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Date</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{date_abs}</td></tr>
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Jour</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{jour}</td></tr>
-<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Horaire</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{horaire}</td></tr>
-<tr><td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:600;">Motif enregistre</td><td style="padding:10px 0;color:#1e293b;font-weight:700;text-align:right;">{cause}</td></tr>
-</table>
-
-{recap_html}
-
-<div style="background:#fee2e2;border:1px solid #ef4444;border-radius:8px;padding:15px;margin:20px 0;color:#991b1b;font-size:13px;">
-    <strong>⏰ Délais de justification :</strong><br>
-    Vous disposez d'un délai de <strong>72 heures</strong> à compter de la date d'absence pour déposer un justificatif via l'onglet <strong>Justificatifs</strong> de la plateforme. Passé ce délai, l'absence sera considérée comme <strong>définitivement non justifiee</strong>.
-</div>
-
-<p style="color:#64748b;font-size:13px;margin-top:20px;">Accédez à la plateforme (https://emplois-du-temps-2026-2027-xadotqqqjnevp7zk2w2gbm.streamlit.app) pour déposer votre justificatif : onglet <strong>Justificatifs</strong>.</p>
-</div>
-<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
-Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
-Cet email est genere automatiquement - merci de ne pas y repondre.
-</div>
-</div>
-</body>
-</html>"""
-            msg.attach(MIMEText(html_body, "html"))
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
-            server.send_message(msg)
-            server.quit()
-            return True
-        except Exception as e:
-            # L'échec SMTP ne remet jamais en cause l'enregistrement de l'absence.
-            try:
-                st.session_state["_dernier_echec_notification_email"] = str(e)
-            except Exception:
-                pass
-            st.warning(f"Notification email non envoyee : {e}")
-            return False
+    def envoyer_notification_absence_étudiant(*args, **kwargs):
+        """Désactivé : les absences sont consultées dans la plateforme, sans e-mail."""
+        return False
 
     # Tableau de bord administrateur des notifications d'absence.
-    _afficher_gestion_file_notifications_absence(envoyer_notification_absence_étudiant)
 
-    def envoyer_notification_decision_etudiant(email_dest, nom_etud, matiere, statut, motif=""):
-        """Envoie une notification à l'étudiant après décision admin (Favorable/Défavorable)."""
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-
-            couleur = "#166534" if "Favorable" in statut else "#991b1b"
-            icone = "✅" if "Favorable" in statut else "❌"
-            titre = "Justificatif ACCEPTÉ" if "Favorable" in statut else "Justificatif REJETÉ"
-            msg_body = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
-<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
-<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
-<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
-</div>
-<div style="padding:30px;">
-<p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_etud}</strong>,</p>
-<div style="background:{'#dcfce7' if 'Favorable' in statut else '#fee2e2'};border-left:5px solid {couleur};padding:15px;margin:20px 0;color:{couleur};font-weight:600;border-radius:0 8px 8px 0;">
-    {icone} <strong>{titre}</strong><br>
-    matière concernée : <strong>{matiere}</strong>
-</div>
-<p style="color:#64748b;font-size:14px;"><strong>Motif du justificatif :</strong> {motif if motif else "Non précisé"}</p>
-{"<p style='color:#166534;font-size:14px;font-weight:600;'>🎓 Votre absence est désormais justifiee. Vous conservez votre éligibilité à l'examen et vous avez le droit à un <strong>examen de remplacement (rattrapage)</strong> si nécessaire.</p>" if "Favorable" in statut else "<p style='color:#991b1b;font-size:14px;'>Votre demande de justification a été rejetée. L'absence reste non justifiee et les sanctions réglementaires s'appliquent.</p>"}
-</div>
-<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
-Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
-Cet email est généré automatiquement - merci de ne pas y répondre.
-</div>
-</div>
-</body>
-</html>"""
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"{titre} - {matiere}"
-            msg["From"] = "chef.department.elt.fge@gmail.com"
-            msg["To"] = str(email_dest).strip()
-            msg.attach(MIMEText(msg_body, "html"))
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
-            server.send_message(msg)
-            server.quit()
-            return True
-        except Exception as e:
-            st.warning(f"Notification décision étudiant non envoyée : {e}")
-            return False
-
-    def envoyer_notification_decision_enseignant(email_dest, nom_ens, nom_etud, matiere, statut, promotion=""):
-        """Envoie une notification à l'enseignant après décision admin sur une justification."""
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-
-            couleur = "#166534" if "Favorable" in statut else "#991b1b"
-            icone = "✅" if "Favorable" in statut else "❌"
-            titre = "Justificatif ACCEPTÉ" if "Favorable" in statut else "Justificatif REJETÉ"
-
-            msg_body = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
-<body style="font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;padding:20px;">
-<div style="max-width:600px;margin:auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-<div style="background:linear-gradient(135deg,#1E3A8A 0%,#3B82F6 100%);color:white;padding:25px;text-align:center;">
-<h1 style="margin:0;font-size:20px;">département d'Electrotechnique - FGE/UDL-SBA</h1>
-<p style="margin:8px 0 0 0;opacity:0.9;font-size:13px;">Plateforme de Suivi d'Assiduité - année 2026-2027</p>
-</div>
-<div style="padding:30px;">
-<p style="color:#334155;margin-bottom:20px;">Salem <strong>{nom_ens}</strong>,</p>
-<p style="color:#64748b;font-size:14px;">L'administration a rendu son avis sur une demande de justification d'absence concernant un étudiant de votre enseignement.</p>
-<div style="background:{'#dcfce7' if 'Favorable' in statut else '#fee2e2'};border-left:5px solid {couleur};padding:15px;margin:20px 0;color:{couleur};font-weight:600;border-radius:0 8px 8px 0;">
-    {icone} <strong>{titre}</strong><br>
-    <strong>Étudiant :</strong> {nom_etud}<br>
-    <strong>matiere :</strong> {matiere}<br>
-    <strong>Promotion :</strong> {promotion}
-</div>
-{"<div style='background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:15px;margin:20px 0;color:#1e40af;font-size:13px;'><strong>📋 Information importante :</strong><br>Cet étudiant a obtenu un avis <strong>favorable</strong> pour la justification de son absence. Il est désormais réhabilité et <strong>a le droit à un examen de remplacement (rattrapage)</strong> s'il le souhaite, conformément au règlement intérieur.</div>" if "Favorable" in statut else "<div style='background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:15px;margin:20px 0;color:#9a3412;font-size:13px;'><strong>📋 Information :</strong><br>La demande de justification a été <strong>rejetée</strong>. L'absence reste enregistrée comme non justifiee et l'étudiant reste sous le seuil d'exclusion si applicable.</div>"}
-</div>
-<div style="text-align:center;padding:20px;background:#f8fafc;font-size:12px;color:#94a3b8;">
-Faculté de génie Electrique - Université Djillali Liabes - Sidi Bel Abbes<br>
-Cet email est généré automatiquement - merci de ne pas y répondre.
-</div>
-</div>
-</body>
-</html>"""
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"[{titre}] {nom_etud} - {matiere}"
-            msg["From"] = "chef.department.elt.fge@gmail.com"
-            msg["To"] = str(email_dest).strip()
-            msg.attach(MIMEText(msg_body, "html"))
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login("chef.department.elt.fge@gmail.com", st.secrets.get("SMTP_PASS", ""))
-            server.send_message(msg)
-            server.quit()
-            return True
-        except Exception as e:
-            st.warning(f"Notification décision enseignant non envoyée : {e}")
-            return False
-
+    def envoyer_notification_decision_etudiant(*args, **kwargs):
+        """Les décisions de justificatifs sont consultables dans le portail, sans e-mail."""
+        return False
+    def envoyer_notification_decision_enseignant(*args, **kwargs):
+        """Les décisions sont consultables dans la plateforme, sans e-mail."""
+        return False
     def trouver_email_étudiant(nom_etudiant, df_étudiants):
         # 1. Priorité : base de données Supabase (email saisi lors de connexion étudiant)
         if MODE_SUPABASE:
@@ -7200,6 +6545,13 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                     .astype(str)
                     .drop_duplicates()
                 ) if "Promotion_Mappee" in df_matiere.columns else pd.DataFrame(columns=["Enseignements", "Promotion_Mappee"])
+                # Les Cours ne sont pas obligatoires : aucune absence de Cours
+                # ne peut être signalée ni comptabilisée. Seuls TD et TP sont suivis.
+                if not couples_matiere_promo_abs.empty:
+                    _type_abs = couples_matiere_promo_abs["Enseignements"].str.strip().str.upper()
+                    couples_matiere_promo_abs = couples_matiere_promo_abs[
+                        _type_abs.str.match(r"^(TD|TP)\s*[-:]", na=False)
+                    ].copy()
 
                 for _, ligne_couple_abs in couples_matiere_promo_abs.iterrows():
                     mat_abs_option = str(ligne_couple_abs["Enseignements"]).strip()
@@ -7700,61 +7052,20 @@ Cet email est généré automatiquement - merci de ne pas y répondre.
                                 }
                                 if MODE_SUPABASE:
                                     if enregistrer_absence_supabase(payload):
-                                        # Envoi notification instantanee a l'étudiant
-                                        email_etu = trouver_email_étudiant(etud_non, df_etu)
-                                        if email_etu:
-                                            resultat_notif = _mettre_en_file_et_envoyer_notification_absence(
-                                                envoyer_notification_absence_étudiant,
-                                                email_etu, etud_non, sel_mat, sel_prof,
-                                                jour_abs, horaire_abs, str(date_abs),
-                                                cause_s if cause_s else "Non justifie",
-                                                get_absences_étudiant(etud_non)
-                                            )
-                                            if resultat_notif["statut"] == "ENVOYEE":
-                                                st.success(f"📧 E-mail envoyé à {etud_non} ({email_etu}).")
-                                            elif resultat_notif["statut"] in ("EN_ECHEC", "FILE_INDISPONIBLE"):
-                                                st.warning(
-                                                    f"⚠️ Absence enregistrée. E-mail non envoyé "
-                                                    f"({resultat_notif['statut']}). "
-                                                    f"{resultat_notif.get('message', '')} "
-                                                    "La notification est conservée si la file Supabase est disponible."
-                                                )
-                                            else:
-                                                st.info(
-                                                    f"ℹ️ Notification déjà suivie : "
-                                                    f"{resultat_notif['statut']}."
-                                                )
-                                        else:
-                                            st.warning(
-                                                f"ℹ️ Aucun e-mail étudiant trouvé pour {etud_non}. "
-                                                "L'absence est enregistrée, mais aucun e-mail ne sera envoyé aux adresses de supervision."
-                                            )
-                                        st.success(f"✅ Absence enregistrée pour {etud_non} !")
+                                        st.success(
+                                            f"✅ Absence enregistrée pour {etud_non}. "
+                                            "Elle est disponible dans les espaces Enseignant, Étudiant et Administrateur. "
+                                            "Aucun e-mail n'a été envoyé."
+                                        )
                                         time.sleep(0.5)
                                         st.rerun()
                                 else:
                                     payload["id"] = len(st.session_state.absences) + 1
                                     st.session_state.absences.append(payload)
-                                    # Envoi notification instantanee a l'étudiant
-                                    email_etu = trouver_email_étudiant(etud_non, df_etu)
-                                    if email_etu:
-                                        resultat_notif = _mettre_en_file_et_envoyer_notification_absence(
-                                            envoyer_notification_absence_étudiant,
-                                            email_etu, etud_non, sel_mat, sel_prof,
-                                            jour_abs, horaire_abs, str(date_abs),
-                                            cause_s if cause_s else "Non justifie",
-                                            get_absences_étudiant(etud_non)
-                                        )
-                                        if resultat_notif["statut"] == "ENVOYEE":
-                                            st.info(f"📧 E-mail envoyé à {etud_non} ({email_etu}).")
-                                        else:
-                                            st.warning("Absence enregistrée ; e-mail non envoyé. " + resultat_notif.get("message", ""))
-                                    else:
-                                        st.warning(
-                                            f"ℹ️ Aucun e-mail étudiant trouvé pour {etud_non}. "
-                                            "L'absence est enregistrée, mais aucun e-mail ne sera envoyé aux adresses de supervision."
-                                        )
-                                    st.success(f"✅ Absence enregistrée (mode locale) pour {etud_non} !")
+                                    st.success(
+                                        f"✅ Absence enregistrée (mode local) pour {etud_non}. "
+                                        "Aucun e-mail n'a été envoyé."
+                                    )
                                     time.sleep(0.5)
                                     st.rerun()
 
@@ -8817,41 +8128,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                                 a["justifie"] = True
                                                 a["cause_non_eligibilite"] = "justifiee - " + str(a.get("cause_non_eligibilite", ""))
 
-                                    # ═══ NOTIFICATIONS EMAIL ═══
-                                    # 1. Notification à l'étudiant
-                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
-                                    if email_etu:
-                                        envoyer_notification_decision_etudiant(
-                                            email_etu, req['nom_etudiant'], req['matiere'],
-                                            "Favorable", req.get('motif', '')
-                                        )
-                                        st.info(f"📧 Notification envoyée à l'étudiant {req['nom_etudiant']}")
-
-                                    # 2. Notification à l'enseignant responsable
-                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
-                                    if ens_rows.empty:
-                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
-                                    if not ens_rows.empty:
-                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
-                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                            # Recherche email dans df_ens directement
-                                            email_ens = None
-                                            nom_fam_cible = extraire_nom_famille(nom_ens)
-                                            for _, row_ens in df_ens.iterrows():
-                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
-                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
-                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                    if email_ens and "@" in email_ens:
-                                                        break
-                                            if email_ens and "@" in str(email_ens):
-                                                envoyer_notification_decision_enseignant(
-                                                    email_ens, nom_ens, req['nom_etudiant'],
-                                                    req['matiere'], "Favorable", req.get('promotion', '')
-                                                )
-                                                st.info(f"📧 Notification envoyée à l'enseignant {nom_ens}")
-                                            else:
-                                                st.caption(f"ℹ️ Email de l'enseignant {nom_ens} non trouvé dans le répertoire.")
-
                                     st.success(f"✔️ Justificatif de {req['nom_etudiant']} pour {req['matiere']} accepté.")
                                     time.sleep(0.5)
                                     st.rerun()
@@ -8863,39 +8139,6 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                         for r in st.session_state.requetes:
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Defavorable"
-
-                                    # ═══ NOTIFICATIONS EMAIL (REJET) ═══
-                                    # 1. Notification à l'étudiant
-                                    email_etu = trouver_email_étudiant(req['nom_etudiant'], df_etu)
-                                    if email_etu:
-                                        envoyer_notification_decision_etudiant(
-                                            email_etu, req['nom_etudiant'], req['matiere'],
-                                            "Defavorable", req.get('motif', '')
-                                        )
-                                        st.info(f"📧 Notification de rejet envoyée à l'étudiant {req['nom_etudiant']}")
-
-                                    # 2. Notification à l'enseignant responsable
-                                    ens_rows = df_edt[(df_edt["Enseignements"] == req['matiere']) & (df_edt["Promotion"].apply(mapper_promotion) == mapper_promotion(req.get('promotion', '')))]
-                                    if ens_rows.empty:
-                                        ens_rows = df_edt[df_edt["Enseignements"] == req['matiere']]
-                                    if not ens_rows.empty:
-                                        nom_ens = str(ens_rows.iloc[0]["Enseignants"]).strip()
-                                        if nom_ens and nom_ens.lower() not in ["non defini", "nan", "", "none"]:
-                                            # Recherche email dans df_ens directement
-                                            email_ens = None
-                                            nom_fam_cible = extraire_nom_famille(nom_ens)
-                                            for _, row_ens in df_ens.iterrows():
-                                                nom_ens_row = str(row_ens.get("Nom", row_ens.get("NOM", ""))).strip()
-                                                if extraire_nom_famille(nom_ens_row) == nom_fam_cible:
-                                                    email_ens = str(row_ens.get("Email", row_ens.get("Email", ""))).strip()
-                                                    if email_ens and "@" in email_ens:
-                                                        break
-                                            if email_ens and "@" in str(email_ens):
-                                                envoyer_notification_decision_enseignant(
-                                                    email_ens, nom_ens, req['nom_etudiant'],
-                                                    req['matiere'], "Defavorable", req.get('promotion', '')
-                                                )
-                                                st.info(f"📧 Notification de rejet envoyée à l'enseignant {nom_ens}")
 
                                     st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
                                     time.sleep(0.5)
