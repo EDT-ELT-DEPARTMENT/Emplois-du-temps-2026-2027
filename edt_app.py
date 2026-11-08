@@ -4316,7 +4316,7 @@ def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
                     else:
                         abs_etudiant_cible = [
                             a for a in st.session_state.absences
-                            if a.get("etud_non_ligible") == etud_non
+                            if a.get("etud_non_eligible") == etud_non
                             and a.get("matiere") == sel_mat
                             and a.get("promotion") == promo_c
                         ]
@@ -6333,6 +6333,36 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
             return True
         return False
 
+    def _nn_ens_abs(x):
+        import unicodedata as _udn
+        t = _udn.normalize("NFKD", str(x or "")).encode("ascii", "ignore").decode()
+        return " ".join(t.upper().split())
+
+    def supprimer_derniere_absence_enseignant(etudiant, matiere, promotion, enseignant):
+        """Supprime la dernière absence NON justifiée signalée par cet enseignant pour l'étudiant."""
+        try:
+            if MODE_SUPABASE:
+                lignes = [a for a in charger_absences_supabase(matiere, promotion)
+                          if a.get("etud_non_eligible") == etudiant]
+            else:
+                lignes = [a for a in st.session_state.absences
+                          if a.get("etud_non_eligible") == etudiant
+                          and a.get("matiere") == matiere and a.get("promotion") == promotion]
+            lignes = [a for a in lignes
+                      if _nn_ens_abs(a.get("enseignant")) == _nn_ens_abs(enseignant)
+                      and a.get("justifie") is not True]
+            if not lignes:
+                return False
+            if MODE_SUPABASE:
+                derniere = max(lignes, key=lambda a: a.get("id") or 0)
+                supabase.table("suivi_assiduite_2026").delete().eq("id", derniere["id"]).execute()
+            else:
+                st.session_state.absences.remove(lignes[-1])
+            return True
+        except Exception as e:
+            st.error(f"Erreur lors de l'annulation : {e}")
+            return False
+
 
     # =============================================================================
 
@@ -7171,11 +7201,19 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
                     else:
                         abs_etudiant_cible = [
                             a for a in st.session_state.absences
-                            if a.get("etud_non_ligible") == etud_non
+                            if a.get("etud_non_eligible") == etud_non
                             and a.get("matiere") == sel_mat
                             and a.get("promotion") == promo_c
                         ]
                     
+                    if is_enseignant_connecte:
+                        # L'enseignant ne peut annuler que SES propres signalements non justifiés
+                        abs_etudiant_cible = [a for a in abs_etudiant_cible
+                                              if _nn_ens_abs(a.get("enseignant")) == _nn_ens_abs(sel_prof)
+                                              and a.get("justifie") is not True]
+                        st.caption("🗑️ Vous pouvez annuler vos propres signalements non justifiés. "
+                                   "Une absence justifiée se supprime via la demande à l'administration (plus bas).")
+
                     if abs_etudiant_cible:
                         for a in abs_etudiant_cible:
                             label = f"{a.get('date_absence','')} | {a.get('jour_absence','')} {a.get('horaire_absence','')} — {a.get('cause_non_eligibilite','Non justifie')}"
@@ -7378,8 +7416,15 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
                                     st.rerun()
 
                 with col_btn2:
-                    if etud_non and not is_enseignant_connecte and st.button("🔄 ANNULER LA DERNIERE ABSENCE", use_container_width=True):
-                        if MODE_SUPABASE:
+                    if etud_non and st.button("🔄 ANNULER LA DERNIERE ABSENCE", use_container_width=True):
+                        if is_enseignant_connecte:
+                            if supprimer_derniere_absence_enseignant(etud_non, sel_mat, promo_c, sel_prof):
+                                st.success(f"✅ Dernière absence que vous avez signalée annulée pour {etud_non} dans {sel_mat}.")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Aucune absence non justifiée signalée par vous pour cet étudiant dans cette matière.")
+                        elif MODE_SUPABASE:
                             if supprimer_derniere_absence_supabase(etud_non, sel_mat, promo_c):
                                 st.success(f"✅ Dernière absence annulée pour {etud_non} dans {sel_mat} ! L'exclusion est levée si applicable.")
                                 time.sleep(0.5)
@@ -7395,9 +7440,13 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
                                 st.warning("⚠️ Aucune absence à annuler pour cet étudiant dans cette matiere.")
 
                 with col_btn3:
-                    if sel_abs_a_annuler and not is_enseignant_connecte and st.button("❌ ANNULER L'ABSENCE CHOISIE", use_container_width=True):
+                    if sel_abs_a_annuler and st.button("❌ ANNULER L'ABSENCE CHOISIE", use_container_width=True):
                         abs_cible = options_annulation[sel_abs_a_annuler]
-                        if MODE_SUPABASE:
+                        if is_enseignant_connecte and (
+                                _nn_ens_abs(abs_cible.get("enseignant")) != _nn_ens_abs(sel_prof)
+                                or abs_cible.get("justifie") is True):
+                            st.error("❌ Vous ne pouvez annuler que vos propres signalements non justifiés.")
+                        elif MODE_SUPABASE:
                             try:
                                 supabase.table("suivi_assiduite_2026").delete().eq("id", abs_cible["id"]).execute()
                                 st.success(f"✅ Absence du {abs_cible.get('date_absence','')} ({abs_cible.get('jour_absence','')} {abs_cible.get('horaire_absence','')}) annulée pour {etud_non} !")
