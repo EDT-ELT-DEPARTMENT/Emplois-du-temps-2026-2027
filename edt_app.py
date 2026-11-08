@@ -3370,9 +3370,17 @@ def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
                     .select("id,etud_non_eligible,matiere,promotion,date_absence,jour_absence,horaire_absence,cause_non_eligibilite,justifie")\
                     .eq("etud_non_eligible", nom_etudiant)\
                     .order("id", desc=True)\
-                    .limit(50)\
+                    .limit(1000)\
                     .execute()
-                return res.data if res.data else []
+                if res.data:
+                    return res.data
+                # Repli : comparaison insensible aux accents, à la casse et aux espaces multiples
+                import unicodedata as _ud
+                def _nn(x):
+                    t = _ud.normalize("NFKD", str(x or "")).encode("ascii", "ignore").decode()
+                    return " ".join(t.upper().split())
+                cible = _nn(nom_etudiant)
+                return [a for a in charger_absences_supabase() if _nn(a.get("etud_non_eligible")) == cible]
             except Exception as e:
                 st.error(f"Erreur de chargement absences : {e}")
                 return []
@@ -3918,6 +3926,54 @@ def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
                     sel_prof = st.selectbox("👤 Sélectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1")
             elif pwd != "":
                 st.error("❌ Code incorrect.")
+
+        # ─── TOUS MES SIGNALEMENTS (indépendant de la matière / promotion choisies) ───
+        if is_enseignant_connecte and sel_prof:
+            with st.expander("📚 Tous mes signalements (toutes matières et promotions)", expanded=False):
+                import unicodedata as _ud2
+                def _nn2(x):
+                    t = _ud2.normalize("NFKD", str(x or "")).encode("ascii", "ignore").decode()
+                    return " ".join(t.upper().split())
+                _tous = charger_absences_supabase() if MODE_SUPABASE else list(st.session_state.absences)
+                _mes = [a for a in _tous if _nn2(a.get("enseignant")) == _nn2(sel_prof)]
+                if _mes:
+                    _df_mes = pd.DataFrame(_mes)
+                    _cols = [c for c in ["promotion", "matiere", "etud_non_eligible", "date_absence",
+                                         "jour_absence", "horaire_absence", "cause_non_eligibilite", "justifie"]
+                             if c in _df_mes.columns]
+                    _df_mes = _df_mes[_cols].rename(columns={
+                        "promotion": "Promotion", "matiere": "Matière", "etud_non_eligible": "Étudiant",
+                        "date_absence": "Date", "jour_absence": "Jour", "horaire_absence": "Horaire",
+                        "cause_non_eligibilite": "Motif", "justifie": "Justifiée"})
+                    if "Justifiée" in _df_mes.columns:
+                        _df_mes["Justifiée"] = _df_mes["Justifiée"].apply(lambda v: "Oui" if v is True else "Non")
+                    _df_mes = _df_mes.sort_values(by=[c for c in ["Promotion", "Matière", "Date"] if c in _df_mes.columns])
+                    st.metric("Signalements enregistrés à votre nom", len(_df_mes))
+                    st.dataframe(_df_mes, use_container_width=True, hide_index=True)
+                    import io as _io_mes
+                    from openpyxl.styles import Font as _F, PatternFill as _PF, Alignment as _AL
+                    from openpyxl.utils import get_column_letter as _gcl
+                    _buf_mes = _io_mes.BytesIO()
+                    with pd.ExcelWriter(_buf_mes, engine="openpyxl") as _w_mes:
+                        _df_mes.to_excel(_w_mes, sheet_name="Mes signalements", index=False)
+                        _ws_mes = _w_mes.sheets["Mes signalements"]
+                        for _c in _ws_mes[1]:
+                            _c.fill = _PF(fill_type="solid", fgColor="1F4E78")
+                            _c.font = _F(color="FFFFFF", bold=True)
+                            _c.alignment = _AL(horizontal="center", vertical="center", wrap_text=True)
+                        for _i, _nom in enumerate(_df_mes.columns, start=1):
+                            _larg = max([len(str(_nom))] + [len(str(v)) for v in _df_mes[_nom].head(300)]) + 2
+                            _ws_mes.column_dimensions[_gcl(_i)].width = min(max(_larg, 12), 45)
+                        _ws_mes.freeze_panes = "A2"
+                        _ws_mes.auto_filter.ref = _ws_mes.dimensions
+                    st.download_button("📥 Télécharger (Excel)",
+                                       data=_buf_mes.getvalue(),
+                                       file_name=f"Mes_signalements_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                       use_container_width=True,
+                                       key="dl_tous_mes_signalements")
+                else:
+                    st.info("Aucun signalement enregistré à votre nom.")
 
         # SUITE COMMUNE
         if sel_prof:
@@ -5362,6 +5418,9 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                         derniere_req = trouver_derniere_requete(
                             étudiant_sel, mat, d_abs, j_abs, h_abs
                         )
+                        if derniere_req and derniere_req.get("statut") == "Favorable":
+                            continue   # demande déjà acceptée : aucun nouveau dépôt possible
+
                         if derniere_req and derniere_req.get("statut") == "Defavorable":
                             absences_bloquees.append({
                                 "absence": a,
@@ -5440,6 +5499,12 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     
                                     try:
                                         pdf_bytes = data["pdf"].read()
+                                        if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
+                                            erreurs_list.append(f"❌ {abs_conc['matiere']} ({abs_conc.get('date_absence','')}) : la pièce jointe est vide ou n'est pas un PDF valide. Demande NON envoyée.")
+                                            continue
+                                        if trouver_requete_existante(étudiant_sel, abs_conc["matiere"], abs_conc.get("date_absence"), abs_conc.get("jour_absence"), abs_conc.get("horaire_absence")):
+                                            erreurs_list.append(f"❌ {abs_conc['matiere']} ({abs_conc.get('date_absence','')}) : une demande existe déjà pour cette absence. Utilisez « Modifier mes demandes en attente ».")
+                                            continue
                                         pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
                                         
                                         payload = {
@@ -5478,10 +5543,74 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 time.sleep(1.5)
                                 st.rerun()
                         else:
-                            st.warning("⚠️ Aucun justificatif PDF n'a été joint. Veuillez déposer au moins un fichier.")
+                            st.warning("⚠️ Aucune demande ne peut être envoyée sans pièce justificative : joignez un PDF à chaque absence que vous souhaitez justifier.")
                     else:
                         if not absences_bloquees:
                             st.info("✅ Toutes vos absences ont déjà un justificatif déposé ou une demande en cours de traitement.")
+
+                    # ─── MODIFIER MES DEMANDES EN ATTENTE (pas de nouveau dépôt pour la même absence) ───
+                    _mes_req = []
+                    if MODE_SUPABASE:
+                        try:
+                            _rep_req = supabase.table("requetes_absences").select("*")\
+                                .eq("nom_etudiant", étudiant_sel).eq("statut", "En attente").execute()
+                            _mes_req = _rep_req.data or []
+                        except Exception as _e_req:
+                            st.error(f"Erreur de chargement de vos demandes : {_e_req}")
+                    else:
+                        _mes_req = [r for r in st.session_state.requetes
+                                    if r.get("nom_etudiant") == étudiant_sel and r.get("statut") == "En attente"]
+
+                    if _mes_req:
+                        st.divider()
+                        st.markdown("### ✏️ Modifier mes demandes en attente")
+                        st.caption("Une demande a déjà été déposée pour ces absences : vous ne pouvez pas en déposer une autre, "
+                                   "mais vous pouvez corriger le motif ou remplacer la pièce justificative tant qu'elle n'a pas été traitée.")
+                        for _r in _mes_req:
+                            _rid = _r.get("id")
+                            _a_pdf = bool(str(_r.get("justificatif_pdf") or "").strip())
+                            with st.container(border=True):
+                                st.markdown(f"**📚 {_r.get('matiere', '')}**")
+                                st.caption(f"📅 {_r.get('date_absence', '')} | 🗓️ {_r.get('jour_absence', '')} | 🕒 {_r.get('horaire_absence', '')} | Déposée le {_r.get('date_demande', '-')}")
+                                if _a_pdf:
+                                    st.success("📎 Pièce justificative jointe. Vous pouvez la remplacer ci-dessous.")
+                                else:
+                                    st.error("⚠️ Cette demande n'a PAS de pièce justificative. Joignez un PDF, sinon elle ne pourra pas être traitée.")
+                                _motif_act = _r.get("motif")
+                                _i_motif = CAUSES_ABSENCES.index(_motif_act) if _motif_act in CAUSES_ABSENCES else 0
+                                _nv_motif = st.selectbox("Motif :", CAUSES_ABSENCES, index=_i_motif, key=f"edit_motif_{_rid}")
+                                _nv_pdf = st.file_uploader("Joindre / remplacer le justificatif (PDF)", type=["pdf"], key=f"edit_pdf_{_rid}")
+                                if st.button("💾 Enregistrer les modifications", key=f"edit_save_{_rid}", use_container_width=True):
+                                    _ok = True
+                                    _pdf_final = _r.get("justificatif_pdf") or ""
+                                    if _nv_pdf is not None:
+                                        _octets = _nv_pdf.read()
+                                        if not _octets or not _octets.startswith(b"%PDF"):
+                                            _ok = False
+                                            st.error("❌ Le fichier joint est vide ou n'est pas un PDF valide.")
+                                        else:
+                                            _pdf_final = base64.b64encode(_octets).decode("utf-8")
+                                    if _ok and not str(_pdf_final).strip():
+                                        _ok = False
+                                        st.error("❌ Enregistrement impossible : une demande doit contenir la pièce justificative (PDF).")
+                                    _maj_ok = False
+                                    if _ok:
+                                        if MODE_SUPABASE:
+                                            try:
+                                                supabase.table("requetes_absences")\
+                                                    .update({"motif": _nv_motif, "justificatif_pdf": _pdf_final})\
+                                                    .eq("id", _rid).eq("statut", "En attente").execute()
+                                                _maj_ok = True
+                                            except Exception as _e_maj:
+                                                st.error(f"❌ Erreur lors de la modification : {_e_maj}")
+                                        else:
+                                            _r["motif"] = _nv_motif
+                                            _r["justificatif_pdf"] = _pdf_final
+                                            _maj_ok = True
+                                    if _maj_ok:
+                                        st.success("✅ Votre demande a été mise à jour.")
+                                        time.sleep(1)
+                                        st.rerun()
                 else:
                     st.info("ℹ️ Aucune absence signalée pour vous actuellement.")
                     st.caption("Si vous pensez qu'il s'agit d'une erreur, contactez l'enseignant de la matiere concernée.")
@@ -6094,9 +6223,17 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
                     .select("id,etud_non_eligible,matiere,promotion,date_absence,jour_absence,horaire_absence,cause_non_eligibilite,justifie")\
                     .eq("etud_non_eligible", nom_etudiant)\
                     .order("id", desc=True)\
-                    .limit(50)\
+                    .limit(1000)\
                     .execute()
-                return res.data if res.data else []
+                if res.data:
+                    return res.data
+                # Repli : comparaison insensible aux accents, à la casse et aux espaces multiples
+                import unicodedata as _ud
+                def _nn(x):
+                    t = _ud.normalize("NFKD", str(x or "")).encode("ascii", "ignore").decode()
+                    return " ".join(t.upper().split())
+                cible = _nn(nom_etudiant)
+                return [a for a in charger_absences_supabase() if _nn(a.get("etud_non_eligible")) == cible]
             except Exception as e:
                 st.error(f"Erreur de chargement absences : {e}")
                 return []
@@ -6644,6 +6781,54 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
                     sel_prof = st.selectbox("👤 Sélectionnez l'Enseignant :", [""] + LISTE_PROFS, key="ens_T1")
             elif pwd != "":
                 st.error("❌ Code incorrect.")
+
+        # ─── TOUS MES SIGNALEMENTS (indépendant de la matière / promotion choisies) ───
+        if is_enseignant_connecte and sel_prof:
+            with st.expander("📚 Tous mes signalements (toutes matières et promotions)", expanded=False):
+                import unicodedata as _ud2
+                def _nn2(x):
+                    t = _ud2.normalize("NFKD", str(x or "")).encode("ascii", "ignore").decode()
+                    return " ".join(t.upper().split())
+                _tous = charger_absences_supabase() if MODE_SUPABASE else list(st.session_state.absences)
+                _mes = [a for a in _tous if _nn2(a.get("enseignant")) == _nn2(sel_prof)]
+                if _mes:
+                    _df_mes = pd.DataFrame(_mes)
+                    _cols = [c for c in ["promotion", "matiere", "etud_non_eligible", "date_absence",
+                                         "jour_absence", "horaire_absence", "cause_non_eligibilite", "justifie"]
+                             if c in _df_mes.columns]
+                    _df_mes = _df_mes[_cols].rename(columns={
+                        "promotion": "Promotion", "matiere": "Matière", "etud_non_eligible": "Étudiant",
+                        "date_absence": "Date", "jour_absence": "Jour", "horaire_absence": "Horaire",
+                        "cause_non_eligibilite": "Motif", "justifie": "Justifiée"})
+                    if "Justifiée" in _df_mes.columns:
+                        _df_mes["Justifiée"] = _df_mes["Justifiée"].apply(lambda v: "Oui" if v is True else "Non")
+                    _df_mes = _df_mes.sort_values(by=[c for c in ["Promotion", "Matière", "Date"] if c in _df_mes.columns])
+                    st.metric("Signalements enregistrés à votre nom", len(_df_mes))
+                    st.dataframe(_df_mes, use_container_width=True, hide_index=True)
+                    import io as _io_mes
+                    from openpyxl.styles import Font as _F, PatternFill as _PF, Alignment as _AL
+                    from openpyxl.utils import get_column_letter as _gcl
+                    _buf_mes = _io_mes.BytesIO()
+                    with pd.ExcelWriter(_buf_mes, engine="openpyxl") as _w_mes:
+                        _df_mes.to_excel(_w_mes, sheet_name="Mes signalements", index=False)
+                        _ws_mes = _w_mes.sheets["Mes signalements"]
+                        for _c in _ws_mes[1]:
+                            _c.fill = _PF(fill_type="solid", fgColor="1F4E78")
+                            _c.font = _F(color="FFFFFF", bold=True)
+                            _c.alignment = _AL(horizontal="center", vertical="center", wrap_text=True)
+                        for _i, _nom in enumerate(_df_mes.columns, start=1):
+                            _larg = max([len(str(_nom))] + [len(str(v)) for v in _df_mes[_nom].head(300)]) + 2
+                            _ws_mes.column_dimensions[_gcl(_i)].width = min(max(_larg, 12), 45)
+                        _ws_mes.freeze_panes = "A2"
+                        _ws_mes.auto_filter.ref = _ws_mes.dimensions
+                    st.download_button("📥 Télécharger (Excel)",
+                                       data=_buf_mes.getvalue(),
+                                       file_name=f"Mes_signalements_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                       use_container_width=True,
+                                       key="dl_tous_mes_signalements")
+                else:
+                    st.info("Aucun signalement enregistré à votre nom.")
 
         # SUITE COMMUNE
         if sel_prof:
@@ -8145,6 +8330,9 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                         derniere_req = trouver_derniere_requete(
                             étudiant_sel, mat, d_abs, j_abs, h_abs
                         )
+                        if derniere_req and derniere_req.get("statut") == "Favorable":
+                            continue   # demande déjà acceptée : aucun nouveau dépôt possible
+
                         if derniere_req and derniere_req.get("statut") == "Defavorable":
                             absences_bloquees.append({
                                 "absence": a,
@@ -8217,6 +8405,12 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     
                                     try:
                                         pdf_bytes = data["pdf"].read()
+                                        if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
+                                            erreurs_list.append(f"❌ {abs_conc['matiere']} ({abs_conc.get('date_absence','')}) : la pièce jointe est vide ou n'est pas un PDF valide. Demande NON envoyée.")
+                                            continue
+                                        if trouver_requete_existante(étudiant_sel, abs_conc["matiere"], abs_conc.get("date_absence"), abs_conc.get("jour_absence"), abs_conc.get("horaire_absence")):
+                                            erreurs_list.append(f"❌ {abs_conc['matiere']} ({abs_conc.get('date_absence','')}) : une demande existe déjà pour cette absence. Utilisez « Modifier mes demandes en attente ».")
+                                            continue
                                         pdf_encoded = base64.b64encode(pdf_bytes).decode('utf-8')
                                         
                                         payload = {
@@ -8255,10 +8449,74 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 time.sleep(1.5)
                                 st.rerun()
                         else:
-                            st.warning("⚠️ Aucun justificatif PDF n'a été joint. Veuillez déposer au moins un fichier.")
+                            st.warning("⚠️ Aucune demande ne peut être envoyée sans pièce justificative : joignez un PDF à chaque absence que vous souhaitez justifier.")
                     else:
                         if not absences_bloquees:
                             st.info("✅ Toutes vos absences ont déjà un justificatif déposé ou une demande en cours de traitement.")
+
+                    # ─── MODIFIER MES DEMANDES EN ATTENTE (pas de nouveau dépôt pour la même absence) ───
+                    _mes_req = []
+                    if MODE_SUPABASE:
+                        try:
+                            _rep_req = supabase.table("requetes_absences").select("*")\
+                                .eq("nom_etudiant", étudiant_sel).eq("statut", "En attente").execute()
+                            _mes_req = _rep_req.data or []
+                        except Exception as _e_req:
+                            st.error(f"Erreur de chargement de vos demandes : {_e_req}")
+                    else:
+                        _mes_req = [r for r in st.session_state.requetes
+                                    if r.get("nom_etudiant") == étudiant_sel and r.get("statut") == "En attente"]
+
+                    if _mes_req:
+                        st.divider()
+                        st.markdown("### ✏️ Modifier mes demandes en attente")
+                        st.caption("Une demande a déjà été déposée pour ces absences : vous ne pouvez pas en déposer une autre, "
+                                   "mais vous pouvez corriger le motif ou remplacer la pièce justificative tant qu'elle n'a pas été traitée.")
+                        for _r in _mes_req:
+                            _rid = _r.get("id")
+                            _a_pdf = bool(str(_r.get("justificatif_pdf") or "").strip())
+                            with st.container(border=True):
+                                st.markdown(f"**📚 {_r.get('matiere', '')}**")
+                                st.caption(f"📅 {_r.get('date_absence', '')} | 🗓️ {_r.get('jour_absence', '')} | 🕒 {_r.get('horaire_absence', '')} | Déposée le {_r.get('date_demande', '-')}")
+                                if _a_pdf:
+                                    st.success("📎 Pièce justificative jointe. Vous pouvez la remplacer ci-dessous.")
+                                else:
+                                    st.error("⚠️ Cette demande n'a PAS de pièce justificative. Joignez un PDF, sinon elle ne pourra pas être traitée.")
+                                _motif_act = _r.get("motif")
+                                _i_motif = CAUSES_ABSENCES.index(_motif_act) if _motif_act in CAUSES_ABSENCES else 0
+                                _nv_motif = st.selectbox("Motif :", CAUSES_ABSENCES, index=_i_motif, key=f"edit_motif_{_rid}")
+                                _nv_pdf = st.file_uploader("Joindre / remplacer le justificatif (PDF)", type=["pdf"], key=f"edit_pdf_{_rid}")
+                                if st.button("💾 Enregistrer les modifications", key=f"edit_save_{_rid}", use_container_width=True):
+                                    _ok = True
+                                    _pdf_final = _r.get("justificatif_pdf") or ""
+                                    if _nv_pdf is not None:
+                                        _octets = _nv_pdf.read()
+                                        if not _octets or not _octets.startswith(b"%PDF"):
+                                            _ok = False
+                                            st.error("❌ Le fichier joint est vide ou n'est pas un PDF valide.")
+                                        else:
+                                            _pdf_final = base64.b64encode(_octets).decode("utf-8")
+                                    if _ok and not str(_pdf_final).strip():
+                                        _ok = False
+                                        st.error("❌ Enregistrement impossible : une demande doit contenir la pièce justificative (PDF).")
+                                    _maj_ok = False
+                                    if _ok:
+                                        if MODE_SUPABASE:
+                                            try:
+                                                supabase.table("requetes_absences")\
+                                                    .update({"motif": _nv_motif, "justificatif_pdf": _pdf_final})\
+                                                    .eq("id", _rid).eq("statut", "En attente").execute()
+                                                _maj_ok = True
+                                            except Exception as _e_maj:
+                                                st.error(f"❌ Erreur lors de la modification : {_e_maj}")
+                                        else:
+                                            _r["motif"] = _nv_motif
+                                            _r["justificatif_pdf"] = _pdf_final
+                                            _maj_ok = True
+                                    if _maj_ok:
+                                        st.success("✅ Votre demande a été mise à jour.")
+                                        time.sleep(1)
+                                        st.rerun()
                 else:
                     st.info("ℹ️ Aucune absence signalée pour vous actuellement.")
                     st.caption("Si vous pensez qu'il s'agit d'une erreur, contactez l'enseignant de la matiere concernée.")
