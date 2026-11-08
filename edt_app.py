@@ -1035,6 +1035,28 @@ footer {visibility: hidden;}
 """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
+# Les titres Streamlit créent une ancre (#modification-des-donnees…) qui s'ajoute à l'adresse du site.
+# On masque les icônes d'ancre, on bloque ces clics et on nettoie l'adresse si elle contient déjà un « # ».
+st.markdown("""<style>
+[data-testid="stHeaderActionElements"] {display:none !important;}
+</style>""", unsafe_allow_html=True)
+import streamlit.components.v1 as _components_ancre
+_components_ancre.html("""<script>
+try {
+  var w = window.parent;
+  if (w.location.hash) {
+    w.history.replaceState(null, "", w.location.pathname + w.location.search);
+  }
+  if (!w.__ancres_bloquees) {
+    w.__ancres_bloquees = true;
+    w.document.addEventListener("click", function (e) {
+      var a = e.target && e.target.closest ? e.target.closest('[data-testid="stHeaderActionElements"] a') : null;
+      if (a) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
+  }
+} catch (e) {}
+</script>""", height=0)
+
 # =============================================================================
 # CONNEXION SUPABASE GLOBALE (partagée)
 # =============================================================================
@@ -2525,6 +2547,22 @@ COMPTES_ETUDIANTS_INDEX = indexer_comptes_etudiants()
 # FONCTION DE LECTURE EXCEL ROBUSTE
     # =============================================================================
 def lire_excel_robuste(chemin_ou_fichier, sheet_name=0):
+    """Lit un fichier Excel (mis en cache pour les chemins de fichiers : rechargé si le fichier change)."""
+    if isinstance(chemin_ou_fichier, str) and os.path.exists(chemin_ou_fichier):
+        try:
+            return _lire_excel_chemin_cache(chemin_ou_fichier, sheet_name,
+                                            os.path.getmtime(chemin_ou_fichier))
+        except Exception:
+            pass   # en cas de souci de cache : lecture directe ci-dessous
+    return _lire_excel_robuste_brut(chemin_ou_fichier, sheet_name)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def _lire_excel_chemin_cache(chemin, sheet_name, mtime):
+    return _lire_excel_robuste_brut(chemin, sheet_name)
+
+
+def _lire_excel_robuste_brut(chemin_ou_fichier, sheet_name=0):
     """Lit un fichier Excel en essayant plusieurs engines (.xlsx, .xls, .xlsb)."""
     if chemin_ou_fichier is None:
         return None
