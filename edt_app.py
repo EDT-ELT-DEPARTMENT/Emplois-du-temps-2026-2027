@@ -6483,6 +6483,82 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
         or (user if role_utilisateur == "etudiant" else None)
     )
 
+    # -------------------------------------------------------------------------
+    # NORMALISATION DE LA SESSION ETUDIANT (compatibilité anciennes sessions)
+    # Certaines sessions déjà ouvertes ou certains comptes issus de l'aperçu
+    # ne contiennent pas la clé "nom". On complète les champs attendus avant
+    # tout accès historique du module afin d'éviter KeyError: 'nom'.
+    # -------------------------------------------------------------------------
+    if étudiant_connecte:
+        if not isinstance(étudiant_connecte, dict):
+            try:
+                étudiant_connecte = dict(étudiant_connecte)
+            except Exception:
+                étudiant_connecte = {}
+
+        def _valeur_session_etu(*cles):
+            for cle in cles:
+                valeur = étudiant_connecte.get(cle)
+                if valeur is None:
+                    continue
+                try:
+                    if pd.isna(valeur):
+                        continue
+                except Exception:
+                    pass
+                valeur = str(valeur).strip()
+                if valeur and valeur.casefold() not in {"nan", "none", "null", "non défini", "non defini"}:
+                    return valeur
+            return ""
+
+        _nom_session_etu = _valeur_session_etu(
+            "nom", "nom_complet", "Nom_Complet", "Nom complet",
+            "nom_officiel", "Nom", "etudiant", "Étudiant"
+        )
+        _mat_session_etu = _valeur_session_etu(
+            "mat_etud", "Mat. Etudiant", "matricule_etudiant",
+            "matricule", "Matricule", "mat_bac"
+        )
+
+        # Si le nom manque dans la session, le retrouver dans le fichier source
+        # étudiant à partir du matricule individuel lorsqu'il est disponible.
+        _ligne_session_etu = None
+        if (not _nom_session_etu or not _valeur_session_etu("promotion")) and not df_etu.empty:
+            try:
+                import unicodedata as _ud_session_etu
+                def _norm_col_session_etu(val):
+                    txt = _ud_session_etu.normalize("NFKD", str(val or ""))
+                    txt = "".join(ch for ch in txt if not _ud_session_etu.combining(ch))
+                    return re.sub(r"[^a-z0-9]", "", txt.casefold())
+
+                _col_mat_session_etu = next(
+                    (c for c in df_etu.columns if _norm_col_session_etu(c) in {
+                        "matetudiant", "matriculeetudiant", "matricule", "numetudiant"
+                    }), None
+                )
+                if _mat_session_etu and _col_mat_session_etu:
+                    _mat_norm_session_etu = re.sub(r"[\s\-]+", "", _mat_session_etu).upper()
+                    _serie_mat_session_etu = df_etu[_col_mat_session_etu].astype(str).str.strip()
+                    _serie_mat_session_etu = _serie_mat_session_etu.str.replace(r"\.0+$", "", regex=True)
+                    _mask_session_etu = _serie_mat_session_etu.str.replace(r"[\s\-]+", "", regex=True).str.upper() == _mat_norm_session_etu
+                    _trouves_session_etu = df_etu.loc[_mask_session_etu]
+                    if not _trouves_session_etu.empty:
+                        _ligne_session_etu = _trouves_session_etu.iloc[0]
+                        if not _nom_session_etu and "Nom_Complet" in df_etu.columns:
+                            _nom_session_etu = str(_ligne_session_etu.get("Nom_Complet", "")).strip()
+            except Exception:
+                _ligne_session_etu = None
+
+        étudiant_connecte["nom"] = _nom_session_etu or "Étudiant"
+        étudiant_connecte.setdefault("mat_etud", _mat_session_etu)
+        étudiant_connecte.setdefault("mat_bac", _mat_session_etu)
+        if not _valeur_session_etu("promotion") and _ligne_session_etu is not None:
+            _col_promo_session_etu = next(
+                (c for c in df_etu.columns if _norm_col_session_etu(c) in {"promotion", "promotions"}), None
+            )
+            if _col_promo_session_etu:
+                étudiant_connecte["promotion"] = str(_ligne_session_etu.get(_col_promo_session_etu, "")).strip()
+
     if not is_enseignant_connecte and not étudiant_connecte and not is_admin_edt:
         st.markdown("<h3 style='text-align:center;color:#1E3A8A;'>🔐 Portail Étudiant</h3>", unsafe_allow_html=True)
         st.info("Accédez à votre espace pour consulter vos absences et déposer des justificatifs.")
