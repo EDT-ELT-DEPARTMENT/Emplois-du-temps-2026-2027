@@ -63,6 +63,12 @@ import streamlit as st
 import pandas as pd
 import base64
 import io
+
+# Rendu PDF en images pour un aperçu fiable dans tous les navigateurs.
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
 import time
 import re
 import os
@@ -5673,7 +5679,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 st.write(f"**Motif :** {req['motif']}")
                                 st.write(f"**Date de dépôt :** {req['date_demande']}")
 
-                                # Aperçu intégré du justificatif PDF avant toute décision.
+                                # Aperçu du justificatif PDF : rendu de chaque page en image.
+                                # Cette méthode ne dépend pas du lecteur PDF du navigateur.
                                 try:
                                     _pdf_b64 = str(req.get("justificatif_pdf") or "").strip()
                                     if _pdf_b64.startswith("data:application/pdf;base64,"):
@@ -5681,16 +5688,23 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     pdf_decoded = base64.b64decode(_pdf_b64, validate=True)
                                     if not pdf_decoded.startswith(b"%PDF"):
                                         raise ValueError("Le fichier stocké n'est pas un PDF valide.")
+
                                     st.markdown("**👁️ Aperçu du justificatif (lecture directe)**")
-                                    _pdf_b64_affichage = base64.b64encode(pdf_decoded).decode("ascii")
-                                    _html_pdf = (
-                                        '<iframe src="data:application/pdf;base64,'
-                                        + _pdf_b64_affichage
-                                        + '#toolbar=1&navpanes=0&view=FitH" width="100%" height="650" '
-                                        + 'style="border:1px solid #cbd5e1;border-radius:8px;" '
-                                        + 'title="Aperçu du justificatif PDF"></iframe>'
-                                    )
-                                    st.components.v1.html(_html_pdf, height=665, scrolling=True)
+                                    if fitz is None:
+                                        raise RuntimeError(
+                                            "Le module PyMuPDF n'est pas installé. Ajoutez `PyMuPDF` dans requirements.txt puis redéployez l'application."
+                                        )
+
+                                    _doc_pdf = fitz.open(stream=pdf_decoded, filetype="pdf")
+                                    if _doc_pdf.page_count == 0:
+                                        raise ValueError("Le PDF ne contient aucune page.")
+                                    st.caption(f"Document de {_doc_pdf.page_count} page(s).")
+                                    for _num_page, _page_pdf in enumerate(_doc_pdf, start=1):
+                                        st.markdown(f"**Page {_num_page} / {_doc_pdf.page_count}**")
+                                        _pix_pdf = _page_pdf.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+                                        st.image(_pix_pdf.tobytes("png"), use_container_width=True)
+                                    _doc_pdf.close()
+
                                     st.download_button(
                                         label="📥 Télécharger le justificatif PDF",
                                         data=pdf_decoded,
@@ -5700,9 +5714,14 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     )
                                 except Exception as _err_pdf_preview:
                                     st.error(f"⚠️ Aperçu PDF impossible : {_err_pdf_preview}")
-                                    st.info("Vous pouvez tout de même télécharger le fichier pour le vérifier avec un lecteur PDF.")
+                                    st.info("Le fichier original reste disponible en téléchargement si son contenu est lisible.")
                                     try:
-                                        _pdf_secours = base64.b64decode(str(req.get("justificatif_pdf") or ""))
+                                        _pdf_secours_b64 = str(req.get("justificatif_pdf") or "").strip()
+                                        if _pdf_secours_b64.startswith("data:application/pdf;base64,"):
+                                            _pdf_secours_b64 = _pdf_secours_b64.split(",", 1)[1]
+                                        _pdf_secours = base64.b64decode(_pdf_secours_b64, validate=True)
+                                        if not _pdf_secours.startswith(b"%PDF"):
+                                            raise ValueError("PDF invalide")
                                         st.download_button(
                                             label="📥 Télécharger le justificatif PDF",
                                             data=_pdf_secours,
@@ -8766,7 +8785,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 st.write(f"**Motif :** {req['motif']}")
                                 st.write(f"**Date de dépôt :** {req['date_demande']}")
 
-                                # Aperçu intégré du justificatif PDF avant toute décision.
+                                # Aperçu du justificatif PDF : rendu de chaque page en image.
+                                # Cette méthode ne dépend pas du lecteur PDF du navigateur.
                                 try:
                                     _pdf_b64 = str(req.get("justificatif_pdf") or "").strip()
                                     if _pdf_b64.startswith("data:application/pdf;base64,"):
@@ -8774,16 +8794,23 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     pdf_decoded = base64.b64decode(_pdf_b64, validate=True)
                                     if not pdf_decoded.startswith(b"%PDF"):
                                         raise ValueError("Le fichier stocké n'est pas un PDF valide.")
+
                                     st.markdown("**👁️ Aperçu du justificatif (lecture directe)**")
-                                    _pdf_b64_affichage = base64.b64encode(pdf_decoded).decode("ascii")
-                                    _html_pdf = (
-                                        '<iframe src="data:application/pdf;base64,'
-                                        + _pdf_b64_affichage
-                                        + '#toolbar=1&navpanes=0&view=FitH" width="100%" height="650" '
-                                        + 'style="border:1px solid #cbd5e1;border-radius:8px;" '
-                                        + 'title="Aperçu du justificatif PDF"></iframe>'
-                                    )
-                                    st.components.v1.html(_html_pdf, height=665, scrolling=True)
+                                    if fitz is None:
+                                        raise RuntimeError(
+                                            "Le module PyMuPDF n'est pas installé. Ajoutez `PyMuPDF` dans requirements.txt puis redéployez l'application."
+                                        )
+
+                                    _doc_pdf = fitz.open(stream=pdf_decoded, filetype="pdf")
+                                    if _doc_pdf.page_count == 0:
+                                        raise ValueError("Le PDF ne contient aucune page.")
+                                    st.caption(f"Document de {_doc_pdf.page_count} page(s).")
+                                    for _num_page, _page_pdf in enumerate(_doc_pdf, start=1):
+                                        st.markdown(f"**Page {_num_page} / {_doc_pdf.page_count}**")
+                                        _pix_pdf = _page_pdf.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+                                        st.image(_pix_pdf.tobytes("png"), use_container_width=True)
+                                    _doc_pdf.close()
+
                                     st.download_button(
                                         label="📥 Télécharger le justificatif PDF",
                                         data=pdf_decoded,
@@ -8793,9 +8820,14 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     )
                                 except Exception as _err_pdf_preview:
                                     st.error(f"⚠️ Aperçu PDF impossible : {_err_pdf_preview}")
-                                    st.info("Vous pouvez tout de même télécharger le fichier pour le vérifier avec un lecteur PDF.")
+                                    st.info("Le fichier original reste disponible en téléchargement si son contenu est lisible.")
                                     try:
-                                        _pdf_secours = base64.b64decode(str(req.get("justificatif_pdf") or ""))
+                                        _pdf_secours_b64 = str(req.get("justificatif_pdf") or "").strip()
+                                        if _pdf_secours_b64.startswith("data:application/pdf;base64,"):
+                                            _pdf_secours_b64 = _pdf_secours_b64.split(",", 1)[1]
+                                        _pdf_secours = base64.b64decode(_pdf_secours_b64, validate=True)
+                                        if not _pdf_secours.startswith(b"%PDF"):
+                                            raise ValueError("PDF invalide")
                                         st.download_button(
                                             label="📥 Télécharger le justificatif PDF",
                                             data=_pdf_secours,
