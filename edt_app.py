@@ -1048,8 +1048,14 @@ if create_client:
         if SUPABASE_URL and SUPABASE_KEY:
             supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
             MODE_SUPABASE = True
-    except Exception:
-        pass
+        else:
+            st.error("⚠️ Secrets Supabase manquants (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY). "
+                     "Les absences NE SERONT PAS sauvegardées durablement.")
+    except Exception as _err_sb:
+        MODE_SUPABASE = False
+        supabase = None
+        st.error(f"⚠️ Connexion Supabase impossible : {_err_sb}. "
+                 "Les absences NE SERONT PAS sauvegardées durablement.")
 
 # =============================================================================
 # CONSTANTES COMMUNES
@@ -3259,13 +3265,19 @@ def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
         if not MODE_SUPABASE:
             return []
         try:
-            query = supabase.table("suivi_assiduite_2026").select("*")
-            if matiere:
-                query = query.eq("matiere", matiere)
-            if promotion:
-                query = query.eq("promotion", promotion)
-            res = query.execute()
-            return res.data if res.data else []
+            toutes, debut, taille = [], 0, 1000
+            while True:
+                query = supabase.table("suivi_assiduite_2026").select("*")
+                if matiere:
+                    query = query.eq("matiere", matiere)
+                if promotion:
+                    query = query.eq("promotion", promotion)
+                page = query.order("id").range(debut, debut + taille - 1).execute().data or []
+                toutes.extend(page)
+                if len(page) < taille:
+                    break
+                debut += taille
+            return toutes
         except Exception as e:
             st.error(f"Erreur Supabase (charger absences) : {e}")
             return []
@@ -4522,10 +4534,10 @@ def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
                     st.dataframe(df_aff, use_container_width=True, hide_index=True)
 
                     # ─── EFFACEMENT AVEC CONFIRMATION CONDITIONNELLE ───
-                    if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary", key="btn_reset_all_abs", disabled=preview_teacher is not None):
+                    if is_admin_edt and st.button("🗑️ Effacer TOUT l'historique des absences", type="primary", key="btn_reset_all_abs", disabled=preview_teacher is not None):
                         st.session_state.confirm_reset_abs = True
 
-                    if st.session_state.get("confirm_reset_abs", False):
+                    if is_admin_edt and st.session_state.get("confirm_reset_abs", False):
                         st.error("⚠️ Cette action est IRRÉVERSIBLE ! Toutes les absences seront définitivement supprimées.")
                         c_yes, c_no = st.columns(2)
                         with c_yes:
@@ -5874,13 +5886,19 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
         if not MODE_SUPABASE:
             return []
         try:
-            query = supabase.table("suivi_assiduite_2026").select("*")
-            if matiere:
-                query = query.eq("matiere", matiere)
-            if promotion:
-                query = query.eq("promotion", promotion)
-            res = query.execute()
-            return res.data if res.data else []
+            toutes, debut, taille = [], 0, 1000
+            while True:
+                query = supabase.table("suivi_assiduite_2026").select("*")
+                if matiere:
+                    query = query.eq("matiere", matiere)
+                if promotion:
+                    query = query.eq("promotion", promotion)
+                page = query.order("id").range(debut, debut + taille - 1).execute().data or []
+                toutes.extend(page)
+                if len(page) < taille:
+                    break
+                debut += taille
+            return toutes
         except Exception as e:
             st.error(f"Erreur Supabase (charger absences) : {e}")
             return []
@@ -7242,10 +7260,10 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
                     st.dataframe(df_aff, use_container_width=True, hide_index=True)
 
                     # ─── EFFACEMENT AVEC CONFIRMATION CONDITIONNELLE ───
-                    if st.button("🗑️ Effacer TOUT l'historique des absences", type="primary", key="btn_reset_all_abs"):
+                    if is_admin_edt and st.button("🗑️ Effacer TOUT l'historique des absences", type="primary", key="btn_reset_all_abs"):
                         st.session_state.confirm_reset_abs = True
 
-                    if st.session_state.get("confirm_reset_abs", False):
+                    if is_admin_edt and st.session_state.get("confirm_reset_abs", False):
                         st.error("⚠️ Cette action est IRRÉVERSIBLE ! Toutes les absences seront définitivement supprimées.")
                         c_yes, c_no = st.columns(2)
                         with c_yes:
