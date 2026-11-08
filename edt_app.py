@@ -86,7 +86,8 @@ try:
 except ImportError:
     create_client = None
     Client = None
-
+# Diagnostic temporaire de la version Streamlit
+st.write("🔧 Version exacte de Streamlit installée sur le Cloud :", st.__version__)
 try:
     from fpdf import FPDF
 except ImportError:
