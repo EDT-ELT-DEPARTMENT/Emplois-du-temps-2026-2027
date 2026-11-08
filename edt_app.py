@@ -5461,7 +5461,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                         if derniere_req and derniere_req.get("statut") == "Defavorable":
                             absences_bloquees.append({
                                 "absence": a,
-                                "motif_rejet": derniere_req.get("motif", "Non précisé")
+                                "motif_rejet": derniere_req.get("motif_rejet") or derniere_req.get("motif", "Non précisé")
                             })
                             continue
     
@@ -5673,13 +5673,57 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 st.write(f"**Motif :** {req['motif']}")
                                 st.write(f"**Date de dépôt :** {req['date_demande']}")
 
-                                pdf_decoded = base64.b64decode(req['justificatif_pdf'])
-                                st.download_button(
-                                    label="👁️ Télécharger le PDF",
-                                    data=pdf_decoded,
-                                    file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"dl_{req['id']}"
+                                # Aperçu intégré du justificatif PDF avant toute décision.
+                                try:
+                                    _pdf_b64 = str(req.get("justificatif_pdf") or "").strip()
+                                    if _pdf_b64.startswith("data:application/pdf;base64,"):
+                                        _pdf_b64 = _pdf_b64.split(",", 1)[1]
+                                    pdf_decoded = base64.b64decode(_pdf_b64, validate=True)
+                                    if not pdf_decoded.startswith(b"%PDF"):
+                                        raise ValueError("Le fichier stocké n'est pas un PDF valide.")
+                                    st.markdown("**👁️ Aperçu du justificatif (lecture directe)**")
+                                    _pdf_b64_affichage = base64.b64encode(pdf_decoded).decode("ascii")
+                                    _html_pdf = (
+                                        '<iframe src="data:application/pdf;base64,'
+                                        + _pdf_b64_affichage
+                                        + '#toolbar=1&navpanes=0&view=FitH" width="100%" height="650" '
+                                        + 'style="border:1px solid #cbd5e1;border-radius:8px;" '
+                                        + 'title="Aperçu du justificatif PDF"></iframe>'
+                                    )
+                                    st.components.v1.html(_html_pdf, height=665, scrolling=True)
+                                    st.download_button(
+                                        label="📥 Télécharger le justificatif PDF",
+                                        data=pdf_decoded,
+                                        file_name=f"Justif_{req.get('nom_etudiant','Etudiant')}_{req.get('matiere','Justificatif')}.pdf",
+                                        mime="application/pdf",
+                                        key=f"dl_{req['id']}"
+                                    )
+                                except Exception as _err_pdf_preview:
+                                    st.error(f"⚠️ Aperçu PDF impossible : {_err_pdf_preview}")
+                                    st.info("Vous pouvez tout de même télécharger le fichier pour le vérifier avec un lecteur PDF.")
+                                    try:
+                                        _pdf_secours = base64.b64decode(str(req.get("justificatif_pdf") or ""))
+                                        st.download_button(
+                                            label="📥 Télécharger le justificatif PDF",
+                                            data=_pdf_secours,
+                                            file_name=f"Justif_{req.get('nom_etudiant','Etudiant')}_{req.get('matiere','Justificatif')}.pdf",
+                                            mime="application/pdf",
+                                            key=f"dl_secours_{req['id']}"
+                                        )
+                                    except Exception:
+                                        st.error("Le fichier justificatif est absent ou illisible dans la base.")
+
+                                # Le motif de rejet est obligatoire et distinct du motif d'absence choisi par l'étudiant.
+                                MOTIFS_REJET_JUSTIFICATIF = [
+                                    "1- Justificatif non compatible avec le motif d'absence signalé",
+                                    "2- Certificat médical ou rapport non visé par le médecin de l'université",
+                                    "3- Justificatif non visible",
+                                    "4- Justificatif téléversé hors délai requis",
+                                ]
+                                motif_rejet_selectionne = st.selectbox(
+                                    "Motif du rejet (à sélectionner avant de rejeter) :",
+                                    options=MOTIFS_REJET_JUSTIFICATIF,
+                                    key=f"motif_rejet_justif_{req['id']}"
                                 )
 
                                 col_acc, col_rej = st.columns(2)
@@ -5708,16 +5752,34 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     st.rerun()
 
                                 if col_rej.button("❌ REJETER", key=f"rej_{req['id']}", use_container_width=True):
+                                    _rejet_ok = False
                                     if MODE_SUPABASE:
-                                        mettre_a_jour_statut_requete_supabase(req["id"], "Defavorable")
+                                        try:
+                                            supabase.table("requetes_absences").update({
+                                                "statut": "Defavorable",
+                                                "motif_rejet": motif_rejet_selectionne,
+                                            }).eq("id", req["id"]).execute()
+                                            _rejet_ok = True
+                                        except Exception as _err_rejet:
+                                            st.error(
+                                                "❌ Impossible d'enregistrer le rejet. Vérifiez que la colonne "
+                                                "motif_rejet a été créée dans Supabase. Détail : "
+                                                f"{_err_rejet}"
+                                            )
                                     else:
                                         for r in st.session_state.requetes:
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Defavorable"
+                                                r["motif_rejet"] = motif_rejet_selectionne
+                                                _rejet_ok = True
 
-                                    st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
-                                    time.sleep(0.5)
-                                    st.rerun()
+                                    if _rejet_ok:
+                                        st.warning(
+                                            f"❌ Dossier de {req['nom_etudiant']} rejeté. "
+                                            f"Motif : {motif_rejet_selectionne}"
+                                        )
+                                        time.sleep(0.5)
+                                        st.rerun()
 
                     with st.expander("🛠️ Zone maintenance"):
                         st.write("Effacer toutes les requêtes de justificatifs.")
@@ -8498,7 +8560,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                         if derniere_req and derniere_req.get("statut") == "Defavorable":
                             absences_bloquees.append({
                                 "absence": a,
-                                "motif_rejet": derniere_req.get("motif", "Non précisé")
+                                "motif_rejet": derniere_req.get("motif_rejet") or derniere_req.get("motif", "Non précisé")
                             })
                             continue
     
@@ -8704,13 +8766,57 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 st.write(f"**Motif :** {req['motif']}")
                                 st.write(f"**Date de dépôt :** {req['date_demande']}")
 
-                                pdf_decoded = base64.b64decode(req['justificatif_pdf'])
-                                st.download_button(
-                                    label="👁️ Télécharger le PDF",
-                                    data=pdf_decoded,
-                                    file_name=f"Justif_{req['nom_etudiant']}_{req['matiere']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"dl_{req['id']}"
+                                # Aperçu intégré du justificatif PDF avant toute décision.
+                                try:
+                                    _pdf_b64 = str(req.get("justificatif_pdf") or "").strip()
+                                    if _pdf_b64.startswith("data:application/pdf;base64,"):
+                                        _pdf_b64 = _pdf_b64.split(",", 1)[1]
+                                    pdf_decoded = base64.b64decode(_pdf_b64, validate=True)
+                                    if not pdf_decoded.startswith(b"%PDF"):
+                                        raise ValueError("Le fichier stocké n'est pas un PDF valide.")
+                                    st.markdown("**👁️ Aperçu du justificatif (lecture directe)**")
+                                    _pdf_b64_affichage = base64.b64encode(pdf_decoded).decode("ascii")
+                                    _html_pdf = (
+                                        '<iframe src="data:application/pdf;base64,'
+                                        + _pdf_b64_affichage
+                                        + '#toolbar=1&navpanes=0&view=FitH" width="100%" height="650" '
+                                        + 'style="border:1px solid #cbd5e1;border-radius:8px;" '
+                                        + 'title="Aperçu du justificatif PDF"></iframe>'
+                                    )
+                                    st.components.v1.html(_html_pdf, height=665, scrolling=True)
+                                    st.download_button(
+                                        label="📥 Télécharger le justificatif PDF",
+                                        data=pdf_decoded,
+                                        file_name=f"Justif_{req.get('nom_etudiant','Etudiant')}_{req.get('matiere','Justificatif')}.pdf",
+                                        mime="application/pdf",
+                                        key=f"dl_{req['id']}"
+                                    )
+                                except Exception as _err_pdf_preview:
+                                    st.error(f"⚠️ Aperçu PDF impossible : {_err_pdf_preview}")
+                                    st.info("Vous pouvez tout de même télécharger le fichier pour le vérifier avec un lecteur PDF.")
+                                    try:
+                                        _pdf_secours = base64.b64decode(str(req.get("justificatif_pdf") or ""))
+                                        st.download_button(
+                                            label="📥 Télécharger le justificatif PDF",
+                                            data=_pdf_secours,
+                                            file_name=f"Justif_{req.get('nom_etudiant','Etudiant')}_{req.get('matiere','Justificatif')}.pdf",
+                                            mime="application/pdf",
+                                            key=f"dl_secours_{req['id']}"
+                                        )
+                                    except Exception:
+                                        st.error("Le fichier justificatif est absent ou illisible dans la base.")
+
+                                # Le motif de rejet est obligatoire et distinct du motif d'absence choisi par l'étudiant.
+                                MOTIFS_REJET_JUSTIFICATIF = [
+                                    "1- Justificatif non compatible avec le motif d'absence signalé",
+                                    "2- Certificat médical ou rapport non visé par le médecin de l'université",
+                                    "3- Justificatif non visible",
+                                    "4- Justificatif téléversé hors délai requis",
+                                ]
+                                motif_rejet_selectionne = st.selectbox(
+                                    "Motif du rejet (à sélectionner avant de rejeter) :",
+                                    options=MOTIFS_REJET_JUSTIFICATIF,
+                                    key=f"motif_rejet_justif_{req['id']}"
                                 )
 
                                 col_acc, col_rej = st.columns(2)
@@ -8739,16 +8845,34 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     st.rerun()
 
                                 if col_rej.button("❌ REJETER", key=f"rej_{req['id']}", use_container_width=True):
+                                    _rejet_ok = False
                                     if MODE_SUPABASE:
-                                        mettre_a_jour_statut_requete_supabase(req["id"], "Defavorable")
+                                        try:
+                                            supabase.table("requetes_absences").update({
+                                                "statut": "Defavorable",
+                                                "motif_rejet": motif_rejet_selectionne,
+                                            }).eq("id", req["id"]).execute()
+                                            _rejet_ok = True
+                                        except Exception as _err_rejet:
+                                            st.error(
+                                                "❌ Impossible d'enregistrer le rejet. Vérifiez que la colonne "
+                                                "motif_rejet a été créée dans Supabase. Détail : "
+                                                f"{_err_rejet}"
+                                            )
                                     else:
                                         for r in st.session_state.requetes:
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Defavorable"
+                                                r["motif_rejet"] = motif_rejet_selectionne
+                                                _rejet_ok = True
 
-                                    st.warning(f"❌ Dossier de {req['nom_etudiant']} rejeté.")
-                                    time.sleep(0.5)
-                                    st.rerun()
+                                    if _rejet_ok:
+                                        st.warning(
+                                            f"❌ Dossier de {req['nom_etudiant']} rejeté. "
+                                            f"Motif : {motif_rejet_selectionne}"
+                                        )
+                                        time.sleep(0.5)
+                                        st.rerun()
 
                     with st.expander("🛠️ Zone maintenance"):
                         st.write("Effacer toutes les requêtes de justificatifs.")
