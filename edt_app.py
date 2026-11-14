@@ -1302,7 +1302,7 @@ def mapper_promotion(promo_edt):
     # Mapping direct sans doublons ni erreurs
     mapping_direct = {
         "ING1": "ING1",
-        "ING2RSE": "ING2",
+        "ING2RSE": "ING2RSE",
         "ING3EI": "ING3EI",
         "ING3RSE": "ING3RSE",
         "ING4EI": "ING4",
@@ -1327,6 +1327,10 @@ def mapper_promotion(promo_edt):
     }
     if p in mapping_direct:
         return mapping_direct[p]
+    # Promotions d'ingénieur : le libellé exact prime. Aucune fusion entre promotions
+    # distinctes (ING2 / ING2RSE / ING2TLC, ING3EI / ING3TLC, ING1 / ING1AUTO...).
+    if re.fullmatch(r"ING\d[A-Z]*", p):
+        return p
     for key, val in mapping_direct.items():
         if key in p or p in key:
             return val
@@ -25028,6 +25032,7 @@ ADMIN_NAV = {
     "Gestion pédagogique": [
         ("Portail de gestion des envois personnalisés & résponsabilités", "👥 Portail Enseignants"),
         ("Surveillances des examens", "📅 Surveillances Examens"),
+        ("Programmation des examens par promotion", "🗓️ Programmation Examens"),
         ("Générateur automatique des surveillances", "🤖 Générateur Automatique"),
         ("Demandes de mise à jour EDT", "📝 Demandes de Mise à Jour EDT"),
         ("Suivi de l'assiduité et des absences", "📝 Suivi d'Assiduité"),
@@ -26455,6 +26460,2149 @@ def afficher_edt_toutes_promotions(df_source, enseignant_connecte=None):
                 if _is_propre:
                     _ws_edt.set_row(_ridx, None, _fmt_dore)
     st.download_button("📥 Télécharger l'EDT filtré (Excel)", _buf_edt.getvalue(), "EDT_Toutes_Promotions.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="dl_edt_toutes_promotions_v3")
+
+
+# =============================================================================
+# MODULE : PROGRAMMATION DES EXAMENS PAR PROMOTION
+# -----------------------------------------------------------------------------
+# 1. Affichage des matières par promotion (matière, chargé de matière, date,
+#    créneau, promotion) avec modification individuelle de la date et du créneau.
+# 2. Répartition automatique sur la semaine : maximum N examens par jour et par
+#    promotion (2 par défaut), respect des jours exclus (vendredi, samedi, dates
+#    exclues) et des créneaux horaires définis au départ.
+# 3. Matières communes : une même matière peut être reliée à une ou plusieurs
+#    autres promotions ; elle est alors programmée à la même date et au même
+#    horaire pour toutes les promotions sélectionnées.
+# 4. Conservation automatique des choix : toute programmation est enregistrée
+#    (session + fichier JSON) et réapparaît dans les autres promotions
+#    concernées sans devoir être programmée une deuxième fois.
+# =============================================================================
+import copy as _pe_copy
+
+FICHIER_PROGRAMMATION_EXAMENS = str(_BASE_DIR / "programmation_examens.json")
+
+_PE_JOURS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+_PE_JOURS_ABR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+_PE_AUCUN = "—"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OUTILS DE BASE
+# ─────────────────────────────────────────────────────────────────────────────
+def _pe_txt(v):
+    """Texte nettoyé (espaces normalisés, NaN/None -> chaîne vide)."""
+    try:
+        if v is None or pd.isna(v):
+            return ""
+    except Exception:
+        if v is None:
+            return ""
+    return re.sub(r"\s+", " ", str(v).replace("\u00a0", " ").strip())
+
+
+def _pe_norm(v):
+    """Clé de comparaison : majuscules, sans accents ni ponctuation."""
+    t = unicodedata.normalize("NFKD", _pe_txt(v).upper())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    t = re.sub(r"[^A-Z0-9]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _pe_cle_nat(v):
+    """Tri naturel (ING2 avant ING10)."""
+    return [int(x) if x.isdigit() else x.casefold() for x in re.split(r"(\d+)", _pe_txt(v))]
+
+
+def _pe_nom_matiere(v):
+    """Nom de matière sans préfixe COURS/TD/TP ni suffixe de groupe (G2, SG3...)."""
+    s = _pe_txt(v)
+    s = re.sub(r"^\s*(?:COURS|COUR|TD|TP)\b\s*[-:–—]?\s*", "", s, flags=re.I)
+    s = re.sub(r"(?:\s+|\s*[-:–—]\s*)(?:SG|G)\s*\d+\s*$", "", s, flags=re.I)
+    return s.strip()
+
+
+def _pe_noms_enseignants(v):
+    """Découpe une cellule « enseignants » en noms distincts."""
+    morceaux = re.split(r"\s*(?:&|\+|/|;|\\|\bet\b)\s*", _pe_txt(v), flags=re.I)
+    resultat, vus = [], set()
+    for nom in morceaux:
+        nom = _pe_txt(nom)
+        cle = _pe_norm(nom)
+        if cle and cle not in {"NAN", "NONE", "NON DEFINI"} and cle not in vus:
+            vus.add(cle)
+            resultat.append(nom)
+    return resultat
+
+
+def _pe_sans_section(nom):
+    """Retire d'un intitulé la mention de section et la liste de groupes finale,
+    ex. « Structure de la matière-Section A (G1, G2, G3, G4) » -> « Structure de la matière »."""
+    s = _pe_txt(nom)
+    s = re.sub(r"\s*\([^)]*\b(?:SG|G)\s*\d+[^)]*\)\s*$", "", s, flags=re.I)
+    s = re.sub(r"(?:\s*[-:–—]+\s*|\s+)(?:Sections?|Sect\.?|Sec\.?)\s*[A-Z0-9]+(?:\s*(?:&|et|\+|/|,)\s*[A-Z0-9]+)*\s*$", "", s, flags=re.I)
+    s = re.sub(r"(?:\s+|\s*[-:–—]\s*)(?:SG|G)\s*\d+\s*$", "", s, flags=re.I)
+    return s.strip()
+
+
+def _pe_promo_a_sections(promo):
+    """Promotions dont les deux sections partagent un seul examen par matière (L1MCIL)."""
+    return _pe_norm(promo).replace(" ", "") in {"L1MCIL", "MCIL1"}
+
+
+def _pe_cle(promo, base):
+    return f"{promo}||{base}"
+
+
+def _pe_date(iso):
+    try:
+        return datetime.strptime(str(iso), "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _pe_label_date(iso):
+    d = _pe_date(iso)
+    if not d:
+        return ""
+    return f"{_PE_JOURS_ABR[d.weekday()]} {d.strftime('%d/%m/%Y')}"
+
+
+def _pe_jour_nom(iso):
+    d = _pe_date(iso)
+    return _PE_JOURS_FR[d.weekday()] if d else ""
+
+
+def _pe_plage(creneau):
+    """(début, fin) en minutes d'un créneau « 08h30 - 10h00 », sinon None."""
+    s = _pe_txt(creneau).lower().replace(" ", "").replace("h", ":")
+    vals = re.findall(r"(?<!\d)(\d{1,2})(?::(\d{1,2}))?", s)
+    if len(vals) >= 2:
+        deb = int(vals[0][0]) * 60 + int(vals[0][1] or 0)
+        fin = int(vals[1][0]) * 60 + int(vals[1][1] or 0)
+        if fin > deb:
+            return deb, fin
+    return None
+
+
+def _pe_chevauche(c1, c2):
+    p1, p2 = _pe_plage(c1), _pe_plage(c2)
+    if p1 and p2:
+        return p1[0] < p2[1] and p2[0] < p1[1]
+    return _pe_norm(c1) == _pe_norm(c2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PARAMÈTRES ET PERSISTANCE
+# ─────────────────────────────────────────────────────────────────────────────
+def _pe_params_defaut():
+    return {
+        "date_debut": "2027-01-17",
+        "date_fin": "2027-01-21",
+        "jours_exclus": ["Vendredi", "Samedi"],
+        "dates_exclues": [],
+        "creneaux": ["08h30 - 10h00", "10h30 - 12h00", "13h00 - 14h30", "15h00 - 16h30"],
+        "max_par_jour": 2,
+        "inclure_td_tp": False,
+    }
+
+
+def _pe_max_jour(params, promo):
+    """Maximum d'examens par jour pour une promotion (valeur propre à la promotion, sinon valeur par défaut)."""
+    propre = (params.get("max_par_jour_promo") or {}).get(promo)
+    try:
+        return max(1, int(propre if propre is not None else params.get("max_par_jour", 2)))
+    except Exception:
+        return 2
+
+
+def _pe_normaliser_store(data):
+    """Complète un store chargé (fichier / import) avec les valeurs par défaut."""
+    store = {"version": 1, "params": _pe_params_defaut(), "epreuves": {}}
+    if not isinstance(data, dict):
+        return store
+    if isinstance(data.get("params"), dict):
+        store["params"].update(data["params"])
+    ep = data.get("epreuves")
+    if isinstance(ep, dict):
+        for k, e in ep.items():
+            if not isinstance(e, dict) or not e.get("promo") or not e.get("base"):
+                continue
+            store["epreuves"][str(k)] = {
+                "promo": _pe_txt(e.get("promo")),
+                "matiere": _pe_txt(e.get("matiere")),
+                "base": _pe_txt(e.get("base")),
+                "charge": _pe_txt(e.get("charge")),
+                "date": _pe_txt(e.get("date")),
+                "creneau": _pe_txt(e.get("creneau")),
+                "groupe": _pe_txt(e.get("groupe")),
+                "ajoutee": bool(e.get("ajoutee", False)),
+                "dept": _pe_txt(e.get("dept")),
+            }
+    return store
+
+
+def _pe_charger_fichier():
+    try:
+        if os.path.exists(FICHIER_PROGRAMMATION_EXAMENS):
+            with open(FICHIER_PROGRAMMATION_EXAMENS, "r", encoding="utf-8") as f:
+                return _pe_normaliser_store(json.load(f))
+    except Exception:
+        pass
+    return _pe_normaliser_store(None)
+
+
+def _pe_store():
+    """Store de la session (chargé une fois depuis le fichier JSON)."""
+    if "pe_store" not in st.session_state:
+        st.session_state["pe_store"] = _pe_charger_fichier()
+    return st.session_state["pe_store"]
+
+
+def _pe_sauver(store=None):
+    """Enregistre la programmation dans le fichier JSON (écriture atomique)."""
+    store = store if store is not None else _pe_store()
+    try:
+        tmp = FICHIER_PROGRAMMATION_EXAMENS + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, FICHIER_PROGRAMMATION_EXAMENS)
+        return True
+    except Exception:
+        return False
+
+
+def _pe_jours_disponibles(params):
+    """Dates ISO disponibles : période moins jours de semaine exclus et dates exclues."""
+    d0, d1 = _pe_date(params.get("date_debut")), _pe_date(params.get("date_fin"))
+    if not d0 or not d1 or d1 < d0:
+        return []
+    excl_sem = set(params.get("jours_exclus", []))
+    excl_dates = set(params.get("dates_exclues", []))
+    out, d = [], d0
+    while d <= d1 and len(out) < 400:
+        if _PE_JOURS_FR[d.weekday()] not in excl_sem and d.isoformat() not in excl_dates:
+            out.append(d.isoformat())
+        d += timedelta(days=1)
+    return out
+
+
+def _pe_creneaux(params):
+    """Créneaux définis au départ, triés par heure de début."""
+    vus, res = set(), []
+    for c in params.get("creneaux", []):
+        c = _pe_txt(c)
+        if c and c not in vus:
+            vus.add(c)
+            res.append(c)
+    res.sort(key=lambda c: (_pe_plage(c) or (9999, 9999)))
+    return res
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 🏛️ DÉPARTEMENTS : rattachement des enseignants et filtrage
+# ─────────────────────────────────────────────────────────────────────────────
+FICHIER_HISTORIQUE_SURVEILLANCES = str(_BASE_DIR / "historique_surveillances.json")
+
+
+def _pe_index_departements(df_edt=None):
+    """Retourne (index, libellés).
+
+    index    : {nom normalisé de l'enseignant: département normalisé}
+    libellés : {département normalisé: libellé d'affichage}
+
+    Source prioritaire : « Département d'affiliation » du fichier du personnel
+    (enseignants réellement attachés au département). À défaut seulement, le
+    département des séances de l'EDT est utilisé.
+    """
+    idx, labels = {}, {}
+    invalides = {"", "NAN", "NONE", "NON RENSEIGNE", "NON DEFINI"}
+
+    def _ajout(nom, dept):
+        k, d = _pe_norm(nom), _pe_norm(dept)
+        if not k or d in invalides:
+            return
+        labels.setdefault(d, _pe_txt(dept))
+        idx.setdefault(k, d)
+
+    affiliation = globals().get("repertoire_departements_affiliation") or {}
+    for nom, dept in affiliation.items():
+        _ajout(nom, dept)
+
+    if not idx and df_edt is not None and len(df_edt):
+        cols = {_pe_norm(c): c for c in df_edt.columns}
+        c_dept = cols.get("DEPARTEMENT") or cols.get("DEPARTMENT")
+        c_ens = cols.get("ENSEIGNANTS") or cols.get("ENSEIGNANT")
+        if c_dept:
+            annuaire = globals().get("repertoire_noms_complets") or {}
+            for dept in df_edt[c_dept].dropna().unique():
+                d = _pe_norm(dept)
+                if d not in invalides:
+                    labels.setdefault(d, _pe_txt(dept))
+            if c_ens:
+                for dept, ens in zip(df_edt[c_dept], df_edt[c_ens]):
+                    for n in _pe_noms_enseignants(ens):
+                        _ajout(n, dept)
+                        _ajout(annuaire.get(_pe_txt(n).upper(), n), dept)
+    return idx, labels
+
+
+def _pe_dept_de(nom, idx):
+    """Département normalisé d'un enseignant (« NOM Prénom » ou « NOM »), '' si inconnu."""
+    toks = _pe_norm(nom).split()
+    for i in range(len(toks), 0, -1):
+        d = idx.get(" ".join(toks[:i]))
+        if d:
+            return d
+    return ""
+
+
+@st.cache_data(show_spinner=False)
+def _pe_promos_etudiants_cache(chemin, mtime):
+    """{promo normalisée: {"label", "dept": {dept normalisé: effectif}}} d'après la liste des étudiants."""
+    res = {}
+    try:
+        d = pd.read_excel(chemin)
+    except Exception:
+        return res
+    cols = {_pe_norm(c): c for c in d.columns}
+    cp = cols.get("PROMOTION") or cols.get("PROMOTIONS")
+    cd = cols.get("DEPARTEMENT") or cols.get("DEPARTMENT") or cols.get("DEPT")
+    if not cp or not cd:
+        return res
+    invalides = {"", "NAN", "NONE", "NON RENSEIGNE", "NON DEFINI"}
+    for promo, dept in zip(d[cp], d[cd]):
+        p, dn = _pe_norm(promo), _pe_norm(dept)
+        if p in invalides or dn in invalides:
+            continue
+        e = res.setdefault(p, {"label": _pe_txt(promo), "dept": {}})
+        e["dept"][dn] = e["dept"].get(dn, 0) + 1
+    return res
+
+
+def _pe_promotions_info(df_edt):
+    """Département propriétaire de chaque promotion, par recoupement des sources :
+    1) liste des étudiants (colonnes Promotion + Département) — source prioritaire ;
+    2) EDT (colonnes Promotion + Département).
+    Retourne {promo normalisée: {"label", "edt", "etu", "proprio"}} ; proprio = '' si indéterminé."""
+    invalides = {"", "NAN", "NONE", "NON RENSEIGNE", "NON DEFINI"}
+    info = {}
+
+    def _fiche(promo):
+        return info.setdefault(_pe_norm(promo), {"label": _pe_txt(promo), "edt": {}, "etu": {}, "proprio": ""})
+
+    if df_edt is not None and len(df_edt):
+        cols = {_pe_norm(c): c for c in df_edt.columns}
+        cp = cols.get("PROMOTION") or cols.get("PROMOTIONS")
+        cd = cols.get("DEPARTEMENT") or cols.get("DEPARTMENT")
+        if cp:
+            depts = df_edt[cd] if cd else [""] * len(df_edt)
+            for promo, dept in zip(df_edt[cp], depts):
+                if _pe_norm(promo) in invalides:
+                    continue
+                f = _fiche(promo)
+                dn = _pe_norm(dept)
+                if dn not in invalides:
+                    f["edt"][dn] = f["edt"].get(dn, 0) + 1
+    try:
+        mtime = os.path.getmtime(FILE_ETUDIANTS) if os.path.exists(FILE_ETUDIANTS) else 0
+        etu = _pe_promos_etudiants_cache(FILE_ETUDIANTS, mtime) if mtime else {}
+    except Exception:
+        etu = {}
+    for p, e in etu.items():
+        f = info.setdefault(p, {"label": e["label"], "edt": {}, "etu": {}, "proprio": ""})
+        f["etu"] = dict(e["dept"])
+    for f in info.values():
+        source = f["etu"] or f["edt"]
+        if source:
+            f["proprio"] = max(source.items(), key=lambda kv: kv[1])[0]
+    return info
+
+
+def _pe_ui_promotions_departement(df_edt, dept, dept_label):
+    """Promotions du département choisi (ensemble normalisé), ajustables à la main.
+    Retourne None lorsque le rattachement ne peut pas être déterminé (aucun filtre)."""
+    if not dept:
+        return None
+    info = _pe_promotions_info(df_edt)
+    if not info:
+        return None
+    tous = sorted((i["label"] for i in info.values()), key=_pe_cle_nat)
+    auto = sorted((i["label"] for i in info.values() if i["proprio"] in ("", dept)), key=_pe_cle_nat)
+    memo = st.session_state.setdefault("pe_promos_ok", {})
+    defaut = [l for l in tous if _pe_norm(l) in memo[dept]] if dept in memo else auto
+    with st.expander(f"🎓 Promotions du département {dept_label} : {len(defaut)} retenue(s) sur {len(tous)}",
+                     expanded=False):
+        st.caption("Une promotion appartient au département indiqué par la liste des étudiants (à défaut, par l'EDT). "
+                   "Les promotions d'autres départements (ex. L2AUTO, TLC, ELN) sont exclues ; vous pouvez ajuster la liste.")
+        choix = st.multiselect("Promotions retenues", tous, default=defaut,
+                               key=_surv_cle(f"pe_promos_dept_{re.sub(chr(92) + 'W+', '', dept)[:16]}", tous))
+        lignes = []
+        for p, i in sorted(info.items(), key=lambda kv: _pe_cle_nat(kv[1]["label"])):
+            lignes.append({
+                "Promotion": i["label"],
+                "Département (étudiants)": ", ".join(f"{d} ({n})" for d, n in sorted(i["etu"].items())) or "—",
+                "Département (EDT)": ", ".join(f"{d} ({n})" for d, n in sorted(i["edt"].items())) or "—",
+                "Rattachée à": i["proprio"] or "indéterminé",
+                "Retenue": "✅" if i["label"] in choix else "❌",
+            })
+        st.dataframe(pd.DataFrame(lignes), hide_index=True, use_container_width=True)
+    ok = {_pe_norm(c) for c in choix}
+    memo[dept] = ok
+    return ok
+
+
+def _surv_cle(prefixe, options):
+    """Clé de widget dépendant de la liste d'options (évite les valeurs périmées)."""
+    h = hashlib.md5("|".join(str(o) for o in options).encode("utf-8")).hexdigest()[:8]
+    return f"{prefixe}_{h}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 🗂️ HISTORIQUE DES SURVEILLANCES GÉNÉRÉES (persistant)
+# ─────────────────────────────────────────────────────────────────────────────
+def _hist_surv_charger():
+    if "exam_historique" not in st.session_state:
+        data = []
+        try:
+            if os.path.exists(FICHIER_HISTORIQUE_SURVEILLANCES):
+                with open(FICHIER_HISTORIQUE_SURVEILLANCES, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+        except Exception:
+            data = []
+        st.session_state["exam_historique"] = [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+    return st.session_state["exam_historique"]
+
+
+def _hist_surv_sauver(lignes):
+    st.session_state["exam_historique"] = list(lignes)
+    try:
+        tmp = FICHIER_HISTORIQUE_SURVEILLANCES + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(list(lignes), f, ensure_ascii=False, indent=1, default=str)
+        os.replace(tmp, FICHIER_HISTORIQUE_SURVEILLANCES)
+        return True
+    except Exception:
+        return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXTRACTION DES MATIÈRES DEPUIS L'EDT
+# ─────────────────────────────────────────────────────────────────────────────
+def _pe_matieres_par_promo(df_edt, inclure_td_tp=False, dept=None, promos_ok=None):
+    """{promotion: [{base, nom, charge}]} — matières proposées aux examens.
+
+    Une matière est retenue lorsqu'elle possède au moins une séance de COURS ;
+    avec inclure_td_tp, les matières n'ayant que des TD/TP sont aussi retenues.
+    """
+    res = {}
+    if df_edt is None or len(df_edt) == 0:
+        return res
+    cols = {_pe_norm(c): c for c in df_edt.columns}
+    c_mat = cols.get("ENSEIGNEMENTS") or cols.get("ENSEIGNEMENT") or cols.get("MATIERE")
+    c_promo = cols.get("PROMOTION") or cols.get("PROMOTIONS")
+    c_ens = cols.get("ENSEIGNANTS") or cols.get("ENSEIGNANT")
+    c_code = cols.get("CODE")
+    if not c_mat or not c_promo:
+        return res
+
+    annuaire = globals().get("repertoire_noms_complets") or {}
+    idx_dept = _pe_index_departements(df_edt)[0] if dept else {}
+
+    def _nom_complet(nom):
+        return annuaire.get(_pe_txt(nom).upper(), _pe_txt(nom))
+
+    tmp = {}
+    for _, lig in df_edt.iterrows():
+        promo = _pe_txt(lig.get(c_promo))
+        brut = _pe_txt(lig.get(c_mat))
+        if _pe_norm(promo) in {"", "NAN", "NONE", "NON DEFINI"}:
+            continue
+        if promos_ok is not None and _pe_norm(promo) not in promos_ok:
+            continue
+        nom = _pe_nom_matiere(brut)
+        if _pe_promo_a_sections(promo):
+            nom = _pe_sans_section(nom)   # Section A + Section B = une seule matière
+        base = _pe_norm(nom)
+        if base in {"", "NAN", "NONE", "NON DEFINI"}:
+            continue
+        code = _pe_txt(lig.get(c_code)).upper() if c_code else ""
+        pref = _pe_norm(brut).split(" ")[0] if _pe_norm(brut) else ""
+        if "COURS" in code or pref in {"COURS", "COUR"}:
+            nature = "COURS"
+        elif "TD" in code or pref == "TD":
+            nature = "TD"
+        else:
+            nature = "TP"
+        ens = _pe_noms_enseignants(lig.get(c_ens)) if c_ens else []
+        if dept:
+            # Uniquement les enseignants attachés au département choisi
+            ens = [n for n in ens if _pe_dept_de(n, idx_dept) == dept]
+            if not ens:
+                continue
+        info = tmp.setdefault(promo, {}).setdefault(
+            base, {"noms": Counter(), "cours": False, "ens_cours": [], "ens_tous": []}
+        )
+        info["noms"][nom] += 1
+        if nature == "COURS":
+            info["cours"] = True
+            for n in ens:
+                if _pe_norm(n) not in {_pe_norm(x) for x in info["ens_cours"]}:
+                    info["ens_cours"].append(n)
+        for n in ens:
+            if _pe_norm(n) not in {_pe_norm(x) for x in info["ens_tous"]}:
+                info["ens_tous"].append(n)
+
+    for promo, matieres in tmp.items():
+        liste = []
+        for base, info in matieres.items():
+            if not info["cours"] and not inclure_td_tp:
+                continue
+            profs = info["ens_cours"] or info["ens_tous"]
+            liste.append({
+                "base": base,
+                "nom": info["noms"].most_common(1)[0][0],
+                "charge": " / ".join(_nom_complet(p) for p in profs),
+            })
+        if liste:
+            liste.sort(key=lambda m: _pe_norm(m["nom"]))
+            res[promo] = liste
+    return res
+
+
+def _pe_assurer(store, mpp, dept=None):
+    """Crée/actualise les épreuves correspondant aux matières de l'EDT."""
+    ep = store["epreuves"]
+    change = False
+    for promo, liste in mpp.items():
+        for m in liste:
+            k = _pe_cle(promo, m["base"])
+            e = ep.get(k)
+            if e is None:
+                ep[k] = {
+                    "promo": promo, "matiere": m["nom"], "base": m["base"], "charge": m["charge"],
+                    "date": "", "creneau": "", "groupe": "", "ajoutee": False, "dept": dept or "",
+                }
+                change = True
+            elif e.get("matiere") != m["nom"] or (m["charge"] and e.get("charge") != m["charge"]):
+                e["matiere"] = m["nom"]
+                if m["charge"]:
+                    e["charge"] = m["charge"]
+                change = True
+            if dept and ep[k].get("dept") != dept:
+                ep[k]["dept"] = dept
+                change = True
+    # Fusion des anciennes épreuves par section (L1MCIL) dans l'épreuve unique de la matière
+    for promo, liste in mpp.items():
+        if not _pe_promo_a_sections(promo):
+            continue
+        valides = {_pe_cle(promo, m["base"]) for m in liste}
+        for m in liste:
+            k = _pe_cle(promo, m["base"])
+            perimees = [kk for kk, ee in ep.items()
+                        if kk != k and kk not in valides and ee.get("promo") == promo and not ee.get("ajoutee")
+                        and _pe_norm(_pe_sans_section(ee.get("matiere"))) == m["base"]]
+            for kk in perimees:
+                if not _pe_est_programme(ep[k]) and _pe_est_programme(ep[kk]):
+                    ep[k]["date"], ep[k]["creneau"] = ep[kk]["date"], ep[kk]["creneau"]
+                if not ep[k].get("groupe") and ep[kk].get("groupe"):
+                    ep[k]["groupe"] = ep[kk]["groupe"]
+                del ep[kk]
+                change = True
+    return change
+
+
+def _pe_calculer_actifs(store, mpp, dept=None):
+    """Épreuves affichées : matières de l'EDT + matières ajoutées par liaison commune."""
+    actifs = set()
+    for promo, liste in mpp.items():
+        for m in liste:
+            actifs.add(_pe_cle(promo, m["base"]))
+    for k, e in store["epreuves"].items():
+        if e.get("ajoutee") and e.get("promo") in mpp and (not dept or e.get("dept") in ("", dept)):
+            actifs.add(k)
+    return actifs
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ACCÈS AUX ÉPREUVES
+# ─────────────────────────────────────────────────────────────────────────────
+def _pe_est_programme(e):
+    return bool(e.get("date")) and bool(e.get("creneau"))
+
+
+def _pe_actives(store):
+    """Paires (clé, épreuve) réellement affichées (filtrées par pe_actifs)."""
+    actifs = st.session_state.get("pe_actifs")
+    for k, e in list(store["epreuves"].items()):
+        if actifs is None or k in actifs:
+            yield k, e
+
+
+def _pe_membres(store, k):
+    """Épreuves synchronisées avec k (k comprise) : même groupe de matière commune."""
+    ep = store["epreuves"]
+    e = ep.get(k)
+    if not e:
+        return []
+    g = e.get("groupe")
+    if not g:
+        return [k]
+    membres = [kk for kk, ee in ep.items() if ee.get("groupe") == g]
+    return membres or [k]
+
+
+def _pe_cles_promo(store, promo):
+    cles = [k for k, e in _pe_actives(store) if e.get("promo") == promo]
+    cles.sort(key=lambda k: _pe_norm(store["epreuves"][k]["matiere"]))
+    return cles
+
+
+def _pe_commune_avec(store, k):
+    ep = store["epreuves"]
+    autres = {ep[m]["promo"] for m in _pe_membres(store, k) if m != k}
+    return sorted(autres, key=_pe_cle_nat)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RÈGLES : VÉRIFICATION, PROGRAMMATION, MATIÈRES COMMUNES
+# ─────────────────────────────────────────────────────────────────────────────
+def _pe_verifier(store, params, membres, date_iso, creneau, dispos=None, slots=None):
+    """Erreurs empêchant de programmer ces épreuves à (date, créneau). Liste vide = OK."""
+    ep = store["epreuves"]
+    dispos = set(dispos if dispos is not None else _pe_jours_disponibles(params))
+    slots = list(slots if slots is not None else _pe_creneaux(params))
+    erreurs = []
+    if date_iso not in dispos:
+        erreurs.append(f"{_pe_label_date(date_iso) or date_iso} n'est pas un jour disponible "
+                       f"(jour exclu ou hors de la période).")
+    if creneau not in slots:
+        erreurs.append(f"Le créneau « {creneau} » ne fait pas partie des créneaux définis.")
+    if erreurs:
+        return erreurs
+    mset = set(membres)
+    actives = list(_pe_actives(store))
+    for k in membres:
+        promo = ep[k]["promo"]
+        mx = _pe_max_jour(params, promo)
+        autres = [
+            e for kk, e in actives
+            if e["promo"] == promo and kk not in mset
+            and e.get("date") == date_iso and e.get("creneau")
+        ]
+        if len(autres) >= mx:
+            erreurs.append(f"{promo} : déjà {len(autres)} examen(s) le {_pe_label_date(date_iso)} "
+                           f"(maximum {mx} par jour et par promotion).")
+        for e in autres:
+            if _pe_chevauche(e["creneau"], creneau):
+                erreurs.append(f"{promo} : chevauchement avec « {e['matiere']} » "
+                               f"({e['creneau']}) le {_pe_label_date(date_iso)}.")
+    return erreurs
+
+
+def _pe_poser(store, membres, date_iso, creneau):
+    for k in membres:
+        store["epreuves"][k]["date"] = date_iso
+        store["epreuves"][k]["creneau"] = creneau
+
+
+def _pe_appliquer_planning(store, params, k, date_iso, creneau):
+    """Programme k (et toutes les promotions liées) à (date, créneau) si les règles le permettent."""
+    membres = _pe_membres(store, k)
+    erreurs = _pe_verifier(store, params, membres, date_iso, creneau)
+    if erreurs:
+        return False, erreurs
+    _pe_poser(store, membres, date_iso, creneau)
+    return True, []
+
+
+def _pe_deprogrammer(store, k):
+    for m in _pe_membres(store, k):
+        store["epreuves"][m]["date"] = ""
+        store["epreuves"][m]["creneau"] = ""
+
+
+def _pe_detacher(store, k):
+    """Retire k de son groupe de matière commune (sa programmation est conservée)."""
+    ep = store["epreuves"]
+    e = ep.get(k)
+    if not e:
+        return
+    g = e.get("groupe")
+    e["groupe"] = ""
+    if g:
+        reste = [kk for kk, ee in ep.items() if ee.get("groupe") == g]
+        if len(reste) == 1:
+            ep[reste[0]]["groupe"] = ""
+    if e.get("ajoutee") and not _pe_est_programme(e):
+        del ep[k]
+
+
+def _pe_lier_une(store, params, k_src, promo_cible):
+    """Relie la matière k_src à la même matière d'une autre promotion (tout ou rien)."""
+    ep = store["epreuves"]
+    src = ep[k_src]
+    base = src["base"]
+    sauvegarde = _pe_copy.deepcopy(ep)
+    kk = _pe_cle(promo_cible, base)
+    if kk not in ep:
+        ep[kk] = {
+            "promo": promo_cible, "matiere": src["matiere"], "base": base, "charge": src["charge"],
+            "date": "", "creneau": "", "groupe": "", "ajoutee": True, "dept": src.get("dept", ""),
+        }
+        actifs = st.session_state.get("pe_actifs")
+        if actifs is not None:
+            actifs.add(kk)
+    gids = {g for g in (src.get("groupe"), ep[kk].get("groupe")) if g}
+    gid = src.get("groupe") or ep[kk].get("groupe") or ("G" + secrets.token_hex(4))
+    gids.add(gid)
+    for e in ep.values():
+        if e.get("groupe") in gids:
+            e["groupe"] = gid
+    src["groupe"] = gid
+    ep[kk]["groupe"] = gid
+    membres = _pe_membres(store, k_src)
+    prog = None
+    if _pe_est_programme(src):
+        prog = (src["date"], src["creneau"])
+    else:
+        for m in membres:
+            if _pe_est_programme(ep[m]):
+                prog = (ep[m]["date"], ep[m]["creneau"])
+                break
+    if prog:
+        erreurs = _pe_verifier(store, params, membres, prog[0], prog[1])
+        if erreurs:
+            ep.clear()
+            ep.update(sauvegarde)
+            return False, erreurs
+        _pe_poser(store, membres, prog[0], prog[1])
+    return True, []
+
+
+def _pe_definir_communes(store, params, k_src, promos_cibles):
+    """Fixe la liste des promotions partageant la matière k_src. Retourne des messages."""
+    ep = store["epreuves"]
+    src = ep[k_src]
+    base, promo_src, nom = src["base"], src["promo"], src["matiere"]
+    msgs = []
+    actuels = {ep[m]["promo"] for m in _pe_membres(store, k_src) if m != k_src}
+    cibles = {p for p in promos_cibles if p != promo_src}
+    for p in sorted(actuels - cibles, key=_pe_cle_nat):
+        kk = _pe_cle(p, base)
+        if kk in ep:
+            _pe_detacher(store, kk)
+            msgs.append(("info", f"« {nom} » : {p} n'est plus liée à {promo_src} "
+                                 f"(sa programmation actuelle est conservée)."))
+    for p in sorted(cibles - actuels, key=_pe_cle_nat):
+        ok, erreurs = _pe_lier_une(store, params, k_src, p)
+        if ok:
+            if _pe_est_programme(ep[k_src]):
+                msgs.append(("success", f"« {nom} » : {p} synchronisée avec {promo_src} — "
+                                        f"{_pe_label_date(ep[k_src]['date'])} à {ep[k_src]['creneau']}."))
+            else:
+                msgs.append(("success", f"« {nom} » : matière commune avec {p}. La date et l'horaire "
+                                        f"choisis pour l'une seront appliqués aux deux promotions."))
+        else:
+            msgs.append(("error", f"« {nom} » : liaison avec {p} impossible — " + " ".join(erreurs)))
+    return msgs
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RÉPARTITION AUTOMATIQUE
+# ─────────────────────────────────────────────────────────────────────────────
+def _pe_repartir(store, params, promos, conserver=True):
+    """Répartit automatiquement les examens des promotions données sur les jours disponibles.
+
+    Règles strictes : jours/créneaux autorisés, maximum N examens par jour et par
+    promotion, aucun chevauchement pour une même promotion, matières communes
+    placées ensemble. Critères de confort : répartir sur la semaine (jours les
+    moins chargés d'abord, jours consécutifs évités), éviter les créneaux collés
+    et deux épreuves simultanées du même chargé de matière.
+    """
+    ep = store["epreuves"]
+    dispos = _pe_jours_disponibles(params)
+    slots = _pe_creneaux(params)
+    resultat = {"places": 0, "conserves": 0, "non_resolues": []}
+    if not dispos or not slots:
+        resultat["erreur"] = "Aucun jour ou créneau disponible : vérifiez les paramètres."
+        return resultat
+
+    dispos_set = set(dispos)
+    vues, unites = set(), []
+    for k, _e in list(_pe_actives(store)):
+        if ep[k]["promo"] not in promos or k in vues:
+            continue
+        m = _pe_membres(store, k)
+        vues.update(m)
+        unites.append(m)
+    unites.sort(key=lambda m: (-len(m), _pe_cle_nat(ep[m[0]]["promo"]), _pe_norm(ep[m[0]]["matiere"])))
+
+    def _decrire(m):
+        return ep[m[0]]["promo"], ep[m[0]]["matiere"]
+
+    for m in unites:
+        promo_txt, mat_txt = _decrire(m)
+        programmes = [k for k in m if _pe_est_programme(ep[k])]
+        if conserver and programmes:
+            ref = ep[programmes[0]]
+            sched = (ref["date"], ref["creneau"])
+            if all(_pe_est_programme(ep[k]) and (ep[k]["date"], ep[k]["creneau"]) == sched for k in m):
+                resultat["conserves"] += 1
+                continue
+            erreurs = _pe_verifier(store, params, m, sched[0], sched[1], dispos_set, slots)
+            if erreurs:
+                resultat["non_resolues"].append(
+                    {"Promotion": promo_txt, "Matière": mat_txt, "Raison": " ".join(erreurs)})
+            else:
+                _pe_poser(store, m, sched[0], sched[1])
+                resultat["places"] += 1
+            continue
+
+        for k in m:
+            ep[k]["date"] = ""
+            ep[k]["creneau"] = ""
+        mset = set(m)
+        actives = [(kk, e) for kk, e in _pe_actives(store) if kk not in mset and _pe_est_programme(e)]
+        noms_charge = {_pe_norm(n) for k in m for n in _pe_noms_enseignants(ep[k]["charge"])}
+        meilleur = None
+        for di, d in enumerate(dispos):
+            for si, s in enumerate(slots):
+                if _pe_verifier(store, params, m, d, s, dispos_set, slots):
+                    continue
+                cout = di * 0.01 + si * 0.001
+                for k in m:
+                    promo = ep[k]["promo"]
+                    memes = [e for _kk, e in actives if e["promo"] == promo]
+                    cout += 10 * sum(1 for e in memes if e["date"] == d)
+                    for dv in (di - 1, di + 1):
+                        if 0 <= dv < len(dispos):
+                            cout += 2 * sum(1 for e in memes if e["date"] == dispos[dv])
+                    for e in memes:
+                        if e["date"] == d and e["creneau"] in slots and abs(slots.index(e["creneau"]) - si) == 1:
+                            cout += 2
+                if noms_charge:
+                    for _kk, e in actives:
+                        if e["date"] == d and _pe_chevauche(e["creneau"], s):
+                            if noms_charge & {_pe_norm(n) for n in _pe_noms_enseignants(e["charge"])}:
+                                cout += 50
+                if meilleur is None or cout < meilleur[0]:
+                    meilleur = (cout, d, s)
+        if meilleur:
+            _pe_poser(store, m, meilleur[1], meilleur[2])
+            resultat["places"] += 1
+        else:
+            promos_m = ", ".join(sorted({ep[k]["promo"] for k in m}, key=_pe_cle_nat))
+            resultat["non_resolues"].append({
+                "Promotion": promo_txt, "Matière": mat_txt,
+                "Raison": f"Aucun jour/créneau libre pour {promos_m} (maximum par jour atteint ou chevauchement). "
+                          f"Élargissez la période ou ajoutez des créneaux."})
+    return resultat
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STATISTIQUES, CONTRÔLES, EXPORTS
+# ─────────────────────────────────────────────────────────────────────────────
+def _pe_stats(store):
+    ep = store["epreuves"]
+    actives = dict(_pe_actives(store))
+    par_promo = {}
+    for k, e in actives.items():
+        v = par_promo.setdefault(e["promo"], {"total": 0, "prog": 0, "communes": 0, "sync": 0})
+        v["total"] += 1
+        if _pe_est_programme(e):
+            v["prog"] += 1
+    groupes = {}
+    for k, e in actives.items():
+        if e.get("groupe"):
+            groupes.setdefault(e["groupe"], []).append(e)
+    communes_total = communes_sync = 0
+    for g, lst in groupes.items():
+        if len(lst) < 2:
+            continue
+        communes_total += 1
+        scheds = {(e["date"], e["creneau"]) for e in lst}
+        synchro = all(_pe_est_programme(e) for e in lst) and len(scheds) == 1
+        if synchro:
+            communes_sync += 1
+        for e in lst:
+            par_promo[e["promo"]]["communes"] += 1
+            if synchro:
+                par_promo[e["promo"]]["sync"] += 1
+    return {
+        "par_promo": par_promo,
+        "promos_total": len(par_promo),
+        "promos_completes": sum(1 for v in par_promo.values() if v["total"] and v["prog"] == v["total"]),
+        "promos_partielles": sum(1 for v in par_promo.values() if 0 < v["prog"] < v["total"]),
+        "matieres_total": sum(v["total"] for v in par_promo.values()),
+        "matieres_prog": sum(v["prog"] for v in par_promo.values()),
+        "communes_total": communes_total,
+        "communes_sync": communes_sync,
+    }
+
+
+def _pe_controle(store, params):
+    """Liste des anomalies de la programmation (vide = tout est cohérent)."""
+    dispos = set(_pe_jours_disponibles(params))
+    slots = _pe_creneaux(params)
+    actives = dict(_pe_actives(store))
+    issues = []
+    par_promo = {}
+    for k, e in actives.items():
+        if _pe_est_programme(e):
+            par_promo.setdefault(e["promo"], []).append(e)
+    for promo, lst in par_promo.items():
+        mx = _pe_max_jour(params, promo)
+        par_date = {}
+        for e in lst:
+            if e["date"] not in dispos:
+                issues.append({"Promotion": promo, "Problème": "Date non disponible",
+                               "Détail": f"« {e['matiere']} » le {_pe_label_date(e['date'])} (jour exclu ou hors période)."})
+            if e["creneau"] not in slots:
+                issues.append({"Promotion": promo, "Problème": "Créneau non défini",
+                               "Détail": f"« {e['matiere']} » : {e['creneau']}."})
+            par_date.setdefault(e["date"], []).append(e)
+        for d, items in par_date.items():
+            if len(items) > mx:
+                issues.append({"Promotion": promo, "Problème": f"Plus de {mx} examens par jour",
+                               "Détail": f"{len(items)} examens le {_pe_label_date(d)}."})
+            for i in range(len(items)):
+                for j in range(i + 1, len(items)):
+                    if _pe_chevauche(items[i]["creneau"], items[j]["creneau"]):
+                        issues.append({"Promotion": promo, "Problème": "Chevauchement horaire",
+                                       "Détail": f"« {items[i]['matiere']} » et « {items[j]['matiere']} » "
+                                                 f"le {_pe_label_date(d)} ({items[i]['creneau']} / {items[j]['creneau']})."})
+    groupes = {}
+    for k, e in actives.items():
+        if e.get("groupe"):
+            groupes.setdefault(e["groupe"], []).append(e)
+    for g, lst in groupes.items():
+        if len(lst) < 2:
+            continue
+        scheds = {(e["date"], e["creneau"]) for e in lst if _pe_est_programme(e)}
+        if scheds and (len(scheds) > 1 or any(not _pe_est_programme(e) for e in lst)):
+            issues.append({"Promotion": " / ".join(sorted({e["promo"] for e in lst}, key=_pe_cle_nat)),
+                           "Problème": "Matière commune non synchronisée",
+                           "Détail": f"« {lst[0]['matiere']} » n'a pas la même date/horaire dans toutes les promotions."})
+    liste = [(k, e) for k, e in actives.items() if _pe_est_programme(e)]
+    for i in range(len(liste)):
+        for j in range(i + 1, len(liste)):
+            (k1, e1), (k2, e2) = liste[i], liste[j]
+            if e1["date"] != e2["date"] or (e1.get("groupe") and e1.get("groupe") == e2.get("groupe")):
+                continue
+            if not _pe_chevauche(e1["creneau"], e2["creneau"]):
+                continue
+            communs = ({_pe_norm(n) for n in _pe_noms_enseignants(e1["charge"])}
+                       & {_pe_norm(n) for n in _pe_noms_enseignants(e2["charge"])})
+            if communs:
+                issues.append({"Promotion": f"{e1['promo']} / {e2['promo']}",
+                               "Problème": "Chargé de matière en double",
+                               "Détail": f"« {e1['matiere']} » et « {e2['matiere']} » ont le même chargé "
+                                         f"le {_pe_label_date(e1['date'])} ({e1['creneau']} / {e2['creneau']})."})
+    return issues
+
+
+def _pe_dataframe(store, promos=None, seulement_programmees=False):
+    """Tableau à plat de la programmation (pour affichage, Excel et générateur)."""
+    lignes = []
+    for k, e in _pe_actives(store):
+        if promos is not None and e["promo"] not in promos:
+            continue
+        if seulement_programmees and not _pe_est_programme(e):
+            continue
+        d = _pe_date(e["date"])
+        lignes.append((
+            (_pe_cle_nat(e["promo"]), e["date"] or "9999-99-99", (_pe_plage(e["creneau"]) or (9999, 9999))[0],
+             _pe_norm(e["matiere"])),
+            {
+                "Promotion": e["promo"],
+                "Matière": e["matiere"],
+                "Chargé de matière": e["charge"] or "Non renseigné",
+                "Date": d.strftime("%d/%m/%Y") if d else "",
+                "Jour": _pe_jour_nom(e["date"]),
+                "Créneau horaire": e["creneau"],
+                "Matière commune avec": ", ".join(_pe_commune_avec(store, k)),
+                "Statut": "Programmée" if _pe_est_programme(e) else "À programmer",
+            },
+        ))
+    colonnes = ["Promotion", "Matière", "Chargé de matière", "Date", "Jour", "Créneau horaire",
+                "Matière commune avec", "Statut"]
+    lignes.sort(key=lambda x: x[0])
+    if not lignes:
+        return pd.DataFrame(columns=colonnes)
+    return pd.DataFrame([x[1] for x in lignes], columns=colonnes)
+
+
+def _pe_vers_dataframe_surveillances(dept=None, promos_ok=None):
+    """Épreuves entièrement programmées (filtrées par département si indiqué),
+    au format attendu par le générateur de surveillances."""
+    try:
+        store = _pe_store()
+    except Exception:
+        return pd.DataFrame()
+    source = store["epreuves"].items() if dept else _pe_actives(store)
+    lignes = []
+    for k, e in source:
+        if not _pe_est_programme(e):
+            continue
+        if dept and e.get("dept") != dept:
+            continue
+        if promos_ok is not None and _pe_norm(e.get("promo")) not in promos_ok:
+            continue
+        d = _pe_date(e["date"])
+        if not d:
+            continue
+        lignes.append({
+            "Jour": _PE_JOURS_FR[d.weekday()], "Date": d.strftime("%d/%m/%Y"),
+            "Heure": e["creneau"], "matiere": e["matiere"], "Salle": "", "Promotion": e["promo"],
+            "Département": e.get("dept", ""),
+        })
+    return pd.DataFrame(lignes)
+
+
+def _pe_excel_bytes(store):
+    """Classeur Excel : planning global, une feuille par promotion et matières communes."""
+    from openpyxl.styles import Font, PatternFill, Alignment
+    df_all = _pe_dataframe(store)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        df_all.to_excel(w, sheet_name="Planning global", index=False)
+        utilises = {"planning global"}
+        for promo in sorted(df_all["Promotion"].unique(), key=_pe_cle_nat) if not df_all.empty else []:
+            nom = re.sub(r"[\\/*?:\[\]]", "_", str(promo))[:31] or "Promotion"
+            base_nom, n = nom, 2
+            while nom.casefold() in utilises:
+                suf = f"_{n}"
+                nom = base_nom[:31 - len(suf)] + suf
+                n += 1
+            utilises.add(nom.casefold())
+            df_all[df_all["Promotion"] == promo].to_excel(w, sheet_name=nom, index=False)
+        communes = df_all[df_all["Matière commune avec"].astype(str).str.strip() != ""] if not df_all.empty else df_all
+        if not communes.empty:
+            communes.to_excel(w, sheet_name="Matières communes", index=False)
+        for ws in w.book.worksheets:
+            ws.freeze_panes = "A2"
+            for cell in ws[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill("solid", fgColor="1E3A8A")
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            for col_cells in ws.columns:
+                largeur = min(max(max(len(str(c.value or "")) for c in col_cells) + 2, 12), 45)
+                ws.column_dimensions[col_cells[0].column_letter].width = largeur
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 📅 EDT DE SURVEILLANCE EN GRILLE (jours en lignes, horaires en colonnes)
+#    Affichage coloré + exports Excel / PDF / HTML (par promotion et par enseignant)
+# ─────────────────────────────────────────────────────────────────────────────
+_SURV_PALETTE = [
+    ("#DBEAFE", "#1D4ED8"), ("#DCFCE7", "#15803D"), ("#FEF3C7", "#B45309"), ("#FCE7F3", "#BE185D"),
+    ("#EDE9FE", "#6D28D9"), ("#CFFAFE", "#0E7490"), ("#FFEDD5", "#C2410C"), ("#E0E7FF", "#4338CA"),
+    ("#FEE2E2", "#B91C1C"), ("#ECFCCB", "#4D7C0F"), ("#F1F5F9", "#334155"), ("#FAE8FF", "#A21CAF"),
+]
+
+
+def _surv_info_date(txt):
+    """(clé de tri ISO, nom du jour, date jj/mm/aaaa) d'une date saisie sous divers formats."""
+    t = _pe_txt(txt)
+    d = None
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", t)
+    if m:
+        try:
+            d = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            d = None
+    if d is None:
+        m = re.search(r"(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})", t)
+        if m:
+            try:
+                d = datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            except ValueError:
+                d = None
+    if d is None:
+        return "9999-" + _pe_norm(t), t, ""
+    return d.strftime("%Y-%m-%d"), _PE_JOURS_FR[d.weekday()], d.strftime("%d/%m/%Y")
+
+
+def _surv_nom_fichier(txt):
+    s = unicodedata.normalize("NFKD", _pe_txt(txt))
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", s).strip("_") or "EDT"
+
+
+def _surv_grille(df_ref, df_vue, mode, cible, titre, sous_titre):
+    """Construit la grille.
+
+    df_ref : planning de référence (définit tous les jours et horaires affichés)
+    df_vue : lignes à afficher (promotion ou enseignant)
+    mode   : "promo" ou "ens"
+    """
+    jours, slots = {}, set()
+    for _, r in df_ref.iterrows():
+        k, jl, dl = _surv_info_date(r.get("Date"))
+        jours[k] = (jl, dl)
+        s = _pe_txt(r.get("Heure"))
+        if s:
+            slots.add(s)
+    slots = sorted(slots, key=lambda s: (_pe_plage(s) or (9999, 9999), s))
+    jours_l = [(k, jours[k][0], jours[k][1]) for k in sorted(jours)]
+    matieres = sorted({_pe_txt(v) for v in df_ref["Matière"]}, key=str.casefold)
+    couleurs = {m: _SURV_PALETTE[i % len(_SURV_PALETTE)] for i, m in enumerate(matieres)}
+
+    cells = {}
+    if mode == "promo":
+        groupes = {}
+        for _, r in df_vue.iterrows():
+            cle = (_surv_info_date(r.get("Date"))[0], _pe_txt(r.get("Heure")))
+            groupes.setdefault(cle, {}).setdefault(_pe_txt(r.get("Matière")), []).append(r)
+        for cle, par_mat in groupes.items():
+            blocs = []
+            for m in sorted(par_mat, key=str.casefold):
+                lignes = []
+                for r in sorted(par_mat[m], key=lambda x: _pe_norm(x.get("Lieu"))):
+                    lignes += [
+                        ("Lieu", _pe_txt(r.get("Lieu"))),
+                        ("Responsable", _pe_txt(r.get("Permanent responsable du lieu"))),
+                        ("Co-surveillant", _pe_txt(r.get("Vacataire co-surveillant"))),
+                    ]
+                blocs.append({"titre": m, "lignes": lignes})
+            cells[cle] = blocs
+    else:
+        cle_ens = _pe_norm(cible)
+        for _, r in df_vue.iterrows():
+            perm = _pe_txt(r.get("Permanent responsable du lieu"))
+            vac = _pe_txt(r.get("Vacataire co-surveillant"))
+            if _pe_norm(perm) == cle_ens:
+                role, autre = "Responsable du lieu", vac
+            elif _pe_norm(vac) == cle_ens:
+                role, autre = "Co-surveillant", perm
+            else:
+                continue
+            cle = (_surv_info_date(r.get("Date"))[0], _pe_txt(r.get("Heure")))
+            cells.setdefault(cle, []).append({
+                "titre": _pe_txt(r.get("Matière")),
+                "lignes": [("Promotion", _pe_txt(r.get("Promotion"))), ("Lieu", _pe_txt(r.get("Lieu"))),
+                           ("Rôle", role), ("Binôme", autre)],
+            })
+        for cle in cells:
+            cells[cle].sort(key=lambda b: b["titre"].casefold())
+    return {"titre": titre, "sous_titre": sous_titre, "jours": jours_l, "slots": slots,
+            "cells": cells, "couleurs": couleurs}
+
+
+def _surv_grille_promotion(df_planning, promo, dept_label=""):
+    vue = df_planning[df_planning["Promotion"].map(_pe_txt) == _pe_txt(promo)]
+    sous = (f"Département : {dept_label} — " if dept_label else "") + f"Généré le {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    return _surv_grille(df_planning, vue, "promo", None, f"EDT de surveillance — Promotion {promo}", sous)
+
+
+def _surv_grille_enseignant(df_planning, nom, dept_label=""):
+    sous = (f"Département : {dept_label} — " if dept_label else "") + f"Généré le {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    return _surv_grille(df_planning, df_planning, "ens", nom, f"EDT de surveillance — {nom}", sous)
+
+
+def _surv_couleur(g, titre):
+    return g["couleurs"].get(titre, _SURV_PALETTE[10])
+
+
+# ── HTML ────────────────────────────────────────────────────────────────────
+def _surv_html_table(g):
+    e = _html_grp.escape
+    th = ("background:#1e3a8a;color:#ffffff;padding:10px 16px;border:1px solid #1e3a8a;"
+          "font-size:14px;text-align:center;white-space:nowrap;")
+    td_jour = ("background:#e0e7ff;color:#1e3a8a;font-weight:700;text-align:center;padding:8px 12px;"
+               "border:1px solid #94a3b8;white-space:nowrap;vertical-align:middle;")
+    td_plein = "background:#ffffff;border:1px solid #94a3b8;padding:6px;vertical-align:top;min-width:170px;"
+    td_vide = "background:#f8fafc;border:1px solid #cbd5e1;padding:6px;vertical-align:top;min-width:170px;"
+    h = ['<div style="overflow-x:auto;margin:8px 0 16px 0;">',
+         '<table style="border-collapse:collapse;width:auto;table-layout:auto;'
+         'font-family:Arial,Helvetica,sans-serif;">',
+         '<thead><tr><th style="' + th + '">Jour / Horaire</th>']
+    for s in g["slots"]:
+        h.append(f'<th style="{th}">{e(s)}</th>')
+    h.append("</tr></thead><tbody>")
+    for k, jl, dl in g["jours"]:
+        h.append(f'<tr><td style="{td_jour}"><div style="font-size:14px;">{e(jl)}</div>'
+                 f'<div style="font-size:12px;font-weight:400;">{e(dl)}</div></td>')
+        for s in g["slots"]:
+            blocs = g["cells"].get((k, s), [])
+            if not blocs:
+                h.append(f'<td style="{td_vide}"></td>')
+                continue
+            inner = []
+            for b in blocs:
+                bg, fg = _surv_couleur(g, b["titre"])
+                lignes = "".join(
+                    f'<div><span style="color:#475569;">{e(lab)} :</span> '
+                    f'<span style="font-weight:600;">{e(val)}</span></div>' for lab, val in b["lignes"]
+                )
+                inner.append(
+                    f'<div style="background:{bg};border-left:5px solid {fg};border-radius:6px;'
+                    f'padding:6px 9px;margin:0 0 6px 0;color:#0f172a;font-size:12.5px;line-height:1.4;">'
+                    f'<div style="font-weight:700;color:{fg};font-size:13px;">{e(b["titre"])}</div>{lignes}</div>'
+                )
+            h.append(f'<td style="{td_plein}">{"".join(inner)}</td>')
+        h.append("</tr>")
+    h.append("</tbody></table></div>")
+    return "".join(h)
+
+
+def _surv_html_document(g):
+    e = _html_grp.escape
+    css = ("@page{size:A4 landscape;margin:10mm}"
+           "body{font-family:Arial,Helvetica,sans-serif;background:#f1f5f9;margin:20px;color:#0f172a}"
+           "h1{color:#1e3a8a;font-size:22px;margin:0 0 4px 0}"
+           ".sous{color:#475569;font-size:13px;margin:0 0 14px 0}"
+           ".pied{color:#64748b;font-size:11px;margin-top:10px}"
+           "@media print{body{background:#ffffff;margin:0}}")
+    return ("<!DOCTYPE html><html lang=\"fr\"><head><meta charset=\"utf-8\">"
+            f"<title>{e(g['titre'])}</title><style>{css}</style></head><body>"
+            f"<h1>{e(g['titre'])}</h1><p class=\"sous\">{e(g['sous_titre'])}</p>"
+            f"{_surv_html_table(g)}"
+            "<p class=\"pied\">Plateforme de gestion des EDTs — Département d'Électrotechnique — UDL-SBA</p>"
+            "</body></html>")
+
+
+# ── EXCEL ───────────────────────────────────────────────────────────────────
+def _surv_excel_bytes(g):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = (re.sub(r"[\\/*?:\[\]]", "_", g["titre"].replace("EDT de surveillance — ", ""))[:31]) or "EDT"
+    slots, jours, cells = g["slots"], g["jours"], g["cells"]
+    nb_col = 1 + len(slots)
+    fin = Side(style="thin", color="94A3B8")
+    bord = Border(left=fin, right=fin, top=fin, bottom=fin)
+
+    ws.cell(1, 1, g["titre"]).font = Font(bold=True, size=15, color="1E3A8A")
+    ws.cell(2, 1, g["sous_titre"]).font = Font(italic=True, size=10, color="475569")
+    if nb_col > 1:
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=nb_col)
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=nb_col)
+
+    def _texte(blocs):
+        parts = []
+        for b in blocs:
+            parts.append("\n".join([b["titre"]] + [f"{lab} : {val}" for lab, val in b["lignes"]]))
+        return "\n\n".join(parts)
+
+    def _nb_lignes(texte, largeur):
+        return sum(max(1, math.ceil(len(l) / max(1, largeur - 2))) for l in texte.split("\n"))
+
+    # largeurs adaptées au contenu
+    largeur_a = max([len("Jour / Horaire")] + [max(len(jl), len(dl)) for _, jl, dl in jours] + [8]) + 4
+    largeurs = [largeur_a]
+    for s in slots:
+        base = len(s) + 4
+        for k, _jl, _dl in jours:
+            for ligne in _texte(cells.get((k, s), [])).split("\n"):
+                base = max(base, min(len(ligne) + 3, 55))
+        largeurs.append(max(base, 22))
+    for i, w in enumerate(largeurs, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    hr = 4
+    entete = PatternFill("solid", fgColor="1E3A8A")
+    ws.cell(hr, 1, "Jour / Horaire")
+    for j, s in enumerate(slots, 2):
+        ws.cell(hr, j, s)
+    for c in range(1, nb_col + 1):
+        cel = ws.cell(hr, c)
+        cel.font = Font(bold=True, color="FFFFFF", size=11)
+        cel.fill = entete
+        cel.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cel.border = bord
+    ws.row_dimensions[hr].height = 26
+
+    for i, (k, jl, dl) in enumerate(jours):
+        r = hr + 1 + i
+        c0 = ws.cell(r, 1, f"{jl}\n{dl}" if dl else jl)
+        c0.font = Font(bold=True, color="1E3A8A", size=11)
+        c0.fill = PatternFill("solid", fgColor="E0E7FF")
+        c0.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c0.border = bord
+        hauteur = 32
+        for j, s in enumerate(slots, 2):
+            blocs = cells.get((k, s), [])
+            cel = ws.cell(r, j)
+            cel.border = bord
+            if blocs:
+                texte = _texte(blocs)
+                cel.value = texte
+                bg, _fg = _surv_couleur(g, blocs[0]["titre"])
+                cel.fill = PatternFill("solid", fgColor=bg.lstrip("#"))
+                cel.font = Font(size=10, color="0F172A")
+                cel.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                hauteur = max(hauteur, 14 * _nb_lignes(texte, largeurs[j - 1]) + 8)
+            else:
+                cel.fill = PatternFill("solid", fgColor="F8FAFC")
+        ws.row_dimensions[r].height = min(hauteur, 409)
+
+    ws.freeze_panes = ws.cell(hr + 1, 2)
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+# ── PDF ─────────────────────────────────────────────────────────────────────
+def _surv_pdf_bytes(g):
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm as rl_cm
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+    x = _xml_escape_grp
+    slots, jours, cells = g["slots"], g["jours"], g["cells"]
+    if not slots or not jours:
+        return None
+    buf = io.BytesIO()
+    page = landscape(A4)
+    doc = SimpleDocTemplate(buf, pagesize=page, leftMargin=1 * rl_cm, rightMargin=1 * rl_cm,
+                            topMargin=1 * rl_cm, bottomMargin=1 * rl_cm, title=g["titre"])
+    st_titre = ParagraphStyle("surv_t", fontName="Helvetica-Bold", fontSize=15, leading=18,
+                              textColor=rl_colors.HexColor("#1e3a8a"), spaceAfter=3)
+    st_sous = ParagraphStyle("surv_s", fontName="Helvetica", fontSize=9, leading=11,
+                             textColor=rl_colors.HexColor("#475569"), spaceAfter=8)
+    st_head = ParagraphStyle("surv_h", fontName="Helvetica-Bold", fontSize=9, leading=11,
+                             textColor=rl_colors.white, alignment=TA_CENTER)
+    st_jour = ParagraphStyle("surv_j", fontName="Helvetica-Bold", fontSize=9, leading=11,
+                             textColor=rl_colors.HexColor("#1e3a8a"), alignment=TA_CENTER)
+    st_pied = ParagraphStyle("surv_p", fontName="Helvetica", fontSize=7.5, leading=9,
+                             textColor=rl_colors.HexColor("#64748b"), alignment=TA_CENTER)
+    styles_bloc = {}
+
+    def _st_bloc(coul):
+        if coul not in styles_bloc:
+            bg, fg = coul
+            styles_bloc[coul] = ParagraphStyle(
+                "surv_b" + bg.lstrip("#"), fontName="Helvetica", fontSize=7.5, leading=9.5,
+                backColor=rl_colors.HexColor(bg), borderColor=rl_colors.HexColor(fg), borderWidth=0.4,
+                borderPadding=(2, 3, 2, 3), spaceBefore=3, spaceAfter=6,
+                textColor=rl_colors.HexColor("#0f172a"))
+        return styles_bloc[coul]
+
+    # largeurs de colonnes proportionnelles au contenu
+    largeur_utile = page[0] - 2 * rl_cm
+    w_jour = 2.7 * rl_cm
+    poids = []
+    for s in slots:
+        m = max(len(s), 22)
+        for k, _jl, _dl in jours:
+            for b in cells.get((k, s), []):
+                m = max(m, len(b["titre"]), *[len(f"{l} : {v}") for l, v in b["lignes"]])
+        poids.append(min(m, 60))
+    reste = largeur_utile - w_jour
+    col_w = [w_jour] + [reste * p / sum(poids) for p in poids]
+
+    data = [[Paragraph("Jour / Horaire", st_head)] + [Paragraph(x(s), st_head) for s in slots]]
+    styles_tab = [
+        ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#1e3a8a")),
+        ("BACKGROUND", (0, 1), (0, -1), rl_colors.HexColor("#e0e7ff")),
+        ("GRID", (0, 0), (-1, -1), 0.5, rl_colors.HexColor("#94a3b8")),
+        ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+        ("VALIGN", (0, 1), (0, -1), "MIDDLE"),
+        ("VALIGN", (1, 1), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for i, (k, jl, dl) in enumerate(jours, 1):
+        ligne = [Paragraph(f"{x(jl)}<br/>{x(dl)}" if dl else x(jl), st_jour)]
+        for j, s in enumerate(slots, 1):
+            blocs = cells.get((k, s), [])
+            if not blocs:
+                ligne.append("")
+                styles_tab.append(("BACKGROUND", (j, i), (j, i), rl_colors.HexColor("#f8fafc")))
+                continue
+            flow = []
+            for b in blocs:
+                corps = "<b>" + x(b["titre"]) + "</b><br/>" + "<br/>".join(
+                    f"{x(l)} : <b>{x(v)}</b>" for l, v in b["lignes"])
+                flow.append(Paragraph(corps, _st_bloc(_surv_couleur(g, b["titre"]))))
+            ligne.append(flow)
+        data.append(ligne)
+    table = Table(data, colWidths=col_w, repeatRows=1)
+    table.setStyle(TableStyle(styles_tab))
+    doc.build([
+        Paragraph(x(g["titre"]), st_titre), Paragraph(x(g["sous_titre"]), st_sous), table,
+        Spacer(1, 0.3 * rl_cm),
+        Paragraph("Plateforme de gestion des EDTs - Departement d'Electrotechnique - UDL-SBA", st_pied),
+    ])
+    return buf.getvalue()
+
+
+# ── INTERFACE ───────────────────────────────────────────────────────────────
+def _surv_boutons_telechargement(g, nom_fichier, cle):
+    c1, c2, c3 = st.columns(3)
+    c1.download_button(
+        "📥 Télécharger en Excel", _surv_excel_bytes(g), f"{nom_fichier}.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True, key=f"{cle}_xlsx")
+    try:
+        pdf = _surv_pdf_bytes(g)
+    except Exception:
+        pdf = None
+    if pdf:
+        c2.download_button("📄 Télécharger en PDF", pdf, f"{nom_fichier}.pdf", "application/pdf",
+                           use_container_width=True, key=f"{cle}_pdf")
+    else:
+        c2.button("📄 PDF indisponible", disabled=True, use_container_width=True, key=f"{cle}_pdf_off")
+    c3.download_button("🌐 Télécharger en HTML", _surv_html_document(g).encode("utf-8"),
+                       f"{nom_fichier}.html", "text/html", use_container_width=True, key=f"{cle}_html")
+
+
+def _surv_afficher_grilles(df_planning, dept_label=""):
+    """Sections « EDT par promotion » et « EDT individuel » (grilles colorées + téléchargements)."""
+    st.subheader("5. 📅 EDT de surveillance par promotion")
+    promos = sorted({_pe_txt(v) for v in df_planning["Promotion"] if _pe_txt(v)}, key=_pe_cle_nat)
+    if promos:
+        promo_sel = st.selectbox("🎓 Choisir la promotion", promos, key=_surv_cle("exam_grille_promo", promos))
+        g = _surv_grille_promotion(df_planning, promo_sel, dept_label)
+        st.markdown(_surv_html_table(g), unsafe_allow_html=True)
+        _surv_boutons_telechargement(g, f"EDT_Surveillance_{_surv_nom_fichier(promo_sel)}",
+                                     f"exam_dl_promo_{_surv_nom_fichier(promo_sel)}")
+    else:
+        st.info("Aucune promotion dans le planning généré.")
+
+    st.subheader("6. 👤 EDT de surveillance individuel")
+    noms = sorted({_pe_txt(v) for col in ("Permanent responsable du lieu", "Vacataire co-surveillant")
+                   for v in df_planning[col] if _pe_txt(v)}, key=str.casefold)
+    if noms:
+        ens_sel = st.selectbox("👤 Choisir l'enseignant", noms, key=_surv_cle("exam_grille_ens", noms))
+        g2 = _surv_grille_enseignant(df_planning, ens_sel, dept_label)
+        st.markdown(_surv_html_table(g2), unsafe_allow_html=True)
+        _surv_boutons_telechargement(g2, f"EDT_Surveillance_{_surv_nom_fichier(ens_sel)}",
+                                     f"exam_dl_ens_{_surv_nom_fichier(ens_sel)}")
+    else:
+        st.info("Aucun enseignant affecté dans le planning généré.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 👥 ÉTUDIANTS PAR PROMOTION, RÉPARTITION PAR LIEU ET LISTES NOMINATIVES
+# ─────────────────────────────────────────────────────────────────────────────
+_ETU_COLS = ["Matricule", "Nom", "Prénom", "Groupe", "Sous-groupe", "Email", "Téléphone"]
+
+
+def _etu_col(df, aliases):
+    if df is None or len(df) == 0:
+        return None
+    index = {_pe_norm(c): c for c in df.columns}
+    for a in aliases:
+        if _pe_norm(a) in index:
+            return index[_pe_norm(a)]
+    return None
+
+
+def _etu_inscription_validee(v):
+    t = _pe_norm(v)
+    return "VALID" in t and not t.startswith("NON") and "NON VALID" not in t and "INVALID" not in t
+
+
+def _etu_matricule(v):
+    try:
+        if v is None or pd.isna(v):
+            return ""
+    except Exception:
+        pass
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    t = str(v).strip()
+    return t[:-2] if re.fullmatch(r"\d+\.0", t) else t
+
+
+def _etu_telephone(v):
+    t = _etu_matricule(v)
+    if re.fullmatch(r"[5-7]\d{8}", t):
+        t = "0" + t
+    return t
+
+
+def _etu_standard(df_etu):
+    """Fichier source des étudiants -> colonnes normalisées + Promotion + Validée."""
+    cols = _ETU_COLS + ["Promotion", "Validée"]
+    if df_etu is None or len(df_etu) == 0:
+        return pd.DataFrame(columns=cols)
+    c_mat = _etu_col(df_etu, ["Mat. Etudiant", "Mat Etudiant", "Matricule", "Matricule étudiant"])
+    c_nom = _etu_col(df_etu, ["Nom"])
+    c_pre = _etu_col(df_etu, ["Prénom", "Prenom"])
+    c_grp = _etu_col(df_etu, ["Groupe"])
+    c_sg = _etu_col(df_etu, ["Sous groupe", "Sous-groupe", "Sousgroupe"])
+    c_em1 = _etu_col(df_etu, ["E-mail institutionnel", "Email institutionnel", "Mail institutionnel"])
+    c_em2 = _etu_col(df_etu, ["email", "E-mail", "Mail", "Adresse email"])
+    c_tel = _etu_col(df_etu, ["N° de téléphone", "Numéro de téléphone", "Téléphone", "Telephone", "Tel"])
+    c_pro = _etu_col(df_etu, ["Promotion", "Promotions"])
+    c_ins = _etu_col(df_etu, ["Sit. d'ins.", "Sit d'ins", "Situation d'inscription", "Situation inscription",
+                              "Statut inscription", "Statut d'inscription", "Etat inscription", "État d'inscription"])
+
+    def _col(c, f=_pe_txt):
+        return df_etu[c].map(f) if c else pd.Series([""] * len(df_etu), index=df_etu.index)
+
+    out = pd.DataFrame({
+        "Matricule": _col(c_mat, _etu_matricule), "Nom": _col(c_nom), "Prénom": _col(c_pre),
+        "Groupe": _col(c_grp), "Sous-groupe": _col(c_sg),
+    })
+    em1, em2 = _col(c_em1), _col(c_em2)
+    out["Email"] = em1.where(em1.ne(""), em2)          # institutionnel, à défaut personnel
+    out["Téléphone"] = _col(c_tel, _etu_telephone)
+    out["Promotion"] = _col(c_pro)
+    out["Validée"] = df_etu[c_ins].map(_etu_inscription_validee) if c_ins else True
+    return out
+
+
+def _etu_promo(df_etu, promo):
+    """Étudiants à inscription VALIDÉE d'une promotion, sans doublon, triés par nom/prénom."""
+    std = df_etu if (isinstance(df_etu, pd.DataFrame) and "Validée" in df_etu.columns) else _etu_standard(df_etu)
+    if std.empty:
+        return pd.DataFrame(columns=_ETU_COLS)
+    m = std["Promotion"].map(_pe_norm).eq(_pe_norm(promo)) & std["Validée"].astype(bool)
+    d = std.loc[m, _ETU_COLS].copy()
+    avec_mat = d[d["Matricule"].ne("")].drop_duplicates("Matricule")
+    sans_mat = d[d["Matricule"].eq("")].drop_duplicates(["Nom", "Prénom"])
+    d = pd.concat([avec_mat, sans_mat])
+    d["_k1"] = d["Nom"].map(_pe_norm)
+    d["_k2"] = d["Prénom"].map(_pe_norm)
+    return d.sort_values(["_k1", "_k2"]).drop(columns=["_k1", "_k2"]).reset_index(drop=True)
+
+
+def _etu_combo(effectif, cap_amphi, cap_salle):
+    """(nb amphis, nb salles) pour un effectif : moins de places perdues et peu de locaux."""
+    effectif, cap_amphi, cap_salle = int(effectif), max(1, int(cap_amphi)), max(1, int(cap_salle))
+    if effectif <= 0:
+        return 0, 0
+    meilleur = None
+    for na in range(0, math.ceil(effectif / cap_amphi) + 1):
+        reste = max(0, effectif - na * cap_amphi)
+        ns = math.ceil(reste / cap_salle) if reste else 0
+        perdu = na * cap_amphi + ns * cap_salle - effectif
+        cout = perdu + 20 * (na + ns)
+        if meilleur is None or cout < meilleur[0]:
+            meilleur = (cout, na, ns)
+    return meilleur[1], meilleur[2]
+
+
+def _etu_plan_lieux(effectif, locaux):
+    """Répartit l'effectif sur des locaux libres selon les étudiants attribués à chacun.
+    Retourne ([(local, nb_étudiants)], places_manquantes)."""
+    reste = int(effectif)
+    dispo = sorted(locaux, key=lambda l: (-l["attribue"], 0 if "AMPHI" in _pe_norm(l["type"]) else 1, _pe_norm(l["lieu"])))
+    choisis = []
+    while reste > 0 and dispo:
+        ajustes = [l for l in dispo if l["attribue"] >= reste]
+        local = min(ajustes, key=lambda l: (l["attribue"], _pe_norm(l["lieu"]))) if ajustes else dispo[0]
+        dispo.remove(local)
+        nb = min(reste, local["attribue"])
+        choisis.append((local, nb))
+        reste -= nb
+    return choisis, max(0, reste)
+
+
+def _etu_feuille_nom(texte, deja):
+    base = re.sub(r"[\\/*?:\[\]]", "-", _pe_txt(texte))[:31] or "Liste"
+    nom, i = base, 2
+    while nom.lower() in deja:
+        suffixe = f" ({i})"
+        nom, i = base[:31 - len(suffixe)] + suffixe, i + 1
+    deja.add(nom.lower())
+    return nom
+
+
+def _etu_excel_bytes(feuilles):
+    """feuilles : [(nom de feuille, [lignes d'information], DataFrame d'étudiants)]."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    fin = Side(style="thin", color="94A3B8")
+    bord = Border(left=fin, right=fin, top=fin, bottom=fin)
+    entetes_base = ["N°", "Matricule", "Nom", "Prénom", "Groupe", "Sous-groupe", "Email", "Téléphone", "Émargement"]
+    deja = set()
+    for nom, infos, d in feuilles:
+        # Les colonnes supplémentaires du DataFrame sont utilisées notamment pour
+        # les cases de présence de chaque matière d'examen de la promotion.
+        colonnes_sup = [c for c in d.columns if c not in _ETU_COLS]
+        entetes = entetes_base + colonnes_sup
+        ws = wb.create_sheet(_etu_feuille_nom(nom, deja))
+        ws.cell(1, 1, infos[0] if infos else nom).font = Font(bold=True, size=14, color="1E3A8A")
+        for i, ligne in enumerate(infos[1:], 2):
+            ws.cell(i, 1, ligne).font = Font(size=10, color="475569")
+        hr = max(3, len(infos) + 2)
+        for j, h in enumerate(entetes, 1):
+            c = ws.cell(hr, j, h)
+            c.font = Font(bold=True, color="FFFFFF")
+            c.fill = PatternFill("solid", fgColor="1E3A8A")
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            c.border = bord
+        largeurs = [len(str(h).replace("\n", " ")) + 2 for h in entetes]
+        largeurs[8] = 18
+        # Colonnes de présence : largeur adaptée à la ligne la plus longue de l'en-tête
+        # (jour — date), la matière passant à la ligne si elle est trop longue.
+        nb_lignes_entete = 1
+        for j in range(10, len(entetes) + 1):
+            lignes_h = str(entetes[j - 1]).split("\n")
+            plus_longue = max((len(l) for l in lignes_h[1:]), default=10)
+            largeurs[j - 1] = min(max(24, plus_longue + 4), 34)
+            total_lignes = 0
+            for k, l in enumerate(lignes_h):
+                facteur = 1.25 if k == 0 else 1.1   # texte en gras un peu plus large
+                total_lignes += max(1, math.ceil(len(l) * facteur / largeurs[j - 1]))
+            nb_lignes_entete = max(nb_lignes_entete, total_lignes)
+        for i, (_, r) in enumerate(d.iterrows(), 1):
+            valeurs = [i, r.get("Matricule", ""), r.get("Nom", ""), r.get("Prénom", ""),
+                       r.get("Groupe", ""), r.get("Sous-groupe", ""), r.get("Email", ""),
+                       r.get("Téléphone", ""), ""]
+            valeurs.extend([r.get(col, "") for col in colonnes_sup])
+            for j, v in enumerate(valeurs, 1):
+                c = ws.cell(hr + i, j, v)
+                c.border = bord
+                c.alignment = Alignment(vertical="center", horizontal="center" if j in (1, 5, 6) or j >= 10 else "left", wrap_text=True)
+                if j < 9:
+                    largeurs[j - 1] = max(largeurs[j - 1], min(len(str(v)) + 2, 55))
+            ws.row_dimensions[hr + i].height = 30
+        ws.row_dimensions[hr].height = max(30, nb_lignes_entete * 16 + 8) if colonnes_sup else 30
+        for j, w in enumerate(largeurs, 1):
+            ws.column_dimensions[get_column_letter(j)].width = w
+        ws.freeze_panes = ws.cell(hr + 1, 1)
+        ws.page_setup.orientation = "landscape"
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.print_title_rows = f"{hr}:{hr}"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _surv_afficher_listes_etudiants(df_planning, df_etu, dept_label=""):
+    """Section « Listes des étudiants par lieu » : affichage et téléchargement Excel."""
+    st.subheader("7. 👥 Listes des étudiants par lieu")
+    if "Matricules" not in df_planning.columns or df_planning["Matricules"].map(_pe_txt).eq("").all():
+        st.info("Les listes nominatives sont créées à la génération : relancez la génération de la promotion "
+                "pour obtenir la répartition des étudiants par lieu.")
+        return
+    std = _etu_standard(df_etu)
+    index = std[std["Matricule"].ne("")].drop_duplicates("Matricule").set_index("Matricule")
+    base = df_planning[df_planning["Matricules"].map(_pe_txt).ne("")]
+    promos = sorted({_pe_txt(v) for v in base["Promotion"]}, key=_pe_cle_nat)
+    promo = st.selectbox("🎓 Promotion", promos, key=_surv_cle("exam_listes_promo", promos))
+    sub = base[base["Promotion"].map(_pe_txt) == promo]
+    examens = (sub.assign(_d=sub["Date"].map(lambda x: _surv_info_date(x)[0]))
+               .drop_duplicates(["Matière", "Date", "Heure"])
+               .sort_values(["_d", "Heure", "Matière"]))
+    cles = [(r["Matière"], r["Date"], r["Heure"]) for _, r in examens.iterrows()]
+    exam = st.selectbox("📝 Examen", cles, key=_surv_cle("exam_listes_exam", [promo] + [str(c) for c in cles]),
+                        format_func=lambda c: f"{c[0]} — {c[1]} ({c[2]})")
+
+    def _liste(ligne):
+        mats = [m for m in _pe_txt(ligne["Matricules"]).split(";") if m]
+        d = index.reindex(mats).reset_index()
+        d["Matricule"] = mats
+        for col in ("Nom", "Prénom", "Groupe", "Sous-groupe", "Email", "Téléphone"):
+            d[col] = d[col].fillna("") if col in d.columns else ""
+        return d[_ETU_COLS]
+
+    def _infos(ligne, nb):
+        return [f"{ligne['Matière']} — Promotion {ligne['Promotion']}",
+                f"Date : {ligne['Date']}   Horaire : {ligne['Heure']}",
+                f"Lieu : {ligne['Lieu']}   Étudiants : {nb}   Capacité : {ligne.get('Capacité', '')}",
+                f"Surveillants : {ligne.get('Permanent responsable du lieu', '')} / {ligne.get('Vacataire co-surveillant', '')}"
+                + (f"   Département : {dept_label}" if dept_label else "")]
+
+    lignes = sub[(sub["Matière"] == exam[0]) & (sub["Date"] == exam[1]) & (sub["Heure"] == exam[2])].sort_values("Lieu")
+    feuilles = []
+    for _, lg in lignes.iterrows():
+        d = _liste(lg)
+        feuilles.append((_pe_txt(lg["Lieu"]), _infos(lg, len(d)), d))
+        with st.expander(f"📍 {lg['Lieu']} — {len(d)} étudiant(s) — surveillants : "
+                         f"{lg.get('Permanent responsable du lieu', '')} / {lg.get('Vacataire co-surveillant', '')}",
+                         expanded=len(lignes) <= 3):
+            aff = d.copy()
+            aff.insert(0, "N°", range(1, len(aff) + 1))
+            st.dataframe(aff, use_container_width=True, hide_index=True)
+            if len(d):
+                st.caption("Répartition : " + " ; ".join(
+                    f"{g or '—'} : {n}" for g, n in d["Groupe"].value_counts().sort_index().items()))
+    c1, c2 = st.columns(2)
+    if feuilles:
+        c1.download_button("📥 Listes de cet examen (Excel, une feuille par lieu)", _etu_excel_bytes(feuilles),
+                           f"Listes_{_surv_nom_fichier(promo)}_{_surv_nom_fichier(exam[0])[:30]}.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           use_container_width=True, key=f"exam_dl_listes_ex_{_surv_nom_fichier(promo)}")
+    toutes = []
+    for i, (_, ex) in enumerate(examens.iterrows(), 1):
+        l_ex = sub[(sub["Matière"] == ex["Matière"]) & (sub["Date"] == ex["Date"]) & (sub["Heure"] == ex["Heure"])]
+        for _, lg in l_ex.sort_values("Lieu").iterrows():
+            d = _liste(lg)
+            toutes.append((f"{i:02d} {_pe_txt(lg['Matière'])[:12]} {_pe_txt(lg['Lieu'])[:10]}", _infos(lg, len(d)), d))
+    if toutes:
+        c2.download_button("📥 Toutes les listes de la promotion (Excel)", _etu_excel_bytes(toutes),
+                           f"Listes_{_surv_nom_fichier(promo)}_tous_examens.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           use_container_width=True, key=f"exam_dl_listes_all_{_surv_nom_fichier(promo)}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INTERFACE STREAMLIT
+# ─────────────────────────────────────────────────────────────────────────────
+def _pe_flash(type_msg, message):
+    st.session_state.setdefault("pe_flash", []).append((type_msg, message))
+
+
+def run_programmation_examens():
+    """Page de programmation des examens par promotion (administration)."""
+    st.header("🗓️ Programmation des examens par promotion")
+    st.caption(
+        "Choisissez une promotion : toutes ses matières apparaissent avec leur chargé de matière. "
+        "Programmez la date et le créneau de chaque examen, ou laissez la répartition automatique le faire. "
+        "Une matière commune programmée pour une promotion l'est automatiquement pour les autres promotions concernées."
+    )
+
+    for type_msg, message in st.session_state.pop("pe_flash", []):
+        getattr(st, type_msg if type_msg in ("success", "info", "warning", "error") else "info")(message)
+
+    # ── Source EDT ─────────────────────────────────────────────────────────
+    df_edt = globals().get("df")
+    if not isinstance(df_edt, pd.DataFrame) or df_edt.empty:
+        try:
+            df_edt = pd.read_excel(FILE_EDT)
+            df_edt.columns = [str(c).strip() for c in df_edt.columns]
+        except Exception as exc:
+            st.error(f"❌ Impossible de charger l'EDT : {exc}")
+            return
+
+    store = _pe_store()
+    params = store["params"]
+    ep = store["epreuves"]
+    ver = st.session_state.get("pe_ver", 0)
+    pver = st.session_state.get("pe_params_ver", 0)
+
+    dispos = _pe_jours_disponibles(params)
+    slots = _pe_creneaux(params)
+
+    # ── 1. Paramètres de départ ───────────────────────────────────────────
+    with st.expander("⚙️ Paramètres de la période d'examens (jours, créneaux, règles)",
+                     expanded=(not dispos or not slots)):
+        c1, c2 = st.columns(2)
+        d0_def = _pe_date(params.get("date_debut")) or _pe_date("2027-01-17")
+        d1_def = _pe_date(params.get("date_fin")) or _pe_date("2027-01-21")
+        nd0 = c1.date_input("📅 Premier jour de la période", value=d0_def, format="DD/MM/YYYY", key=f"pe_p_d0_{pver}")
+        nd1 = c2.date_input("📅 Dernier jour de la période", value=d1_def, format="DD/MM/YYYY", key=f"pe_p_d1_{pver}")
+        # Application immédiate de la période : la liste « Date d'examen » des tableaux ci-dessous
+        # est construite à partir des paramètres enregistrés ; sans cette mise à jour, une nouvelle
+        # date de début/fin n'y apparaîtrait qu'après avoir cliqué sur « Enregistrer les paramètres ».
+        if nd0 and nd1 and nd1 >= nd0 and params.get("date_debut") and params.get("date_fin") \
+                and (nd0.isoformat() != params.get("date_debut") or nd1.isoformat() != params.get("date_fin")):
+            params["date_debut"], params["date_fin"] = nd0.isoformat(), nd1.isoformat()
+            params["dates_exclues"] = [x for x in params.get("dates_exclues", [])
+                                       if nd0.isoformat() <= x <= nd1.isoformat()]
+            _pe_sauver(store)
+            st.session_state["pe_ver"] = ver + 1
+            _pe_flash("success", f"Période mise à jour : du {nd0.strftime('%d/%m/%Y')} au {nd1.strftime('%d/%m/%Y')}. "
+                                 "Les nouvelles dates sont disponibles dans « Date d'examen ».")
+            st.rerun()
+        elif nd0 and nd1 and nd1 < nd0:
+            st.error("❌ Le dernier jour doit être postérieur ou égal au premier jour.")
+        njours_excl = st.multiselect(
+            "🚫 Jours de la semaine exclus", _PE_JOURS_FR,
+            default=[j for j in params.get("jours_exclus", []) if j in _PE_JOURS_FR], key=f"pe_p_jex_{pver}"
+        )
+        toutes_dates = []
+        if nd0 and nd1 and nd1 >= nd0:
+            d = nd0
+            while d <= nd1 and len(toutes_dates) < 120:
+                toutes_dates.append(d.isoformat())
+                d += timedelta(days=1)
+        ndates_excl = st.multiselect(
+            "🚫 Dates exclues (jours fériés, journées bloquées…)", toutes_dates,
+            default=[x for x in params.get("dates_exclues", []) if x in toutes_dates],
+            format_func=_pe_label_date, key=f"pe_p_dex_{pver}_{nd0}_{nd1}"
+        )
+        ncren_txt = st.text_area(
+            "🕒 Créneaux horaires (un par ligne, ex. 08h30 - 10h00)",
+            value="\n".join(params.get("creneaux", [])), height=120, key=f"pe_p_cren_{pver}"
+        )
+        c3, c4 = st.columns(2)
+        nmax = c3.number_input("🔢 Maximum d'examens par jour et par promotion (valeur par défaut)", min_value=1, max_value=6,
+                               value=int(params.get("max_par_jour", 2)), step=1, key=f"pe_p_max_{pver}")
+        ninclure = c4.checkbox("Inclure les matières n'ayant que des TD/TP (sans cours)",
+                               value=bool(params.get("inclure_td_tp", False)), key=f"pe_p_incl_{pver}")
+        st.markdown("**🎓 Maximum d'examens par jour selon la promotion**")
+        st.caption("La valeur par défaut ci-dessus s'applique à toutes les promotions, sauf celles que vous personnalisez ici.")
+        _pm = params.setdefault("max_par_jour_promo", {})
+        _info_mx = _pe_promotions_info(df_edt)
+        _dept_mx = st.session_state.get("pe_dept_sel")
+        _promos_mx = sorted({i["label"] for i in _info_mx.values() if not _dept_mx or i["proprio"] in ("", _dept_mx)},
+                            key=_pe_cle_nat)
+        if _promos_mx:
+            _m1, _m2, _m3 = st.columns([2, 1, 2])
+            _p_mx = _m1.selectbox("Promotion", _promos_mx, key=_surv_cle(f"pe_p_mxsel_{pver}", _promos_mx))
+            _v_mx = _m2.number_input("Maximum / jour", min_value=1, max_value=6, step=1,
+                                     value=_pe_max_jour(params, _p_mx), key=f"pe_p_mxval_{pver}_{_pe_norm(_p_mx)}")
+            _m3.markdown("<div style='height:1.9rem'></div>", unsafe_allow_html=True)
+            if _m3.button("✅ Appliquer à cette promotion", key=f"pe_p_mxapp_{pver}"):
+                _pm[_p_mx] = int(_v_mx)
+                _pe_sauver(store)
+                _pe_flash("success", f"Maximum de {int(_v_mx)} examen(s) par jour enregistré pour {_p_mx}.")
+                st.rerun()
+        if _pm:
+            st.dataframe(pd.DataFrame([{"Promotion": p, "Maximum / jour": n}
+                                       for p, n in sorted(_pm.items(), key=lambda kv: _pe_cle_nat(kv[0]))]),
+                         hide_index=True, use_container_width=True)
+            _ret_mx = st.multiselect("Rétablir la valeur par défaut pour :", sorted(_pm, key=_pe_cle_nat),
+                                     key=f"pe_p_mxret_{pver}_{len(_pm)}")
+            if st.button("↩️ Rétablir la valeur par défaut", key=f"pe_p_mxrst_{pver}", disabled=not _ret_mx):
+                for _p in _ret_mx:
+                    _pm.pop(_p, None)
+                _pe_sauver(store)
+                _pe_flash("success", "Valeur par défaut rétablie pour : " + ", ".join(_ret_mx))
+                st.rerun()
+
+        if st.button("💾 Enregistrer les paramètres", key=f"pe_p_save_{pver}", type="primary"):
+            lignes_cren = [_pe_txt(x) for x in ncren_txt.splitlines() if _pe_txt(x)]
+            invalides = [x for x in lignes_cren if _pe_plage(x) is None]
+            if not nd0 or not nd1 or nd1 < nd0:
+                st.error("❌ La date de fin doit être postérieure ou égale à la date de début.")
+            elif not lignes_cren:
+                st.error("❌ Définissez au moins un créneau horaire.")
+            elif invalides:
+                st.error("❌ Créneau(x) illisible(s) : " + " ; ".join(invalides) + " — utilisez le format « 08h30 - 10h00 ».")
+            else:
+                params.update({
+                    "date_debut": nd0.isoformat(), "date_fin": nd1.isoformat(),
+                    "jours_exclus": list(njours_excl), "dates_exclues": list(ndates_excl),
+                    "creneaux": lignes_cren, "max_par_jour": int(nmax), "inclure_td_tp": bool(ninclure),
+                })
+                _pe_sauver(store)
+                _pe_flash("success", "Paramètres enregistrés. Les examens déjà programmés sont conservés ; "
+                                     "le contrôle de cohérence signale ceux qui sortent des nouvelles règles.")
+                st.session_state["pe_ver"] = ver + 1
+                st.rerun()
+
+    if not dispos or not slots:
+        st.error("❌ Aucun jour disponible ou aucun créneau défini : complétez les paramètres ci-dessus.")
+        return
+    st.caption(
+        f"📌 Période : {_pe_label_date(dispos[0])} → {_pe_label_date(dispos[-1])} — {len(dispos)} jour(s) disponible(s) — "
+        f"créneaux : {' | '.join(slots)} — maximum {int(params.get('max_par_jour', 2))} examen(s)/jour/promotion"
+        f"{' (+ ' + str(len(params.get('max_par_jour_promo') or {})) + ' promotion(s) personnalisée(s))' if params.get('max_par_jour_promo') else ''} — "
+        f"jours exclus : {', '.join(params.get('jours_exclus', [])) or 'aucun'}"
+        + (f" + {len(params.get('dates_exclues', []))} date(s)" if params.get("dates_exclues") else "")
+    )
+
+    # ── Département : seuls ses enseignants sont concernés ────────────────
+    idx_dept, labels_dept = _pe_index_departements(df_edt)
+    dept = None
+    if labels_dept:
+        opts_dept = sorted(labels_dept.keys(), key=lambda d: labels_dept[d].casefold())
+        dept = st.selectbox(
+            "🏛️ Département", opts_dept, format_func=lambda d: labels_dept.get(d, d), key="pe_dept_sel",
+            help="Les matières, les chargés de matière et les surveillances ne concernent que les "
+                 "enseignants attachés au département choisi.",
+        )
+        st.caption(f"🏛️ {labels_dept[dept]} — programmation limitée aux matières dont le chargé appartient à ce "
+                   f"département ; les surveillances seront affectées uniquement à ses enseignants.")
+    else:
+        st.warning("⚠️ Aucun département n'est renseigné (colonne « Département d'affiliation » du fichier du "
+                   "personnel ou colonne « Département » de l'EDT) : toutes les matières sont affichées.")
+    dtag = re.sub(r"\W+", "", dept or "all")[:16]
+    promos_ok = _pe_ui_promotions_departement(df_edt, dept, labels_dept.get(dept, dept) if dept else "")
+
+    # ── Matières issues de l'EDT ──────────────────────────────────────────
+    mpp = _pe_matieres_par_promo(df_edt, bool(params.get("inclure_td_tp", False)), dept, promos_ok)
+    if not mpp:
+        st.error("❌ Aucune matière trouvée dans l'EDT pour ce département "
+                 "(colonnes Enseignements, Promotion, Code, Enseignants attendues).")
+        return
+    if _pe_assurer(store, mpp, dept):
+        _pe_sauver(store)
+    st.session_state["pe_actifs"] = _pe_calculer_actifs(store, mpp, dept)
+
+    promos = sorted(mpp.keys(), key=_pe_cle_nat)
+    stats = _pe_stats(store)
+
+    # ── 2. Compteurs globaux ───────────────────────────────────────────────
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("🎓 Promotions programmées", f"{stats['promos_completes']} / {stats['promos_total']}",
+              delta=f"{stats['promos_partielles']} partielle(s)", delta_color="off")
+    m2.metric("📚 Matières programmées", f"{stats['matieres_prog']} / {stats['matieres_total']}",
+              delta=f"{stats['matieres_total'] - stats['matieres_prog']} à programmer", delta_color="off")
+    m3.metric("🔗 Matières communes synchronisées", f"{stats['communes_sync']} / {stats['communes_total']}",
+              delta=f"{stats['communes_total'] - stats['communes_sync']} en attente", delta_color="off")
+    m4.metric("📆 Jours disponibles", len(dispos), delta=f"{len(slots)} créneau(x)/jour", delta_color="off")
+
+    st.divider()
+
+    # ── 3. Choix de la promotion ───────────────────────────────────────────
+    promo = st.selectbox("🎓 Promotion", promos, key=_surv_cle(f"pe_promo_sel_{dtag}", promos))
+    cles = _pe_cles_promo(store, promo)
+    sp = stats["par_promo"].get(promo, {"total": 0, "prog": 0, "communes": 0, "sync": 0})
+    synchronisees_depuis_autres = sum(
+        1 for k in cles if ep[k].get("groupe") and _pe_est_programme(ep[k]) and len(_pe_membres(store, k)) > 1
+    )
+    p1, p2, p3, p4 = st.columns(4)
+    p1.metric(f"📘 Matières de {promo}", sp["total"])
+    p2.metric("✅ Programmées", f"{sp['prog']} / {sp['total']}")
+    p3.metric("🔗 Communes synchronisées", f"{sp['sync']} / {sp['communes']}")
+    p4.metric("⏳ À programmer", sp["total"] - sp["prog"])
+    if synchronisees_depuis_autres:
+        st.info(f"🔗 {synchronisees_depuis_autres} matière(s) de {promo} sont communes avec d'autres promotions et "
+                f"déjà programmées (synchronisées) : inutile de les programmer une deuxième fois.")
+
+    # ── 4. Tableau des matières de la promotion ───────────────────────────
+    used_dates = {ep[k]["date"] for k in cles if ep[k]["date"] and ep[k]["date"] not in dispos}
+    used_cren = {ep[k]["creneau"] for k in cles if ep[k]["creneau"] and ep[k]["creneau"] not in slots}
+    map_date = {_PE_AUCUN: ""}
+    for d in dispos:
+        map_date[_pe_label_date(d)] = d
+    for d in sorted(used_dates):
+        map_date[_pe_label_date(d) + " ⚠ hors période"] = d
+    inv_date = {v: lab for lab, v in map_date.items()}
+    map_cren = {_PE_AUCUN: ""}
+    for c in slots:
+        map_cren[c] = c
+    for c in sorted(used_cren):
+        map_cren[c + " ⚠"] = c
+    inv_cren = {v: lab for lab, v in map_cren.items()}
+
+    lignes = []
+    for k in cles:
+        e = ep[k]
+        liees = _pe_commune_avec(store, k)
+        if liees:
+            membres = _pe_membres(store, k)
+            synchro = all(_pe_est_programme(ep[m]) for m in membres) and \
+                len({(ep[m]["date"], ep[m]["creneau"]) for m in membres}) == 1
+            statut = (f"🔗 Synchronisée avec {', '.join(liees)}" if synchro
+                      else f"🔗 Commune avec {', '.join(liees)} — à programmer")
+        else:
+            statut = "✅ Programmée" if _pe_est_programme(e) else "⏳ À programmer"
+        lignes.append({
+            "Matière": e["matiere"],
+            "Chargé de matière": e["charge"] or "Non renseigné",
+            "Promotion": e["promo"],
+            "Date d'examen": inv_date.get(e["date"], _PE_AUCUN) if e["date"] else _PE_AUCUN,
+            "Créneau horaire": inv_cren.get(e["creneau"], _PE_AUCUN) if e["creneau"] else _PE_AUCUN,
+            "Matière commune": ", ".join(liees) if liees else _PE_AUCUN,
+            "Statut": statut,
+        })
+    df_tab = pd.DataFrame(lignes)
+
+    st.markdown(f"### 📋 Matières de {promo}")
+    st.caption("Modifiez la date et/ou le créneau d'une matière directement dans le tableau, puis cliquez sur "
+               "« Enregistrer ». Les règles (jours exclus, créneaux définis, maximum par jour, chevauchements) sont vérifiées.")
+    edite = st.data_editor(
+        df_tab, hide_index=True, use_container_width=True, key=f"pe_editor_{dtag}_{promo}_{ver}",
+        disabled=["Matière", "Chargé de matière", "Promotion", "Matière commune", "Statut"],
+        column_config={
+            "Date d'examen": st.column_config.SelectboxColumn("📅 Date d'examen", options=list(map_date.keys()), required=True),
+            "Créneau horaire": st.column_config.SelectboxColumn("🕒 Créneau horaire", options=list(map_cren.keys()), required=True),
+        },
+    )
+
+    if st.button("💾 Enregistrer les modifications de cette promotion", type="primary", key=f"pe_save_tab_{promo}_{ver}"):
+        changements = []
+        for i, k in enumerate(cles):
+            nd = map_date.get(edite.iloc[i]["Date d'examen"], "")
+            ns = map_cren.get(edite.iloc[i]["Créneau horaire"], "")
+            if nd != ep[k]["date"] or ns != ep[k]["creneau"]:
+                changements.append((k, nd, ns))
+        if not changements:
+            _pe_flash("info", "Aucune modification à enregistrer.")
+        else:
+            anciens = {}
+            for k, _nd, _ns in changements:
+                for m in _pe_membres(store, k):
+                    anciens[m] = (ep[m]["date"], ep[m]["creneau"])
+            for m in anciens:
+                ep[m]["date"], ep[m]["creneau"] = "", ""
+            nb_ok = 0
+            for k, nd, ns in changements:
+                nom = ep[k]["matiere"]
+                if not nd and not ns:
+                    nb_ok += 1
+                    continue
+                if not nd or not ns:
+                    _pe_flash("warning", f"« {nom} » : renseignez la date ET le créneau (modification ignorée).")
+                    ancien = anciens.get(k, ("", ""))
+                    if ancien[0] and ancien[1]:
+                        _pe_appliquer_planning(store, params, k, ancien[0], ancien[1])
+                    continue
+                ok, erreurs = _pe_appliquer_planning(store, params, k, nd, ns)
+                if ok:
+                    nb_ok += 1
+                    autres = [ep[m]["promo"] for m in _pe_membres(store, k) if m != k]
+                    if autres:
+                        _pe_flash("success", f"« {nom} » programmée le {_pe_label_date(nd)} à {ns} — "
+                                             f"synchronisée aussi pour : {', '.join(sorted(autres, key=_pe_cle_nat))}.")
+                else:
+                    _pe_flash("error", f"« {nom} » : modification refusée — " + " ".join(erreurs))
+                    ancien = anciens.get(k, ("", ""))
+                    if ancien[0] and ancien[1]:
+                        ok2, _er = _pe_appliquer_planning(store, params, k, ancien[0], ancien[1])
+                        if not ok2:
+                            _pe_flash("warning", f"« {nom} » : l'ancienne programmation n'a pas pu être rétablie, "
+                                                 f"la matière est à reprogrammer.")
+            if nb_ok:
+                _pe_flash("success", f"{nb_ok} modification(s) enregistrée(s) pour {promo}.")
+            _pe_sauver(store)
+        st.session_state["pe_ver"] = ver + 1
+        st.rerun()
+
+    # ── 5. Répartition automatique ─────────────────────────────────────────
+    st.markdown("### 🪄 Répartition automatique sur la semaine")
+    st.caption(
+        f"Répartit les matières sur les {len(dispos)} jour(s) disponible(s) en respectant : maximum "
+        f"{int(params.get('max_par_jour', 2))} examen(s) par jour et par promotion, jours exclus, créneaux définis, "
+        f"aucun chevauchement, matières communes placées ensemble. Chaque programmation reste modifiable manuellement."
+    )
+    conserver = st.checkbox("Conserver les examens déjà programmés (ne programmer que ceux qui manquent)",
+                            value=True, key="pe_conserver")
+    b1, b2, b3 = st.columns(3)
+    portee = None
+    if b1.button(f"🪄 Répartir {promo}", use_container_width=True, key=f"pe_auto_one_{promo}_{ver}"):
+        portee = [promo]
+    if b2.button("🪄 Répartir toutes les promotions", use_container_width=True, key=f"pe_auto_all_{ver}"):
+        portee = list(promos)
+    if b3.button(f"🗑️ Déprogrammer {promo}", use_container_width=True, key=f"pe_clear_{promo}_{ver}",
+                 help="Les matières communes sont aussi déprogrammées pour les autres promotions liées."):
+        for k in cles:
+            _pe_deprogrammer(store, k)
+        _pe_sauver(store)
+        _pe_flash("success", f"Programmation de {promo} réinitialisée.")
+        st.session_state["pe_ver"] = ver + 1
+        st.rerun()
+    if portee is not None:
+        res = _pe_repartir(store, params, portee, conserver)
+        if res.get("erreur"):
+            _pe_flash("error", res["erreur"])
+        else:
+            _pe_sauver(store)
+            _pe_flash("success", f"{res['places']} matière(s) programmée(s) automatiquement"
+                                 f" ({res['conserves']} déjà programmée(s) conservée(s)).")
+            if res["non_resolues"]:
+                lignes_nr = "\n".join(f"- **{x['Promotion']}** — {x['Matière']} : {x['Raison']}" for x in res["non_resolues"][:15])
+                _pe_flash("warning", f"{len(res['non_resolues'])} matière(s) n'ont pas pu être placées :\n{lignes_nr}")
+        st.session_state["pe_ver"] = ver + 1
+        st.rerun()
+
+    # ── Vue semaine de la promotion ────────────────────────────────────────
+    with st.expander(f"📆 Vue semaine — {promo}", expanded=True):
+        grille = []
+        for d in dispos:
+            ligne = {"Jour": _pe_label_date(d)}
+            for s in slots:
+                ligne[s] = " / ".join(
+                    ep[k]["matiere"] for k in cles if ep[k]["date"] == d and ep[k]["creneau"] == s
+                )
+            grille.append(ligne)
+        st.dataframe(pd.DataFrame(grille), hide_index=True, use_container_width=True)
+
+    # ── 6. Matières communes ───────────────────────────────────────────────
+    with st.expander(f"🔗 Matières communes — {promo}", expanded=False):
+        autres_promos = [p for p in promos if p != promo]
+        st.caption(
+            "Pour chaque matière, choisissez une ou plusieurs autres promotions concernées. La matière sera alors "
+            "programmée à la même date et au même horaire pour toutes ces promotions : programmée une fois, "
+            "elle apparaît déjà programmée dans les autres. Les promotions sont reliées par le nom de la matière ; "
+            "si elle n'existe pas encore dans l'autre promotion, elle y est ajoutée sous le même nom."
+        )
+        if not autres_promos:
+            st.info("Une seule promotion est disponible.")
+        else:
+            with st.form(f"pe_form_com_{dtag}_{promo}_{ver}"):
+                choix = {}
+                for k in cles:
+                    e = ep[k]
+                    liees = [p for p in _pe_commune_avec(store, k) if p in autres_promos]
+                    choix[k] = st.multiselect(
+                        f"📘 {e['matiere']}  ·  {e['charge'] or 'chargé non renseigné'}",
+                        autres_promos, default=liees,
+                        key=f"pe_com_{dtag}_{promo}_{e['base']}_{ver}",
+                        placeholder="Matière commune avec… (laisser vide si propre à cette promotion)",
+                    )
+                soumis = st.form_submit_button("💾 Enregistrer les matières communes", type="primary")
+            if soumis:
+                nb_modif = 0
+                for k, selection in choix.items():
+                    actuel = [p for p in _pe_commune_avec(store, k) if p in autres_promos]
+                    if set(selection) != set(actuel):
+                        nb_modif += 1
+                        for type_msg, message in _pe_definir_communes(store, params, k, selection):
+                            _pe_flash(type_msg, message)
+                if nb_modif:
+                    _pe_sauver(store)
+                else:
+                    _pe_flash("info", "Aucune modification des matières communes.")
+                st.session_state["pe_ver"] = ver + 1
+                st.rerun()
+
+    # ── 7. Contrôle de cohérence ───────────────────────────────────────────
+    st.markdown("### 🛡️ Contrôle de cohérence")
+    anomalies = _pe_controle(store, params)
+    if anomalies:
+        st.error(f"{len(anomalies)} anomalie(s) détectée(s) dans la programmation.")
+        st.dataframe(pd.DataFrame(anomalies), hide_index=True, use_container_width=True)
+    else:
+        st.success("Aucune anomalie : jours autorisés, créneaux définis, maximum par jour, "
+                   "aucun chevauchement et matières communes synchronisées.")
+
+    # ── 8. Récapitulatif par promotion ─────────────────────────────────────
+    st.markdown("### 📊 Récapitulatif par promotion")
+    recap = []
+    for p in promos:
+        v = stats["par_promo"].get(p, {"total": 0, "prog": 0, "communes": 0, "sync": 0})
+        etat = "✅ Programmée" if v["total"] and v["prog"] == v["total"] else (
+            "🟡 Partielle" if v["prog"] else "⏳ Non programmée")
+        recap.append({"Promotion": p, "Matières": v["total"], "Programmées": v["prog"],
+                      "À programmer": v["total"] - v["prog"],
+                      "Matières communes": v["communes"], "Communes synchronisées": v["sync"], "État": etat})
+    st.dataframe(pd.DataFrame(recap), hide_index=True, use_container_width=True)
+
+    with st.expander("📥 Exports et sauvegarde", expanded=False):
+        df_export = _pe_dataframe(store)
+        if df_export.empty:
+            st.caption("Aucune donnée à exporter.")
+        else:
+            st.dataframe(df_export, hide_index=True, use_container_width=True)
+            e1, e2 = st.columns(2)
+            e1.download_button(
+                "📥 Planning des examens (Excel)", _pe_excel_bytes(store),
+                f"Programmation_Examens_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True, key="pe_dl_excel",
+            )
+            e2.download_button(
+                "💾 Sauvegarde de la programmation (JSON)",
+                json.dumps(store, ensure_ascii=False, indent=2).encode("utf-8"),
+                f"programmation_examens_{datetime.now().strftime('%d_%m_%Y')}.json", "application/json",
+                use_container_width=True, key="pe_dl_json",
+            )
+        st.caption("La programmation est enregistrée automatiquement (fichier « programmation_examens.json »). "
+                   "Si le serveur est réinitialisé, restaurez-la avec une sauvegarde JSON.")
+        up = st.file_uploader("📤 Restaurer une sauvegarde JSON", type=["json"], key=f"pe_upload_{pver}")
+        if up is not None and st.button("♻️ Restaurer cette sauvegarde", key=f"pe_restore_{pver}"):
+            try:
+                data = json.loads(up.getvalue().decode("utf-8"))
+                if not isinstance(data, dict) or not isinstance(data.get("epreuves"), dict):
+                    raise ValueError("fichier de sauvegarde invalide")
+                st.session_state["pe_store"] = _pe_normaliser_store(data)
+                _pe_sauver(st.session_state["pe_store"])
+                st.session_state["pe_ver"] = ver + 1
+                st.session_state["pe_params_ver"] = pver + 1
+                _pe_flash("success", "Sauvegarde restaurée.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"❌ Restauration impossible : {exc}")
 
 
 # --- LOGIQUE PRINCIPALE ---
@@ -29104,66 +31252,1177 @@ if df is not None:
         else:
             st.error("Le fichier 'surveillances_Semestre 01-2026-2027.xlsx' non établi pour le moment.")
 
+    elif portail == "🗓️ Programmation Examens":
+        if not is_admin:
+            st.error("Accès réservé au Bureau des Examens.")
+            st.stop()
+        run_programmation_examens()
+
     elif portail == "🤖 Générateur Automatique":
         if not is_admin:
             st.error("Accès réservé au Bureau des Examens.")
+            st.stop()
+
+        st.header("⚙️ Générateur automatique des examens et des surveillances")
+        st.info(
+            "Pendant les examens, les enseignants sont considérés comme libérés de leurs "
+            "cours/TD/TP habituels. Seules les surveillances générées ci-dessous sont "
+            "prises en compte pour détecter les indisponibilités."
+        )
+
+        # ------------------------------------------------------------------
+        # DÉPARTEMENT : seuls ses enseignants surveillent
+        # ------------------------------------------------------------------
+        _idx_dept_g, _labels_dept_g = _pe_index_departements(df)
+        if _labels_dept_g:
+            _opts_dept_g = sorted(_labels_dept_g.keys(), key=lambda d: _labels_dept_g[d].casefold())
+            _pref_dept_g = st.session_state.get("pe_dept_sel")
+            exam_dept = st.selectbox(
+                "🏛️ Département (les surveillances seront affectées uniquement à ses enseignants)",
+                _opts_dept_g, index=_opts_dept_g.index(_pref_dept_g) if _pref_dept_g in _opts_dept_g else 0,
+                format_func=lambda d: _labels_dept_g.get(d, d), key="exam_dept_sel"
+            )
+            exam_dept_label = _labels_dept_g.get(exam_dept, exam_dept)
         else:
-            st.header("⚙️ Moteur de Génération de Surveillances")
-            if "effectifs_db" not in st.session_state:
-                st.session_state.effectifs_db = {"ING1": [50, 4], "MCIL1": [40, 3], "L1MCIL": [288, 4], "L2ELT": [90, 2], "M1RE": [15, 1], "ING2": [16, 1]}
+            exam_dept, exam_dept_label = None, ""
+            st.warning("Aucun département n'est renseigné : tous les enseignants du fichier du personnel sont utilisés.")
+        dept_tag = exam_dept or ""
+        _promos_ok_g = _pe_ui_promotions_departement(df, exam_dept, exam_dept_label)
 
-            with st.expander("📦 Gestion des Effectifs", expanded=False):
-                data_eff = [{"Promotion": k, "Effectif Total": v[0], "Nb de Salles": v[1]} for k, v in st.session_state.effectifs_db.items()]
-                edited_eff = st.data_editor(pd.DataFrame(data_eff), use_container_width=True, num_rows="dynamic", hide_index=True)
-                if st.button("💾 Sauvegarder la configuration"):
-                    st.session_state.effectifs_db = {row["Promotion"]: [int(row["Effectif Total"]), int(row["Nb de Salles"])] for _, row in edited_eff.iterrows()}
-                    st.success("Mis à jour !")
+        # ------------------------------------------------------------------
+        # OUTILS LOCAUX DU GÉNÉRATEUR
+        # ------------------------------------------------------------------
+        def _exam_txt(v):
+            try:
+                if v is None or pd.isna(v):
+                    return ""
+            except Exception:
+                if v is None:
+                    return ""
+            return re.sub(r"\s+", " ", str(v).strip())
 
-            SRC = "surveillances_2027.xlsx"
-            if os.path.exists(SRC):
-                df_src = pd.read_excel(SRC)
-                df_src.columns = [str(c).strip() for c in df_src.columns]
-                for c in df_src.columns: df_src[c] = df_src[c].fillna("").astype(str).str.strip()
-                
-                C_MAT, C_RESP, C_SURV, C_DATE, C_HEURE, C_SALLE, C_PROMO = "matiere", "Chargé de matiere", "Surveillant(s)", "Date", "Heure", "Salle", "Promotion"
-                df_src = df_src[~df_src[C_MAT].str.contains(r'\bTP\b|\bTD\b', case=False, na=False)]
-                liste_profs = sorted([p for p in df_src[C_SURV].unique() if p not in ["", "nan", "Non défini"]])
+        def _exam_norm(v):
+            t = unicodedata.normalize("NFKD", _exam_txt(v).upper())
+            t = "".join(ch for ch in t if not unicodedata.combining(ch))
+            t = re.sub(r"[^A-Z0-9]+", " ", t)
+            return re.sub(r"\s+", " ", t).strip()
 
-                with st.expander("⚖️ Plafonnement", expanded=True):
-                    col1, col2 = st.columns(2)
-                    m_base = col1.number_input("Max séances", min_value=1, value=10)
-                    ratio = col2.number_input("Ratio Étud/Surv", min_value=1, value=25)
-                
-                p_cible = st.multiselect("🎓 Promotions :", sorted(df_src[C_PROMO].unique()))
-                if st.button("🚀 GÉNÉRER LE PLANNING") and p_cible:
-                    stats = {p: 0 for p in liste_profs}
-                    tracker, res_list = [], []
-                    for p_name in p_cible:
-                        df_p = df_src[df_src[C_PROMO] == p_name].drop_duplicates(subset=[C_MAT, C_DATE, C_HEURE])
-                        conf = st.session_state.effectifs_db.get(p_name, [30, 1])
-                        eff_total, nb_salles = conf[0], int(conf[1])
-                        for _, row in df_p.iterrows():
-                            for s_idx in range(1, nb_salles + 1):
-                                eff_salle = eff_total // nb_salles
-                                nb_req = max(2, (eff_salle // ratio) + (1 if eff_salle % ratio > 0 else 0))
-                                equipe = []
-                                tri_prio = sorted(liste_profs, key=lambda x: stats[x])
-                                for p in tri_prio:
-                                    if len(equipe) < nb_req and stats[p] < m_base:
-                                        if not any(t for t in tracker if t['D']==row[C_DATE] and t['H']==row[C_HEURE] and t['N']==p):
-                                            equipe.append(p); stats[p] += 1
-                                            tracker.append({'D': row[C_DATE], 'H': row[C_HEURE], 'N': p})
-                                res_list.append({"Enseignements": row[C_MAT], "Code": "S1-2027", "Enseignants": " & ".join(equipe) if len(equipe) >= 2 else "⚠️ BESOIN RENFORT", "Horaire": row[C_HEURE], "Jours": row[C_DATE], "Lieu": f"Salle {s_idx}" if nb_salles > 1 else row[C_SALLE], "Promotion": f"{p_name} (S{s_idx})" if nb_salles > 1 else p_name})
-                    st.session_state.df_généré = pd.DataFrame(res_list)
-                    st.session_state.stats_charge = stats
+        def _exam_col(df, aliases):
+            if df is None or df.empty:
+                return None
+            index = {_exam_norm(c): c for c in df.columns}
+            for a in aliases:
+                if _exam_norm(a) in index:
+                    return index[_exam_norm(a)]
+            return None
+
+        def _exam_noms(v):
+            morceaux = re.split(r"\s*(?:&|\+|/|;|\bet\b)\s*", _exam_txt(v), flags=re.I)
+            resultat = []
+            vus = set()
+            for nom in morceaux:
+                nom = _exam_txt(nom)
+                cle = _exam_norm(nom)
+                if cle and cle not in {"NAN", "NONE", "NON DEFINI"} and cle not in vus:
+                    vus.add(cle)
+                    resultat.append(nom)
+            return resultat
+
+        def _exam_plage(v):
+            """Retourne les minutes début/fin, y compris pour les créneaux d'une heure."""
+            s = _exam_txt(v).lower().replace(" ", "")
+            s = s.replace("h", ":")
+            valeurs = re.findall(r"(?<!\d)(\d{1,2})(?::(\d{1,2}))?", s)
+            if len(valeurs) >= 2:
+                debut = int(valeurs[0][0]) * 60 + int(valeurs[0][1] or 0)
+                fin = int(valeurs[1][0]) * 60 + int(valeurs[1][1] or 0)
+                if fin <= debut and fin < 12 * 60:
+                    fin += 12 * 60
+                if fin > debut:
+                    return debut, fin
+            return None
+
+        def _exam_matiere_base(v):
+            s = _exam_txt(v)
+            s = re.sub(r"^\s*(?:COURS|COUR|TD|TP)\s*[-:–—]?\s*", "", s, flags=re.I)
+            s = re.sub(r"\s*[-:–—]?\s*(?:SG|G)\s*\d+\s*$", "", s, flags=re.I)
+            return _exam_norm(_pe_sans_section(s))
+
+        def _exam_capacite_effectif(df_etu, promotion):
+            # Effectif = étudiants à inscription validée (liste source), sans doublon
+            if df_etu is None or df_etu.empty or not _exam_col(df_etu, ["Promotion", "Promotions"]):
+                return None
+            return int(len(_etu_promo(df_etu, promotion)))
+
+        # ------------------------------------------------------------------
+        # CHARGEMENT DES SOURCES : examens, personnel et EDT pédagogique
+        # ------------------------------------------------------------------
+        fichier_examens = str(_BASE_DIR / "surveillances_2027.xlsx")
+        fichier_personnel = str(_BASE_DIR / "Permanents-Vacataires-ELT2-2026-2027.xlsx")
+        fichier_edt = str(_BASE_DIR / "dataEDT-ELT-S1-2027.xlsx")
+        if not os.path.exists(fichier_edt):
+            fichier_edt = str(_BASE_DIR / "dataEDT-ELT-S1-2027(1).xlsx")
+
+        # Source des épreuves : programmation par promotion (module « Programmation des
+        # examens ») ou fichier surveillances_2027.xlsx.
+        _df_prog_exam = _pe_vers_dataframe_surveillances(exam_dept, _promos_ok_g)
+        _utiliser_prog = False
+        if not _df_prog_exam.empty:
+            _choix_source_exam = st.radio(
+                "Source des épreuves (matières, promotions, dates et heures) :",
+                ["🗓️ Programmation des examens par promotion", "📄 Fichier surveillances_2027.xlsx"],
+                index=0, key="exam_source_epreuves"
+            )
+            _utiliser_prog = _choix_source_exam.startswith("🗓️")
+            if _utiliser_prog:
+                st.caption(f"{len(_df_prog_exam)} épreuve(s) programmée(s) reprises du module de programmation "
+                           f"(matières communes déjà synchronisées).")
+
+        if _utiliser_prog:
+            df_exam_source = _df_prog_exam.copy()
+        else:
+            if not os.path.exists(fichier_examens):
+                st.error("Le fichier source surveillances_2027.xlsx est introuvable. Il doit contenir les matières, promotions, dates et heures des examens. "
+                         "Vous pouvez aussi programmer les examens dans « Programmation des examens par promotion ».")
+                st.stop()
+            df_exam_source = pd.read_excel(fichier_examens)
+        df_exam_source.columns = [str(c).strip() for c in df_exam_source.columns]
+        df_exam_source = df_exam_source.fillna("")
+        col_mat = _exam_col(df_exam_source, ["matiere", "Matière", "Enseignements", "Enseignement"])
+        col_promo = _exam_col(df_exam_source, ["Promotion", "Promotions"])
+        col_date = _exam_col(df_exam_source, ["Date", "Jour", "Date examen"])
+        col_heure = _exam_col(df_exam_source, ["Heure", "Horaire", "Créneau"])
+        col_lieu = _exam_col(df_exam_source, ["Salle", "Lieu", "Local"])
+        if not all([col_mat, col_promo, col_date, col_heure]):
+            st.error("Colonnes obligatoires absentes du fichier surveillances_2027.xlsx : matière, promotion, date et heure.")
+            st.write("Colonnes détectées :", list(df_exam_source.columns))
+            st.stop()
+        if _promos_ok_g is not None:
+            df_exam_source = df_exam_source[
+                df_exam_source[col_promo].map(lambda v: _pe_norm(v) in _promos_ok_g)].copy()
+
+        df_personnel = pd.read_excel(fichier_personnel) if os.path.exists(fichier_personnel) else pd.DataFrame()
+        df_edt_exam = pd.read_excel(fichier_edt) if os.path.exists(fichier_edt) else pd.DataFrame()
+        if not df_personnel.empty:
+            df_personnel.columns = [str(c).strip() for c in df_personnel.columns]
+        if not df_edt_exam.empty:
+            df_edt_exam.columns = [str(c).strip() for c in df_edt_exam.columns]
+
+        col_nom_p = _exam_col(df_personnel, ["Nom complet", "Enseignant", "Enseignants", "Nom et prénom", "Nom_Prénom"])
+        col_nom = _exam_col(df_personnel, ["NOM", "Nom"])
+        col_prenom = _exam_col(df_personnel, ["PRÉNOM", "Prénom", "PRENOM"])
+        col_qualite = _exam_col(df_personnel, ["Qualité", "Statut", "Catégorie"])
+        if not df_personnel.empty and col_nom_p:
+            df_personnel["_nom_exam"] = df_personnel[col_nom_p].map(_exam_txt)
+        elif not df_personnel.empty and col_nom:
+            df_personnel["_nom_exam"] = df_personnel.apply(
+                lambda r: _exam_txt(r.get(col_nom, "")) + " " + _exam_txt(r.get(col_prenom, "")), axis=1
+            )
+        else:
+            df_personnel["_nom_exam"] = "" if not df_personnel.empty else pd.Series(dtype=str)
+
+        personnel = {}
+        for _, rp in df_personnel.iterrows():
+            nom = _exam_txt(rp.get("_nom_exam", ""))
+            cle = _exam_norm(nom)
+            qualite = _exam_norm(rp.get(col_qualite, "")) if col_qualite else ""
+            if not cle:
+                continue
+            statut = "Permanent" if "PERMANENT" in qualite else ("Vacataire" if "VACATAIRE" in qualite else "Autre")
+            personnel[cle] = {"nom": nom, "statut": statut, "qualite": _exam_txt(rp.get(col_qualite, "")) if col_qualite else ""}
+        if not personnel:
+            st.error("Impossible d'identifier les enseignants et leur Qualité dans le fichier du personnel. Vérifie les colonnes Nom/Prénom et Qualité.")
+            st.stop()
+        if exam_dept:
+            _nb_personnel_total = len(personnel)
+            personnel = {c: p for c, p in personnel.items() if _pe_dept_de(p["nom"], _idx_dept_g) == exam_dept}
+            if not personnel:
+                st.error(f"Aucun enseignant du fichier du personnel n'est rattaché au département « {exam_dept_label} ».")
+                st.stop()
+            st.caption(f"👥 {len(personnel)} enseignant(s) du département « {exam_dept_label} » retenus sur "
+                       f"{_nb_personnel_total} : seuls eux peuvent être affectés aux surveillances.")
+
+        permanents = sorted([v["nom"] for v in personnel.values() if v["statut"] == "Permanent"])
+        vacataires = sorted([v["nom"] for v in personnel.values() if v["statut"] == "Vacataire"])
+        if not permanents or not vacataires:
+            st.error("Le binôme obligatoire nécessite au moins un enseignant Permanent et un enseignant Vacataire correctement identifiés dans le fichier du personnel.")
+            st.stop()
+
+        # ------------------------------------------------------------------
+        # CONFIGURATION DES EFFECTIFS ET DES CAPACITÉS DE LOCAUX
+        # ------------------------------------------------------------------
+        st.subheader("1. Effectifs et capacité des lieux")
+        st.caption("Effectif calculé automatiquement : uniquement les étudiants dont la situation d'inscription est « validée ». "
+                   "Vous pouvez encore le corriger dans le tableau.")
+        effectifs_init = {}
+        promotions_source = sorted({_exam_txt(v) for v in df_exam_source[col_promo].tolist() if _exam_txt(v)})
+        df_etudiants_source = None
+        if os.path.exists(FILE_ETUDIANTS):
+            try:
+                df_etudiants_source = pd.read_excel(FILE_ETUDIANTS)
+            except Exception:
+                df_etudiants_source = None
+
+        for promo in promotions_source:
+            effectif_auto = _exam_capacite_effectif(df_etudiants_source, promo)
+            effectifs_init[promo] = int(effectif_auto or 30)
+
+        df_effectifs = pd.DataFrame([
+            {"Promotion": p, "Effectif": effectifs_init[p]}
+            for p in promotions_source
+        ])
+        effectifs_edites = st.data_editor(
+            df_effectifs, use_container_width=True, hide_index=True,
+            disabled=["Promotion"], key="exam_effectifs_editor"
+        )
+        effectifs_par_promo = {
+            _exam_txt(r["Promotion"]): max(0, int(r["Effectif"]))
+            for _, r in effectifs_edites.iterrows()
+        }
+
+        # Étudiants (inscription validée) de chaque promotion : base de la répartition par lieu
+        _etu_std_all = _etu_standard(df_etudiants_source)
+        _etu_par_promo = {_exam_norm(p): _etu_promo(_etu_std_all, p) for p in promotions_source}
+        _matricules_par_promo = {k: [m for m in d["Matricule"].tolist() if m] for k, d in _etu_par_promo.items()}
+
+        st.markdown("#### 🏛️ Locaux : amphis, salles et étudiants attribués")
+        st.caption(
+            "Choisissez le département et la promotion, indiquez le nombre d'amphis et de salles, "
+            "puis sélectionnez uniquement les locaux autorisés présents dans le fichier EDT : AS01 à AS20 "
+            "et Amphi 01 à Amphi 12. Un local réservé sur un même jour et un même horaire pour une autre "
+            "promotion est automatiquement écarté. Les étudiants validés restent répartis une seule fois "
+            "par local et chaque liste Excel contient toutes les matières d'examen de la promotion."
+        )
+
+        # Les lieux sont lus directement dans le fichier EDT pédagogique : aucune appellation
+        # générique du type « Amphi 1 » ou « Salle 1 » n'est fabriquée.
+        _loc_col_dept = _exam_col(df_edt_exam, ["Département", "Departement", "Dépt"])
+        _loc_col_promo = _exam_col(df_edt_exam, ["Promotion", "Promotions"])
+        _loc_col_lieu = _exam_col(df_edt_exam, ["Lieu", "Salle", "Local", "Locaux"])
+        if df_edt_exam.empty or not _loc_col_promo or not _loc_col_lieu:
+            st.warning("Le fichier EDT pédagogique doit contenir les colonnes Promotion et Lieu pour proposer les locaux réels.")
+        else:
+            _loc_source = df_edt_exam.copy()
+            _loc_source[_loc_col_promo] = _loc_source[_loc_col_promo].map(_exam_txt)
+            _loc_source[_loc_col_lieu] = _loc_source[_loc_col_lieu].map(_exam_txt)
+            _loc_source = _loc_source[
+                _loc_source[_loc_col_promo].ne("") & _loc_source[_loc_col_lieu].ne("")
+            ].copy()
+
+            if _loc_col_dept:
+                _loc_source[_loc_col_dept] = _loc_source[_loc_col_dept].map(_exam_txt)
+                _loc_depts = sorted(
+                    {_exam_txt(v) for v in _loc_source[_loc_col_dept] if _exam_txt(v)},
+                    key=_pe_cle_nat
+                )
+            else:
+                _loc_depts = [exam_dept_label or exam_dept or "Département non renseigné"]
+
+            if not _loc_depts:
+                st.warning("Aucun département n'est renseigné dans la colonne Département du fichier EDT.")
+            else:
+                _loc_dept_def = exam_dept_label if exam_dept_label in _loc_depts else (
+                    exam_dept if exam_dept in _loc_depts else _loc_depts[0]
+                )
+                _loc_dept = st.selectbox(
+                    "🏢 Département", _loc_depts,
+                    index=_loc_depts.index(_loc_dept_def), key="exam_loc_dept_select"
+                )
+                if _loc_col_dept:
+                    _loc_dept_rows = _loc_source[
+                        _loc_source[_loc_col_dept].map(_exam_norm).eq(_exam_norm(_loc_dept))
+                    ].copy()
+                else:
+                    _loc_dept_rows = _loc_source.copy()
+
+                _loc_promos = sorted(
+                    {_exam_txt(v) for v in _loc_dept_rows[_loc_col_promo] if _exam_txt(v)},
+                    key=_pe_cle_nat
+                )
+                if not _loc_promos:
+                    st.info("Aucune promotion disponible pour ce département dans le fichier EDT.")
+                else:
+                    _loc_promo_def = next((p for p in _loc_promos if _exam_norm(p) == _exam_norm(exam_dept)), _loc_promos[0])
+                    _loc_promo = st.selectbox(
+                        "🎓 Promotion", _loc_promos, index=_loc_promos.index(_loc_promo_def),
+                        key="exam_loc_promo_select"
+                    )
+                    _loc_promo_rows = _loc_dept_rows[
+                        _loc_dept_rows[_loc_col_promo].map(_exam_norm).eq(_exam_norm(_loc_promo))
+                    ].copy()
+                    # Toutes les matières réellement programmées pour cette promotion :
+                    # mêmes colonnes sur chaque liste de local, quel que soit l'examen.
+                    _col_mat_loc = _exam_col(df_exam_source, ["Matière", "Matiere", "Enseignements", "Enseignement"])
+                    _matieres_exam_promo = []
+                    _entetes_presence_par_matiere = {}
+                    if _col_mat_loc:
+                        _df_exam_promo_entetes = df_exam_source[
+                            df_exam_source[col_promo].map(_exam_norm).eq(_exam_norm(_loc_promo))
+                        ].copy()
+                        _matieres_exam_promo = list(dict.fromkeys(
+                            _exam_txt(v) for v in _df_exam_promo_entetes[_col_mat_loc].tolist() if _exam_txt(v)
+                        ))
+
+                        # Ajouter au titre de chaque colonne la date ET le jour de l'épreuve.
+                        # Si le fichier fournit une colonne Jour distincte, elle est prioritaire ;
+                        # sinon le jour de la semaine est calculé depuis la date réelle.
+                        _col_date_entete = _exam_col(df_exam_source, ["Date", "Date examen", "Date de l'examen"])
+                        _col_jour_entete = _exam_col(df_exam_source, ["Jour", "Jour examen", "Jour de l'examen"])
+                        _cle_chrono_matiere = {}   # matière -> (date, minutes) de sa 1re épreuve
+                        _details_tri = {}          # matière -> [(date, minutes, "Jour — JJ/MM/AAAA")]
+                        _jours_fr_entete = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+                        for _, _ligne_exam_entete in _df_exam_promo_entetes.iterrows():
+                            _matiere_entete = _exam_txt(_ligne_exam_entete.get(_col_mat_loc, ""))
+                            if not _matiere_entete:
+                                continue
+                            _date_brute_entete = _exam_txt(
+                                _ligne_exam_entete.get(_col_date_entete, "") if _col_date_entete
+                                else _ligne_exam_entete.get(col_date, "")
+                            )
+                            _jour_brut_entete = _exam_txt(
+                                _ligne_exam_entete.get(_col_jour_entete, "")
+                                if _col_jour_entete and _col_jour_entete != _col_date_entete
+                                else ""
+                            )
+                            _date_affichee_entete = ""
+                            _date_parsee_entete = pd.NaT
+                            _jour_affiche_entete = _jour_brut_entete
+                            if _date_brute_entete:
+                                try:
+                                    _date_parsee_entete = pd.to_datetime(_date_brute_entete, dayfirst=True, errors="coerce")
+                                    if pd.notna(_date_parsee_entete):
+                                        _date_affichee_entete = _date_parsee_entete.strftime("%d/%m/%Y")
+                                        if not _jour_affiche_entete:
+                                            _jour_affiche_entete = _jours_fr_entete[_date_parsee_entete.weekday()].capitalize()
+                                except Exception:
+                                    pass
+                                # Lorsque la source ne contient que le nom du jour dans la colonne Date/Jour.
+                                if not _date_affichee_entete and not _jour_affiche_entete:
+                                    _jour_affiche_entete = _date_brute_entete
+                            _detail_date_jour = " — ".join(x for x in [_jour_affiche_entete, _date_affichee_entete] if x)
+                            if _detail_date_jour:
+                                _entetes_presence_par_matiere.setdefault(_matiere_entete, [])
+                                if _detail_date_jour not in _entetes_presence_par_matiere[_matiere_entete]:
+                                    _entetes_presence_par_matiere[_matiere_entete].append(_detail_date_jour)
+                                    # Clé chronologique : date puis heure de début de l'épreuve.
+                                    _h_txt_entete = _exam_txt(_ligne_exam_entete.get(col_heure, ""))
+                                    _m_h_entete = re.search(r"(\d{1,2})\s*[h:]\s*(\d{2})?", _h_txt_entete)
+                                    _min_entete = (int(_m_h_entete.group(1)) * 60 + int(_m_h_entete.group(2) or 0)) if _m_h_entete else 0
+                                    _ts_entete = _date_parsee_entete.normalize() if pd.notna(_date_parsee_entete) else pd.Timestamp.max
+                                    _details_tri.setdefault(_matiere_entete, []).append((_ts_entete, _min_entete, _detail_date_jour))
+                                    _cle_actuelle = _cle_chrono_matiere.get(_matiere_entete)
+                                    if _cle_actuelle is None or (_ts_entete, _min_entete) < _cle_actuelle:
+                                        _cle_chrono_matiere[_matiere_entete] = (_ts_entete, _min_entete)
+                    # Ordre chronologique : colonnes classées de l'examen le plus ancien au plus récent,
+                    # indépendamment de l'ordre des matières dans le fichier source.
+                    if _matieres_exam_promo:
+                        _ordre_source = {m: i for i, m in enumerate(_matieres_exam_promo)}
+                        _matieres_exam_promo = sorted(
+                            _matieres_exam_promo,
+                            key=lambda m: (_cle_chrono_matiere.get(m, (pd.Timestamp.max, 0)), _ordre_source[m])
+                        )
+                        for _m_tri, _liste_tri in _details_tri.items():
+                            _entetes_presence_par_matiere[_m_tri] = [
+                                d for _, _, d in sorted(_liste_tri, key=lambda x: (x[0], x[1]))
+                            ]
+                    # La liste des locaux dépend uniquement du département sélectionné,
+                    # et non de la promotion. On conserve exclusivement AS01-AS20 et Amphi 01-Amphi 12.
+                    _loc_dept_lieux = sorted(
+                        {_exam_txt(v) for v in _loc_dept_rows[_loc_col_lieu] if _exam_txt(v)},
+                        key=_pe_cle_nat
+                    )
+                    def _local_exam_autorise(_nom):
+                        _n = _exam_txt(_nom).strip()
+                        return bool(
+                            re.fullmatch(r"AS\s*0?(?:[1-9]|1[0-9]|20)", _n, flags=re.IGNORECASE)
+                            or re.fullmatch(r"Amphi\s*0?(?:[1-9]|1[0-2])", _n, flags=re.IGNORECASE)
+                        )
+                    _lieux_reels = [x for x in _loc_dept_lieux if _local_exam_autorise(x)]
+                    _amphis_reels = [l for l in _lieux_reels if _exam_norm(l).startswith("AMPHI")]
+                    _salles_reelles = [l for l in _lieux_reels if re.match(r"^AS", _exam_norm(l))]
+
+                    st.caption(
+                        f"Locaux autorisés dans le département {_loc_dept} : "
+                        f"{len(_amphis_reels)} amphi(s), {len(_salles_reelles)} salle(s). "
+                        "Seuls Amphi 01 à Amphi 12 et AS01 à AS20 sont proposés."
+                    )
+                    if not _lieux_reels:
+                        st.warning(
+                            "Aucun des locaux autorisés (AS01-AS20 ou Amphi 01-Amphi 12) "
+                            "n'a été trouvé dans le fichier EDT pour ce département."
+                        )
+                    else:
+                        _loc_etudiants_source = df_etudiants_source
+                        if _loc_etudiants_source is not None and not _loc_etudiants_source.empty:
+                            _loc_etudiants_source = _loc_etudiants_source.copy()
+                            _loc_etu_dept_col = _etu_col(_loc_etudiants_source, ["Département", "Departement", "Dépt"])
+                            if _loc_etu_dept_col:
+                                _loc_etu_dept_values = _loc_etudiants_source[_loc_etu_dept_col].map(_exam_txt)
+                                _loc_etu_dept_match = _loc_etu_dept_values.map(_exam_norm).eq(_exam_norm(_loc_dept))
+                                if _loc_etu_dept_match.any():
+                                    _loc_etudiants_source = _loc_etudiants_source[_loc_etu_dept_match].copy()
+                            _loc_std = _etu_standard(_loc_etudiants_source)
+                            _loc_etudiants = _etu_promo(_loc_std, _loc_promo)
+                        else:
+                            _loc_etudiants = pd.DataFrame(columns=_ETU_COLS)
+
+                        _eff_loc = len(_loc_etudiants)
+                        st.metric("Étudiants inscrits validés dans la promotion", _eff_loc)
+
+                        # Tous les créneaux d'examen de la promotion sont pris en compte.
+                        # Un local affecté à cette promotion est donc réservé sur chacun de ses créneaux.
+                        _loc_rows_exam_promo = df_exam_source[
+                            df_exam_source[col_promo].map(_exam_norm).eq(_exam_norm(_loc_promo))
+                        ].copy()
+                        _slots_promo = {}
+                        for _, _slot_row in _loc_rows_exam_promo.iterrows():
+                            _jour_brut = _exam_txt(_slot_row.get(col_date, ""))
+                            _heure_brute = _exam_txt(_slot_row.get(col_heure, ""))
+                            if _jour_brut and _heure_brute:
+                                _slots_promo[(_exam_norm(_jour_brut), _exam_norm(_heure_brute))] = (
+                                    _jour_brut, _heure_brute
+                                )
+                        _slots_promo_liste = list(_slots_promo.values())
+                        if not _slots_promo_liste:
+                            st.warning(
+                                "Aucun jour/date et horaire d'examen n'a été trouvé pour cette promotion. "
+                                "La vérification des conflits de locaux ne peut pas être effectuée."
+                            )
+
+                        # Réservations conservées pendant la session Streamlit courante.
+                        _reservations_loc = st.session_state.setdefault("exam_loc_reservations", {})
+                        _cle_affectation_loc = f"{_exam_norm(_loc_dept)}|{_exam_norm(_loc_promo)}"
+                        _affectation_existante = _reservations_loc.get(_cle_affectation_loc, {})
+                        _slots_courants_cles = {
+                            (_exam_norm(j), _exam_norm(h)) for j, h in _slots_promo_liste
+                        }
+                        _locaux_occupes = {}
+                        for _cle_autre, _reservation in _reservations_loc.items():
+                            if _cle_autre == _cle_affectation_loc:
+                                continue
+                            _slots_autres = set(_reservation.get("slots_keys", []))
+                            _chevauchement = _slots_courants_cles.intersection(_slots_autres)
+                            if not _chevauchement:
+                                continue
+                            for _local_reserve in _reservation.get("lieux", []):
+                                _locaux_occupes.setdefault(_local_reserve, []).append({
+                                    "promotion": _reservation.get("promotion", "Autre promotion"),
+                                    "departement": _reservation.get("departement", ""),
+                                    "creneaux": [
+                                        f"{_reservation.get('slots_display', {}).get(k, (k[0], k[1])[0])} "
+                                        f"— {_reservation.get('slots_display', {}).get(k, (k[0], k[1])[1])}"
+                                        for k in sorted(_chevauchement)
+                                    ],
+                                })
+
+                        if _locaux_occupes:
+                            st.markdown("**🚫 Locaux déjà occupés sur un ou plusieurs créneaux de cette promotion**")
+                            for _local_occupe, _details_occupe in sorted(_locaux_occupes.items(), key=lambda x: _pe_cle_nat(x[0])):
+                                for _detail_occupe in _details_occupe:
+                                    st.warning(
+                                        f"{_local_occupe} : déjà occupé par la promotion "
+                                        f"{_detail_occupe['promotion']} — "
+                                        f"{', '.join(_detail_occupe['creneaux'])}."
+                                    )
+
+                        _amphis_libres = [x for x in _amphis_reels if x not in _locaux_occupes]
+                        _salles_libres = [x for x in _salles_reelles if x not in _locaux_occupes]
+                        _lieux_libres = _amphis_libres + _salles_libres
+                        _lieux_existants_courants = list(_affectation_existante.get("lieux", []))
+                        # Les locaux déjà enregistrés pour cette même promotion restent modifiables.
+                        _amphis_options = sorted(
+                            set(_amphis_libres).union(x for x in _lieux_existants_courants if x in _amphis_reels),
+                            key=_pe_cle_nat
+                        )
+                        _salles_options = sorted(
+                            set(_salles_libres).union(x for x in _lieux_existants_courants if x in _salles_reelles),
+                            key=_pe_cle_nat
+                        )
+                        _nb_amphi_def = sum(1 for x in _lieux_existants_courants if x in _amphis_reels)
+                        _nb_salle_def = sum(1 for x in _lieux_existants_courants if x in _salles_reelles)
+                        _n_amphi = int(st.number_input(
+                            f"Nombre d'amphis à attribuer (maximum : {len(_amphis_options)})",
+                            min_value=0, max_value=len(_amphis_options),
+                            value=min(_nb_amphi_def or 1, len(_amphis_options)), step=1,
+                            key=f"exam_loc_nb_amphi_{_exam_norm(_loc_dept)}_{_exam_norm(_loc_promo)}"
+                        ))
+                        _n_salle = int(st.number_input(
+                            f"Nombre de salles à attribuer (maximum : {len(_salles_options)})",
+                            min_value=0, max_value=len(_salles_options),
+                            value=min(_nb_salle_def or (1 if not _n_amphi else 0), len(_salles_options)), step=1,
+                            key=f"exam_loc_nb_salle_{_exam_norm(_loc_dept)}_{_exam_norm(_loc_promo)}"
+                        ))
+
+                        _loc_choisis = []
+                        _col_a, _col_s = st.columns(2)
+                        with _col_a:
+                            st.markdown("**🏛️ Amphis disponibles**")
+                            for _i in range(_n_amphi):
+                                _options_amphi = [x for x in _amphis_options if x not in _loc_choisis]
+                                if not _options_amphi:
+                                    break
+                                _ancien = _lieux_existants_courants[_i] if _i < len(_lieux_existants_courants) else None
+                                _idx = _options_amphi.index(_ancien) if _ancien in _options_amphi else 0
+                                _choix = st.selectbox(
+                                    f"Amphi {_i + 1}", _options_amphi, index=_idx,
+                                    key=f"exam_loc_amphi_{_exam_norm(_loc_dept)}_{_exam_norm(_loc_promo)}_{_i}"
+                                )
+                                _loc_choisis.append(_choix)
+                        with _col_s:
+                            st.markdown("**🏫 Salles disponibles**")
+                            for _i in range(_n_salle):
+                                _options_salle = [x for x in _salles_options if x not in _loc_choisis]
+                                if not _options_salle:
+                                    break
+                                _anciens_salles = [x for x in _lieux_existants_courants if x in _salles_reelles]
+                                _ancien = _anciens_salles[_i] if _i < len(_anciens_salles) else None
+                                _idx = _options_salle.index(_ancien) if _ancien in _options_salle else 0
+                                _choix = st.selectbox(
+                                    f"Salle {_i + 1}", _options_salle, index=_idx,
+                                    key=f"exam_loc_salle_{_exam_norm(_loc_dept)}_{_exam_norm(_loc_promo)}_{_i}"
+                                )
+                                _loc_choisis.append(_choix)
+
+                        if not _loc_choisis:
+                            st.info("Sélectionnez au moins un amphi ou une salle disponible pour répartir les étudiants.")
+                        elif _eff_loc == 0:
+                            st.warning("Aucun étudiant à inscription validée n'a été trouvé pour cette promotion.")
+                        else:
+                            st.caption(
+                                f"Créneaux pris en compte pour {_loc_promo} : "
+                                + (" ; ".join(f"{j} — {h}" for j, h in _slots_promo_liste)
+                                   if _slots_promo_liste else "aucun créneau détecté")
+                            )
+                            if st.button(
+                                "✅ Confirmer la répartition et réserver ces locaux",
+                                key=f"exam_loc_confirm_{_exam_norm(_loc_dept)}_{_exam_norm(_loc_promo)}",
+                                type="primary", use_container_width=True
+                            ):
+                                if not _slots_promo_liste:
+                                    st.error("Impossible de réserver les locaux sans jour/date et horaire d'examen.")
+                                else:
+                                    # Dernière vérification avant validation, pour éviter toute double réservation.
+                                    _conflits_validation = {}
+                                    for _cle_autre, _reservation in _reservations_loc.items():
+                                        if _cle_autre == _cle_affectation_loc:
+                                            continue
+                                        _communs = _slots_courants_cles.intersection(set(_reservation.get("slots_keys", [])))
+                                        if _communs:
+                                            for _lieu_res in _reservation.get("lieux", []):
+                                                if _lieu_res in _loc_choisis:
+                                                    _conflits_validation.setdefault(_lieu_res, set()).add(_reservation.get("promotion", "Autre promotion"))
+                                    if _conflits_validation:
+                                        for _lieu_conf, _promos_conf in _conflits_validation.items():
+                                            st.error(f"Lieu déjà occupé : {_lieu_conf} par {', '.join(sorted(_promos_conf))}. Choisissez un autre local.")
+                                    else:
+                                        _reservations_loc[_cle_affectation_loc] = {
+                                            "departement": _loc_dept,
+                                            "promotion": _loc_promo,
+                                            "lieux": list(_loc_choisis),
+                                            "slots_keys": list(_slots_courants_cles),
+                                            "slots_display": {(_exam_norm(j), _exam_norm(h)): (j, h) for j, h in _slots_promo_liste},
+                                        }
+                                        st.session_state["exam_loc_reservations"] = _reservations_loc
+                                        st.success("Locaux réservés pour tous les créneaux d'examen de cette promotion.")
+                                        st.rerun()
+
+                            # Les exports sont proposés seulement après confirmation de la réservation.
+                            _affectation_confirmee = _reservations_loc.get(_cle_affectation_loc, {})
+                            _repartition_saisie = []
+                            if set(_affectation_confirmee.get("lieux", [])) == set(_loc_choisis) and _affectation_confirmee:
+                                _nb_loc = len(_loc_choisis)
+                                _base_loc, _reste_loc = divmod(_eff_loc, _nb_loc)
+                                _repartition_auto = [_base_loc + (1 if _i < _reste_loc else 0) for _i in range(_nb_loc)]
+                                _cle_rep = f"{_exam_norm(_loc_dept)}_{_exam_norm(_loc_promo)}"
+                                _ver_rep = st.session_state.get(f"exam_loc_rep_ver_{_cle_rep}", 0)
+                                st.markdown("**✏️ Modifier le nombre d'étudiants par local**")
+                                st.caption(
+                                    "La répartition équilibrée est proposée par défaut. Modifiez la colonne "
+                                    "« Nombre d'étudiants » ; la somme doit rester égale à l'effectif de la promotion."
+                                )
+                                _rep_edit = st.data_editor(
+                                    pd.DataFrame({
+                                        "Local": list(_loc_choisis),
+                                        "Type": ["Amphi" if "AMPHI" in _exam_norm(x) else "Salle" for x in _loc_choisis],
+                                        "Nombre d'étudiants": _repartition_auto,
+                                    }),
+                                    hide_index=True, use_container_width=True, disabled=["Local", "Type"],
+                                    column_config={"Nombre d'étudiants": st.column_config.NumberColumn(
+                                        "Nombre d'étudiants", min_value=0, max_value=int(_eff_loc), step=1, required=True)},
+                                    key=f"exam_loc_rep_editor_{_cle_rep}_{'|'.join(_loc_choisis)}_{_eff_loc}_{_ver_rep}"
+                                )
+                                _repartition_saisie = [
+                                    int(v) if pd.notna(v) else 0 for v in _rep_edit["Nombre d'étudiants"].tolist()
+                                ]
+                                _total_saisi = sum(_repartition_saisie)
+                                _c_rep1, _c_rep2, _c_rep3 = st.columns([1, 1, 1])
+                                _c_rep1.metric("Étudiants à répartir", _eff_loc)
+                                _c_rep2.metric("Étudiants attribués", _total_saisi, delta=_total_saisi - _eff_loc,
+                                               delta_color="off")
+                                if _c_rep3.button("↩️ Répartition équilibrée", key=f"exam_loc_rep_reset_{_cle_rep}",
+                                                  use_container_width=True):
+                                    st.session_state[f"exam_loc_rep_ver_{_cle_rep}"] = _ver_rep + 1
+                                    st.rerun()
+                                if _total_saisi != _eff_loc:
+                                    st.error(
+                                        f"La somme des effectifs ({_total_saisi}) ne correspond pas aux "
+                                        f"{_eff_loc} étudiant(s) de la promotion "
+                                        f"(écart : {_total_saisi - _eff_loc:+d}). Corrigez le tableau pour activer les exports."
+                                    )
+                                    _repartition_saisie = None
+                            if set(_affectation_confirmee.get("lieux", [])) == set(_loc_choisis) and _affectation_confirmee \
+                                    and _repartition_saisie is not None:
+                                # Affectation initiale selon les effectifs saisis, puis modification
+                                # étudiant par étudiant (déplacement d'un local à l'autre).
+                                _affect_defaut = []
+                                for _i_aff, _nom_aff in enumerate(_loc_choisis):
+                                    _affect_defaut.extend([_nom_aff] * _repartition_saisie[_i_aff])
+                                _aff_cols = [c for c in ["Matricule", "Nom", "Prénom", "Groupe", "Sous-groupe"]
+                                             if c in _loc_etudiants.columns]
+                                _df_aff = _loc_etudiants[_aff_cols].reset_index(drop=True).copy()
+                                _df_aff.insert(0, "Local", _affect_defaut)
+                                _ver_etu = st.session_state.get(f"exam_loc_etu_ver_{_cle_rep}", 0)
+                                st.markdown("**🔀 Déplacer des étudiants d'un local à l'autre**")
+                                st.caption(
+                                    "Dans la colonne « Local », choisissez le nouveau local de chaque étudiant "
+                                    "(la table se filtre et se trie via les en-têtes). Modifier les effectifs "
+                                    "ci-dessus réinitialise cette liste."
+                                )
+                                _etu_edit = st.data_editor(
+                                    _df_aff, hide_index=True, use_container_width=True,
+                                    disabled=_aff_cols, height=420,
+                                    column_config={"Local": st.column_config.SelectboxColumn(
+                                        "Local", options=list(_loc_choisis), required=True)},
+                                    key=f"exam_loc_etu_editor_{_cle_rep}_{'|'.join(_loc_choisis)}_"
+                                        f"{'-'.join(map(str, _repartition_saisie))}_{_ver_etu}"
+                                )
+                                if st.button("↩️ Annuler les déplacements d'étudiants",
+                                             key=f"exam_loc_etu_reset_{_cle_rep}"):
+                                    st.session_state[f"exam_loc_etu_ver_{_cle_rep}"] = _ver_etu + 1
+                                    st.rerun()
+                                _affect_finale = [
+                                    v if v in _loc_choisis else _affect_defaut[_k]
+                                    for _k, v in enumerate(_etu_edit["Local"].tolist())
+                                ]
+                                _loc_etudiants_reset = _loc_etudiants.reset_index(drop=True)
+                                # Répartition finale mémorisée : utilisée ensuite par la génération des surveillances.
+                                _plan_final = {"departement": _loc_dept, "promotion": _loc_promo,
+                                               "effectifs": {}, "matricules": {}}
+                                for _nom_pf in _loc_choisis:
+                                    _m_pf = [a == _nom_pf for a in _affect_finale]
+                                    _plan_final["effectifs"][_nom_pf] = int(sum(_m_pf))
+                                    _plan_final["matricules"][_nom_pf] = [
+                                        x for x in _loc_etudiants_reset[_m_pf]["Matricule"].tolist() if x
+                                    ]
+                                st.session_state.setdefault("exam_loc_plan", {})[_cle_affectation_loc] = _plan_final
+                                _feuilles_loc = []
+                                _resume_loc = []
+                                for _i, _nom_loc in enumerate(_loc_choisis):
+                                    _masque_loc = [a == _nom_loc for a in _affect_finale]
+                                    _part_loc = _loc_etudiants_reset[_masque_loc].copy().reset_index(drop=True)
+                                    if _part_loc.empty:
+                                        st.warning(f"{_nom_loc} ne contient aucun étudiant.")
+                                    for _matiere_presence in _matieres_exam_promo:
+                                        _details_exam_presence = _entetes_presence_par_matiere.get(_matiere_presence, [])
+                                        _date_jour_presence = "\n".join(_details_exam_presence) if _details_exam_presence else "Date/jour non renseigné"
+                                        _col_presence = f"Présence\n{_matiere_presence}\n{_date_jour_presence}"
+                                        if _col_presence not in _part_loc.columns:
+                                            _part_loc[_col_presence] = ""
+                                    _infos_loc = [
+                                        f"Liste des étudiants — {_loc_promo}",
+                                        f"Département : {_loc_dept}",
+                                        f"Local : {_nom_loc}   |   Effectif attribué : {len(_part_loc)}",
+                                    ]
+                                    _feuilles_loc.append((_nom_loc, _infos_loc, _part_loc))
+                                    _resume_loc.append({"Local": _nom_loc, "Type": "Amphi" if "AMPHI" in _exam_norm(_nom_loc) else "Salle",
+                                                        "Nombre d'étudiants": len(_part_loc)})
+                                st.success(f"Répartition confirmée : {_eff_loc} étudiant(s) réparti(s) dans {len(_loc_choisis)} local(aux).")
+                                st.dataframe(pd.DataFrame(_resume_loc), use_container_width=True, hide_index=True)
+                                _dl_cols = st.columns(min(3, len(_feuilles_loc)))
+                                for _i, (_nom_loc, _infos_loc, _part_loc) in enumerate(_feuilles_loc):
+                                    with _dl_cols[_i % len(_dl_cols)]:
+                                        st.download_button(
+                                            f"📥 Excel — {_nom_loc} ({len(_part_loc)})",
+                                            _etu_excel_bytes([(_nom_loc, _infos_loc, _part_loc)]),
+                                            f"Etudiants_{_surv_nom_fichier(_loc_promo)}_{_surv_nom_fichier(_nom_loc)}.xlsx",
+                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                            use_container_width=True,
+                                            key=f"exam_loc_dl_{_exam_norm(_loc_dept)}_{_exam_norm(_loc_promo)}_{_i}"
+                                        )
+                                st.download_button(
+                                    "📦 Télécharger toutes les listes par local (Excel)",
+                                    _etu_excel_bytes(_feuilles_loc),
+                                    f"Repartition_{_surv_nom_fichier(_loc_dept)}_{_surv_nom_fichier(_loc_promo)}.xlsx",
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True,
+                                    key=f"exam_loc_dl_all_{_exam_norm(_loc_dept)}_{_exam_norm(_loc_promo)}"
+                                )
+
+        # ------------------------------------------------------------------
+        # QUOTAS ET EXCLUSIONS STRICTES PAR ENSEIGNANT
+        # ------------------------------------------------------------------
+        st.subheader("2. Quotas et exclusions du personnel")
+        st.caption("Pour chaque statut, cochez progressivement dans la liste déroulante les enseignants à exclure des "
+                   "surveillances, puis fixez le nombre de surveillances : une valeur par défaut pour tout le statut, "
+                   "modifiable enseignant par enseignant.")
+        quota_par_nom = {}
+        exclus = set()
+        _onglets = st.tabs([f"👔 Permanents ({len(permanents)})", f"🎓 Vacataires ({len(vacataires)})"])
+        for _onglet, _statut, _noms in zip(_onglets, ["Permanent", "Vacataire"], [permanents, vacataires]):
+            with _onglet:
+                _pre = _statut.lower()
+                _qdef = int(st.number_input(f"Nombre de surveillances par défaut ({_statut}s)", min_value=0,
+                                            max_value=50, value=5, step=1, key=f"exam_quota_def_{_pre}"))
+                _exc_sel = st.multiselect(
+                    f"🚫 {_statut}s à exclure des surveillances (cochez dans la liste)", _noms,
+                    key=_surv_cle(f"exam_excl_{_pre}", _noms), placeholder="Choisir les enseignants à exclure…")
+                _vq = st.session_state.get(f"exam_quota_ver_{_pre}", 0)
+                _q_edit = st.data_editor(
+                    pd.DataFrame([{"Enseignant": n, "Exclu": n in _exc_sel, "Nombre de surveillances": _qdef}
+                                  for n in _noms]),
+                    hide_index=True, use_container_width=True, disabled=["Enseignant", "Exclu"],
+                    column_config={"Nombre de surveillances": st.column_config.NumberColumn(
+                        "Nombre de surveillances", min_value=0, max_value=50, step=1)},
+                    key=_surv_cle(f"exam_quota_editor_{_pre}_{_vq}", _noms)
+                )
+                if st.button("↩️ Réinitialiser les nombres individuels", key=f"exam_quota_reset_{_pre}"):
+                    st.session_state[f"exam_quota_ver_{_pre}"] = _vq + 1
                     st.rerun()
+                _total_q = 0
+                for _, _rq in _q_edit.iterrows():
+                    _cle_q = _exam_norm(_rq["Enseignant"])
+                    _qv = _rq["Nombre de surveillances"]
+                    quota_par_nom[_cle_q] = max(0, int(_qv)) if pd.notna(_qv) else _qdef
+                    if _rq["Enseignant"] in _exc_sel:
+                        exclus.add(_cle_q)
+                    else:
+                        _total_q += quota_par_nom[_cle_q]
+                _k1, _k2, _k3 = st.columns(3)
+                _k1.metric(f"{_statut}s retenus", len(_noms) - len(_exc_sel))
+                _k2.metric(f"{_statut}s exclus", len(_exc_sel))
+                _k3.metric("Surveillances disponibles", _total_q)
 
-                if st.session_state.get("df_généré") is not None:
-                    st.dataframe(st.session_state.df_généré, use_container_width=True, hide_index=True)
-                    xlsx_buf = io.BytesIO()
-                    with pd.ExcelWriter(xlsx_buf, engine='xlsxwriter') as writer: st.session_state.df_généré.to_excel(writer, index=False)
-                    st.download_button("📥 TÉLÉCHARGER LE PLANNING", xlsx_buf.getvalue(), "EDT_Surveillances_2027.xlsx")
+        # ------------------------------------------------------------------
+        # EXTRACTION DU RESPONSABLE DU COURS DEPUIS L'EDT
+        # ------------------------------------------------------------------
+        edt_c_mat = _exam_col(df_edt_exam, ["Enseignements", "Enseignement", "Matière"])
+        edt_c_ens = _exam_col(df_edt_exam, ["Enseignants", "Enseignant", "Chargé de matière"])
+        edt_c_promo = _exam_col(df_edt_exam, ["Promotion", "Promotions"])
+        responsables = {}
+        if not df_edt_exam.empty and edt_c_mat and edt_c_ens and edt_c_promo:
+            for _, redit in df_edt_exam.iterrows():
+                mat_base = _exam_matiere_base(redit.get(edt_c_mat, ""))
+                promo_key = _exam_norm(redit.get(edt_c_promo, ""))
+                if mat_base and promo_key:
+                    cle = (promo_key, mat_base)
+                    responsables.setdefault(cle, [])
+                    for n in _exam_noms(redit.get(edt_c_ens, "")):
+                        if _exam_norm(n) not in {_exam_norm(x) for x in responsables[cle]}:
+                            responsables[cle].append(n)
 
+        st.subheader("3. Paramètres de surveillance")
+        col_ratio, col_common = st.columns(2)
+        ratio_etudiants = col_ratio.number_input("Étudiants maximum par surveillant", min_value=1, max_value=100, value=25, key="exam_ratio")
+        synchroniser_communs = col_common.checkbox("Synchroniser les matières communes entre promotions", value=True, key="exam_common_sync")
+        st.caption("Chaque lieu reçoit exactement un binôme : 1 Permanent responsable du lieu + 1 Vacataire co-surveillant.")
+
+        # Les dates et heures restent celles de la source. Aucune date n'est inventée.
+        df_exam = df_exam_source.copy()
+        df_exam["_matiere"] = df_exam[col_mat].map(_exam_txt)
+        df_exam["_promo"] = df_exam[col_promo].map(_exam_txt)
+        df_exam["_date"] = df_exam[col_date].map(_exam_txt)
+        df_exam["_heure"] = df_exam[col_heure].map(_exam_txt)
+        if col_lieu:
+            df_exam["_lieu_source"] = df_exam[col_lieu].map(_exam_txt)
+        else:
+            df_exam["_lieu_source"] = ""
+
+        # Écarter les lignes vides et les TD/TP : le générateur concerne les épreuves de matières.
+        df_exam = df_exam[
+            df_exam["_matiere"].ne("") & df_exam["_promo"].ne("") &
+            df_exam["_date"].ne("") & df_exam["_heure"].ne("")
+        ].copy()
+        df_exam = df_exam[~df_exam["_matiere"].str.contains(r"^\s*(?:TD|TP)\s*[-:]", case=False, na=False)]
+        if df_exam.empty:
+            st.warning("Aucune épreuve exploitable : vérifie les matières, promotions, dates et heures dans surveillances_2027.xlsx.")
+            st.stop()
+
+        # Regrouper les occurrences identiques; une matière commune garde une épreuve unique.
+        df_exam["_matiere_base"] = df_exam["_matiere"].map(_exam_matiere_base)
+        df_exam["_promo_key"] = df_exam["_promo"].map(_exam_norm)
+        df_exam["_date_key"] = df_exam["_date"].map(_exam_norm)
+        df_exam["_heure_key"] = df_exam["_heure"].map(_exam_norm)
+
+        # Pour les matières communes, on retient un créneau commun unique pour la même promotion
+        # (la première occurrence source est la référence); l'affectation reste vérifiable.
+        if synchroniser_communs and not _utiliser_prog:
+            for mat_base, indices in df_exam.groupby("_matiere_base").groups.items():
+                if len(indices) > 1:
+                    premier = df_exam.loc[list(indices)[0]]
+                    for idx in list(indices):
+                        df_exam.loc[idx, "_date"] = premier["_date"]
+                        df_exam.loc[idx, "_heure"] = premier["_heure"]
+                        df_exam.loc[idx, "_date_key"] = premier["_date_key"]
+                        df_exam.loc[idx, "_heure_key"] = premier["_heure_key"]
+
+        df_exam = df_exam.drop_duplicates(subset=["_matiere_base", "_promo_key", "_date_key", "_heure_key"]).copy()
+
+        # ------------------------------------------------------------------
+        # CHOIX DE LA PROMOTION À GÉNÉRER
+        # ------------------------------------------------------------------
+        _TOUTES_PROMOS = "Toutes les promotions"
+        _promos_gen = sorted({p for p in df_exam["_promo"].tolist() if p}, key=_pe_cle_nat)
+        _choix_promo_gen = st.selectbox(
+            "🎓 Promotion à générer", [_TOUTES_PROMOS] + _promos_gen,
+            key=_surv_cle("exam_promo_gen", _promos_gen),
+            help="Les surveillances déjà générées pour les autres promotions sont conservées et prises en "
+                 "compte (aucun enseignant ni local réservé deux fois, quotas cumulés)."
+        )
+        _generer_toutes = (_choix_promo_gen == _TOUTES_PROMOS)
+        df_exam_cible = df_exam if _generer_toutes else df_exam[df_exam["_promo"] == _choix_promo_gen].copy()
+
+        # ------------------------------------------------------------------
+        # MOTEUR D'AFFECTATION : aucune double réservation de local ou prof
+        # ------------------------------------------------------------------
+        if st.button("🚀 GÉNÉRER LE PLANNING SANS CHEVAUCHEMENT", type="primary", use_container_width=True, key="exam_generate_no_conflict"):
+            planning = []
+            compteur = {cle: 0 for cle in personnel}
+            occupation_prof = defaultdict(list)
+            occupation_lieu = defaultdict(list)
+            erreurs = []
+
+            # Historique : on remplace uniquement la portée générée (département + promotion) ;
+            # tout le reste est conservé et occupe déjà les enseignants et les locaux.
+            _historique = _hist_surv_charger()
+            _conserves = [
+                r for r in _historique
+                if not (r.get("Département", "") == dept_tag
+                        and (_generer_toutes or _exam_txt(r.get("Promotion")) == _choix_promo_gen))
+            ]
+            for _r in _conserves:
+                _jour_r = _exam_norm(_r.get("Date", ""))
+                _plage_r = _exam_plage(_r.get("Heure", ""))
+                for _col_n in ("Permanent responsable du lieu", "Vacataire co-surveillant"):
+                    _cle_n = _exam_norm(_r.get(_col_n, ""))
+                    if _cle_n in personnel:
+                        compteur[_cle_n] = compteur.get(_cle_n, 0) + 1
+                        occupation_prof[_cle_n].append({"jour": _jour_r, "plage": _plage_r,
+                                                        "matiere": _r.get("Matière", ""), "lieu": _r.get("Lieu", "")})
+                occupation_lieu[_exam_norm(_r.get("Lieu", ""))].append(
+                    {"jour": _jour_r, "plage": _plage_r, "matiere": _r.get("Matière", ""), "promo": _r.get("Promotion", "")})
+
+            def _est_libre(occupations, jour, plage):
+                if plage is None:
+                    return not any(x["jour"] == _exam_norm(jour) for x in occupations)
+                for x in occupations:
+                    if x["jour"] != _exam_norm(jour):
+                        continue
+                    autre = x.get("plage")
+                    if autre is None:
+                        return False
+                    if plage[0] < autre[1] and autre[0] < plage[1]:
+                        return False
+                return True
+
+            # Règle : un chargé de matière ne peut pas surveiller un AUTRE examen pendant son propre
+            # examen. Son examen reste libre pour lui (il peut le surveiller), mais bloque tout le reste.
+            occupation_charge = defaultdict(list)
+
+            def _charges_de(_ex):
+                _noms = responsables.get((_ex["_promo_key"], _ex["_matiere_base"]), [])
+                if not _noms:
+                    for (_pk, _mb), _n in responsables.items():
+                        if _mb == _ex["_matiere_base"] and _n:
+                            _noms = _n
+                            break
+                return _noms
+
+            for _, _ex in df_exam.iterrows():
+                _j_ex = _exam_norm(_ex["_date"])
+                if not _j_ex or not _exam_txt(_ex["_heure"]):
+                    continue
+                _pl_ex = _exam_plage(_ex["_heure"])
+                _id_ex = (_ex["_matiere_base"], _j_ex, _exam_norm(_ex["_heure"]))
+                for _n_ex in _charges_de(_ex):
+                    _c_ex = _exam_norm(_n_ex)
+                    if _c_ex in personnel:
+                        occupation_charge[_c_ex].append(
+                            {"jour": _j_ex, "plage": _pl_ex, "id": _id_ex, "matiere": _ex["_matiere"]})
+
+            def _choisir_profils(statut, jour, plage, responsable=None, deja=(), exam_id=None):
+                candidats = []
+                for cle, p in personnel.items():
+                    if p["statut"] != statut or cle in exclus or cle in deja:
+                        continue
+                    if compteur.get(cle, 0) >= quota_par_nom.get(cle, 0):
+                        continue
+                    if not _est_libre(occupation_prof[cle], jour, plage):
+                        continue
+                    if not _est_libre([x for x in occupation_charge[cle] if x["id"] != exam_id], jour, plage):
+                        continue   # chargé de matière d'un autre examen au même moment
+                    # Règle de charge journalière : au plus 3 surveillances par jour ; dès que l'enseignant
+                    # en a déjà 2 ce jour-là, la suivante ne doit pas être collée aux précédentes
+                    # (ex. 2 le matin + 1 le soir, ou 1 le matin + 2 le soir).
+                    _du_jour = [x for x in occupation_prof[cle] if x["jour"] == _exam_norm(jour)]
+                    if len(_du_jour) >= 3:
+                        continue
+                    if len(_du_jour) >= 2 and plage is not None:
+                        _collee = False
+                        for _x in _du_jour:
+                            _a = _x.get("plage")
+                            if _a and max(_a[0] - plage[1], plage[0] - _a[1]) <= 30:
+                                _collee = True
+                                break
+                        if _collee:
+                            continue
+                    priorite = 0 if responsable and cle == _exam_norm(responsable) else 1
+                    candidats.append((priorite, compteur.get(cle, 0), p["nom"], cle))
+                candidats.sort()
+                return candidats[0] if candidats else None
+
+            for _, examen in df_exam_cible.sort_values(["_date", "_heure", "_promo", "_matiere"]).iterrows():
+                matiere = examen["_matiere"]
+                promo = examen["_promo"]
+                jour = examen["_date"]
+                heure = examen["_heure"]
+                plage = _exam_plage(heure)
+                effectif = int(effectifs_par_promo.get(promo, 0))
+                if effectif <= 0:
+                    erreurs.append({"Matière": matiere, "Promotion": promo, "Date": jour, "Heure": heure, "Problème": "Effectif nul ou non renseigné"})
+                    continue
+
+                nb_lieux_requis = max(1, math.ceil(effectif / max(1, int(ratio_etudiants) * 2)))
+                # On choisit des locaux libres et on répartit réellement les étudiants par capacité.
+                locaux_disponibles = []
+                locaux = []
+                _plans_loc = st.session_state.get("exam_loc_plan", {})
+                _res_loc = st.session_state.get("exam_loc_reservations", {})
+                _depts_ok = {_exam_norm(dept_tag), _exam_norm(exam_dept_label)} - {""}
+                _cand_loc = [(k, r) for k, r in _res_loc.items()
+                             if _exam_norm(r.get("promotion", "")) == _exam_norm(promo)]
+                _cand_dept = [(k, r) for k, r in _cand_loc if _exam_norm(r.get("departement", "")) in _depts_ok]
+                for _k_loc, _r_loc in (_cand_dept or _cand_loc)[:1]:
+                    _plan_loc = _plans_loc.get(_k_loc, {})
+                    _lieux_res = list(_r_loc.get("lieux", []))
+                    if _plan_loc.get("effectifs") and set(_plan_loc["effectifs"]) == set(_lieux_res):
+                        _effs_loc = dict(_plan_loc["effectifs"])
+                    else:  # pas encore de répartition détaillée : répartition équilibrée
+                        _b_loc, _r2_loc = divmod(effectif, max(1, len(_lieux_res)))
+                        _effs_loc = {n: _b_loc + (1 if i < _r2_loc else 0) for i, n in enumerate(_lieux_res)}
+                    for _n_loc in _lieux_res:
+                        locaux.append({
+                            "lieu": _n_loc,
+                            "type": "Amphi" if "AMPHI" in _exam_norm(_n_loc) else "Salle",
+                            "capacite": int(_effs_loc.get(_n_loc, 0)),
+                            "attribue": int(_effs_loc.get(_n_loc, 0)),
+                            "matricules": (_plan_loc.get("matricules", {}) or {}).get(_n_loc),
+                        })
+                if not locaux:
+                    erreurs.append({"Matière": matiere, "Promotion": promo, "Date": jour, "Heure": heure,
+                                    "Problème": "Aucun local réservé pour cette promotion : confirmez d'abord "
+                                                "la répartition dans la section « Locaux »."})
+                    continue
+                for local in sorted(locaux, key=lambda x: (0 if "AMPHI" in _exam_norm(x["type"]) else 1, -x["capacite"], _exam_norm(x["lieu"]))):
+                    if _est_libre(occupation_lieu[_exam_norm(local["lieu"])], jour, plage):
+                        locaux_disponibles.append(local)
+
+                # Répartition des étudiants selon le nombre attribué à chaque local libre
+                plan_lieux, manque = _etu_plan_lieux(effectif, locaux_disponibles)
+                if manque > 0:
+                    erreurs.append({
+                        "Matière": matiere, "Promotion": promo, "Date": jour, "Heure": heure,
+                        "Problème": f"Capacité insuffisante : {effectif - manque}/{effectif} places attribuées disponibles"
+                    })
+                    continue
+                liste_matricules = _matricules_par_promo.get(_exam_norm(promo), [])
+                curseur = 0
+
+                _id_exam = (examen["_matiere_base"], _exam_norm(jour), _exam_norm(heure))
+                cle_resp = (examen["_promo_key"], examen["_matiere_base"])
+                resp_candidates = responsables.get(cle_resp, [])
+                responsable_cours = resp_candidates[0] if resp_candidates else ""
+                # Si l'EDT a une matière commune sur plusieurs promotions, rechercher aussi par matière seule.
+                if not responsable_cours:
+                    for (pk, mb), noms in responsables.items():
+                        if mb == examen["_matiere_base"] and noms:
+                            responsable_cours = noms[0]
+                            break
+
+                for local, nb_etu in plan_lieux:
+                    _mats_fixes = local.get("matricules")
+                    if _mats_fixes and len(_mats_fixes) == nb_etu:
+                        tranche = list(_mats_fixes)   # liste modifiée à la main (déplacements inclus)
+                    else:
+                        tranche = liste_matricules[curseur:curseur + nb_etu]
+                    curseur += nb_etu
+                    # Responsable du cours prioritaire dans le binôme, mais le Permanent
+                    # demeure obligatoirement responsable du local.
+                    permanent = _choisir_profils("Permanent", jour, plage, responsable_cours, exam_id=_id_exam)
+                    if permanent is None:
+                        erreurs.append({
+                            "Matière": matiere, "Promotion": promo, "Date": jour, "Heure": heure,
+                            "Lieu": local["lieu"], "Problème": "Aucun Permanent disponible (quota, exclusion, chevauchement, examen dont il est chargé ou règle des séances consécutives)"
+                        })
+                        continue
+                    cle_perm = permanent[3]
+                    vacataire = _choisir_profils("Vacataire", jour, plage, responsable_cours, deja={cle_perm}, exam_id=_id_exam)
+                    if vacataire is None:
+                        erreurs.append({
+                            "Matière": matiere, "Promotion": promo, "Date": jour, "Heure": heure,
+                            "Lieu": local["lieu"], "Problème": "Aucun Vacataire disponible (quota, exclusion, chevauchement, examen dont il est chargé ou règle des séances consécutives)"
+                        })
+                        continue
+                    cle_vac = vacataire[3]
+                    equipe = [
+                        {"nom": personnel[cle_perm]["nom"], "statut": "Permanent", "fonction": "Responsable du lieu"},
+                        {"nom": personnel[cle_vac]["nom"], "statut": "Vacataire", "fonction": "Co-surveillant"}
+                    ]
+                    for cle in (cle_perm, cle_vac):
+                        compteur[cle] = compteur.get(cle, 0) + 1
+                        occupation_prof[cle].append({"jour": _exam_norm(jour), "plage": plage, "matiere": matiere, "lieu": local["lieu"]})
+                    occupation_lieu[_exam_norm(local["lieu"])].append({"jour": _exam_norm(jour), "plage": plage, "matiere": matiere, "promo": promo})
+                    planning.append({
+                        "Matière": matiere,
+                        "Responsable du cours (prioritaire)": responsable_cours or "Non identifié dans l'EDT",
+                        "Promotion": promo,
+                        "Effectif": effectif,
+                        "Date": jour,
+                        "Heure": heure,
+                        "Lieu": local["lieu"],
+                        "Type de lieu": local["type"],
+                        "Capacité": local["capacite"],
+                        "Effectif du lieu": nb_etu,
+                        "Permanent responsable du lieu": equipe[0]["nom"],
+                        "Vacataire co-surveillant": equipe[1]["nom"],
+                        "Binôme": equipe[0]["nom"] + " / " + equipe[1]["nom"],
+                        "Département": dept_tag,
+                        "Matricules": ";".join(tranche)
+                    })
+
+            _hist_surv_sauver(_conserves + planning)
+            st.session_state["exam_erreurs_sans_conflit"] = pd.DataFrame(erreurs)
+            st.rerun()
+
+        # ------------------------------------------------------------------
+        # HISTORIQUE DES EXAMENS : consultation et effacement
+        # ------------------------------------------------------------------
+        st.subheader("🗂️ Historique des examens générés")
+        for _msg_h in st.session_state.pop("exam_flash", []):
+            st.success(_msg_h)
+        _hist_tout = _hist_surv_charger()
+        _hist_dept = [r for r in _hist_tout if r.get("Département", "") == dept_tag]
+        _promos_hist = sorted({_exam_txt(r.get("Promotion")) for r in _hist_dept if _exam_txt(r.get("Promotion"))},
+                              key=_pe_cle_nat)
+        st.caption(f"{len(_hist_dept)} affectation(s) enregistrée(s) pour ce département "
+                   f"({len(_promos_hist)} promotion(s)) — {len(_hist_tout)} au total, tous départements confondus.")
+        if _hist_tout:
+            _ETENDUE_DEPT = "Toutes les promotions du département"
+            _ETENDUE_TOUT = "Tout l'historique (tous les départements)"
+            _opts_eff = [_ETENDUE_DEPT] + _promos_hist + [_ETENDUE_TOUT]
+            _portee_eff = st.selectbox("🗑️ Effacer l'historique de :", _opts_eff,
+                                       key=_surv_cle("exam_eff_portee", _opts_eff))
+            _deprog_eff = st.checkbox(
+                "Effacer aussi la programmation (dates et créneaux) des examens concernés",
+                value=False, key="exam_eff_deprog",
+                help="Décoché : seules les surveillances générées sont effacées ; les examens restent programmés.")
+            _confirme_eff = st.checkbox("Je confirme l'effacement (action irréversible)", key="exam_eff_confirm")
+            if st.button("🗑️ Effacer l'historique sélectionné", disabled=not _confirme_eff, key="exam_eff_go"):
+                if _portee_eff == _ETENDUE_TOUT:
+                    _reste = []
+                elif _portee_eff == _ETENDUE_DEPT:
+                    _reste = [r for r in _hist_tout if r.get("Département", "") != dept_tag]
+                else:
+                    _reste = [r for r in _hist_tout
+                              if not (r.get("Département", "") == dept_tag and _exam_txt(r.get("Promotion")) == _portee_eff)]
+                _nb_eff = len(_hist_tout) - len(_reste)
+                _hist_surv_sauver(_reste)
+                if _deprog_eff:
+                    _st_pe = _pe_store()
+                    for _k_pe, _e_pe in _st_pe["epreuves"].items():
+                        _dans_portee = (_portee_eff == _ETENDUE_TOUT
+                                        or (_e_pe.get("dept", "") == dept_tag
+                                            and (_portee_eff == _ETENDUE_DEPT or _e_pe.get("promo") == _portee_eff)))
+                        if _dans_portee:
+                            _e_pe["date"], _e_pe["creneau"] = "", ""
+                    _pe_sauver(_st_pe)
+                st.session_state.pop("exam_erreurs_sans_conflit", None)
+                st.session_state.setdefault("exam_flash", []).append(
+                    f"Historique effacé : {_nb_eff} affectation(s) supprimée(s)"
+                    + (" et programmation des examens réinitialisée." if _deprog_eff else "."))
+                st.rerun()
+        else:
+            st.info("L'historique est vide.")
+
+        # ------------------------------------------------------------------
+        # RÉSULTATS, VALIDATION DES CONFLITS ET EXPORT EXCEL
+        # ------------------------------------------------------------------
+        df_planning = pd.DataFrame([r for r in _hist_dept
+                                    if _promos_ok_g is None or _pe_norm(r.get("Promotion")) in _promos_ok_g])
+        df_erreurs = st.session_state.get("exam_erreurs_sans_conflit")
+        compteurs = {}
+        if not df_planning.empty:
+            for _col_c in ("Permanent responsable du lieu", "Vacataire co-surveillant"):
+                for _n_c in df_planning[_col_c].tolist():
+                    _k_c = _exam_norm(_n_c)
+                    if _k_c:
+                        compteurs[_k_c] = compteurs.get(_k_c, 0) + 1
+        if not df_planning.empty or isinstance(df_erreurs, pd.DataFrame):
+            st.subheader("4. Planning généré")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Lieux / binômes affectés", len(df_planning))
+            c2.metric("Épreuves non résolues", len(df_erreurs) if isinstance(df_erreurs, pd.DataFrame) else 0)
+            c3.metric("Enseignants mobilisés", len({n for n in df_planning.get("Permanent responsable du lieu", pd.Series(dtype=str)).tolist() + df_planning.get("Vacataire co-surveillant", pd.Series(dtype=str)).tolist() if n}))
+            if not df_planning.empty:
+                st.dataframe(df_planning.drop(columns=["Matricules"], errors="ignore"), use_container_width=True, hide_index=True)
+                # Contrôle final explicite : aucun enseignant ni local ne doit être dupliqué
+                # sur des plages horaires qui se recouvrent.
+                controles = []
+                for _, r in df_planning.iterrows():
+                    controles.append({"Jour": r["Date"], "Heure": r["Heure"], "Lieu": r["Lieu"], "Enseignant": r["Permanent responsable du lieu"]})
+                    controles.append({"Jour": r["Date"], "Heure": r["Heure"], "Lieu": r["Lieu"], "Enseignant": r["Vacataire co-surveillant"]})
+                df_controles = pd.DataFrame(controles)
+                st.success("Contrôle de cohérence appliqué pendant chaque affectation : un enseignant et un local ne sont réservés qu'une seule fois sur des créneaux qui se recouvrent.")
+                st.markdown("#### Compteur de surveillances par enseignant")
+                df_stats_surv = pd.DataFrame([
+                    {"Enseignant": personnel[k]["nom"], "Statut": personnel[k]["statut"],
+                     "Surveillances affectées": int(v), "Quota cible": quota_par_nom.get(k, 0),
+                     "Exclusion stricte": k in exclus}
+                    for k, v in compteurs.items() if k in personnel
+                ]).sort_values(["Statut", "Enseignant"])
+                st.dataframe(df_stats_surv, use_container_width=True, hide_index=True)
+
+                sortie = io.BytesIO()
+                with pd.ExcelWriter(sortie, engine="openpyxl") as writer:
+                    df_planning.drop(columns=["Matricules"], errors="ignore").to_excel(
+                        writer, sheet_name="Planning surveillances", index=False)
+                    df_stats_surv.to_excel(writer, sheet_name="Quotas enseignants", index=False)
+                    if isinstance(df_erreurs, pd.DataFrame) and not df_erreurs.empty:
+                        df_erreurs.to_excel(writer, sheet_name="Affectations impossibles", index=False)
+                    for ws in writer.book.worksheets:
+                        ws.freeze_panes = "A2"
+                        ws.auto_filter.ref = ws.dimensions
+                        for cell in ws[1]:
+                            cell.font = __import__("openpyxl").styles.Font(bold=True, color="FFFFFF")
+                            cell.fill = __import__("openpyxl").styles.PatternFill("solid", fgColor="1E3A8A")
+                            cell.alignment = __import__("openpyxl").styles.Alignment(horizontal="center", vertical="center", wrap_text=True)
+                        for col_cells in ws.columns:
+                            largeur = min(max(max(len(str(c.value or "")) for c in col_cells) + 2, 12), 42)
+                            ws.column_dimensions[col_cells[0].column_letter].width = largeur
+                sortie.seek(0)
+                st.download_button(
+                    "📥 Télécharger le planning complet (Excel)",
+                    sortie.getvalue(),
+                    "Planning_Examens_Surveillances_Sans_Chevauchement.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+                _surv_afficher_grilles(df_planning, exam_dept_label)
+                _surv_afficher_listes_etudiants(df_planning, df_etudiants_source, exam_dept_label)
+            else:
+                st.warning("Aucun binôme n'a pu être affecté. Consulte les problèmes ci-dessous.")
+            if isinstance(df_erreurs, pd.DataFrame) and not df_erreurs.empty:
+                st.error("Certaines affectations sont impossibles sans violer les règles (capacité, quota, exclusion ou disponibilité).")
+                st.dataframe(df_erreurs, use_container_width=True, hide_index=True)
     elif portail == "👥 Portail Enseignants":
         if not is_admin:
             st.error("🚫 ACCÈS RESTREINT.")
