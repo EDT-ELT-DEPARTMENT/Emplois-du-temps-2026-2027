@@ -1242,7 +1242,7 @@ CAUSES_ABSENCES = [
     "Autres"
 ]
 
-CODE_ADMIN = "1234"
+CODE_ADMIN = "milouafarid1974"
 CODE_ADMIN_EDT = "doctorat2026"
 
 # =============================================================================
@@ -25188,6 +25188,638 @@ hr { border-color:#e2e8f0; }
 </style>
 """, unsafe_allow_html=True)
 
+# =============================================================================
+# MODULE PFE / STARTUP — PROPOSITIONS ETUDIANTES, SUJETS ENSEIGNANTS, CANDIDATURES
+# Ajout autonome au portail existant. Toutes les données partagées sont stockées
+# dans Supabase. La liste officielle des étudiants reste la source de référence.
+# =============================================================================
+PFE_PROMOTIONS_AUTORISEES = {"M2RE", "M2ER", "M2CE", "M2ME", "M2MCIL", "ING5RSE"}
+PFE_TYPES_PROPOSITION_ETUDIANT = ["Startup", "PFE classique"]
+PFE_TYPES_SUJET_ENSEIGNANT = ["Projet 1275", "PFE classique"]
+PFE_MAX_EQUIPE = 6
+PFE_MAX_RESUME_WORDS = 200
+
+
+def _pfe_norm(value):
+    """Normalisation robuste des noms de colonnes, identités et promotions."""
+    value = "" if value is None else str(value)
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+
+def _pfe_clean(value):
+    """Convertit une valeur Excel en chaîne propre sans 'nan' ni 'None'."""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    value = str(value).strip()
+    return "" if value.casefold() in {"nan", "none", "null", "nat"} else value
+
+
+def _pfe_col(df_source, aliases):
+    """Retrouve une colonne Excel en conservant aussi les intitulés arabes exacts."""
+    if df_source is None or df_source.empty:
+        return None
+    # La comparaison littérale est indispensable pour les colonnes arabes :
+    # leur normalisation ASCII donnerait une chaîne vide.
+    colonnes = [str(col).strip() for col in df_source.columns]
+    for alias in aliases:
+        alias_propre = str(alias).strip()
+        if alias_propre in colonnes:
+            return df_source.columns[colonnes.index(alias_propre)]
+    index = {_pfe_norm(col): col for col in df_source.columns if _pfe_norm(col)}
+    for alias in aliases:
+        key = _pfe_norm(alias)
+        if key and key in index:
+            return index[key]
+    return None
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _pfe_charger_etudiants_officiels():
+    """Charge la feuille principale du fichier officiel Liste des étudiants."""
+    chemins = [
+        str(Path(__file__).parent.resolve() / "Liste des étudiants_2026-2027.xlsx"),
+        str(Path(FILE_ETUDIANTS)) if "FILE_ETUDIANTS" in globals() else "",
+    ]
+    chemin = next((p for p in chemins if p and os.path.exists(p)), None)
+    if not chemin:
+        raise FileNotFoundError("Le fichier officiel « Liste des étudiants_2026-2027.xlsx » est introuvable dans le dépôt.")
+    df_source = pd.read_excel(chemin, sheet_name=0)
+    df_source.columns = [str(c).strip() for c in df_source.columns]
+
+    c_mat = _pfe_col(df_source, ["Mat. Etudiant", "Mat Etudiant", "Matricule étudiant", "Matricule Etudiant", "Matricule"])
+    c_nom = _pfe_col(df_source, ["Nom"])
+    c_prenom = _pfe_col(df_source, ["Prénom", "Prenom"])
+    c_promo = _pfe_col(df_source, ["Promotion", "Promotions"])
+    if not all([c_mat, c_nom, c_prenom, c_promo]):
+        raise ValueError("Le fichier officiel doit contenir Mat. Etudiant, Nom, Prénom et Promotion.")
+
+    c_nom_ar = _pfe_col(df_source, ["اللقب"])
+    c_pre_ar = _pfe_col(df_source, ["الإسم", "الاسم"])
+    c_tel = _pfe_col(df_source, ["N° de téléphone", "N de telephone", "Téléphone", "Telephone", "N°/TEL"])
+    c_email_inst = _pfe_col(df_source, ["E-mail institutionnel", "Email institutionnel", "Email universitaire"])
+    c_email = _pfe_col(df_source, ["email", "E-mail", "Courriel"])
+    c_groupe = _pfe_col(df_source, ["Groupe"])
+    c_sg = _pfe_col(df_source, ["Sous groupe", "Sous-groupe"])
+    c_dept = _pfe_col(df_source, ["Département", "Departement", "Structure"])
+    c_conge = _pfe_col(df_source, ["Congé académique", "Conge academique"])
+
+    lignes = []
+    for _, row in df_source.iterrows():
+        matricule = _pfe_clean(row.get(c_mat, ""))
+        nom = _pfe_clean(row.get(c_nom, ""))
+        prenom = _pfe_clean(row.get(c_prenom, ""))
+        promotion = _pfe_clean(row.get(c_promo, "")).upper()
+        if not matricule or not nom or not prenom:
+            continue
+        if matricule.casefold() in {"nan", "none"}:
+            continue
+        nom_complet = f"{nom.upper()} {prenom.title()}".strip()
+        email_inst = _pfe_clean(row.get(c_email_inst, "")) if c_email_inst else ""
+        email_perso = _pfe_clean(row.get(c_email, "")) if c_email else ""
+        telephone = _pfe_clean(row.get(c_tel, "")) if c_tel else ""
+        ligne = {
+            "matricule": matricule,
+            "nom": nom,
+            "prenom": prenom,
+            "nom_complet": nom_complet,
+            "nom_arabe": _pfe_clean(row.get(c_nom_ar, "")) if c_nom_ar else "",
+            "prenom_arabe": _pfe_clean(row.get(c_pre_ar, "")) if c_pre_ar else "",
+            "nom_complet_arabe": " ".join(x for x in [
+                _pfe_clean(row.get(c_pre_ar, "")) if c_pre_ar else "",
+                _pfe_clean(row.get(c_nom_ar, "")) if c_nom_ar else "",
+            ] if x),
+            "promotion": promotion,
+            "telephone": telephone,
+            "email_institutionnel": email_inst,
+            "email": email_perso,
+            "groupe": _pfe_clean(row.get(c_groupe, "")) if c_groupe else "",
+            "sous_groupe": _pfe_clean(row.get(c_sg, "")) if c_sg else "",
+            "departement": _pfe_clean(row.get(c_dept, "")) if c_dept else "",
+            "conge_academique": _pfe_clean(row.get(c_conge, "")) if c_conge else "",
+        }
+        lignes.append(ligne)
+
+    # Un matricule doit désigner une seule fiche officielle. La première ligne
+    # valide est conservée pour éviter les doublons éventuels du fichier source.
+    resultat = {}
+    for ligne in lignes:
+        resultat.setdefault(ligne["matricule"], ligne)
+    return resultat
+
+
+def _pfe_etudiant_connecte(preview_student=None):
+    """Retourne la fiche officielle de l'étudiant courant ou de l'aperçu admin."""
+    identite = preview_student or st.session_state.get("étudiant_auth") or {}
+    matricule = _pfe_clean(
+        identite.get("mat_etud") or identite.get("matricule") or identite.get("mat_bac") or ""
+    )
+    if not matricule:
+        return None
+    try:
+        return _pfe_charger_etudiants_officiels().get(matricule)
+    except Exception:
+        return None
+
+
+def _pfe_est_eligible_etudiant(fiche):
+    """L'éligibilité est déterminée exclusivement par la promotion officielle."""
+    return bool(fiche and _pfe_clean(fiche.get("promotion", "")).upper() in PFE_PROMOTIONS_AUTORISEES)
+
+
+def _pfe_est_enseignant_permanent(nom_enseignant, email_enseignant=""):
+    """Vérifie la Qualité PERMANENT dans le fichier officiel du personnel."""
+    if not isinstance(df_contacts, pd.DataFrame) or df_contacts.empty:
+        return False
+    c_nom = _pfe_col(df_contacts, ["NOM", "Nom"])
+    c_pre = _pfe_col(df_contacts, ["PRÉNOM", "PRENOM", "Prénom", "Prenom"])
+    c_qualite = _pfe_col(df_contacts, ["Qualité", "Qualite", "Statut"])
+    c_email = _pfe_col(df_contacts, ["Email", "E-mail", "Courriel"])
+    if not c_nom or not c_pre or not c_qualite:
+        return False
+    cible_nom = _pfe_norm(nom_enseignant)
+    cible_email = _pfe_norm(email_enseignant)
+    if not cible_nom and not cible_email:
+        return False
+    for _, row in df_contacts.iterrows():
+        nom = _pfe_clean(row.get(c_nom, ""))
+        prenom = _pfe_clean(row.get(c_pre, ""))
+        qualite = _pfe_clean(row.get(c_qualite, "")).upper()
+        email = _pfe_clean(row.get(c_email, "")) if c_email else ""
+        if "PERMANENT" not in qualite:
+            continue
+        nom_complet = f"{nom} {prenom}".strip()
+        variantes = {_pfe_norm(nom_complet), _pfe_norm(f"{prenom} {nom}"), _pfe_norm(nom)}
+        if cible_email and email and cible_email == _pfe_norm(email):
+            return True
+        if cible_nom and cible_nom in variantes:
+            return True
+    return False
+
+
+def _pfe_db_lire_tout(table, taille_page=1000):
+    """Lecture paginée Supabase pour ne pas perdre les lignes après 1000."""
+    if not MODE_SUPABASE or supabase is None:
+        raise RuntimeError("La connexion Supabase n'est pas disponible.")
+    resultat = []
+    debut = 0
+    while True:
+        rep = supabase.table(table).select("*").order("created_at", desc=True).range(debut, debut + taille_page - 1).execute()
+        page = rep.data or []
+        resultat.extend(page)
+        if len(page) < taille_page:
+            break
+        debut += taille_page
+    return resultat
+
+
+def _pfe_nb_mots(texte):
+    return len(re.findall(r"\b[\wÀ-ÿ'-]+\b", str(texte or ""), flags=re.UNICODE))
+
+
+def _pfe_enregistrer_historique(action, acteur, cible, details=None):
+    try:
+        if MODE_SUPABASE and supabase is not None:
+            supabase.table("pfe_historique").insert({
+                "action": str(action),
+                "acteur": str(acteur or ""),
+                "cible": str(cible or ""),
+                "details": details or {},
+            }).execute()
+    except Exception:
+        pass
+
+
+def _pfe_afficher_coordonnees_etudiant(fiche):
+    """Affiche les coordonnées reprises de la fiche officielle."""
+    if not fiche:
+        st.warning("Fiche étudiant introuvable dans le fichier officiel.")
+        return
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(f"**Matricule**\n\n{fiche.get('matricule') or '—'}")
+    c2.markdown(f"**Nom et prénom**\n\n{fiche.get('nom_complet') or '—'}")
+    c3.markdown(f"**Promotion**\n\n{fiche.get('promotion') or '—'}")
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(f"**Téléphone**\n\n{fiche.get('telephone') or 'Non renseigné'}")
+    c2.markdown(f"**E-mail institutionnel**\n\n{fiche.get('email_institutionnel') or 'Non renseigné'}")
+    c3.markdown(f"**E-mail**\n\n{fiche.get('email') or 'Non renseigné'}")
+    st.caption(
+        f"Nom arabe : {fiche.get('nom_complet_arabe') or 'Non renseigné'} · "
+        f"Groupe : {fiche.get('groupe') or '—'} · Sous-groupe : {fiche.get('sous_groupe') or '—'}"
+    )
+
+
+def _pfe_notifications_etudiant(matricule):
+    """Affiche les notifications internes associées au matricule connecté."""
+    try:
+        rep = supabase.table("pfe_notifications").select("*").eq("matricule_etudiant", matricule).order("created_at", desc=True).limit(30).execute()
+        notifications = rep.data or []
+        if notifications:
+            with st.expander(f"🔔 Notifications ({len(notifications)})", expanded=True):
+                for notif in notifications:
+                    st.markdown(f"**{notif.get('titre', 'Information')}** — {notif.get('created_at', '')}")
+                    st.write(notif.get("message", ""))
+                    if not notif.get("lu", False):
+                        try:
+                            supabase.table("pfe_notifications").update({"lu": True}).eq("id", notif.get("id")).execute()
+                        except Exception:
+                            pass
+    except Exception as exc:
+        st.caption(f"Notifications temporairement indisponibles : {str(exc)[:160]}")
+
+
+def _pfe_sauver_proposition_etudiant(fiche, type_sujet, titre, resume, matricules_equipe):
+    """Enregistre une proposition Startup/PFE avec six étudiants maximum au total."""
+    if not MODE_SUPABASE or supabase is None:
+        raise RuntimeError("La base Supabase est indisponible : la proposition ne peut pas être enregistrée.")
+    titre = str(titre or "").strip()
+    resume = str(resume or "").strip()
+    if not titre:
+        raise ValueError("Le titre du sujet est obligatoire.")
+    if type_sujet not in PFE_TYPES_PROPOSITION_ETUDIANT:
+        raise ValueError("Le type de sujet sélectionné n'est pas valide.")
+    if not resume:
+        raise ValueError("Le résumé est obligatoire.")
+    nombre_mots = _pfe_nb_mots(resume)
+    if nombre_mots > PFE_MAX_RESUME_WORDS:
+        raise ValueError(f"Le résumé contient {nombre_mots} mots. La limite est de 200 mots.")
+
+    base = _pfe_charger_etudiants_officiels()
+    matricule_proposant = fiche["matricule"]
+    membres = [matricule_proposant] + [str(m).strip() for m in (matricules_equipe or []) if str(m).strip()]
+    if len(membres) > PFE_MAX_EQUIPE:
+        raise ValueError("Une équipe ne peut pas dépasser 6 étudiants au total, proposant compris.")
+    if len(membres) != len(set(membres)):
+        raise ValueError("Un même étudiant ne peut pas être sélectionné plusieurs fois.")
+    if any(m not in base for m in membres):
+        raise ValueError("Un membre sélectionné n'existe pas dans le fichier officiel des étudiants.")
+    membres_fiches = [base[m] for m in membres]
+    if any(not _pfe_est_eligible_etudiant(x) for x in membres_fiches):
+        raise ValueError("Tous les membres de l'équipe doivent appartenir à l'une des six promotions éligibles.")
+
+    details_equipe = [{
+        "matricule": x["matricule"], "nom_complet": x["nom_complet"],
+        "nom_complet_arabe": x.get("nom_complet_arabe", ""), "promotion": x["promotion"],
+        "telephone": x.get("telephone", ""), "email_institutionnel": x.get("email_institutionnel", ""),
+        "email": x.get("email", ""), "groupe": x.get("groupe", ""),
+        "sous_groupe": x.get("sous_groupe", ""),
+    } for x in membres_fiches]
+
+    payload = {
+        "matricule_proposant": matricule_proposant,
+        "nom_proposant": fiche["nom_complet"],
+        "promotion": fiche["promotion"],
+        "type_sujet": type_sujet,
+        "titre": titre,
+        "resume": resume,
+        "nombre_mots_resume": nombre_mots,
+        "membres_matricules": membres,
+        "equipe_details": details_equipe,
+        "statut": "Soumise",
+    }
+    rep = supabase.table("pfe_propositions_etudiants").insert(payload).execute()
+    ligne = (rep.data or [{}])[0]
+    _pfe_enregistrer_historique("PROPOSITION_ETUDIANT_CREEE", fiche["nom_complet"], ligne.get("id", ""), payload)
+    return ligne
+
+
+def _pfe_rendre_page_etudiant(preview_student=None):
+    """Module étudiant : proposition en équipe, consultation sujets enseignants et candidatures."""
+    fiche = _pfe_etudiant_connecte(preview_student=preview_student)
+    # Aucun contenu ni message du module n'est affiché aux promotions non autorisées.
+    if not _pfe_est_eligible_etudiant(fiche):
+        return
+    st.markdown("## 🎓 Projets de fin d'études — Startup et PFE")
+    st.caption("Proposez un sujet en équipe de 6 étudiants maximum au total, ou candidatez à un sujet déposé par un enseignant permanent.")
+    _pfe_afficher_coordonnees_etudiant(fiche)
+    if not MODE_SUPABASE or supabase is None:
+        st.error("Le service Supabase est indisponible. Les propositions et candidatures ne peuvent pas être sauvegardées.")
+        return
+    _pfe_notifications_etudiant(fiche["matricule"])
+
+    onglet_proposition, onglet_sujets, onglet_mes_demandes = st.tabs([
+        "💡 Proposer un sujet", "📚 Sujets des enseignants", "📌 Mes propositions et candidatures"
+    ])
+
+    with onglet_proposition:
+        st.markdown("### Déposer une proposition de sujet")
+        st.info("Le proposant est automatiquement compté comme le premier membre de l'équipe. Vous pouvez ajouter jusqu'à 5 camarades.")
+        try:
+            base = _pfe_charger_etudiants_officiels()
+            candidats = [x for m, x in base.items() if m != fiche["matricule"] and _pfe_est_eligible_etudiant(x)]
+            candidats.sort(key=lambda x: (x.get("promotion", ""), x.get("nom_complet", "")))
+            options = {f"{x['nom_complet']} — {x['promotion']} — {x['matricule']}": x["matricule"] for x in candidats}
+            with st.form("pfe_form_proposition_etudiant_v1", clear_on_submit=True):
+                type_sujet = st.selectbox("Type de proposition *", PFE_TYPES_PROPOSITION_ETUDIANT, key="pfe_etu_type")
+                titre = st.text_input("Titre du sujet *", max_chars=250, key="pfe_etu_titre")
+                resume = st.text_area("Résumé du sujet (200 mots maximum) *", height=150, max_chars=3000, key="pfe_etu_resume")
+                st.caption(f"Nombre de mots : {_pfe_nb_mots(resume)} / 200")
+                selection_labels = st.multiselect(
+                    "Choisir les camarades (5 au maximum, proposant non compris)",
+                    options=list(options.keys()), max_selections=5, key="pfe_etu_equipe"
+                )
+                envoyer = st.form_submit_button("📤 Envoyer la proposition", type="primary", use_container_width=True)
+            if envoyer:
+                try:
+                    if not titre.strip() or not resume.strip():
+                        raise ValueError("Le titre et le résumé sont obligatoires.")
+                    if _pfe_nb_mots(resume) > 200:
+                        raise ValueError(f"Le résumé dépasse 200 mots ({_pfe_nb_mots(resume)} mots actuellement).")
+                    matricules = [options[x] for x in selection_labels]
+                    ligne = _pfe_sauver_proposition_etudiant(fiche, type_sujet, titre, resume, matricules)
+                    st.success("Votre proposition a été enregistrée et transmise à tous les enseignants permanents ainsi qu'à l'administration.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Impossible d'enregistrer la proposition : {exc}")
+        except Exception as exc:
+            st.error(f"Impossible de charger la liste officielle des étudiants : {exc}")
+
+    with onglet_sujets:
+        st.markdown("### Sujets déposés par les enseignants permanents")
+        try:
+            sujets = supabase.table("pfe_sujets_enseignants").select("*").eq("statut", "Ouvert").order("created_at", desc=True).execute().data or []
+            if not sujets:
+                st.info("Aucun sujet enseignant ouvert à la candidature pour le moment.")
+            else:
+                try:
+                    mes_candidatures = supabase.table("pfe_candidatures_sujets").select("*").eq("matricule_etudiant", fiche["matricule"]).execute().data or []
+                except Exception:
+                    mes_candidatures = []
+                deja = {str(x.get("sujet_id")) for x in mes_candidatures}
+                for sujet in sujets:
+                    sid = str(sujet.get("id", ""))
+                    with st.container(border=True):
+                        st.markdown(f"### {sujet.get('titre', 'Sujet sans titre')}")
+                        st.caption(f"{sujet.get('type_sujet', '')} · Encadrant : {sujet.get('enseignant_nom', '')} · Déposé le : {sujet.get('created_at', '')}")
+                        st.write(sujet.get("resume", ""))
+                        if sid in deja:
+                            st.info("Vous avez déjà envoyé une candidature pour ce sujet.")
+                        elif st.button("Je souhaite choisir ce sujet", key=f"pfe_candidater_{sid}", use_container_width=True):
+                            try:
+                                payload = {
+                                    "sujet_id": sid,
+                                    "matricule_etudiant": fiche["matricule"],
+                                    "etudiant_nom": fiche["nom_complet"],
+                                    "promotion": fiche["promotion"],
+                                    "email": fiche.get("email_institutionnel") or fiche.get("email", ""),
+                                    "telephone": fiche.get("telephone", ""),
+                                    "statut": "En attente",
+                                }
+                                supabase.table("pfe_candidatures_sujets").insert(payload).execute()
+                                _pfe_enregistrer_historique("CANDIDATURE_SUJET_CREEE", fiche["nom_complet"], sid, payload)
+                                st.success("Votre candidature est transmise à l'enseignant. Elle reste en attente de validation.")
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"Candidature non enregistrée : {exc}")
+        except Exception as exc:
+            st.error(f"Impossible de charger les sujets enseignants : {exc}")
+
+    with onglet_mes_demandes:
+        st.markdown("### Mes propositions étudiantes")
+        try:
+            propositions = supabase.table("pfe_propositions_etudiants").select("*").eq("matricule_proposant", fiche["matricule"]).order("created_at", desc=True).execute().data or []
+            if not propositions:
+                st.info("Vous n'avez pas encore déposé de proposition.")
+            for prop in propositions:
+                with st.expander(f"{prop.get('titre', 'Proposition')} — {prop.get('statut', 'Soumise')}"):
+                    st.write(f"**Type :** {prop.get('type_sujet', '')}")
+                    st.write(prop.get("resume", ""))
+                    st.caption(f"Équipe : {len(prop.get('membres_matricules') or [])} étudiant(s) · Dépôt : {prop.get('created_at', '')}")
+                    if prop.get("statut") in {"Soumise", "En examen"}:
+                        if st.button("Retirer ma proposition", key=f"pfe_retirer_prop_{prop.get('id')}"):
+                            try:
+                                supabase.table("pfe_propositions_etudiants").update({"statut": "Retirée", "updated_at": datetime.now().isoformat()}).eq("id", prop.get("id")).eq("matricule_proposant", fiche["matricule"]).execute()
+                                _pfe_enregistrer_historique("PROPOSITION_ETUDIANT_RETIRÉE", fiche["nom_complet"], prop.get("id"), {})
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"Retrait impossible : {exc}")
+        except Exception as exc:
+            st.error(f"Lecture de vos propositions impossible : {exc}")
+        st.markdown("### Mes candidatures aux sujets enseignants")
+        try:
+            candidatures = supabase.table("pfe_candidatures_sujets").select("*").eq("matricule_etudiant", fiche["matricule"]).order("created_at", desc=True).execute().data or []
+            if not candidatures:
+                st.info("Vous n'avez pas encore candidaté à un sujet enseignant.")
+            sujets_map = {}
+            try:
+                sujets_map = {str(x.get("id")): x for x in _pfe_db_lire_tout("pfe_sujets_enseignants")}
+            except Exception:
+                pass
+            for candidature in candidatures:
+                sujet = sujets_map.get(str(candidature.get("sujet_id")), {})
+                st.write(f"**{sujet.get('titre', 'Sujet')}** — {candidature.get('statut', 'En attente')} — {candidature.get('created_at', '')}")
+        except Exception as exc:
+            st.caption(f"Candidatures indisponibles : {str(exc)[:160]}")
+
+
+def _pfe_lignes_propositions_avec_coordonnees():
+    """Enrichit les propositions stockées par les coordonnées du fichier officiel."""
+    propositions = _pfe_db_lire_tout("pfe_propositions_etudiants")
+    base = _pfe_charger_etudiants_officiels()
+    resultat = []
+    for prop in propositions:
+        membres = []
+        matricules = prop.get("membres_matricules") or []
+        for matricule in matricules:
+            fiche = base.get(str(matricule), {})
+            if fiche:
+                membres.append(fiche)
+        # Si la liste des matricules est absente sur une ancienne ligne, le snapshot JSON reste visible.
+        if not membres and isinstance(prop.get("equipe_details"), list):
+            membres = prop.get("equipe_details")
+        prop = dict(prop)
+        prop["_membres_enrichis"] = membres
+        resultat.append(prop)
+    return resultat
+
+
+def _pfe_rendre_propositions_enseignant_admin(lignes, prefixe):
+    """Affiche une liste de propositions avec les coordonnées détaillées de chaque membre."""
+    if not lignes:
+        st.info("Aucune proposition étudiante enregistrée.")
+        return
+    for prop in lignes:
+        titre = prop.get("titre", "Proposition sans titre")
+        with st.expander(f"{titre} — {prop.get('type_sujet', '')} — {prop.get('statut', 'Soumise')}"):
+            st.markdown(f"**Résumé :** {prop.get('resume', '')}")
+            st.caption(
+                f"Proposant : {prop.get('nom_proposant', '')} · Matricule : {prop.get('matricule_proposant', '')} · "
+                f"Promotion : {prop.get('promotion', '')} · Dépôt : {prop.get('created_at', '')}"
+            )
+            st.markdown(f"**Équipe ({len(prop.get('_membres_enrichis') or [])}/6 étudiants)**")
+            for index, membre in enumerate(prop.get("_membres_enrichis") or [], start=1):
+                st.markdown(f"#### {index}. {membre.get('nom_complet', membre.get('nom', 'Étudiant'))}")
+                _pfe_afficher_coordonnees_etudiant(membre)
+            if prop.get("statut") == "Soumise":
+                st.caption("Cette proposition a été déposée par l'étudiant. Elle est consultable par les enseignants permanents et l'administration.")
+
+
+def _pfe_rendre_page_enseignant(nom_enseignant, email_enseignant="", read_only=False):
+    """Espace réservé aux enseignants vérifiés comme permanents."""
+    if not _pfe_est_enseignant_permanent(nom_enseignant, email_enseignant):
+        st.error("Cette fonctionnalité est réservée aux enseignants permanents identifiés dans le fichier officiel du personnel (colonne Qualité).")
+        return
+    st.markdown("## 🎓 Gestion des sujets de fin d'études")
+    st.caption("Consultation des propositions étudiantes, dépôt de sujets d'encadrement et validation des candidatures.")
+    if not MODE_SUPABASE or supabase is None:
+        st.error("La connexion Supabase est indisponible. Les données PFE ne peuvent pas être chargées.")
+        return
+    tab_propositions, tab_depot, tab_sujets = st.tabs([
+        "💡 Propositions des étudiants", "➕ Déposer un sujet", "📚 Mes sujets et candidatures"
+    ])
+    with tab_propositions:
+        try:
+            lignes = _pfe_lignes_propositions_avec_coordonnees()
+            _pfe_rendre_propositions_enseignant_admin(lignes, "enseignant")
+        except Exception as exc:
+            st.error(f"Impossible de charger les propositions étudiantes : {exc}")
+    if read_only:
+        st.info("Aperçu administrateur en lecture seule : le dépôt de sujets et la validation des candidatures sont désactivés dans cet aperçu.")
+        return
+    with tab_depot:
+        st.markdown("### Déposer un sujet ouvert aux étudiants éligibles")
+        with st.form("pfe_form_depot_enseignant_v1", clear_on_submit=True):
+            type_sujet = st.selectbox("Type de sujet *", PFE_TYPES_SUJET_ENSEIGNANT, key="pfe_ens_type")
+            titre = st.text_input("Titre du sujet *", max_chars=250, key="pfe_ens_titre")
+            resume = st.text_area("Résumé (200 mots maximum) *", height=150, max_chars=3000, key="pfe_ens_resume")
+            envoyer = st.form_submit_button("📤 Publier le sujet", type="primary", use_container_width=True)
+        if envoyer:
+            try:
+                if not titre.strip() or not resume.strip():
+                    raise ValueError("Le titre et le résumé sont obligatoires.")
+                if _pfe_nb_mots(resume) > 200:
+                    raise ValueError(f"Le résumé dépasse 200 mots ({_pfe_nb_mots(resume)} mots).")
+                payload = {
+                    "enseignant_nom": str(nom_enseignant or "").strip(),
+                    "enseignant_email": str(email_enseignant or "").strip(),
+                    "titre": titre.strip(), "type_sujet": type_sujet,
+                    "resume": resume.strip(), "nombre_mots_resume": _pfe_nb_mots(resume),
+                    "statut": "Ouvert",
+                }
+                rep = supabase.table("pfe_sujets_enseignants").insert(payload).execute()
+                ligne = (rep.data or [{}])[0]
+                _pfe_enregistrer_historique("SUJET_ENSEIGNANT_PUBLIE", nom_enseignant, ligne.get("id", ""), payload)
+                st.success("Sujet publié. Il est désormais visible dans les comptes des étudiants des promotions éligibles.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Publication impossible : {exc}")
+    with tab_sujets:
+        try:
+            sujets = supabase.table("pfe_sujets_enseignants").select("*").eq("enseignant_nom", str(nom_enseignant or "").strip()).order("created_at", desc=True).execute().data or []
+            if not sujets:
+                st.info("Vous n'avez pas encore déposé de sujet.")
+            for sujet in sujets:
+                sid = str(sujet.get("id", ""))
+                with st.expander(f"{sujet.get('titre', 'Sujet')} — {sujet.get('statut', '')}"):
+                    st.write(f"**Type :** {sujet.get('type_sujet', '')}")
+                    st.write(sujet.get("resume", ""))
+                    candidatures = supabase.table("pfe_candidatures_sujets").select("*").eq("sujet_id", sid).order("created_at", desc=True).execute().data or []
+                    st.write(f"**Candidatures reçues : {len(candidatures)}**")
+                    for cand in candidatures:
+                        st.markdown(f"**{cand.get('etudiant_nom', '')}** — {cand.get('promotion', '')} — {cand.get('statut', '')}")
+                        st.caption(f"Matricule : {cand.get('matricule_etudiant', '')} · Téléphone : {cand.get('telephone', '')} · E-mail : {cand.get('email', '')}")
+                        if cand.get("statut") == "En attente" and sujet.get("statut") == "Ouvert":
+                            if st.button("✅ Accepter cet étudiant et clôturer le sujet", key=f"pfe_accept_{cand.get('id')}", type="primary"):
+                                try:
+                                    result = supabase.rpc("pfe_valider_candidature", {
+                                        "p_candidature_id": cand.get("id"),
+                                        "p_enseignant_nom": str(nom_enseignant or ""),
+                                    }).execute()
+                                    _pfe_enregistrer_historique("CANDIDATURE_VALIDEE", nom_enseignant, sid, {"candidature_id": cand.get("id")})
+                                    st.success("Candidature acceptée. Les autres candidatures en attente pour ce sujet sont automatiquement refusées et leurs étudiants sont notifiés.")
+                                    st.rerun()
+                                except Exception as exc:
+                                    st.error(f"Validation impossible : {exc}. Vérifiez que le script SQL PFE a été exécuté.")
+                    if sujet.get("statut") == "Ouvert" and not any(x.get("statut") == "Acceptée" for x in candidatures):
+                        if st.button("🔒 Fermer ce sujet", key=f"pfe_close_{sid}"):
+                            try:
+                                supabase.table("pfe_sujets_enseignants").update({"statut": "Fermé", "updated_at": datetime.now().isoformat()}).eq("id", sid).eq("enseignant_nom", str(nom_enseignant or "").strip()).execute()
+                                _pfe_enregistrer_historique("SUJET_ENSEIGNANT_FERME", nom_enseignant, sid, {})
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"Fermeture impossible : {exc}")
+        except Exception as exc:
+            st.error(f"Impossible de charger vos sujets : {exc}")
+
+
+def _pfe_rendre_page_admin():
+    """Vue globale de contrôle et d'export pour l'administration."""
+    st.markdown("## 🛡️ Administration — Sujets de fin d'études")
+    if not MODE_SUPABASE or supabase is None:
+        st.error("La connexion Supabase est indisponible.")
+        return
+    tab_propositions, tab_sujets, tab_candidatures, tab_historique = st.tabs([
+        "💡 Propositions étudiantes", "📚 Sujets enseignants", "📌 Candidatures", "🕘 Historique"
+    ])
+    try:
+        propositions = _pfe_lignes_propositions_avec_coordonnees()
+        sujets = _pfe_db_lire_tout("pfe_sujets_enseignants")
+        candidatures = _pfe_db_lire_tout("pfe_candidatures_sujets")
+    except Exception as exc:
+        st.error(f"Erreur de lecture des tables PFE : {exc}. Exécutez le script supabase_pfe_setup.sql dans Supabase.")
+        return
+
+    with tab_propositions:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Propositions", len(propositions))
+        c2.metric("Équipes", sum(1 for x in propositions if x.get("membres_matricules")))
+        c3.metric("Étudiants proposés", sum(len(x.get("membres_matricules") or []) for x in propositions))
+        _pfe_rendre_propositions_enseignant_admin(propositions, "admin")
+        export_rows = []
+        for prop in propositions:
+            membres = prop.get("_membres_enrichis") or []
+            for membre in membres:
+                export_rows.append({
+                    "ID proposition": prop.get("id"), "Type": prop.get("type_sujet"),
+                    "Titre": prop.get("titre"), "Résumé": prop.get("resume"),
+                    "Statut": prop.get("statut"), "Date dépôt": prop.get("created_at"),
+                    "Proposant": prop.get("nom_proposant"), "Promotion proposant": prop.get("promotion"),
+                    "Matricule membre": membre.get("matricule"), "Nom membre": membre.get("nom_complet"),
+                    "Nom arabe": membre.get("nom_complet_arabe"), "Promotion membre": membre.get("promotion"),
+                    "Téléphone": membre.get("telephone"), "E-mail institutionnel": membre.get("email_institutionnel"),
+                    "E-mail": membre.get("email"), "Groupe": membre.get("groupe"), "Sous-groupe": membre.get("sous_groupe"),
+                })
+        if export_rows:
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+                pd.DataFrame(export_rows).to_excel(writer, index=False, sheet_name="Propositions et équipes")
+                ws = writer.sheets["Propositions et équipes"]
+                ws.freeze_panes(1, 0)
+                ws.autofilter(0, 0, len(export_rows), len(pd.DataFrame(export_rows).columns) - 1)
+                for idx, col in enumerate(pd.DataFrame(export_rows).columns):
+                    ws.set_column(idx, idx, min(max(len(str(col)) + 3, 15), 38))
+            st.download_button("📥 Exporter toutes les propositions et coordonnées en Excel", buf.getvalue(), f"Propositions_PFE_Startup_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+    with tab_sujets:
+        if sujets:
+            df_sujets = pd.DataFrame(sujets)
+            colonnes = [c for c in ["titre", "type_sujet", "enseignant_nom", "enseignant_email", "statut", "created_at", "resume"] if c in df_sujets.columns]
+            st.dataframe(df_sujets[colonnes], use_container_width=True, hide_index=True)
+        else:
+            st.info("Aucun sujet enseignant enregistré.")
+    with tab_candidatures:
+        if candidatures:
+            df_cand = pd.DataFrame(candidatures)
+            st.dataframe(df_cand, use_container_width=True, hide_index=True)
+        else:
+            st.info("Aucune candidature enregistrée.")
+    with tab_historique:
+        try:
+            historique = _pfe_db_lire_tout("pfe_historique")
+            if historique:
+                st.dataframe(pd.DataFrame(historique), use_container_width=True, hide_index=True)
+            else:
+                st.info("Aucune action enregistrée.")
+        except Exception as exc:
+            st.caption(f"Historique indisponible : {exc}")
+
+
+# Fin du module PFE / STARTUP
+
+
 # --- NAVIGATION CENTRALE PAR ESPACE ET RUBRIQUE ---
 _user_auth = st.session_state.get("user_data") or {}
 _role_auth = str(_user_auth.get("role", "")).strip().lower()
@@ -25215,6 +25847,7 @@ ADMIN_NAV = {
         ("Répertoire des matières", "📚 Répertoire des Matières"),
     ],
     "Pilotage et scolarité": [
+        ("Gestion des sujets de fin d'études", "🎓 Gestion PFE Administration"),
         ("Statistiques et données", "📊 Statistiques & Données"),
         ("Effectifs par promotion", "📊 Statistiques & Données"),
         ("Bordereaux et procès-verbaux", "📢 Gestion Administrative - Bordereaux & PVs"),
@@ -25227,6 +25860,7 @@ TEACHER_NAV = {
         ("Consulter les EDT des promotions", "🎓 Consulter EDT Toutes Promotions"),
     ],
     "Suivi pédagogique": [
+        ("Sujets de fin d'études et propositions étudiantes", "🎓 Gestion PFE Enseignant"),
         ("Suivi de l'assiduité et des absences", "📝 Suivi d'Assiduité"),
         ("Surveillances des examens", "📅 Surveillances Examens"),
     ],
@@ -25313,6 +25947,9 @@ with st.container():
                 st.error("Aucun enseignant disponible pour la prévisualisation.")
                 st.stop()
             nav_structure = TEACHER_NAV
+            if not _pfe_est_enseignant_permanent(_preview_teacher, ""):
+                nav_structure = {k: [item for item in v if item[1] != "🎓 Gestion PFE Enseignant"] for k, v in nav_structure.items()}
+                nav_structure = {k: v for k, v in nav_structure.items() if v}
         elif espace_choisi == "Étudiant":
             _df_preview_etu = pd.DataFrame()
             try:
@@ -25359,6 +25996,9 @@ with st.container():
     elif _role_auth == "enseignant":
         espace_choisi = "Enseignant"
         nav_structure = TEACHER_NAV
+        if not _pfe_est_enseignant_permanent(_user_auth.get("nom_officiel", ""), _user_auth.get("email", "")):
+            nav_structure = {k: [item for item in v if item[1] != "🎓 Gestion PFE Enseignant"] for k, v in nav_structure.items()}
+            nav_structure = {k: v for k, v in nav_structure.items() if v}
     elif _role_auth == "etudiant":
         espace_choisi = "Étudiant"
         nav_structure = STUDENT_NAV
@@ -35591,7 +36231,18 @@ if df is not None:
         if _is_admin_auth and _preview_student is None:
             st.warning("Sélectionnez un étudiant dans la navigation centrale pour afficher son espace.")
         else:
+            # Le module PFE est rendu uniquement si la fiche officielle confirme
+            # l'appartenance à M2RE, M2ER, M2CE, M2ME, M2MCIL ou ING5RSE.
+            _pfe_rendre_page_etudiant(preview_student=_preview_student if _is_admin_auth else None)
             run_Assiduité_une_fois(preview_student=_preview_student if _is_admin_auth else None)
+    elif portail == "🎓 Gestion PFE Enseignant":
+        _pfe_rendre_page_enseignant(
+            user.get("nom_officiel", ""),
+            user.get("email", ""),
+            read_only=bool(_is_admin_auth and espace_choisi == "Enseignant"),
+        )
+    elif portail == "🎓 Gestion PFE Administration" and is_admin:
+        _pfe_rendre_page_admin()
     elif portail == "📢 Gestion Administrative - Bordereaux & PVs" and is_admin:
         # ==========================================
         # IMPORTS SPÉCIFIQUES (idéalement à déplacer en haut du fichier)
