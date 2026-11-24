@@ -3364,20 +3364,108 @@ def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
             st.error(f"Erreur Supabase (rehabilitation) : {e}")
             return False
 
-    def charger_requetes_supabase(statut=None, promotion=None):
+    # -------------------------------------------------------------------------
+    # CHARGEMENT DES REQUÊTES (JUSTIFICATIFS) — CORRECTIF « statement timeout »
+    # La colonne justificatif_pdf contient les PDF encodés en base64 (plusieurs Mo
+    # par ligne). Le chargement de toutes les lignes avec select("*") dépassait le
+    # délai maximal de Supabase (erreur 57014). Désormais :
+    #   1) la liste est chargée SANS la colonne justificatif_pdf, par pages ;
+    #   2) chaque requête est relancée automatiquement en cas de timeout ;
+    #   3) le PDF d'une requête n'est lu qu'à la demande (une seule ligne, par id).
+    # Index conseillé (Supabase > SQL Editor), à exécuter une seule fois :
+    #   create index if not exists idx_requetes_statut_id on public.requetes_absences (statut, id);
+    #   create index if not exists idx_requetes_promotion_id on public.requetes_absences (promotion, id);
+    # -------------------------------------------------------------------------
+    def _executer_avec_reessais(fabrique, tentatives=3):
+        derniere_erreur = None
+        for essai in range(tentatives):
+            try:
+                return fabrique()
+            except Exception as _err_essai:
+                derniere_erreur = _err_essai
+                if essai < tentatives - 1:
+                    time.sleep(0.6 * (essai + 1))
+        raise derniere_erreur
+
+    def _requetes_colonnes_legeres():
+        """Liste des colonnes de requetes_absences SANS le PDF base64."""
+        colonnes_en_cache = st.session_state.get("_requetes_cols_legeres")
+        if colonnes_en_cache:
+            return colonnes_en_cache
+        colonnes = [
+            "id", "date_demande", "nom_etudiant", "matiere", "promotion", "motif",
+            "statut", "date_absence", "jour_absence", "horaire_absence", "motif_rejet",
+        ]
+        try:
+            # Une seule ligne suffit pour découvrir les colonnes réellement présentes.
+            res_cols = supabase.table("requetes_absences").select("*").order("id").limit(1).execute()
+            if res_cols.data:
+                colonnes = [c for c in res_cols.data[0].keys() if c != "justificatif_pdf"]
+        except Exception:
+            pass
+        st.session_state["_requetes_cols_legeres"] = colonnes
+        return colonnes
+
+    def charger_requetes_supabase(statut=None, promotion=None, avec_pdf=False):
         if not MODE_SUPABASE:
             return []
+
+        def _lire_par_pages(colonnes, taille):
+            toutes, debut = [], 0
+            while True:
+                query = supabase.table("requetes_absences").select(colonnes)
+                if statut:
+                    query = query.eq("statut", statut)
+                if promotion:
+                    query = query.eq("promotion", promotion)
+                page = _executer_avec_reessais(
+                    lambda: query.order("id").range(debut, debut + taille - 1).execute()
+                ).data or []
+                toutes.extend(page)
+                if len(page) < taille:
+                    break
+                debut += taille
+            return toutes
+
         try:
-            query = supabase.table("requetes_absences").select("*")
-            if statut:
-                query = query.eq("statut", statut)
-            if promotion:
-                query = query.eq("promotion", promotion)
-            res = query.execute()
-            return res.data if res.data else []
+            if avec_pdf:
+                return _lire_par_pages("*", 20)
+            try:
+                return _lire_par_pages(",".join(_requetes_colonnes_legeres()), 200)
+            except Exception:
+                # Repli : toutes les colonnes, mais par toutes petites pages.
+                st.session_state.pop("_requetes_cols_legeres", None)
+                return _lire_par_pages("*", 10)
         except Exception as e:
             st.error(f"Erreur Supabase (charger requetes) : {e}")
+            if "57014" in str(e) or "timeout" in str(e).lower():
+                st.info(
+                    "💡 Pour supprimer définitivement ce délai d'attente, exécutez une fois dans "
+                    "Supabase > SQL Editor : create index if not exists idx_requetes_statut_id "
+                    "on public.requetes_absences (statut, id);"
+                )
             return []
+
+    def charger_pdf_requete_supabase(req):
+        """Lit le PDF base64 d'UNE requête à la demande (conservé en cache de session)."""
+        if req.get("justificatif_pdf"):
+            return req.get("justificatif_pdf")
+        if not MODE_SUPABASE or req.get("id") is None:
+            return ""
+        cle_cache = f"_pdf_requete_{req.get('id')}"
+        if cle_cache in st.session_state:
+            return st.session_state[cle_cache]
+        try:
+            res_pdf = _executer_avec_reessais(
+                lambda: supabase.table("requetes_absences").select("justificatif_pdf")
+                .eq("id", req["id"]).limit(1).execute()
+            )
+            valeur_pdf = (res_pdf.data[0].get("justificatif_pdf") if res_pdf.data else "") or ""
+        except Exception as _err_pdf:
+            st.warning(f"⚠️ Chargement du justificatif impossible pour le moment : {_err_pdf}")
+            return ""
+        st.session_state[cle_cache] = valeur_pdf
+        return valeur_pdf
 
     def enregistrer_requete_supabase(payload):
         if not MODE_SUPABASE:
@@ -5686,7 +5774,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 # Aperçu du justificatif PDF : rendu de chaque page en image.
                                 # Cette méthode ne dépend pas du lecteur PDF du navigateur.
                                 try:
-                                    _pdf_b64 = str(req.get("justificatif_pdf") or "").strip()
+                                    _pdf_b64 = str(charger_pdf_requete_supabase(req) or "").strip()
                                     if _pdf_b64.startswith("data:application/pdf;base64,"):
                                         _pdf_b64 = _pdf_b64.split(",", 1)[1]
                                     pdf_decoded = base64.b64decode(_pdf_b64, validate=True)
@@ -5720,7 +5808,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     st.error(f"⚠️ Aperçu PDF impossible : {_err_pdf_preview}")
                                     st.info("Le fichier original reste disponible en téléchargement si son contenu est lisible.")
                                     try:
-                                        _pdf_secours_b64 = str(req.get("justificatif_pdf") or "").strip()
+                                        _pdf_secours_b64 = str(charger_pdf_requete_supabase(req) or "").strip()
                                         if _pdf_secours_b64.startswith("data:application/pdf;base64,"):
                                             _pdf_secours_b64 = _pdf_secours_b64.split(",", 1)[1]
                                         _pdf_secours = base64.b64decode(_pdf_secours_b64, validate=True)
@@ -6189,20 +6277,108 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
             st.error(f"Erreur Supabase (rehabilitation) : {e}")
             return False
 
-    def charger_requetes_supabase(statut=None, promotion=None):
+    # -------------------------------------------------------------------------
+    # CHARGEMENT DES REQUÊTES (JUSTIFICATIFS) — CORRECTIF « statement timeout »
+    # La colonne justificatif_pdf contient les PDF encodés en base64 (plusieurs Mo
+    # par ligne). Le chargement de toutes les lignes avec select("*") dépassait le
+    # délai maximal de Supabase (erreur 57014). Désormais :
+    #   1) la liste est chargée SANS la colonne justificatif_pdf, par pages ;
+    #   2) chaque requête est relancée automatiquement en cas de timeout ;
+    #   3) le PDF d'une requête n'est lu qu'à la demande (une seule ligne, par id).
+    # Index conseillé (Supabase > SQL Editor), à exécuter une seule fois :
+    #   create index if not exists idx_requetes_statut_id on public.requetes_absences (statut, id);
+    #   create index if not exists idx_requetes_promotion_id on public.requetes_absences (promotion, id);
+    # -------------------------------------------------------------------------
+    def _executer_avec_reessais(fabrique, tentatives=3):
+        derniere_erreur = None
+        for essai in range(tentatives):
+            try:
+                return fabrique()
+            except Exception as _err_essai:
+                derniere_erreur = _err_essai
+                if essai < tentatives - 1:
+                    time.sleep(0.6 * (essai + 1))
+        raise derniere_erreur
+
+    def _requetes_colonnes_legeres():
+        """Liste des colonnes de requetes_absences SANS le PDF base64."""
+        colonnes_en_cache = st.session_state.get("_requetes_cols_legeres")
+        if colonnes_en_cache:
+            return colonnes_en_cache
+        colonnes = [
+            "id", "date_demande", "nom_etudiant", "matiere", "promotion", "motif",
+            "statut", "date_absence", "jour_absence", "horaire_absence", "motif_rejet",
+        ]
+        try:
+            # Une seule ligne suffit pour découvrir les colonnes réellement présentes.
+            res_cols = supabase.table("requetes_absences").select("*").order("id").limit(1).execute()
+            if res_cols.data:
+                colonnes = [c for c in res_cols.data[0].keys() if c != "justificatif_pdf"]
+        except Exception:
+            pass
+        st.session_state["_requetes_cols_legeres"] = colonnes
+        return colonnes
+
+    def charger_requetes_supabase(statut=None, promotion=None, avec_pdf=False):
         if not MODE_SUPABASE:
             return []
+
+        def _lire_par_pages(colonnes, taille):
+            toutes, debut = [], 0
+            while True:
+                query = supabase.table("requetes_absences").select(colonnes)
+                if statut:
+                    query = query.eq("statut", statut)
+                if promotion:
+                    query = query.eq("promotion", promotion)
+                page = _executer_avec_reessais(
+                    lambda: query.order("id").range(debut, debut + taille - 1).execute()
+                ).data or []
+                toutes.extend(page)
+                if len(page) < taille:
+                    break
+                debut += taille
+            return toutes
+
         try:
-            query = supabase.table("requetes_absences").select("*")
-            if statut:
-                query = query.eq("statut", statut)
-            if promotion:
-                query = query.eq("promotion", promotion)
-            res = query.execute()
-            return res.data if res.data else []
+            if avec_pdf:
+                return _lire_par_pages("*", 20)
+            try:
+                return _lire_par_pages(",".join(_requetes_colonnes_legeres()), 200)
+            except Exception:
+                # Repli : toutes les colonnes, mais par toutes petites pages.
+                st.session_state.pop("_requetes_cols_legeres", None)
+                return _lire_par_pages("*", 10)
         except Exception as e:
             st.error(f"Erreur Supabase (charger requetes) : {e}")
+            if "57014" in str(e) or "timeout" in str(e).lower():
+                st.info(
+                    "💡 Pour supprimer définitivement ce délai d'attente, exécutez une fois dans "
+                    "Supabase > SQL Editor : create index if not exists idx_requetes_statut_id "
+                    "on public.requetes_absences (statut, id);"
+                )
             return []
+
+    def charger_pdf_requete_supabase(req):
+        """Lit le PDF base64 d'UNE requête à la demande (conservé en cache de session)."""
+        if req.get("justificatif_pdf"):
+            return req.get("justificatif_pdf")
+        if not MODE_SUPABASE or req.get("id") is None:
+            return ""
+        cle_cache = f"_pdf_requete_{req.get('id')}"
+        if cle_cache in st.session_state:
+            return st.session_state[cle_cache]
+        try:
+            res_pdf = _executer_avec_reessais(
+                lambda: supabase.table("requetes_absences").select("justificatif_pdf")
+                .eq("id", req["id"]).limit(1).execute()
+            )
+            valeur_pdf = (res_pdf.data[0].get("justificatif_pdf") if res_pdf.data else "") or ""
+        except Exception as _err_pdf:
+            st.warning(f"⚠️ Chargement du justificatif impossible pour le moment : {_err_pdf}")
+            return ""
+        st.session_state[cle_cache] = valeur_pdf
+        return valeur_pdf
 
     def enregistrer_requete_supabase(payload):
         if not MODE_SUPABASE:
@@ -8792,7 +8968,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                 # Aperçu du justificatif PDF : rendu de chaque page en image.
                                 # Cette méthode ne dépend pas du lecteur PDF du navigateur.
                                 try:
-                                    _pdf_b64 = str(req.get("justificatif_pdf") or "").strip()
+                                    _pdf_b64 = str(charger_pdf_requete_supabase(req) or "").strip()
                                     if _pdf_b64.startswith("data:application/pdf;base64,"):
                                         _pdf_b64 = _pdf_b64.split(",", 1)[1]
                                     pdf_decoded = base64.b64decode(_pdf_b64, validate=True)
@@ -8826,7 +9002,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                     st.error(f"⚠️ Aperçu PDF impossible : {_err_pdf_preview}")
                                     st.info("Le fichier original reste disponible en téléchargement si son contenu est lisible.")
                                     try:
-                                        _pdf_secours_b64 = str(req.get("justificatif_pdf") or "").strip()
+                                        _pdf_secours_b64 = str(charger_pdf_requete_supabase(req) or "").strip()
                                         if _pdf_secours_b64.startswith("data:application/pdf;base64,"):
                                             _pdf_secours_b64 = _pdf_secours_b64.split(",", 1)[1]
                                         _pdf_secours = base64.b64decode(_pdf_secours_b64, validate=True)
