@@ -24545,6 +24545,10 @@ if not st.session_state.get("user_data") and st.session_state.get("étudiant_aut
     }
 
 if not st.session_state["user_data"]:
+    # Bannière de la page d'accueil / connexion, chargée depuis le dépôt GitHub.
+    _IMAGE_ACCUEIL_GE_LOGIN = _BASE_DIR / "GE.jpg"
+    if _IMAGE_ACCUEIL_GE_LOGIN.is_file():
+        st.image(str(_IMAGE_ACCUEIL_GE_LOGIN), use_container_width=True)
     st.markdown("<h1 class='main-title'>🏛️ Espace enseignant & Administration</h1>", unsafe_allow_html=True)
     t_conn, t_ins, t_adm, t_etu = st.tabs(["🔑 Connexion", "📝 Inscription", "🛡️ Admin", "🎓 Étudiant"])
 
@@ -25889,6 +25893,13 @@ _NAV_MODE_BY_LABEL = {
     "Éditeur des données EDT": "✍️ Éditeur de données",
 }
 
+
+# Image de la page d'accueil : le fichier GE.jpg doit être placé à la racine
+# du dépôt GitHub, au même niveau que app.py. Le chemin est résolu localement
+# afin que Streamlit Cloud charge l'image directement depuis le dépôt déployé.
+_IMAGE_ACCUEIL_GE = _BASE_DIR / "GE.jpg"
+if _IMAGE_ACCUEIL_GE.is_file():
+    st.image(str(_IMAGE_ACCUEIL_GE), use_container_width=True)
 
 with st.container():
     st.markdown(f"""<div class="elt-hero" style="background:linear-gradient(118deg,#14213d 0%,#1e40af 58%,#4f46e5 100%);">
