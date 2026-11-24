@@ -1019,6 +1019,40 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# =============================================================================
+# BANNIÈRE D'ACCUEIL RESPONSIVE — image GE.jpg
+# L'image reste entièrement visible, sans déformation, avec une hauteur limitée.
+# =============================================================================
+st.markdown("""
+<style>
+/* Image de la page d'accueil : format bannière, centrée et limitée en hauteur. */
+div[data-testid="stImage"] {
+    max-width: 1200px;
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+}
+div[data-testid="stImage"] img {
+    display: block;
+    width: 100%;
+    max-height: 210px;
+    height: 210px;
+    object-fit: contain;
+    object-position: center center;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Adaptation aux petits écrans : la bannière devient moins haute. */
+@media (max-width: 768px) {
+    div[data-testid="stImage"] img {
+        max-height: 135px;
+        height: 135px;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Empêche le rendu multiple du module Assiduité au cours d'une même exécution.
 st.session_state["_assiduite_rendered_this_run"] = False
 
