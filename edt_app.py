@@ -6136,9 +6136,56 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                         key="bilan_general_avis"
                     )
 
-                _recherche_etudiant_global = st.text_input(
+                # Liste déroulante alimentée directement par le fichier source
+                # officiel des étudiants. Le matricule permet de différencier
+                # les homonymes et de conserver les promotions distinctes.
+                _options_etudiants_source = {"Tous les étudiants": None}
+                try:
+                    _df_source_etudiants_bilan = df_etu.copy() if isinstance(df_etu, pd.DataFrame) else pd.DataFrame()
+                    if _df_source_etudiants_bilan.empty and os.path.exists(FILE_ETUDIANTS):
+                        _df_source_etudiants_bilan = lire_excel_robuste(FILE_ETUDIANTS)
+                    if not _df_source_etudiants_bilan.empty:
+                        _cols_etu_bilan = detecter_colonnes_etudiant(_df_source_etudiants_bilan)
+                        _col_nom_bilan = _cols_etu_bilan.get("nom")
+                        _col_prenom_bilan = _cols_etu_bilan.get("prenom")
+                        _col_mat_bilan = _cols_etu_bilan.get("mat_etud") or _cols_etu_bilan.get("mat_bac")
+                        _col_promo_bilan = _cols_etu_bilan.get("promotion")
+
+                        for _, _row_etu_bilan in _df_source_etudiants_bilan.iterrows():
+                            _nom_bilan = str(_row_etu_bilan.get(_col_nom_bilan, "") if _col_nom_bilan else "").strip()
+                            _prenom_bilan = str(_row_etu_bilan.get(_col_prenom_bilan, "") if _col_prenom_bilan else "").strip()
+                            _mat_bilan = normaliser_mat_etudiant(_row_etu_bilan.get(_col_mat_bilan, "") if _col_mat_bilan else "")
+                            _promo_bilan = str(_row_etu_bilan.get(_col_promo_bilan, "") if _col_promo_bilan else "").strip()
+                            _nom_bilan = "" if _nom_bilan.lower() in ("nan", "none") else _nom_bilan
+                            _prenom_bilan = "" if _prenom_bilan.lower() in ("nan", "none") else _prenom_bilan
+                            _promo_bilan = "" if _promo_bilan.lower() in ("nan", "none") else _promo_bilan
+                            _identite_bilan = " ".join(x for x in [_nom_bilan, _prenom_bilan] if x).strip()
+                            if not _identite_bilan and not _mat_bilan:
+                                continue
+                            _libelle_bilan = _identite_bilan or "Étudiant sans nom"
+                            if _mat_bilan:
+                                _libelle_bilan += f" — Mat. { _mat_bilan }"
+                            if _promo_bilan:
+                                _libelle_bilan += f" — {_promo_bilan}"
+                            _cle_option_bilan = _libelle_bilan
+                            _suffixe_option_bilan = 2
+                            while _cle_option_bilan in _options_etudiants_source:
+                                _cle_option_bilan = f"{_libelle_bilan} ({_suffixe_option_bilan})"
+                                _suffixe_option_bilan += 1
+                            _options_etudiants_source[_cle_option_bilan] = {
+                                "nom_complet": _identite_bilan,
+                                "matricule": _mat_bilan,
+                                "promotion": _promo_bilan,
+                            }
+                except Exception as _err_liste_etu_bilan:
+                    st.warning(f"La liste source des étudiants n'a pas pu être chargée : {_err_liste_etu_bilan}")
+
+                _choix_etudiant_global = st.selectbox(
                     "Rechercher un étudiant (nom ou matricule)",
-                    key="bilan_general_recherche_etudiant"
+                    options=list(_options_etudiants_source.keys()),
+                    index=0,
+                    key="bilan_general_recherche_etudiant_liste",
+                    help="La liste est chargée depuis le fichier source Liste des étudiants_2026-2027.xlsx."
                 )
 
                 _df_global_filtre = _df_bilan_global.copy()
@@ -6162,13 +6209,21 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     _df_global_filtre = _df_global_filtre[
                         _df_global_filtre["Avis administratif"].astype(str) == _filtre_avis_global
                     ]
-                if _recherche_etudiant_global.strip():
-                    _masque_etudiant = (
-                        _df_global_filtre["Étudiant"].astype(str).str.contains(
-                            _recherche_etudiant_global.strip(), case=False, na=False
+                _etudiant_selectionne_global = _options_etudiants_source.get(_choix_etudiant_global)
+                if _etudiant_selectionne_global:
+                    _nom_selectionne_global = str(_etudiant_selectionne_global.get("nom_complet", "")).strip()
+                    _mat_selectionne_global = str(_etudiant_selectionne_global.get("matricule", "")).strip()
+                    _serie_noms_absences = _df_global_filtre["Étudiant"].fillna("").astype(str)
+                    _masque_etudiant_global = pd.Series(False, index=_df_global_filtre.index)
+                    if _nom_selectionne_global:
+                        _masque_etudiant_global = _masque_etudiant_global | _serie_noms_absences.str.contains(
+                            re.escape(_nom_selectionne_global), case=False, na=False
                         )
-                    )
-                    _df_global_filtre = _df_global_filtre[_masque_etudiant]
+                    if _mat_selectionne_global:
+                        _masque_etudiant_global = _masque_etudiant_global | _serie_noms_absences.str.contains(
+                            re.escape(_mat_selectionne_global), case=False, na=False
+                        )
+                    _df_global_filtre = _df_global_filtre[_masque_etudiant_global]
 
                 _m1, _m2, _m3 = st.columns(3)
                 _m1.metric("Absences enregistrées", len(_df_global_filtre))
@@ -9616,9 +9671,56 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                         key="bilan_general_avis"
                     )
 
-                _recherche_etudiant_global = st.text_input(
+                # Liste déroulante alimentée directement par le fichier source
+                # officiel des étudiants. Le matricule permet de différencier
+                # les homonymes et de conserver les promotions distinctes.
+                _options_etudiants_source = {"Tous les étudiants": None}
+                try:
+                    _df_source_etudiants_bilan = df_etu.copy() if isinstance(df_etu, pd.DataFrame) else pd.DataFrame()
+                    if _df_source_etudiants_bilan.empty and os.path.exists(FILE_ETUDIANTS):
+                        _df_source_etudiants_bilan = lire_excel_robuste(FILE_ETUDIANTS)
+                    if not _df_source_etudiants_bilan.empty:
+                        _cols_etu_bilan = detecter_colonnes_etudiant(_df_source_etudiants_bilan)
+                        _col_nom_bilan = _cols_etu_bilan.get("nom")
+                        _col_prenom_bilan = _cols_etu_bilan.get("prenom")
+                        _col_mat_bilan = _cols_etu_bilan.get("mat_etud") or _cols_etu_bilan.get("mat_bac")
+                        _col_promo_bilan = _cols_etu_bilan.get("promotion")
+
+                        for _, _row_etu_bilan in _df_source_etudiants_bilan.iterrows():
+                            _nom_bilan = str(_row_etu_bilan.get(_col_nom_bilan, "") if _col_nom_bilan else "").strip()
+                            _prenom_bilan = str(_row_etu_bilan.get(_col_prenom_bilan, "") if _col_prenom_bilan else "").strip()
+                            _mat_bilan = normaliser_mat_etudiant(_row_etu_bilan.get(_col_mat_bilan, "") if _col_mat_bilan else "")
+                            _promo_bilan = str(_row_etu_bilan.get(_col_promo_bilan, "") if _col_promo_bilan else "").strip()
+                            _nom_bilan = "" if _nom_bilan.lower() in ("nan", "none") else _nom_bilan
+                            _prenom_bilan = "" if _prenom_bilan.lower() in ("nan", "none") else _prenom_bilan
+                            _promo_bilan = "" if _promo_bilan.lower() in ("nan", "none") else _promo_bilan
+                            _identite_bilan = " ".join(x for x in [_nom_bilan, _prenom_bilan] if x).strip()
+                            if not _identite_bilan and not _mat_bilan:
+                                continue
+                            _libelle_bilan = _identite_bilan or "Étudiant sans nom"
+                            if _mat_bilan:
+                                _libelle_bilan += f" — Mat. { _mat_bilan }"
+                            if _promo_bilan:
+                                _libelle_bilan += f" — {_promo_bilan}"
+                            _cle_option_bilan = _libelle_bilan
+                            _suffixe_option_bilan = 2
+                            while _cle_option_bilan in _options_etudiants_source:
+                                _cle_option_bilan = f"{_libelle_bilan} ({_suffixe_option_bilan})"
+                                _suffixe_option_bilan += 1
+                            _options_etudiants_source[_cle_option_bilan] = {
+                                "nom_complet": _identite_bilan,
+                                "matricule": _mat_bilan,
+                                "promotion": _promo_bilan,
+                            }
+                except Exception as _err_liste_etu_bilan:
+                    st.warning(f"La liste source des étudiants n'a pas pu être chargée : {_err_liste_etu_bilan}")
+
+                _choix_etudiant_global = st.selectbox(
                     "Rechercher un étudiant (nom ou matricule)",
-                    key="bilan_general_recherche_etudiant"
+                    options=list(_options_etudiants_source.keys()),
+                    index=0,
+                    key="bilan_general_recherche_etudiant_liste",
+                    help="La liste est chargée depuis le fichier source Liste des étudiants_2026-2027.xlsx."
                 )
 
                 _df_global_filtre = _df_bilan_global.copy()
@@ -9642,13 +9744,21 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                     _df_global_filtre = _df_global_filtre[
                         _df_global_filtre["Avis administratif"].astype(str) == _filtre_avis_global
                     ]
-                if _recherche_etudiant_global.strip():
-                    _masque_etudiant = (
-                        _df_global_filtre["Étudiant"].astype(str).str.contains(
-                            _recherche_etudiant_global.strip(), case=False, na=False
+                _etudiant_selectionne_global = _options_etudiants_source.get(_choix_etudiant_global)
+                if _etudiant_selectionne_global:
+                    _nom_selectionne_global = str(_etudiant_selectionne_global.get("nom_complet", "")).strip()
+                    _mat_selectionne_global = str(_etudiant_selectionne_global.get("matricule", "")).strip()
+                    _serie_noms_absences = _df_global_filtre["Étudiant"].fillna("").astype(str)
+                    _masque_etudiant_global = pd.Series(False, index=_df_global_filtre.index)
+                    if _nom_selectionne_global:
+                        _masque_etudiant_global = _masque_etudiant_global | _serie_noms_absences.str.contains(
+                            re.escape(_nom_selectionne_global), case=False, na=False
                         )
-                    )
-                    _df_global_filtre = _df_global_filtre[_masque_etudiant]
+                    if _mat_selectionne_global:
+                        _masque_etudiant_global = _masque_etudiant_global | _serie_noms_absences.str.contains(
+                            re.escape(_mat_selectionne_global), case=False, na=False
+                        )
+                    _df_global_filtre = _df_global_filtre[_masque_etudiant_global]
 
                 _m1, _m2, _m3 = st.columns(3)
                 _m1.metric("Absences enregistrées", len(_df_global_filtre))
