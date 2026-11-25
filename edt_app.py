@@ -26045,6 +26045,353 @@ def _pfe_etudiant_connecte(preview_student=None):
         return None
 
 
+# =============================================================================
+# RESSOURCES PÉDAGOGIQUES : COURS / TD / TP / INFORMATIONS / TRAVAUX
+# Les métadonnées sont conservées dans Supabase et les fichiers dans un bucket
+# privé. Le portail étudiant ne voit que les publications de sa promotion ou
+# celles qui lui sont adressées individuellement.
+# =============================================================================
+PEDAGOGIE_TABLE = "ressources_pedagogiques"
+PEDAGOGIE_BUCKET = "elt-ressources-pedagogiques"
+PEDAGOGIE_MAX_FILE_MB = 30
+
+
+def _pedagogie_lire_publications(promotion=None, enseignant_email=None, destinataire_matricule=None):
+    if not MODE_SUPABASE or supabase is None:
+        raise RuntimeError("La connexion Supabase n'est pas disponible.")
+    q = supabase.table(PEDAGOGIE_TABLE).select("*")
+    if promotion:
+        q = q.eq("promotion", str(promotion))
+    if enseignant_email:
+        q = q.eq("enseignant_email", str(enseignant_email).strip().lower())
+    if destinataire_matricule:
+        # Les publications générales sont ajoutées séparément à celles ciblées.
+        q = q.or_(f"destinataire_matricule.is.null,destinataire_matricule.eq.{str(destinataire_matricule)}")
+    rep = q.order("created_at", desc=True).limit(500).execute()
+    return rep.data or []
+
+
+def _pedagogie_afficher_fichiers(publication, prefixe="etu"):
+    fichiers = publication.get("fichiers") or []
+    if isinstance(fichiers, str):
+        try:
+            import json as _json_ped
+            fichiers = _json_ped.loads(fichiers)
+        except Exception:
+            fichiers = []
+    if not fichiers:
+        st.caption("Aucun fichier joint à cette publication.")
+        return
+    for i, fichier in enumerate(fichiers):
+        nom = str(fichier.get("nom", f"Document_{i+1}"))
+        chemin = str(fichier.get("chemin", ""))
+        if not chemin:
+            continue
+        try:
+            contenu = supabase.storage.from_(PEDAGOGIE_BUCKET).download(chemin)
+            if hasattr(contenu, "read"):
+                contenu = contenu.read()
+            if isinstance(contenu, bytearray):
+                contenu = bytes(contenu)
+            mime = fichier.get("mime") or "application/octet-stream"
+            taille = int(fichier.get("taille", 0) or 0)
+            suffixe = f" · {taille / (1024*1024):.2f} Mo" if taille else ""
+            st.download_button(
+                f"📥 Télécharger : {nom}{suffixe}",
+                data=contenu,
+                file_name=nom,
+                mime=mime,
+                key=f"{prefixe}_ped_dl_{publication.get('id')}_{i}",
+                use_container_width=True,
+            )
+        except Exception as exc:
+            st.warning(f"Téléchargement indisponible pour {nom} : {exc}")
+
+
+def afficher_ressources_pedagogiques(user_data, df_edt, role="enseignant", preview_student=None):
+    """Partage pédagogique strictement limité aux enseignements et groupes réellement attribués."""
+    import uuid as _uuid_ped
+    import mimetypes as _mimetypes_ped
+    import re as _re_ped
+    import unicodedata as _unicodedata_ped
+    from pathlib import Path as _Path_ped
+    from datetime import datetime as _datetime_ped
+
+    def _ped_norm_code(valeur, prefixe):
+        if valeur is None:
+            return ""
+        t = str(valeur).strip().upper()
+        if not t or t.casefold() in {"nan", "none", "nat", "n/a", "na", "non défini", "non defini"}:
+            return ""
+        if prefixe == "SG":
+            m = _re_ped.search(r"SG\s*[-_. ]?\s*(\d+)", t) or _re_ped.search(r"(\d+)", t)
+        else:
+            m = (_re_ped.search(r"(?<![A-Z])G(?:ROUPE)?\s*[-_. ]?\s*(\d+)", t)
+                 or _re_ped.search(r"(\d+)", t))
+        return f"{prefixe}{int(m.group(1))}" if m else ""
+
+    def _ped_codes_enseignement(libelle):
+        texte = str(libelle or "").upper()
+        sgs = sorted({f"SG{int(n)}" for n in _re_ped.findall(r"SG\s*[-_. ]?\s*(\d+)", texte)}, key=lambda x: int(x[2:]))
+        sans_sg = _re_ped.sub(r"SG\s*[-_. ]?\s*\d+", " ", texte)
+        groupes = sorted({f"G{int(n)}" for n in _re_ped.findall(r"(?<![A-Z])G(?:ROUPE)?\s*[-_. ]?\s*(\d+)", sans_sg)}, key=lambda x: int(x[1:]))
+        return groupes, sgs
+
+    def _ped_type_enseignement(libelle):
+        t = str(libelle or "").strip().upper()
+        if _re_ped.match(r"^\s*TP\s*[-_:]", t):
+            return "TP"
+        if _re_ped.match(r"^\s*TD\s*[-_:]", t):
+            return "TD"
+        if _re_ped.match(r"^\s*COURS?\s*[-_:]", t):
+            return "COURS"
+        return "AUTRE"
+
+    def _ped_fiches_pour_cible(promotion, groupe="", sous_groupe=""):
+        fiches = _pfe_charger_etudiants_officiels()
+        resultat = []
+        for f in fiches.values():
+            if str(f.get("promotion", "")).strip().upper() != str(promotion).strip().upper():
+                continue
+            # Exclure les étudiants en congé académique.
+            if str(f.get("conge_academique", "")).strip().casefold() in {"oui", "o", "yes", "true", "1"}:
+                continue
+            if groupe and _ped_norm_code(f.get("groupe", ""), "G") != groupe:
+                continue
+            if sous_groupe and _ped_norm_code(f.get("sous_groupe", ""), "SG") != sous_groupe:
+                continue
+            resultat.append(f)
+        return sorted(resultat, key=lambda f: f.get("nom_complet", "").casefold())
+
+    if not MODE_SUPABASE or supabase is None:
+        st.error("Le partage pédagogique nécessite une connexion Supabase active. Vérifiez SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY.")
+        return
+
+    if role == "enseignant":
+        nom_enseignant = str(user_data.get("nom_officiel", "Enseignant")).strip()
+        email_enseignant = str(user_data.get("email", "")).strip().lower()
+        st.markdown("## 📚 Espace de partage pédagogique")
+        st.caption("Chaque publication est limitée à vos enseignements de l'emploi du temps, puis au groupe ou sous-groupe concerné.")
+
+        df_prof = pd.DataFrame()
+        if isinstance(df_edt, pd.DataFrame) and not df_edt.empty and "Enseignants" in df_edt.columns:
+            df_prof = df_edt[df_edt["Enseignants"].astype(str).str.contains(_re_ped.escape(nom_enseignant), case=False, na=False)].copy()
+        if df_prof.empty:
+            st.warning("Aucun enseignement n'est associé à votre compte dans l'emploi du temps. Le dépôt est bloqué.")
+            return
+        if not all(c in df_prof.columns for c in ["Promotion", "Enseignements"]):
+            st.error("Les colonnes Promotion et Enseignements sont nécessaires pour sécuriser le partage.")
+            return
+
+        promos = sorted({str(x).strip() for x in df_prof["Promotion"].dropna() if str(x).strip() and str(x).strip().casefold() not in {"nan", "none", "non défini", "non defini"}})
+        if not promos:
+            st.warning("Aucune promotion n'est associée à vos enseignements.")
+            return
+
+        tab_depot, tab_mes_publications = st.tabs(["➕ Nouvelle publication", "📂 Mes publications"])
+        with tab_depot:
+            promotion = st.selectbox("1. Promotion", promos, key="ped_promo_depot_v2")
+            df_promo_prof = df_prof[df_prof["Promotion"].astype(str).str.strip() == promotion].copy()
+            # Liste d'enseignements distincts effectivement attribués à cet enseignant pour cette promotion.
+            enseignements = sorted({str(x).strip() for x in df_promo_prof["Enseignements"].dropna()
+                                    if str(x).strip() and str(x).strip().casefold() not in {"nan", "none", "non défini", "non defini"}}, key=str.casefold)
+            if not enseignements:
+                st.warning("Aucun enseignement attribué pour cette promotion.")
+                return
+            matiere = st.selectbox("2. Votre matière / enseignement (issu de votre EDT)", enseignements, key="ped_matiere_depot_v2")
+            lignes_matiere = df_promo_prof[df_promo_prof["Enseignements"].astype(str).str.strip() == matiere]
+            # Vérification explicite que l'enseignement choisi figure bien dans les lignes EDT du compte connecté.
+            if lignes_matiere.empty:
+                st.error("Cet enseignement ne fait pas partie de vos affectations. Publication interdite.")
+                return
+
+            type_ens = _ped_type_enseignement(matiere)
+            groupes_edt, sous_groupes_edt = _ped_codes_enseignement(matiere)
+            groupe_cible = ""
+            sous_groupe_cible = ""
+            portee = "promotion"
+            autorisation_ok = True
+
+            if type_ens == "TD":
+                if not groupes_edt:
+                    st.error("Le TD sélectionné ne comporte aucun code de groupe (ex. G1) dans l'intitulé de l'EDT. Pour éviter d'envoyer le document au mauvais groupe, la publication est bloquée. Faites corriger l'affectation TD dans l'EDT.")
+                    autorisation_ok = False
+                else:
+                    groupe_cible = st.selectbox("3. Groupe TD autorisé par votre affectation", groupes_edt, key="ped_groupe_td_v2")
+                    portee = "groupe"
+            elif type_ens == "TP":
+                if not sous_groupes_edt:
+                    st.error("Le TP sélectionné ne comporte aucun code de sous-groupe (ex. SG11) dans l'intitulé de l'EDT. Pour éviter toute diffusion incorrecte, la publication est bloquée. Faites corriger l'affectation TP dans l'EDT.")
+                    autorisation_ok = False
+                else:
+                    sous_groupe_cible = st.selectbox("3. Sous-groupe TP autorisé par votre affectation", sous_groupes_edt, key="ped_sous_groupe_tp_v2")
+                    groupe_parent = _ped_norm_code(sous_groupe_cible[2], "G") if len(sous_groupe_cible) > 2 else ""
+                    # SG11 correspond au groupe G1 ; SG21 au groupe G2, etc.
+                    groupe_parent = f"G{int(sous_groupe_cible[2])}" if len(sous_groupe_cible) > 2 and sous_groupe_cible[2].isdigit() else ""
+                    groupe_cible = groupe_parent
+                    portee = "sous_groupe"
+            elif groupes_edt:
+                groupe_cible = st.selectbox("3. Groupe concerné par cet enseignement", groupes_edt, key="ped_groupe_cours_v2")
+                portee = "groupe"
+            else:
+                st.info("Cet enseignement n'est pas subdivisé dans l'intitulé de l'EDT : la publication concernera toute la promotion.")
+
+            candidats = _ped_fiches_pour_cible(promotion, groupe_cible, sous_groupe_cible) if autorisation_ok else []
+            if autorisation_ok and not candidats:
+                st.error("Aucun étudiant officiel ne correspond au groupe/sous-groupe indiqué. Publication bloquée : vérifiez les affectations et le fichier officiel des étudiants.")
+                autorisation_ok = False
+            if autorisation_ok:
+                libelle_cible = (f"Sous-groupe {sous_groupe_cible} (groupe {groupe_cible})" if sous_groupe_cible
+                                 else f"Groupe {groupe_cible}" if groupe_cible else "Toute la promotion")
+                st.success(f"Destinataires autorisés : **{libelle_cible}** — **{len(candidats)} étudiant(s)**.")
+
+            with st.form("form_depot_ressource_pedagogique_v2", clear_on_submit=True):
+                type_pub = st.selectbox("Type de publication", ["Cours", "Fiche TD", "Fiche TP", "Corrigé", "Information", "Travail à effectuer", "Autre"], key="ped_type_depot_v2")
+                titre = st.text_input("Titre", placeholder="Ex. Chapitre 2 — Machines électriques")
+                contenu = st.text_area("Message destiné aux étudiants", placeholder="Consignes, informations, travail à préparer, date limite…", height=140)
+                mode_dest = st.radio("Destinataires", ["Tout le groupe / sous-groupe autorisé", "Un étudiant de ce groupe uniquement"], horizontal=True, key="ped_mode_dest_v2")
+                fiche_dest = None
+                if mode_dest == "Un étudiant de ce groupe uniquement" and candidats:
+                    labels = [f"{f['nom_complet']} — {f['matricule']}" for f in candidats]
+                    choix_dest = st.selectbox("Étudiant destinataire", labels, key="ped_dest_etu_v2")
+                    fiche_dest = candidats[labels.index(choix_dest)]
+                fichiers = st.file_uploader(
+                    "Joindre des fichiers (PDF, Word, Excel, PowerPoint ou images)",
+                    type=["pdf", "doc", "docx", "odt", "xls", "xlsx", "ppt", "pptx", "jpg", "jpeg", "png", "zip"],
+                    accept_multiple_files=True, key="ped_fichiers_depot_v2",
+                    help=f"Taille maximale : {PEDAGOGIE_MAX_FILE_MB} Mo par fichier.",
+                )
+                publier = st.form_submit_button("📤 Publier uniquement aux étudiants sélectionnés", type="primary", use_container_width=True, disabled=not autorisation_ok)
+
+            if publier:
+                if not autorisation_ok:
+                    st.error("Publication bloquée : destinataires non validés.")
+                elif not titre.strip():
+                    st.error("Veuillez saisir un titre.")
+                elif not contenu.strip() and not fichiers:
+                    st.error("Ajoutez un message ou au moins un fichier.")
+                elif mode_dest == "Un étudiant de ce groupe uniquement" and fiche_dest is None:
+                    st.error("Sélectionnez un étudiant appartenant au groupe/sous-groupe autorisé.")
+                elif any(getattr(f, "size", 0) > PEDAGOGIE_MAX_FILE_MB * 1024 * 1024 for f in (fichiers or [])):
+                    st.error(f"Un fichier dépasse la limite de {PEDAGOGIE_MAX_FILE_MB} Mo.")
+                else:
+                    publication_id = str(_uuid_ped.uuid4())
+                    fichiers_meta, chemins_uploades = [], []
+                    try:
+                        for fichier in (fichiers or []):
+                            nom_original = _Path_ped(fichier.name).name
+                            extension = _Path_ped(nom_original).suffix.lower()
+                            nom_stockage = f"{publication_id}/{_uuid_ped.uuid4().hex}{extension}"
+                            mime = fichier.type or _mimetypes_ped.guess_type(nom_original)[0] or "application/octet-stream"
+                            contenu_fichier = fichier.getvalue()
+                            supabase.storage.from_(PEDAGOGIE_BUCKET).upload(nom_stockage, contenu_fichier,
+                                file_options={"content-type": mime, "upsert": "false"})
+                            chemins_uploades.append(nom_stockage)
+                            fichiers_meta.append({"nom": nom_original, "chemin": nom_stockage, "mime": mime, "taille": len(contenu_fichier)})
+
+                        payload = {
+                            "id": publication_id,
+                            "type_publication": type_pub,
+                            "titre": titre.strip(),
+                            "contenu": contenu.strip(),
+                            "promotion": promotion,
+                            "matiere": matiere,
+                            "enseignant": nom_enseignant,
+                            "enseignant_email": email_enseignant,
+                            "portee": portee,
+                            "groupe_cible": groupe_cible or None,
+                            "sous_groupe_cible": sous_groupe_cible or None,
+                            "destinataire_matricule": fiche_dest.get("matricule") if fiche_dest else None,
+                            "destinataire_nom": fiche_dest.get("nom_complet") if fiche_dest else None,
+                            "fichiers": fichiers_meta,
+                            "created_at": _datetime_ped.now().astimezone().isoformat(),
+                        }
+                        supabase.table(PEDAGOGIE_TABLE).insert(payload).execute()
+                        st.success(f"Publication envoyée à {1 if fiche_dest else len(candidats)} étudiant(s) de {libelle_cible}.")
+                        st.rerun()
+                    except Exception as exc:
+                        if chemins_uploades:
+                            try:
+                                supabase.storage.from_(PEDAGOGIE_BUCKET).remove(chemins_uploades)
+                            except Exception:
+                                pass
+                        st.error(f"La publication n'a pas pu être enregistrée : {exc}. Vérifiez la migration SQL de partage pédagogique.")
+
+        with tab_mes_publications:
+            try:
+                publications = _pedagogie_lire_publications(enseignant_email=email_enseignant)
+            except Exception as exc:
+                publications = []
+                st.error(f"Impossible de charger vos publications : {exc}")
+            if not publications:
+                st.info("Vous n'avez encore publié aucun document ou message.")
+            for pub in publications:
+                date_pub = str(pub.get("created_at", ""))[:16].replace("T", " ")
+                cible = (f"{pub.get('sous_groupe_cible')} / {pub.get('groupe_cible')}" if pub.get("sous_groupe_cible")
+                         else f"Groupe {pub.get('groupe_cible')}" if pub.get("groupe_cible") else "Toute la promotion")
+                with st.expander(f"{pub.get('type_publication','Publication')} · {pub.get('titre','Sans titre')} — {pub.get('promotion','')} · {date_pub}"):
+                    st.write(pub.get("contenu", ""))
+                    st.caption(f"Matière : {pub.get('matiere','')} · Cible : {cible} · Étudiant : {pub.get('destinataire_nom') or 'Tous les étudiants de la cible'}")
+                    _pedagogie_afficher_fichiers(pub, "ens")
+                    if st.button("🗑️ Supprimer cette publication", key=f"ped_supprimer_{pub.get('id')}"):
+                        try:
+                            fichiers_pub = pub.get("fichiers") or []
+                            chemins = [f.get("chemin") for f in fichiers_pub if f.get("chemin")]
+                            if chemins:
+                                supabase.storage.from_(PEDAGOGIE_BUCKET).remove(chemins)
+                            supabase.table(PEDAGOGIE_TABLE).delete().eq("id", pub.get("id")).eq("enseignant_email", email_enseignant).execute()
+                            st.success("Publication supprimée.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Suppression impossible : {exc}")
+
+    elif role == "etudiant":
+        fiche = _pfe_etudiant_connecte(preview_student=preview_student)
+        if not fiche:
+            st.warning("Votre fiche officielle étudiant n'a pas pu être identifiée. Vérifiez que votre matricule étudiant correspond au fichier source.")
+            return
+        promotion = str(fiche.get("promotion", "")).strip()
+        matricule = str(fiche.get("matricule", "")).strip()
+        groupe_etu = _ped_norm_code(fiche.get("groupe", ""), "G")
+        sous_groupe_etu = _ped_norm_code(fiche.get("sous_groupe", ""), "SG")
+        st.markdown("## 📚 Mes cours, TD, TP et annonces des enseignants")
+        st.caption(f"Vos ressources personnelles — **{promotion}**, **{groupe_etu or 'groupe non renseigné'}**, **{sous_groupe_etu or 'sous-groupe non renseigné'}**. Seules les publications correspondant à vos affectations sont affichées.")
+        try:
+            publications = _pedagogie_lire_publications(promotion=promotion)
+            visibles = []
+            for p in publications:
+                cible_mat = str(p.get("destinataire_matricule") or "").strip()
+                if cible_mat and cible_mat != matricule:
+                    continue
+                g_cible = _ped_norm_code(p.get("groupe_cible", ""), "G")
+                sg_cible = _ped_norm_code(p.get("sous_groupe_cible", ""), "SG")
+                if g_cible and groupe_etu != g_cible:
+                    continue
+                if sg_cible and sous_groupe_etu != sg_cible:
+                    continue
+                visibles.append(p)
+            publications = visibles
+        except Exception as exc:
+            st.error(f"Impossible de charger les ressources pédagogiques : {exc}")
+            return
+        if not publications:
+            st.info("Aucun document, message ou travail à faire ne vous a encore été adressé pour vos matières, groupe et sous-groupe.")
+            return
+        types = ["Tous"] + sorted({str(p.get("type_publication", "Autre")) for p in publications})
+        filtre_type = st.selectbox("Filtrer par type", types, key="ped_filtre_type_etudiant_v2")
+        if filtre_type != "Tous":
+            publications = [p for p in publications if p.get("type_publication") == filtre_type]
+        for pub in publications:
+            date_pub = str(pub.get("created_at", ""))[:16].replace("T", " ")
+            cible = (f"Sous-groupe {pub.get('sous_groupe_cible')}" if pub.get("sous_groupe_cible")
+                     else f"Groupe {pub.get('groupe_cible')}" if pub.get("groupe_cible") else "Promotion")
+            with st.container(border=True):
+                st.markdown(f"**{pub.get('type_publication','Publication')} — {pub.get('titre','Sans titre')}**")
+                st.caption(f"👨‍🏫 {pub.get('enseignant','Enseignant')} · 📘 {pub.get('matiere','')} · 👥 {cible} · 🕒 {date_pub}")
+                if pub.get("contenu"):
+                    st.write(pub.get("contenu"))
+                _pedagogie_afficher_fichiers(pub, "etu")
+
 def _pfe_est_eligible_etudiant(fiche):
     """L'éligibilité est déterminée exclusivement par la promotion officielle."""
     return bool(fiche and _pfe_clean(fiche.get("promotion", "")).upper() in PFE_PROMOTIONS_AUTORISEES)
@@ -26386,7 +26733,6 @@ PFE_ENSEIGNANTS_RESPONSABLES_EQUIPE = {
     "MASSOUM AHMED",
     "ZIDI SID AHMED",
     "TOUHAMI SEDDIK",
-    "MILOUA FARID",
     "BENTAALLAH ABDERRAHIM",
     "REZOUG MOHAMMED",
     "BENDAOUD ABDELBER",
@@ -26734,6 +27080,7 @@ TEACHER_NAV = {
         ("Surveillances des examens", "📅 Surveillances Examens"),
     ],
     "Ressources pédagogiques": [
+        ("Dépôt des cours, TD, TP et annonces", "📚 Ressources pédagogiques"),
         ("Répertoire des matières", "📚 Répertoire des Matières"),
     ],
 }
@@ -37111,6 +37458,12 @@ if df is not None:
             # l'appartenance à M2RE, M2ER, M2CE, M2ME, M2MCIL ou ING5RSE.
             _pfe_rendre_page_etudiant(preview_student=_preview_student if _is_admin_auth else None)
             run_Assiduité_une_fois(preview_student=_preview_student if _is_admin_auth else None)
+            afficher_ressources_pedagogiques(
+                user, df, role="etudiant",
+                preview_student=_preview_student if _is_admin_auth else None,
+            )
+    elif portail == "📚 Ressources pédagogiques" and espace_choisi == "Enseignant":
+        afficher_ressources_pedagogiques(user, df, role="enseignant")
     elif portail == "🎓 Gestion PFE Enseignant":
         _pfe_rendre_page_enseignant(
             user.get("nom_officiel", ""),
