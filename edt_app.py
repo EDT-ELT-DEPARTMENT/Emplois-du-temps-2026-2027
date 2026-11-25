@@ -3515,7 +3515,11 @@ def run_Assiduité_apercu(preview_teacher=None, preview_student=None):
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("requetes_absences").update({"statut": statut}).eq("id", req_id).execute()
+            supabase.table("requetes_absences").update({
+                "statut": statut,
+                "date_decision": datetime.now().isoformat(),
+                "decide_par": "Administration",
+            }).eq("id", req_id).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (maj statut) : {e}")
@@ -5883,6 +5887,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                         for r in st.session_state.requetes:
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Favorable"
+                                                r["date_decision"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                                                r["decide_par"] = "Administration"
                                         for a in st.session_state.absences:
                                             if (a.get("etud_non_eligible") == req['nom_etudiant']
                                                     and a.get("matiere") == req['matiere']):
@@ -5903,6 +5909,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                             supabase.table("requetes_absences").update({
                                                 "statut": "Defavorable",
                                                 "motif_rejet": motif_rejet_selectionne,
+                                                "date_decision": datetime.now().isoformat(),
+                                                "decide_par": "Administration",
                                             }).eq("id", req["id"]).execute()
                                             _rejet_ok = True
                                         except Exception as _err_rejet:
@@ -5916,6 +5924,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Defavorable"
                                                 r["motif_rejet"] = motif_rejet_selectionne
+                                                r["date_decision"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                                                r["decide_par"] = "Administration"
                                                 _rejet_ok = True
 
                                     if _rejet_ok:
@@ -5958,6 +5968,282 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
     if not is_enseignant_connecte:
         with tab3:
             st.header("📊 bilans d'assiduité")
+
+            # -----------------------------------------------------------------
+            # BILAN GÉNÉRAL DES ABSENCES — TOUTES PROMOTIONS DE LA FACULTÉ
+            # Les données proviennent des signalements enseignants et des
+            # demandes de justificatifs déjà enregistrés dans Supabase.
+            # -----------------------------------------------------------------
+            st.divider()
+            st.subheader("🌐 Bilan général des absences — toutes les promotions")
+            st.caption(
+                "Registre détaillé des absences signalées par les enseignants, "
+                "avec le justificatif étudiant et la décision administrative."
+            )
+
+            if MODE_SUPABASE:
+                _absences_globales = charger_absences_supabase()
+                # Les absences supprimées/archivées restent consultables dans
+                # la corbeille Supabase : on les ajoute au bilan historique.
+                try:
+                    _absences_archivees_globales = []
+                    _debut_archive_global, _taille_archive_global = 0, 1000
+                    while True:
+                        _page_archive_global = (
+                            supabase.table("suivi_assiduite_corbeille")
+                            .select("*")
+                            .range(
+                                _debut_archive_global,
+                                _debut_archive_global + _taille_archive_global - 1
+                            ).execute().data or []
+                        )
+                        _absences_archivees_globales.extend(_page_archive_global)
+                        if len(_page_archive_global) < _taille_archive_global:
+                            break
+                        _debut_archive_global += _taille_archive_global
+                    for _absence_archivee in _absences_archivees_globales:
+                        _absence_archivee["_archivee_bilan"] = True
+                    _absences_globales.extend(_absences_archivees_globales)
+                except Exception as _err_archive_bilan:
+                    st.warning(
+                        "La corbeille des absences n'a pas pu être lue. "
+                        "Le bilan affiche les absences encore présentes dans le registre actif. "
+                        f"Détail : {_err_archive_bilan}"
+                    )
+                _requetes_globales = charger_requetes_supabase()
+            else:
+                _absences_globales = list(st.session_state.get("absences", []))
+                _requetes_globales = list(st.session_state.get("requetes", []))
+
+            def _cle_bilan_absence(_d, _etudiant_key):
+                def _n(_v):
+                    return " ".join(str(_v or "").strip().casefold().split())
+                return (
+                    _n(_d.get(_etudiant_key)),
+                    _n(_d.get("matiere")),
+                    _n(_d.get("promotion")),
+                    _n(_d.get("date_absence")),
+                    _n(_d.get("jour_absence")),
+                    _n(_d.get("horaire_absence")),
+                )
+
+            _index_requetes_bilan = {}
+            for _rq in _requetes_globales:
+                _cle_rq = _cle_bilan_absence(_rq, "nom_etudiant")
+                # Les demandes sont parcourues dans l'ordre de la base ;
+                # la dernière demande rencontrée pour une séance prévaut.
+                _index_requetes_bilan[_cle_rq] = _rq
+
+            _lignes_bilan_global = []
+            for _ab in _absences_globales:
+                _cle_ab = _cle_bilan_absence(_ab, "etud_non_eligible")
+                _rq = _index_requetes_bilan.get(_cle_ab, {})
+                _justifie = _ab.get("justifie") is True
+                _statut_req = str(_rq.get("statut") or "").strip()
+
+                if _statut_req:
+                    _avis_admin = _statut_req
+                elif _justifie:
+                    _avis_admin = "Favorable (absence déjà marquée justifiée)"
+                else:
+                    _avis_admin = "Aucun avis — aucune demande déposée"
+
+                if _statut_req == "En attente":
+                    _etat_justificatif = "Déposé — en attente"
+                elif _statut_req == "Favorable":
+                    _etat_justificatif = "Déposé — accepté"
+                elif _statut_req in ("Defavorable", "Défavorable"):
+                    _etat_justificatif = "Déposé — rejeté"
+                elif _justifie:
+                    _etat_justificatif = "Justifiée"
+                else:
+                    _etat_justificatif = "Non justifiée / aucun justificatif déposé"
+
+                _date_decision = (
+                    _rq.get("date_decision")
+                    or _rq.get("updated_at")
+                    or _rq.get("date_traitement")
+                    or _rq.get("traite_le")
+                    or _rq.get("date_avis")
+                    or ""
+                )
+
+                _lignes_bilan_global.append({
+                    "Enseignant ayant signalé": _ab.get("enseignant", ""),
+                    "Étudiant": _ab.get("etud_non_eligible", ""),
+                    "Promotion": _ab.get("promotion", ""),
+                    "Matière / enseignement": _ab.get("matiere", ""),
+                    "Date d'absence": _ab.get("date_absence", ""),
+                    "Jour": _ab.get("jour_absence", ""),
+                    "Heure / créneau": _ab.get("horaire_absence", ""),
+                    "Date du signalement": _ab.get("date_saisie", ""),
+                    "État du registre": "Archivée / supprimée" if _ab.get("_archivee_bilan") else "Active",
+                    "Justificatif étudiant": _etat_justificatif,
+                    "Date de dépôt du justificatif": _rq.get("date_demande", ""),
+                    "Motif déclaré par l'étudiant": _rq.get("motif", ""),
+                    "Avis administratif": _avis_admin,
+                    "Date de décision administrative": _date_decision or "Non enregistrée",
+                    "Décision prise par": _rq.get("decide_par", ""),
+                    "Motif du rejet administratif": _rq.get("motif_rejet", ""),
+                    "Absence justifiée (base)": "Oui" if _justifie else "Non",
+                })
+
+            if _lignes_bilan_global:
+                _df_bilan_global = pd.DataFrame(_lignes_bilan_global)
+
+                _c_filtres = st.columns(3)
+                with _c_filtres[0]:
+                    _promos_globales = sorted(
+                        [str(x) for x in _df_bilan_global["Promotion"].dropna().unique() if str(x).strip()]
+                    )
+                    _filtre_promo_global = st.selectbox(
+                        "Promotion (bilan général)",
+                        ["Toutes"] + _promos_globales,
+                        key="bilan_general_promotion"
+                    )
+                with _c_filtres[1]:
+                    _enseignants_globaux = sorted(
+                        [str(x) for x in _df_bilan_global["Enseignant ayant signalé"].dropna().unique() if str(x).strip()]
+                    )
+                    _filtre_enseignant_global = st.selectbox(
+                        "Enseignant",
+                        ["Tous"] + _enseignants_globaux,
+                        key="bilan_general_enseignant"
+                    )
+                with _c_filtres[2]:
+                    _matieres_globales = sorted(
+                        [str(x) for x in _df_bilan_global["Matière / enseignement"].dropna().unique() if str(x).strip()]
+                    )
+                    _filtre_matiere_global = st.selectbox(
+                        "Matière",
+                        ["Toutes"] + _matieres_globales,
+                        key="bilan_general_matiere"
+                    )
+
+                _c_filtres2 = st.columns(2)
+                with _c_filtres2[0]:
+                    _etats_justif = sorted(_df_bilan_global["Justificatif étudiant"].fillna("").astype(str).unique())
+                    _filtre_justif_global = st.selectbox(
+                        "État du justificatif",
+                        ["Tous"] + _etats_justif,
+                        key="bilan_general_justificatif"
+                    )
+                with _c_filtres2[1]:
+                    _avis_possibles = sorted(_df_bilan_global["Avis administratif"].fillna("").astype(str).unique())
+                    _filtre_avis_global = st.selectbox(
+                        "Avis de l'administration",
+                        ["Tous"] + _avis_possibles,
+                        key="bilan_general_avis"
+                    )
+
+                _recherche_etudiant_global = st.text_input(
+                    "Rechercher un étudiant (nom ou matricule)",
+                    key="bilan_general_recherche_etudiant"
+                )
+
+                _df_global_filtre = _df_bilan_global.copy()
+                if _filtre_promo_global != "Toutes":
+                    _df_global_filtre = _df_global_filtre[
+                        _df_global_filtre["Promotion"].astype(str) == _filtre_promo_global
+                    ]
+                if _filtre_enseignant_global != "Tous":
+                    _df_global_filtre = _df_global_filtre[
+                        _df_global_filtre["Enseignant ayant signalé"].astype(str) == _filtre_enseignant_global
+                    ]
+                if _filtre_matiere_global != "Toutes":
+                    _df_global_filtre = _df_global_filtre[
+                        _df_global_filtre["Matière / enseignement"].astype(str) == _filtre_matiere_global
+                    ]
+                if _filtre_justif_global != "Tous":
+                    _df_global_filtre = _df_global_filtre[
+                        _df_global_filtre["Justificatif étudiant"].astype(str) == _filtre_justif_global
+                    ]
+                if _filtre_avis_global != "Tous":
+                    _df_global_filtre = _df_global_filtre[
+                        _df_global_filtre["Avis administratif"].astype(str) == _filtre_avis_global
+                    ]
+                if _recherche_etudiant_global.strip():
+                    _masque_etudiant = (
+                        _df_global_filtre["Étudiant"].astype(str).str.contains(
+                            _recherche_etudiant_global.strip(), case=False, na=False
+                        )
+                    )
+                    _df_global_filtre = _df_global_filtre[_masque_etudiant]
+
+                _m1, _m2, _m3 = st.columns(3)
+                _m1.metric("Absences enregistrées", len(_df_global_filtre))
+                _m2.metric(
+                    "Absences justifiées",
+                    int((_df_global_filtre["Absence justifiée (base)"] == "Oui").sum())
+                )
+                _m3.metric(
+                    "Sans avis administratif",
+                    int(_df_global_filtre["Avis administratif"].astype(str).str.startswith("Aucun avis").sum())
+                )
+
+                st.dataframe(
+                    _df_global_filtre,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # Export Excel multi-feuilles : détail filtré + synthèses globales.
+                _buf_bilan_global = io.BytesIO()
+                with pd.ExcelWriter(_buf_bilan_global, engine="xlsxwriter") as _writer_global:
+                    _df_global_filtre.to_excel(
+                        _writer_global, index=False, sheet_name="Absences détail"
+                    )
+                    _synthese_promo_global = (
+                        _df_bilan_global.groupby("Promotion", dropna=False)
+                        .agg(
+                            Nombre_absences=("Étudiant", "size"),
+                            Nombre_justifiees=("Absence justifiée (base)", lambda x: (x == "Oui").sum()),
+                        ).reset_index()
+                    )
+                    _synthese_enseignant_global = (
+                        _df_bilan_global.groupby("Enseignant ayant signalé", dropna=False)
+                        .size().reset_index(name="Nombre_absences_signalees")
+                        .sort_values("Nombre_absences_signalees", ascending=False)
+                    )
+                    _synthese_matiere_global = (
+                        _df_bilan_global.groupby(
+                            ["Promotion", "Matière / enseignement"], dropna=False
+                        ).size().reset_index(name="Nombre_absences")
+                        .sort_values("Nombre_absences", ascending=False)
+                    )
+                    _synthese_promo_global.to_excel(
+                        _writer_global, index=False, sheet_name="Synthèse promotions"
+                    )
+                    _synthese_enseignant_global.to_excel(
+                        _writer_global, index=False, sheet_name="Synthèse enseignants"
+                    )
+                    _synthese_matiere_global.to_excel(
+                        _writer_global, index=False, sheet_name="Synthèse matières"
+                    )
+
+                    for _nom_feuille, _df_feuille in [
+                        ("Absences détail", _df_global_filtre),
+                        ("Synthèse promotions", _synthese_promo_global),
+                        ("Synthèse enseignants", _synthese_enseignant_global),
+                        ("Synthèse matières", _synthese_matiere_global),
+                    ]:
+                        _ws_global = _writer_global.sheets[_nom_feuille]
+                        _ws_global.freeze_panes(1, 0)
+                        _ws_global.autofilter(0, 0, max(0, len(_df_feuille)), max(0, len(_df_feuille.columns) - 1))
+                        for _col_idx, _col_name in enumerate(_df_feuille.columns):
+                            _largeur = min(max(len(str(_col_name)) + 3, 14), 34)
+                            _ws_global.set_column(_col_idx, _col_idx, _largeur)
+
+                st.download_button(
+                    "📥 Télécharger le bilan général complet en Excel",
+                    data=_buf_bilan_global.getvalue(),
+                    file_name="Bilan_general_absences_faculte.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="telecharger_bilan_general_absences_faculte",
+                    use_container_width=True,
+                )
+            else:
+                st.info("Aucune absence signalée n'est actuellement enregistrée dans le registre.")
 
             # Vérification code d'accès pour les bilans et exports
             if not is_enseignant_connecte and not is_admin_edt:
@@ -6428,7 +6714,11 @@ def run_Assiduité_complet(forced_portal=None, forced_mode_view=None):
         if not MODE_SUPABASE:
             return False
         try:
-            supabase.table("requetes_absences").update({"statut": statut}).eq("id", req_id).execute()
+            supabase.table("requetes_absences").update({
+                "statut": statut,
+                "date_decision": datetime.now().isoformat(),
+                "decide_par": "Administration",
+            }).eq("id", req_id).execute()
             return True
         except Exception as e:
             st.error(f"Erreur Supabase (maj statut) : {e}")
@@ -9077,6 +9367,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                         for r in st.session_state.requetes:
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Favorable"
+                                                r["date_decision"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                                                r["decide_par"] = "Administration"
                                         for a in st.session_state.absences:
                                             if (a.get("etud_non_eligible") == req['nom_etudiant']
                                                     and a.get("matiere") == req['matiere']):
@@ -9097,6 +9389,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                             supabase.table("requetes_absences").update({
                                                 "statut": "Defavorable",
                                                 "motif_rejet": motif_rejet_selectionne,
+                                                "date_decision": datetime.now().isoformat(),
+                                                "decide_par": "Administration",
                                             }).eq("id", req["id"]).execute()
                                             _rejet_ok = True
                                         except Exception as _err_rejet:
@@ -9110,6 +9404,8 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                                             if r["id"] == req["id"]:
                                                 r["statut"] = "Defavorable"
                                                 r["motif_rejet"] = motif_rejet_selectionne
+                                                r["date_decision"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                                                r["decide_par"] = "Administration"
                                                 _rejet_ok = True
 
                                     if _rejet_ok:
@@ -9152,6 +9448,282 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
     if not is_enseignant_connecte:
         with tab3:
             st.header("📊 bilans d'assiduité")
+
+            # -----------------------------------------------------------------
+            # BILAN GÉNÉRAL DES ABSENCES — TOUTES PROMOTIONS DE LA FACULTÉ
+            # Les données proviennent des signalements enseignants et des
+            # demandes de justificatifs déjà enregistrés dans Supabase.
+            # -----------------------------------------------------------------
+            st.divider()
+            st.subheader("🌐 Bilan général des absences — toutes les promotions")
+            st.caption(
+                "Registre détaillé des absences signalées par les enseignants, "
+                "avec le justificatif étudiant et la décision administrative."
+            )
+
+            if MODE_SUPABASE:
+                _absences_globales = charger_absences_supabase()
+                # Les absences supprimées/archivées restent consultables dans
+                # la corbeille Supabase : on les ajoute au bilan historique.
+                try:
+                    _absences_archivees_globales = []
+                    _debut_archive_global, _taille_archive_global = 0, 1000
+                    while True:
+                        _page_archive_global = (
+                            supabase.table("suivi_assiduite_corbeille")
+                            .select("*")
+                            .range(
+                                _debut_archive_global,
+                                _debut_archive_global + _taille_archive_global - 1
+                            ).execute().data or []
+                        )
+                        _absences_archivees_globales.extend(_page_archive_global)
+                        if len(_page_archive_global) < _taille_archive_global:
+                            break
+                        _debut_archive_global += _taille_archive_global
+                    for _absence_archivee in _absences_archivees_globales:
+                        _absence_archivee["_archivee_bilan"] = True
+                    _absences_globales.extend(_absences_archivees_globales)
+                except Exception as _err_archive_bilan:
+                    st.warning(
+                        "La corbeille des absences n'a pas pu être lue. "
+                        "Le bilan affiche les absences encore présentes dans le registre actif. "
+                        f"Détail : {_err_archive_bilan}"
+                    )
+                _requetes_globales = charger_requetes_supabase()
+            else:
+                _absences_globales = list(st.session_state.get("absences", []))
+                _requetes_globales = list(st.session_state.get("requetes", []))
+
+            def _cle_bilan_absence(_d, _etudiant_key):
+                def _n(_v):
+                    return " ".join(str(_v or "").strip().casefold().split())
+                return (
+                    _n(_d.get(_etudiant_key)),
+                    _n(_d.get("matiere")),
+                    _n(_d.get("promotion")),
+                    _n(_d.get("date_absence")),
+                    _n(_d.get("jour_absence")),
+                    _n(_d.get("horaire_absence")),
+                )
+
+            _index_requetes_bilan = {}
+            for _rq in _requetes_globales:
+                _cle_rq = _cle_bilan_absence(_rq, "nom_etudiant")
+                # Les demandes sont parcourues dans l'ordre de la base ;
+                # la dernière demande rencontrée pour une séance prévaut.
+                _index_requetes_bilan[_cle_rq] = _rq
+
+            _lignes_bilan_global = []
+            for _ab in _absences_globales:
+                _cle_ab = _cle_bilan_absence(_ab, "etud_non_eligible")
+                _rq = _index_requetes_bilan.get(_cle_ab, {})
+                _justifie = _ab.get("justifie") is True
+                _statut_req = str(_rq.get("statut") or "").strip()
+
+                if _statut_req:
+                    _avis_admin = _statut_req
+                elif _justifie:
+                    _avis_admin = "Favorable (absence déjà marquée justifiée)"
+                else:
+                    _avis_admin = "Aucun avis — aucune demande déposée"
+
+                if _statut_req == "En attente":
+                    _etat_justificatif = "Déposé — en attente"
+                elif _statut_req == "Favorable":
+                    _etat_justificatif = "Déposé — accepté"
+                elif _statut_req in ("Defavorable", "Défavorable"):
+                    _etat_justificatif = "Déposé — rejeté"
+                elif _justifie:
+                    _etat_justificatif = "Justifiée"
+                else:
+                    _etat_justificatif = "Non justifiée / aucun justificatif déposé"
+
+                _date_decision = (
+                    _rq.get("date_decision")
+                    or _rq.get("updated_at")
+                    or _rq.get("date_traitement")
+                    or _rq.get("traite_le")
+                    or _rq.get("date_avis")
+                    or ""
+                )
+
+                _lignes_bilan_global.append({
+                    "Enseignant ayant signalé": _ab.get("enseignant", ""),
+                    "Étudiant": _ab.get("etud_non_eligible", ""),
+                    "Promotion": _ab.get("promotion", ""),
+                    "Matière / enseignement": _ab.get("matiere", ""),
+                    "Date d'absence": _ab.get("date_absence", ""),
+                    "Jour": _ab.get("jour_absence", ""),
+                    "Heure / créneau": _ab.get("horaire_absence", ""),
+                    "Date du signalement": _ab.get("date_saisie", ""),
+                    "État du registre": "Archivée / supprimée" if _ab.get("_archivee_bilan") else "Active",
+                    "Justificatif étudiant": _etat_justificatif,
+                    "Date de dépôt du justificatif": _rq.get("date_demande", ""),
+                    "Motif déclaré par l'étudiant": _rq.get("motif", ""),
+                    "Avis administratif": _avis_admin,
+                    "Date de décision administrative": _date_decision or "Non enregistrée",
+                    "Décision prise par": _rq.get("decide_par", ""),
+                    "Motif du rejet administratif": _rq.get("motif_rejet", ""),
+                    "Absence justifiée (base)": "Oui" if _justifie else "Non",
+                })
+
+            if _lignes_bilan_global:
+                _df_bilan_global = pd.DataFrame(_lignes_bilan_global)
+
+                _c_filtres = st.columns(3)
+                with _c_filtres[0]:
+                    _promos_globales = sorted(
+                        [str(x) for x in _df_bilan_global["Promotion"].dropna().unique() if str(x).strip()]
+                    )
+                    _filtre_promo_global = st.selectbox(
+                        "Promotion (bilan général)",
+                        ["Toutes"] + _promos_globales,
+                        key="bilan_general_promotion"
+                    )
+                with _c_filtres[1]:
+                    _enseignants_globaux = sorted(
+                        [str(x) for x in _df_bilan_global["Enseignant ayant signalé"].dropna().unique() if str(x).strip()]
+                    )
+                    _filtre_enseignant_global = st.selectbox(
+                        "Enseignant",
+                        ["Tous"] + _enseignants_globaux,
+                        key="bilan_general_enseignant"
+                    )
+                with _c_filtres[2]:
+                    _matieres_globales = sorted(
+                        [str(x) for x in _df_bilan_global["Matière / enseignement"].dropna().unique() if str(x).strip()]
+                    )
+                    _filtre_matiere_global = st.selectbox(
+                        "Matière",
+                        ["Toutes"] + _matieres_globales,
+                        key="bilan_general_matiere"
+                    )
+
+                _c_filtres2 = st.columns(2)
+                with _c_filtres2[0]:
+                    _etats_justif = sorted(_df_bilan_global["Justificatif étudiant"].fillna("").astype(str).unique())
+                    _filtre_justif_global = st.selectbox(
+                        "État du justificatif",
+                        ["Tous"] + _etats_justif,
+                        key="bilan_general_justificatif"
+                    )
+                with _c_filtres2[1]:
+                    _avis_possibles = sorted(_df_bilan_global["Avis administratif"].fillna("").astype(str).unique())
+                    _filtre_avis_global = st.selectbox(
+                        "Avis de l'administration",
+                        ["Tous"] + _avis_possibles,
+                        key="bilan_general_avis"
+                    )
+
+                _recherche_etudiant_global = st.text_input(
+                    "Rechercher un étudiant (nom ou matricule)",
+                    key="bilan_general_recherche_etudiant"
+                )
+
+                _df_global_filtre = _df_bilan_global.copy()
+                if _filtre_promo_global != "Toutes":
+                    _df_global_filtre = _df_global_filtre[
+                        _df_global_filtre["Promotion"].astype(str) == _filtre_promo_global
+                    ]
+                if _filtre_enseignant_global != "Tous":
+                    _df_global_filtre = _df_global_filtre[
+                        _df_global_filtre["Enseignant ayant signalé"].astype(str) == _filtre_enseignant_global
+                    ]
+                if _filtre_matiere_global != "Toutes":
+                    _df_global_filtre = _df_global_filtre[
+                        _df_global_filtre["Matière / enseignement"].astype(str) == _filtre_matiere_global
+                    ]
+                if _filtre_justif_global != "Tous":
+                    _df_global_filtre = _df_global_filtre[
+                        _df_global_filtre["Justificatif étudiant"].astype(str) == _filtre_justif_global
+                    ]
+                if _filtre_avis_global != "Tous":
+                    _df_global_filtre = _df_global_filtre[
+                        _df_global_filtre["Avis administratif"].astype(str) == _filtre_avis_global
+                    ]
+                if _recherche_etudiant_global.strip():
+                    _masque_etudiant = (
+                        _df_global_filtre["Étudiant"].astype(str).str.contains(
+                            _recherche_etudiant_global.strip(), case=False, na=False
+                        )
+                    )
+                    _df_global_filtre = _df_global_filtre[_masque_etudiant]
+
+                _m1, _m2, _m3 = st.columns(3)
+                _m1.metric("Absences enregistrées", len(_df_global_filtre))
+                _m2.metric(
+                    "Absences justifiées",
+                    int((_df_global_filtre["Absence justifiée (base)"] == "Oui").sum())
+                )
+                _m3.metric(
+                    "Sans avis administratif",
+                    int(_df_global_filtre["Avis administratif"].astype(str).str.startswith("Aucun avis").sum())
+                )
+
+                st.dataframe(
+                    _df_global_filtre,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # Export Excel multi-feuilles : détail filtré + synthèses globales.
+                _buf_bilan_global = io.BytesIO()
+                with pd.ExcelWriter(_buf_bilan_global, engine="xlsxwriter") as _writer_global:
+                    _df_global_filtre.to_excel(
+                        _writer_global, index=False, sheet_name="Absences détail"
+                    )
+                    _synthese_promo_global = (
+                        _df_bilan_global.groupby("Promotion", dropna=False)
+                        .agg(
+                            Nombre_absences=("Étudiant", "size"),
+                            Nombre_justifiees=("Absence justifiée (base)", lambda x: (x == "Oui").sum()),
+                        ).reset_index()
+                    )
+                    _synthese_enseignant_global = (
+                        _df_bilan_global.groupby("Enseignant ayant signalé", dropna=False)
+                        .size().reset_index(name="Nombre_absences_signalees")
+                        .sort_values("Nombre_absences_signalees", ascending=False)
+                    )
+                    _synthese_matiere_global = (
+                        _df_bilan_global.groupby(
+                            ["Promotion", "Matière / enseignement"], dropna=False
+                        ).size().reset_index(name="Nombre_absences")
+                        .sort_values("Nombre_absences", ascending=False)
+                    )
+                    _synthese_promo_global.to_excel(
+                        _writer_global, index=False, sheet_name="Synthèse promotions"
+                    )
+                    _synthese_enseignant_global.to_excel(
+                        _writer_global, index=False, sheet_name="Synthèse enseignants"
+                    )
+                    _synthese_matiere_global.to_excel(
+                        _writer_global, index=False, sheet_name="Synthèse matières"
+                    )
+
+                    for _nom_feuille, _df_feuille in [
+                        ("Absences détail", _df_global_filtre),
+                        ("Synthèse promotions", _synthese_promo_global),
+                        ("Synthèse enseignants", _synthese_enseignant_global),
+                        ("Synthèse matières", _synthese_matiere_global),
+                    ]:
+                        _ws_global = _writer_global.sheets[_nom_feuille]
+                        _ws_global.freeze_panes(1, 0)
+                        _ws_global.autofilter(0, 0, max(0, len(_df_feuille)), max(0, len(_df_feuille.columns) - 1))
+                        for _col_idx, _col_name in enumerate(_df_feuille.columns):
+                            _largeur = min(max(len(str(_col_name)) + 3, 14), 34)
+                            _ws_global.set_column(_col_idx, _col_idx, _largeur)
+
+                st.download_button(
+                    "📥 Télécharger le bilan général complet en Excel",
+                    data=_buf_bilan_global.getvalue(),
+                    file_name="Bilan_general_absences_faculte.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="telecharger_bilan_general_absences_faculte",
+                    use_container_width=True,
+                )
+            else:
+                st.info("Aucune absence signalée n'est actuellement enregistrée dans le registre.")
 
             # Vérification code d'accès pour les bilans et exports
             if not is_enseignant_connecte and not is_admin_edt:
@@ -25695,6 +26267,139 @@ def _pfe_rendre_propositions_enseignant_admin(lignes, prefixe):
                 st.caption("Cette proposition a été déposée par l'étudiant. Elle est consultable par les enseignants permanents et l'administration.")
 
 
+
+# Enseignants autorisés à consulter la totalité des sujets PFE,
+# qu'ils aient été déposés par un enseignant ou par un étudiant.
+PFE_ENSEIGNANTS_RESPONSABLES_EQUIPE = {
+    "NASSOUR KAMEL",
+    "JBILOU MOKHTARIA",
+    "MASSOUM AHMED",
+    "ZIDI SID AHMED",
+    "TOUHAMI SEDDIK",
+    "BENTAALLAH ABDERRAHIM",
+    "REZOUG MOHAMMED",
+    "BENDAOUD ABDELBER",
+    "BERMAKI HAMZA",
+    "ARDJOUN SID AHMED",
+}
+
+
+def _pfe_normaliser_nom_enseignant(valeur):
+    """Normalise les noms pour éviter les différences de casse et d'accents."""
+    texte = unicodedata.normalize("NFKD", str(valeur or "").strip().upper())
+    texte = "".join(c for c in texte if not unicodedata.combining(c))
+    return re.sub(r"[^A-Z0-9]+", "", texte)
+
+
+def _pfe_est_responsable_equipe_autorise(nom_enseignant):
+    """Indique si l'enseignant appartient à la liste des responsables PFE autorisés."""
+    autorises = {
+        _pfe_normaliser_nom_enseignant(nom)
+        for nom in PFE_ENSEIGNANTS_RESPONSABLES_EQUIPE
+    }
+    return _pfe_normaliser_nom_enseignant(nom_enseignant) in autorises
+
+
+def _pfe_rendre_vue_globale_sujets_responsable():
+    """
+    Vue en lecture seule de toutes les soumissions PFE :
+    - propositions déposées par les étudiants et leurs équipes ;
+    - sujets déposés par tous les enseignants permanents ;
+    - candidatures associées aux sujets enseignants.
+    Cette vue est réservée à la liste des responsables de formation autorisés.
+    """
+    st.markdown("### 📚 Tous les sujets déposés")
+    st.caption(
+        "Vue globale réservée aux enseignants responsables désignés. "
+        "Elle regroupe les propositions des étudiants et les sujets déposés "
+        "par l'ensemble des enseignants, sans distinction de déposant."
+    )
+
+    try:
+        propositions = _pfe_lignes_propositions_avec_coordonnees()
+    except Exception as exc:
+        propositions = []
+        st.error(f"Chargement des propositions étudiantes impossible : {exc}")
+
+    try:
+        sujets_enseignants = _pfe_db_lire_tout("pfe_sujets_enseignants")
+        sujets_enseignants = sorted(
+            sujets_enseignants,
+            key=lambda x: str(x.get("created_at", "")),
+            reverse=True,
+        )
+    except Exception as exc:
+        sujets_enseignants = []
+        st.error(f"Chargement des sujets enseignants impossible : {exc}")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Propositions étudiantes", len(propositions))
+    c2.metric("Sujets déposés par les enseignants", len(sujets_enseignants))
+    c3.metric("Total des dépôts", len(propositions) + len(sujets_enseignants))
+
+    sous_onglet_etudiants, sous_onglet_enseignants = st.tabs([
+        "🎓 Propositions des étudiants",
+        "👨‍🏫 Sujets déposés par les enseignants",
+    ])
+
+    with sous_onglet_etudiants:
+        if propositions:
+            _pfe_rendre_propositions_enseignant_admin(
+                propositions, "responsable_global"
+            )
+        else:
+            st.info("Aucune proposition étudiante enregistrée.")
+
+    with sous_onglet_enseignants:
+        if not sujets_enseignants:
+            st.info("Aucun sujet déposé par un enseignant.")
+        else:
+            for sujet in sujets_enseignants:
+                titre = sujet.get("titre", "Sujet sans titre")
+                enseignant = sujet.get("enseignant_nom", "Enseignant non précisé")
+                sid = str(sujet.get("id", ""))
+                with st.expander(
+                    f"{titre} — {enseignant} — {sujet.get('statut', 'Statut non précisé')}"
+                ):
+                    st.write(f"**Type :** {sujet.get('type_sujet', '')}")
+                    st.write(f"**Enseignant déposant :** {enseignant}")
+                    st.write(f"**E-mail :** {sujet.get('enseignant_email', '')}")
+                    st.write(f"**Date de dépôt :** {sujet.get('created_at', '')}")
+                    st.markdown(f"**Résumé :** {sujet.get('resume', '')}")
+
+                    try:
+                        candidatures = (
+                            supabase.table("pfe_candidatures_sujets")
+                            .select("*")
+                            .eq("sujet_id", sid)
+                            .order("created_at", desc=True)
+                            .execute().data or []
+                        )
+                    except Exception as exc:
+                        candidatures = []
+                        st.warning(
+                            f"Les candidatures associées ne peuvent pas être chargées : {exc}"
+                        )
+
+                    st.markdown(f"**Candidatures reçues : {len(candidatures)}**")
+                    for candidature in candidatures:
+                        st.markdown(
+                            f"- **{candidature.get('etudiant_nom', 'Étudiant')}** "
+                            f"— {candidature.get('promotion', '')} "
+                            f"— {candidature.get('statut', 'En attente')}"
+                        )
+                        st.caption(
+                            f"Matricule : {candidature.get('matricule_etudiant', '')} · "
+                            f"Téléphone : {candidature.get('telephone', '')} · "
+                            f"E-mail : {candidature.get('email', '')}"
+                        )
+
+    st.info(
+        "Consultation uniquement : les dépôts et les candidatures restent gérés "
+        "par leurs auteurs et les enseignants encadrants concernés."
+    )
+
+
 def _pfe_rendre_page_enseignant(nom_enseignant, email_enseignant="", read_only=False):
     """Espace réservé aux enseignants vérifiés comme permanents."""
     if not _pfe_est_enseignant_permanent(nom_enseignant, email_enseignant):
@@ -25705,9 +26410,24 @@ def _pfe_rendre_page_enseignant(nom_enseignant, email_enseignant="", read_only=F
     if not MODE_SUPABASE or supabase is None:
         st.error("La connexion Supabase est indisponible. Les données PFE ne peuvent pas être chargées.")
         return
-    tab_propositions, tab_depot, tab_sujets = st.tabs([
-        "💡 Propositions des étudiants", "➕ Déposer un sujet", "📚 Mes sujets et candidatures"
-    ])
+    responsable_global = _pfe_est_responsable_equipe_autorise(nom_enseignant)
+
+    if responsable_global:
+        tab_global, tab_propositions, tab_depot, tab_sujets = st.tabs([
+            "🌐 Tous les sujets déposés",
+            "💡 Propositions des étudiants",
+            "➕ Déposer un sujet",
+            "📚 Mes sujets et candidatures",
+        ])
+        with tab_global:
+            _pfe_rendre_vue_globale_sujets_responsable()
+    else:
+        tab_propositions, tab_depot, tab_sujets = st.tabs([
+            "💡 Propositions des étudiants",
+            "➕ Déposer un sujet",
+            "📚 Mes sujets et candidatures",
+        ])
+
     with tab_propositions:
         try:
             lignes = _pfe_lignes_propositions_avec_coordonnees()
