@@ -26214,21 +26214,23 @@ def afficher_ressources_pedagogiques(user_data, df_edt, role="enseignant", previ
 
             if type_ens == "TD":
                 if not groupes_edt:
-                    st.error("Le TD sélectionné ne comporte aucun code de groupe (ex. G1) dans l'intitulé de l'EDT. Pour éviter d'envoyer le document au mauvais groupe, la publication est bloquée. Faites corriger l'affectation TD dans l'EDT.")
-                    autorisation_ok = False
+                    # Si l'intitulé du TD ne précise aucun groupe, diffuser à toute
+                    # la promotion liée à cette affectation, sans bloquer l'enseignant.
+                    st.info("ℹ️ Aucun code de groupe (ex. G1) n'est indiqué dans l'intitulé de ce TD : la publication sera envoyée à toute la promotion concernée.")
+                    portee = "promotion"
                 else:
                     groupe_cible = st.selectbox("3. Groupe TD autorisé par votre affectation", groupes_edt, key="ped_groupe_td_v2")
                     portee = "groupe"
             elif type_ens == "TP":
                 if not sous_groupes_edt:
-                    st.error("Le TP sélectionné ne comporte aucun code de sous-groupe (ex. SG11) dans l'intitulé de l'EDT. Pour éviter toute diffusion incorrecte, la publication est bloquée. Faites corriger l'affectation TP dans l'EDT.")
-                    autorisation_ok = False
+                    # Si l'intitulé du TP ne précise aucun sous-groupe, diffuser à
+                    # toute la promotion liée à cette affectation, sans blocage.
+                    st.info("ℹ️ Aucun code de sous-groupe (ex. SG11) n'est indiqué dans l'intitulé de ce TP : la publication sera envoyée à toute la promotion concernée.")
+                    portee = "promotion"
                 else:
                     sous_groupe_cible = st.selectbox("3. Sous-groupe TP autorisé par votre affectation", sous_groupes_edt, key="ped_sous_groupe_tp_v2")
-                    groupe_parent = _ped_norm_code(sous_groupe_cible[2], "G") if len(sous_groupe_cible) > 2 else ""
                     # SG11 correspond au groupe G1 ; SG21 au groupe G2, etc.
-                    groupe_parent = f"G{int(sous_groupe_cible[2])}" if len(sous_groupe_cible) > 2 and sous_groupe_cible[2].isdigit() else ""
-                    groupe_cible = groupe_parent
+                    groupe_cible = f"G{int(sous_groupe_cible[2])}" if len(sous_groupe_cible) > 2 and sous_groupe_cible[2].isdigit() else ""
                     portee = "sous_groupe"
             elif groupes_edt:
                 groupe_cible = st.selectbox("3. Groupe concerné par cet enseignement", groupes_edt, key="ped_groupe_cours_v2")
