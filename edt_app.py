@@ -796,6 +796,46 @@ def _compter_natures_par_cellule(df_type, colonnes_cellule):
     return nb_cours, nb_td, nb_tp
 
 
+_SEP_ENSEIGNANTS_RE = re.compile(r"\s*(?:\+|/|,|&|\bet\b)\s*", re.IGNORECASE)
+
+
+def _atomes_enseignants(cellule):
+    """Découpe une cellule « A / B », « A + B »… en noms individuels normalisés."""
+    return {
+        re.sub(r"\s+", " ", t).strip().casefold()
+        for t in _SEP_ENSEIGNANTS_RE.split(str(cellule))
+        if t and t.strip()
+    }
+
+
+def _masque_enseignant(serie_enseignants, nom):
+    """Masque booléen : lignes de l'enseignant `nom`.
+
+    1) Correspondance EXACTE du nom complet (insensible à la casse), y compris
+       dans les cellules multi-enseignants (« A / B », « A + B »).
+       « MILOUDI » ne prend donc plus « MILOUDI HOUCINE » ni « MILOUDI MOHAMED ».
+    2) Si aucune ligne ne correspond exactement (ex. nom saisi sous une forme
+       abrégée), repli sur une correspondance par MOT ENTIER (jamais par
+       sous-chaîne : « BOUDA » ne correspond plus à « AKKAL BOUDALI »)."""
+    texte = serie_enseignants.astype(str)
+    nom = str(nom).strip()
+    if not nom or nom.casefold() in {"nan", "none"}:
+        return texte.str.len() < 0
+    cibles = _atomes_enseignants(nom)
+    cache = {}
+
+    def _ok(cellule):
+        if cellule not in cache:
+            cache[cellule] = bool(cibles) and cibles <= _atomes_enseignants(cellule)
+        return cache[cellule]
+
+    masque = texte.map(_ok).astype(bool)
+    if masque.any():
+        return masque
+    motif = r"(?<![\w'’\-])" + re.escape(nom) + r"(?![\w'’\-])"
+    return texte.str.contains(motif, case=False, na=False, regex=True)
+
+
 def _detecter_chevauchements_natures(df_type, colonnes_cellule):
     """Retourne la liste des cellules (jour + horaire) où un même
     enseignant a plusieurs natures DIFFÉRENTES (ex. Cours + TD).
@@ -10758,9 +10798,10 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             # Motif de correspondance : une ligne est retenue si sa colonne
             # « Enseignants » contient AU MOINS UN des enseignants choisis.
             motif_enseignants_admin = "|".join(re.escape(e) for e in enseignants_selectionnes)
-            df_f_complet = df[df["Enseignants"].str.contains(
-                motif_enseignants_admin, case=False, na=False, regex=True
-            )].copy()
+            df_f_complet = df[
+                pd.concat([_masque_enseignant(df["Enseignants"], e) for e in enseignants_selectionnes], axis=1).any(axis=1)
+                if enseignants_selectionnes else (df["Enseignants"].astype(str).str.len() < 0)
+            ].copy()
             df_f_complet['Type'] = df_f_complet['Code'].apply(
                 lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
             )
@@ -10809,7 +10850,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
             else:
                 bilan_multi = []
                 for _ens_multi in enseignants_selectionnes:
-                    _df_multi = df[df["Enseignants"].astype(str).str.contains(re.escape(str(_ens_multi)), case=False, na=False, regex=True)].copy()
+                    _df_multi = df[_masque_enseignant(df["Enseignants"], _ens_multi)].copy()
                     if _df_multi.empty:
                         continue
                     if "j_norm" not in _df_multi.columns:
@@ -11240,11 +11281,7 @@ td{{padding:12px;border:1px solid #e2e8f0;vertical-align:top;font-size:11px;word
                 from reportlab.lib.units import mm as _mm_zip
 
                 nom_re = re.escape(str(nom_enseignant_zip).strip())
-                df_personne_zip = df_source_zip[
-                    df_source_zip["Enseignants"].fillna("").astype(str).str.contains(
-                        nom_re, case=False, regex=True, na=False
-                    )
-                ].copy()
+                df_personne_zip = df_source_zip[_masque_enseignant(df_source_zip["Enseignants"], nom_enseignant_zip)].copy()
                 if df_personne_zip.empty:
                     return None, "Aucune séance trouvée"
 
@@ -17782,7 +17819,7 @@ td,th{{border:1px solid #cbd5e1;padding:6px;word-wrap:break-word;}}
                 st.session_state["user_data"] = None
                 st.rerun()
 
-        df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
+        df_f = df[_masque_enseignant(df["Enseignants"], cible)].copy()
         if df_f.empty:
             st.warning("⚠️ Aucun cours programmé pour vous.")
             return
@@ -24347,7 +24384,7 @@ def render_download_hub(df_global, user_data, is_admin):
         if sel_prof != "Tous":
             # Un enseignant : son emploi du temps complet (tous départements), pour une charge horaire exacte
             df_filtre_p = df_propre.copy()
-            df_filtre_p = df_filtre_p[df_filtre_p["Enseignants"].str.contains(sel_prof, case=False, na=False)]
+            df_filtre_p = df_filtre_p[_masque_enseignant(df_filtre_p["Enseignants"], sel_prof)]
             
             # ═══════════════════════════════════════════════════════
             # AFFICHEUR NUMÉRIQUE : CHARGE HORAIRE & HEURES SUP
@@ -26175,7 +26212,7 @@ def afficher_ressources_pedagogiques(user_data, df_edt, role="enseignant", previ
 
         df_prof = pd.DataFrame()
         if isinstance(df_edt, pd.DataFrame) and not df_edt.empty and "Enseignants" in df_edt.columns:
-            df_prof = df_edt[df_edt["Enseignants"].astype(str).str.contains(_re_ped.escape(nom_enseignant), case=False, na=False)].copy()
+            df_prof = df_edt[_masque_enseignant(df_edt["Enseignants"], nom_enseignant)].copy()
         if df_prof.empty:
             st.warning("Aucun enseignement n'est associé à votre compte dans l'emploi du temps. Le dépôt est bloqué.")
             return
@@ -27408,9 +27445,7 @@ if portail == "📊 Statistiques & Données" and is_admin:
                 # Même filtrage que la vue administrative « Enseignant » :
                 # une ligne est retenue si la colonne « Enseignants » CONTIENT
                 # le nom (insensible à la casse), et non pas en égalité stricte.
-                df_ens = df[df['Enseignants'].str.contains(
-                    re.escape(str(ens)), case=False, na=False, regex=True
-                )].copy()
+                df_ens = df[_masque_enseignant(df['Enseignants'], ens)].copy()
                 if df_ens.empty:
                     continue
 
@@ -30686,7 +30721,7 @@ if df is not None:
             
             # --- FILTRAGE ET CALCULS ---
             # Filtrage des données basé sur le NOM (variable 'cible')
-            df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
+            df_f = df[_masque_enseignant(df["Enseignants"], cible)].copy()
             
             # Définition des types pour le calcul (COURS, TD ou TP)
             df_f['Type'] = df_f['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
@@ -30788,102 +30823,114 @@ if df is not None:
                 st.markdown("---")
                 import io
                 
-                # Bouton de génération globale
-                if st.button("📑 Préparer le Bilan Global (Tous les enseignants)", use_container_width=True):
-                    liste_profs = sorted(df["Enseignants"].unique())
-                    recap_data = []
+                # Bouton de génération globale (le résultat est conservé en session
+                # afin que le bouton de téléchargement ne disparaisse pas au rerun).
+                if st.button("📑 Préparer le Bilan Global (Tous les enseignants)", use_container_width=True, key="btn_prep_bilan_global"):
+                    try:
+                        with st.spinner("Calcul du bilan global en cours..."):
+                            # Liste des postes supérieurs chargée UNE seule fois (évite 2 requêtes DB par enseignant)
+                            _sel_sess = st.session_state.get("postes_superieurs_selection_bilan")
+                            if _sel_sess is not None:
+                                _noms_sup = _sel_sess
+                            else:
+                                _noms_sup, _src_sup, _err_sup = _charger_postes_superieurs()
+                            _cles_sup = {_cle_enseignant_poste(n) for n in _noms_sup}
 
-                    for p in liste_profs:
-                        # Calculs miroirs de la logique individuelle pour chaque enseignant
-                        df_p = df[df["Enseignants"].str.contains(p, case=False, na=False)].copy()
-                        
-                        # Détermination du Type (Cours, TD, TP)
-                        df_p['Type'] = df_p['Code'].apply(lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP"))
-                        
-                        # Suppression des doublons basés sur l'horaire normalisé
-                        df_up = df_p.drop_duplicates(subset=['j_norm', 'h_norm'])
-                        
-                        # --- ÉTAPE CRUCIALE : DÉFINITION DES VARIABLES (CORRECTION NameError) ---
-                        # On cherche le nom complet (NOM Prénom) dans le dictionnaire créé au chargement
-                        nom_complet = repertoire_noms_complets.get(p.strip().upper(), p)
-            
-                        # Récupération du Grade et de la Qualité
-                        grade_enseignant = repertoire_grades.get(p.strip().upper(), "N/A")
-                        qualite_enseignant = repertoire_qualites.get(p.strip().upper(), "Non spécifié")
-                        
-                        # Comptage cohérent avec les autres vues : une nature prioritaire
-                        # par cellule normalisée jour + horaire (COURS > TD > TP).
-                        if "j_norm" not in df_p.columns:
-                            df_p["j_norm"] = df_p["Jours"].apply(normalize)
-                        if "h_norm" not in df_p.columns:
-                            df_p["h_norm"] = df_p["Horaire"].apply(normalize)
-                        n_co, n_td, n_tp = _compter_natures_par_cellule(df_p, ["j_norm", "h_norm"])
-                        
-                        # Charge standard = 7 eq/h ; poste supérieur = seuil 3.5 eq/h.
-                        s_oblig = _seuil_charge_enseignant(p)
-                        c_eq = (n_co * 1.5) + (n_td + n_tp)
-                        b_h = c_eq - s_oblig
-                        c_eff = (n_co + n_td + n_tp) * 1.5
-                        depts_intervention = sorted({str(v).strip() for v in df_p.get("Département", pd.Series(dtype=str)).dropna().tolist() if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}}, key=str.casefold)
-                        promos_intervention = sorted({str(v).strip() for v in df_p.get("Promotion", pd.Series(dtype=str)).dropna().tolist() if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}}, key=str.casefold)
-                        dept_affiliation = repertoire_departements_affiliation.get(p.strip().upper(), "") or " / ".join(depts_intervention) or "Non renseigné"
+                            df_base = df.copy()
+                            if "j_norm" not in df_base.columns:
+                                df_base["j_norm"] = df_base["Jours"].apply(normalize)
+                            if "h_norm" not in df_base.columns:
+                                df_base["h_norm"] = df_base["Horaire"].apply(normalize)
+                            df_base["Type"] = df_base["Code"].apply(
+                                lambda x: "COURS" if "COURS" in str(x).upper() else ("TD" if "TD" in str(x).upper() else "TP")
+                            )
 
-                        recap_data.append({
-                            "Enseignant": nom_complet,
-                            "Département d'affiliation": dept_affiliation,
-                            "Promotion(s) d'intervention": " / ".join(promos_intervention) if promos_intervention else "Non renseignée",
-                            "Poste supérieur": "Oui" if _est_poste_superieur(p) else "Non",
-                            "Grade": grade_enseignant,
-                            "Qualité": qualite_enseignant,
-                            "Cours": n_co,
-                            "TD": n_td,
-                            "TP": n_tp,
-                            "Charge Effective (h)": c_eff,
-                            "Total (Eq)": c_eq,
-                            "Heures Sup. Réelles/Déficit Horaire": round(b_h, 4),
-                            "Résultat (h:min)": _formater_heures_minutes(b_h)
-                        })
+                            _vus_bg = {}
+                            for _cell in df_base["Enseignants"].dropna().unique():
+                                for _t in _SEP_ENSEIGNANTS_RE.split(str(_cell)):
+                                    _t = re.sub(r"\s+", " ", _t).strip()
+                                    if _t:
+                                        _vus_bg.setdefault(_t.casefold(), _t)
+                            liste_profs = sorted(_vus_bg.values(), key=str.casefold)
+                            recap_data = []
 
-                    df_global = pd.DataFrame(recap_data)
-                    
-                    # Génération Excel avec formatage strict
-                    buf = io.BytesIO()
-                    with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
-                        df_global.to_excel(writer, index=False, sheet_name='Bilan_Global_Charges')
-                        
-                        workbook  = writer.book
-                        worksheet = writer.sheets['Bilan_Global_Charges']
+                            for p in liste_profs:
+                                # regex=False : évite les erreurs avec ( ) + . etc. dans les noms
+                                df_p = df_base[_masque_enseignant(df_base["Enseignants"], p)].copy()
+                                if df_p.empty:
+                                    continue
 
-                        # Définition du format pour les valeurs négatives
-                        format_rouge = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-                        
-                        # 1. Ajustement automatique de la largeur des colonnes au texte
-                        for i, col in enumerate(df_global.columns):
-                            # Calcul de la longueur maximale entre l'entête et le contenu
-                            max_len = max(df_global[col].astype(str).map(len).max(), len(col)) + 2
-                            worksheet.set_column(i, i, max_len)
-                        
-                        # 2. Coloration des charges inférieures à 0 (Colonne "Heures Sup. Réelles/Déficit Horaire" - index 7)
-                        last_row = len(df_global)
-                        _idx_bilan_global = df_global.columns.get_loc("Heures Sup. Réelles/Déficit Horaire")
-                        worksheet.conditional_format(1, _idx_bilan_global, last_row, _idx_bilan_global, {
-                            'type':     'cell',
-                            'criteria': '<',
-                            'value':    0,
-                            'format':   format_rouge
-                        })
+                                cle_p = p.strip().upper()
+                                nom_complet = repertoire_noms_complets.get(cle_p, p)
+                                grade_enseignant = repertoire_grades.get(cle_p, "N/A")
+                                qualite_enseignant = repertoire_qualites.get(cle_p, "Non spécifié")
 
-                        # Figer l'entête
-                        worksheet.freeze_panes(1, 0)
+                                n_co, n_td, n_tp = _compter_natures_par_cellule(df_p, ["j_norm", "h_norm"])
 
+                                est_sup = _cle_enseignant_poste(p) in _cles_sup
+                                s_oblig = SEUIL_POSTE_SUP_EQUIVALENT if est_sup else CHARGE_STATUTAIRE_EQUIVALENT
+                                c_eq = (n_co * 1.5) + (n_td + n_tp)
+                                b_h = c_eq - s_oblig
+                                c_eff = (n_co + n_td + n_tp) * 1.5
+
+                                depts_intervention = sorted({str(v).strip() for v in df_p.get("Département", pd.Series(dtype=str)).dropna().tolist() if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}}, key=str.casefold)
+                                promos_intervention = sorted({str(v).strip() for v in df_p.get("Promotion", pd.Series(dtype=str)).dropna().tolist() if str(v).strip() and str(v).strip().casefold() not in {"nan", "none"}}, key=str.casefold)
+                                dept_affiliation = repertoire_departements_affiliation.get(cle_p, "") or " / ".join(depts_intervention) or "Non renseigné"
+
+                                recap_data.append({
+                                    "Enseignant": nom_complet,
+                                    "Département d'affiliation": dept_affiliation,
+                                    "Promotion(s) d'intervention": " / ".join(promos_intervention) if promos_intervention else "Non renseignée",
+                                    "Poste supérieur": "Oui" if est_sup else "Non",
+                                    "Grade": grade_enseignant,
+                                    "Qualité": qualite_enseignant,
+                                    "Cours": n_co,
+                                    "TD": n_td,
+                                    "TP": n_tp,
+                                    "Charge Effective (h)": c_eff,
+                                    "Total (Eq)": c_eq,
+                                    "Heures Sup. Réelles/Déficit Horaire": round(b_h, 4),
+                                    "Résultat (h:min)": _formater_heures_minutes(b_h)
+                                })
+
+                            if not recap_data:
+                                st.session_state.pop("bilan_global_xlsx", None)
+                                st.warning("Aucune donnée d'enseignant à exporter.")
+                            else:
+                                df_global = pd.DataFrame(recap_data)
+                                buf = io.BytesIO()
+                                with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
+                                    df_global.to_excel(writer, index=False, sheet_name='Bilan_Global_Charges')
+                                    workbook = writer.book
+                                    worksheet = writer.sheets['Bilan_Global_Charges']
+                                    format_rouge = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+                                    for i, col in enumerate(df_global.columns):
+                                        max_len = max(df_global[col].astype(str).map(len).max(), len(col)) + 2
+                                        worksheet.set_column(i, i, max_len)
+                                    last_row = len(df_global)
+                                    _idx_bilan_global = df_global.columns.get_loc("Heures Sup. Réelles/Déficit Horaire")
+                                    worksheet.conditional_format(1, _idx_bilan_global, last_row, _idx_bilan_global, {
+                                        'type': 'cell', 'criteria': '<', 'value': 0, 'format': format_rouge
+                                    })
+                                    worksheet.freeze_panes(1, 0)
+                                st.session_state["bilan_global_xlsx"] = buf.getvalue()
+                                st.session_state["bilan_global_nb"] = len(df_global)
+                    except Exception as _exc_bg:
+                        st.session_state.pop("bilan_global_xlsx", None)
+                        st.error(f"❌ Échec de la préparation du bilan global : {_exc_bg}")
+
+                # Le bouton de téléchargement est HORS du `if st.button` : il reste affiché.
+                if st.session_state.get("bilan_global_xlsx"):
+                    st.success(f"✅ Bilan prêt : {st.session_state.get('bilan_global_nb', 0)} enseignants.")
                     st.download_button(
                         label="📥 Télécharger le fichier Excel Global",
-                        data=buf.getvalue(),
+                        data=st.session_state["bilan_global_xlsx"],
                         file_name="Bilan_Global_Charges_2027.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
+                        use_container_width=True,
+                        key="dl_bilan_global"
                     )
-                    
+
             st.divider()
             st.markdown("### 📅 Emploi du Temps Individuel")
             
@@ -33010,7 +33057,7 @@ if df is not None:
                 st.error("❌ Les données EDT ne sont pas disponibles. Contactez l'administrateur.")
                 st.stop()
         
-            df_f = df[df["Enseignants"].str.contains(cible, case=False, na=False)].copy()
+            df_f = df[_masque_enseignant(df["Enseignants"], cible)].copy()
         
             if df_f.empty:
                 st.warning("⚠️ Aucun cours n'est programmé pour vous actuellement.")
@@ -34559,7 +34606,7 @@ if df is not None:
                     for row in donnees_finales:
                         if (row["État d'envoi"] in ["⏳ En attente", "🟡 Dispo (Source Excel)"]) and "@" in str(row["Email"]):
                             nom_cible = str(row['Enseignant']).strip().upper()
-                            df_perso = df[df["Enseignants"].astype(str).str.upper().str.contains(nom_cible, na=False)]
+                            df_perso = df[_masque_enseignant(df["Enseignants"], nom_cible)]
                             df_mail = df_perso[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
                             
                             nb_cours = df_mail['Enseignements'].str.contains('Cours', case=False).sum()
@@ -35167,7 +35214,7 @@ if is_admin and portail == "👥 Portail Enseignants":
                 items.append(txt)
             return "\n".join(items)
     
-        df_ens = df_source[df_source["Enseignants"].str.contains(nom_enseignant, case=False, na=False)].copy()
+        df_ens = df_source[_masque_enseignant(df_source["Enseignants"], nom_enseignant)].copy()
         if df_ens.empty:
             return None, "Aucun cours"
     
@@ -35388,7 +35435,7 @@ if is_admin and portail == "👥 Portail Enseignants":
                 status_txt.text(f"Envoi en cours : {nom_ens} ({i+1}/{len(liste_destinataires)})")
     
                 # Extraction des données
-                df_perso = df[df["Enseignants"].astype(str).str.contains(str(nom_ens).strip(), na=False)]
+                df_perso = df[_masque_enseignant(df["Enseignants"], nom_ens)]
                 df_mail = df_perso[['Enseignements', 'Code', 'Enseignants', 'Horaire', 'Jours', 'Lieu', 'Promotion']]
     
                 nb_cours = df_mail['Enseignements'].str.contains('Cours', case=False).sum()
@@ -38581,7 +38628,7 @@ def run_edt_intelligent():
                 if selection not in df_edt["Enseignants"].values:
                     st.warning("⚠️ Votre nom n'apparaît pas dans le fichier EDT. Contactez l'administrateur.")
             
-            df_filtre = df_edt[df_edt["Enseignants"].str.contains(selection, case=False, na=False)].copy()
+            df_filtre = df_edt[_masque_enseignant(df_edt["Enseignants"], selection)].copy()
             titre = f"EDT Individuel — {selection}"
             mode_export = "enseignant"
 
