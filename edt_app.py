@@ -31155,12 +31155,44 @@ def run_programmation_examens():
         else:
             # Les boutons d'ajout groupé sont volontairement placés hors du formulaire :
             # Streamlit ne permet pas d'utiliser un bouton classique à l'intérieur d'un form.
-            # Chaque bouton ajoute en un clic toutes les promotions proposées pour cette matière,
-            # tout en conservant les choix manuels déjà présents dans le multiselect.
+            # Le bouton global ajoute toutes les suggestions de toutes les matières de la promotion.
+            # Les boutons individuels restent disponibles et tous les choix manuels sont conservés.
+            suggestions_par_matiere = {}
             for k in cles:
                 e = ep[k]
-                suggestions = [p for p in suggestions_communes_cours.get((promo, e["base"]), [])
-                               if p in autres_promos]
+                suggestions_par_matiere[k] = [
+                    p for p in suggestions_communes_cours.get((promo, e["base"]), [])
+                    if p in autres_promos
+                ]
+
+            nb_matieres_suggerees = sum(bool(v) for v in suggestions_par_matiere.values())
+            if nb_matieres_suggerees:
+                if st.button(
+                    "➕ Sélectionner toutes les suggestions de toutes les matières",
+                    key=f"pe_com_suggest_global_{dtag}_{promo}_{ver}",
+                    type="primary",
+                    use_container_width=True,
+                    help="Sélectionne en une seule fois toutes les promotions suggérées pour toutes les matières "
+                         "de cette promotion. Les choix déjà effectués manuellement sont conservés. "
+                         "La liaison n'est enregistrée qu'après validation du formulaire.",
+                ):
+                    for k, suggestions in suggestions_par_matiere.items():
+                        if not suggestions:
+                            continue
+                        e = ep[k]
+                        cle_widget = f"pe_com_{dtag}_{promo}_{e['base']}_{ver}"
+                        deja_selectionnees = st.session_state.get(
+                            cle_widget, _pe_commune_avec(store, k)
+                        )
+                        deja_selectionnees = [p for p in deja_selectionnees if p in autres_promos]
+                        st.session_state[cle_widget] = list(
+                            dict.fromkeys(deja_selectionnees + suggestions)
+                        )
+                    st.rerun()
+
+            for k in cles:
+                e = ep[k]
+                suggestions = suggestions_par_matiere.get(k, [])
                 if suggestions:
                     st.caption(
                         "🔎 Suggestions détectées dans DATA (Cours de même intitulé et même enseignant) : "
@@ -31184,8 +31216,7 @@ def run_programmation_examens():
                 for k in cles:
                     e = ep[k]
                     liees = [p for p in _pe_commune_avec(store, k) if p in autres_promos]
-                    suggestions = [p for p in suggestions_communes_cours.get((promo, e["base"]), [])
-                                   if p in autres_promos]
+                    suggestions = suggestions_par_matiere.get(k, [])
                     choix[k] = st.multiselect(
                         f"📘 {e['matiere']}  ·  {e['charge'] or 'chargé non renseigné'}",
                         autres_promos, default=liees,
