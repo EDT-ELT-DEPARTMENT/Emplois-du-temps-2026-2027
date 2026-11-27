@@ -30162,7 +30162,11 @@ def _surv_grille(df_ref, df_vue, mode, cible, titre, sous_titre):
             for m in sorted(par_mat, key=str.casefold):
                 lignes = []
                 for r in sorted(par_mat[m], key=lambda x: _pe_norm(x.get("Lieu"))):
+                    charge_matiere = _pe_txt(
+                        r.get("Chargé de matière", r.get("Responsable du cours (prioritaire)", ""))
+                    ) or "Non renseigné"
                     lignes += [
+                        ("Chargé de matière", charge_matiere),
                         ("Lieu", _pe_txt(r.get("Lieu"))),
                         ("Responsable", _pe_txt(r.get("Permanent responsable du lieu"))),
                         ("Co-surveillant", _pe_txt(r.get("Vacataire co-surveillant"))),
@@ -30181,9 +30185,13 @@ def _surv_grille(df_ref, df_vue, mode, cible, titre, sous_titre):
             else:
                 continue
             cle = (_surv_info_date(r.get("Date"))[0], _pe_txt(r.get("Heure")))
+            charge_matiere = _pe_txt(
+                r.get("Chargé de matière", r.get("Responsable du cours (prioritaire)", ""))
+            ) or "Non renseigné"
             cells.setdefault(cle, []).append({
                 "titre": _pe_txt(r.get("Matière")),
-                "lignes": [("Promotion", _pe_txt(r.get("Promotion"))), ("Lieu", _pe_txt(r.get("Lieu"))),
+                "lignes": [("Chargé de matière", charge_matiere),
+                           ("Promotion", _pe_txt(r.get("Promotion"))), ("Lieu", _pe_txt(r.get("Lieu"))),
                            ("Rôle", role), ("Binôme", autre)],
             })
         for cle in cells:
@@ -35628,6 +35636,7 @@ if df is not None:
                     occupation_lieu[_exam_norm(local["lieu"])].append({"jour": _exam_norm(jour), "plage": plage, "matiere": matiere, "promo": promo})
                     planning.append({
                         "Matière": matiere,
+                        "Chargé de matière": responsable_cours or "Non identifié dans l'EDT",
                         "Responsable du cours (prioritaire)": responsable_cours or "Non identifié dans l'EDT",
                         "Promotion": promo,
                         "Effectif": effectif,
@@ -35735,6 +35744,20 @@ if df is not None:
         df_erreurs = st.session_state.get("exam_erreurs_sans_conflit")
         compteurs = {}
         if not df_planning.empty:
+            # Champ explicite utilisé dans l'affichage, les grilles et les exports.
+            # Compatibilité avec les anciens historiques qui stockent ce nom sous
+            # "Responsable du cours (prioritaire)".
+            if "Chargé de matière" not in df_planning.columns:
+                df_planning["Chargé de matière"] = df_planning.get(
+                    "Responsable du cours (prioritaire)", pd.Series([""] * len(df_planning), index=df_planning.index)
+                )
+            else:
+                _charge_existant = df_planning["Chargé de matière"].fillna("").astype(str).str.strip()
+                _charge_prioritaire = df_planning.get(
+                    "Responsable du cours (prioritaire)", pd.Series([""] * len(df_planning), index=df_planning.index)
+                ).fillna("").astype(str).str.strip()
+                df_planning["Chargé de matière"] = _charge_existant.where(_charge_existant.ne(""), _charge_prioritaire)
+            df_planning["Chargé de matière"] = df_planning["Chargé de matière"].replace({"": "Non renseigné", "nan": "Non renseigné", "None": "Non renseigné"})
             for _col_c in ("Permanent responsable du lieu", "Vacataire co-surveillant"):
                 for _n_c in df_planning[_col_c].tolist():
                     _k_c = _exam_norm(_n_c)
