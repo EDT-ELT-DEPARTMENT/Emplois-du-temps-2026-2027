@@ -30584,8 +30584,8 @@ def _etu_telephone(v):
 
 
 def _etu_standard(df_etu):
-    """Fichier source des étudiants -> colonnes normalisées + Promotion + Validée."""
-    cols = _ETU_COLS + ["Promotion", "Validée"]
+    """Normalise la source et conserve le statut d'inscription et de congé académique."""
+    cols = _ETU_COLS + ["Promotion", "Validée", "Congé académique"]
     if df_etu is None or len(df_etu) == 0:
         return pd.DataFrame(columns=cols)
     c_mat = _etu_col(df_etu, ["Mat. Etudiant", "Mat Etudiant", "Matricule", "Matricule étudiant"])
@@ -30599,6 +30599,10 @@ def _etu_standard(df_etu):
     c_pro = _etu_col(df_etu, ["Promotion", "Promotions"])
     c_ins = _etu_col(df_etu, ["Sit. d'ins.", "Sit d'ins", "Situation d'inscription", "Situation inscription",
                               "Statut inscription", "Statut d'inscription", "Etat inscription", "État d'inscription"])
+    # La colonne du congé académique est prioritaire pour l'exclusion :
+    # même une inscription validée ne rend pas l'étudiant comptabilisable si la valeur est OUI.
+    c_conge = _etu_col(df_etu, ["Congé académique", "Conge academique", "Congé academique",
+                                "Conge académique", "Statut congé académique"])
 
     def _col(c, f=_pe_txt):
         return df_etu[c].map(f) if c else pd.Series([""] * len(df_etu), index=df_etu.index)
@@ -30612,15 +30616,29 @@ def _etu_standard(df_etu):
     out["Téléphone"] = _col(c_tel, _etu_telephone)
     out["Promotion"] = _col(c_pro)
     out["Validée"] = df_etu[c_ins].map(_etu_inscription_validee) if c_ins else True
+    if c_conge:
+        out["Congé académique"] = df_etu[c_conge].map(
+            lambda v: _pe_norm(v) == "OUI"
+        )
+    else:
+        # Si la colonne est absente, ne pas exclure arbitrairement les étudiants.
+        out["Congé académique"] = False
     return out
 
 
 def _etu_promo(df_etu, promo):
-    """Étudiants à inscription VALIDÉE d'une promotion, sans doublon, triés par nom/prénom."""
+    """Étudiants validés, hors congé académique, sans doublon, triés par nom/prénom."""
     std = df_etu if (isinstance(df_etu, pd.DataFrame) and "Validée" in df_etu.columns) else _etu_standard(df_etu)
     if std.empty:
         return pd.DataFrame(columns=_ETU_COLS)
-    m = std["Promotion"].map(_pe_norm).eq(_pe_norm(promo)) & std["Validée"].astype(bool)
+    if "Congé académique" not in std.columns:
+        std = std.copy()
+        std["Congé académique"] = False
+    m = (
+        std["Promotion"].map(_pe_norm).eq(_pe_norm(promo))
+        & std["Validée"].astype(bool)
+        & ~std["Congé académique"].astype(bool)
+    )
     d = std.loc[m, _ETU_COLS].copy()
     avec_mat = d[d["Matricule"].ne("")].drop_duplicates("Matricule")
     sans_mat = d[d["Matricule"].eq("")].drop_duplicates(["Nom", "Prénom"])
