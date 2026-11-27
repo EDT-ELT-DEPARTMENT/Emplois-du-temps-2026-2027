@@ -28602,9 +28602,11 @@ def _pe_nom_matiere(v):
 def _pe_suggestions_communes_cours(df_edt, dept=None, promos_ok=None):
     """
     Détecte les matières communes potentielles dans le fichier DATA.
-    Seules les lignes COURS sont prises en compte. Le titre est comparé
-    après retrait du préfixe « Cours » et normalisation des accents/casse.
-    Cette fonction ne crée aucune liaison : elle fournit des suggestions.
+    Une suggestion exige simultanément :
+      - un intitulé de COURS identique après normalisation ;
+      - au moins un même enseignant (nom normalisé) dans les promotions comparées.
+    Les lignes TD/TP sont ignorées. Cette fonction ne crée aucune liaison :
+    elle fournit uniquement des suggestions à valider manuellement.
     Retour : {(promotion, base_matiere): [autres_promotions, ...]}.
     """
     resultat = {}
@@ -28616,10 +28618,11 @@ def _pe_suggestions_communes_cours(df_edt, dept=None, promos_ok=None):
     c_promo = cols.get("PROMOTION") or cols.get("PROMOTIONS")
     c_code = cols.get("CODE")
     c_ens = cols.get("ENSEIGNANTS") or cols.get("ENSEIGNANT")
-    if not c_mat or not c_promo:
+    if not c_mat or not c_promo or not c_ens:
         return resultat
 
     idx_dept = _pe_index_departements(df_edt)[0] if dept else {}
+    # Clé = (intitulé normalisé, enseignant normalisé), valeur = promotions.
     groupes = {}
 
     for _, lig in df_edt.iterrows():
@@ -28643,19 +28646,28 @@ def _pe_suggestions_communes_cours(df_edt, dept=None, promos_ok=None):
         if not base or base in {"NAN", "NONE", "NON DEFINI"}:
             continue
 
-        if dept:
-            enseignants = _pe_noms_enseignants(lig.get(c_ens)) if c_ens else []
-            enseignants = [n for n in enseignants if _pe_dept_de(n, idx_dept) == dept]
-            if not enseignants:
+        enseignants = _pe_noms_enseignants(lig.get(c_ens))
+        for enseignant in enseignants:
+            cle_enseignant = _pe_norm(enseignant)
+            if not cle_enseignant:
                 continue
+            if dept and _pe_dept_de(enseignant, idx_dept) != dept:
+                continue
+            groupes.setdefault((base, cle_enseignant), set()).add(promo)
 
-        groupes.setdefault(base, {"promos": set()})["promos"].add(promo)
+    # On ne relie les promotions que si le même enseignant assure le même cours.
+    # Si plusieurs enseignants correspondent, on rassemble les promotions suggérées.
+    suggestions_par_matiere = {}
+    for (base, _enseignant), promos_matiere in groupes.items():
+        if len(promos_matiere) < 2:
+            continue
+        for promo in promos_matiere:
+            suggestions_par_matiere.setdefault((promo, base), set()).update(
+                p for p in promos_matiere if p != promo
+            )
 
-    for base, info in groupes.items():
-        promos_matiere = sorted(info["promos"], key=_pe_cle_nat)
-        if len(promos_matiere) >= 2:
-            for promo in promos_matiere:
-                resultat[(promo, base)] = [p for p in promos_matiere if p != promo]
+    for cle, promos_suggerees in suggestions_par_matiere.items():
+        resultat[cle] = sorted(promos_suggerees, key=_pe_cle_nat)
     return resultat
 
 
