@@ -35281,6 +35281,105 @@ if df is not None:
                                 _lieux_common.append(_nom_common)
                 _amphis_common = sorted([x for x in _lieux_common if _exam_norm(x).startswith("AMPHI")], key=_pe_cle_nat)
                 _salles_common = sorted([x for x in _lieux_common if _exam_norm(x).startswith("AS")], key=_pe_cle_nat)
+
+                # ------------------------------------------------------------------
+                # CLASSEMENT ET ENREGISTREMENT GROUPE PAR NOMBRE DE PROMOTIONS
+                # Chaque matière conserve son propre effectif total. Lors d'un
+                # enregistrement groupé, les locaux choisis sont réutilisés et
+                # l'effectif de chaque matière est réparti équitablement.
+                # ------------------------------------------------------------------
+                st.markdown("#### 🗂️ Classement des matières communes par nombre de promotions")
+                _groupes_par_nb_promos = defaultdict(list)
+                for _cle_bulk in _common_options:
+                    _nb_promos_bulk = len(_groupes_communs_exam[_cle_bulk]["promotions"])
+                    _groupes_par_nb_promos[_nb_promos_bulk].append(_cle_bulk)
+
+                for _nb_promos_bulk in sorted(_groupes_par_nb_promos):
+                    _cles_groupe_bulk = sorted(
+                        _groupes_par_nb_promos[_nb_promos_bulk],
+                        key=lambda k: (_groupes_communs_exam[k]["matiere"].casefold(),
+                                       _groupes_communs_exam[k]["date_key"],
+                                       _groupes_communs_exam[k]["heure_key"])
+                    )
+                    with st.expander(
+                        f"📚 Matières communes à {_nb_promos_bulk} promotions ({len(_cles_groupe_bulk)} matière(s))",
+                        expanded=False,
+                    ):
+                        for _cle_aff_bulk in _cles_groupe_bulk:
+                            _info_aff_bulk = _groupes_communs_exam[_cle_aff_bulk]
+                            st.markdown(
+                                f"- **{_info_aff_bulk['matiere']}** — "
+                                f"{' / '.join(_info_aff_bulk['promotions'])} — "
+                                f"{_info_aff_bulk['date']} ({_info_aff_bulk['heure']})"
+                            )
+                        if not _lieux_common:
+                            st.warning("Aucun local autorisé n'est disponible pour l'enregistrement groupé.")
+                        else:
+                            _selection_bulk = st.multiselect(
+                                "Matières à enregistrer ensemble",
+                                options=_cles_groupe_bulk,
+                                default=_cles_groupe_bulk,
+                                format_func=lambda k: (
+                                    f"{_groupes_communs_exam[k]['matiere']} — "
+                                    f"{' / '.join(_groupes_communs_exam[k]['promotions'])} — "
+                                    f"{_groupes_communs_exam[k]['date']} ({_groupes_communs_exam[k]['heure']})"
+                                ),
+                                key=f"exam_common_bulk_subjects_{_exam_norm(dept_tag)}_{_nb_promos_bulk}_{_exam_norm(_choix_promo_gen)}",
+                                help="Toutes les matières de ce groupe sont présélectionnées. Tu peux en retirer avant l'enregistrement.",
+                            )
+                            _locaux_bulk = st.multiselect(
+                                "Locaux communs à appliquer aux matières sélectionnées",
+                                options=_lieux_common,
+                                default=[],
+                                key=f"exam_common_bulk_rooms_{_exam_norm(dept_tag)}_{_nb_promos_bulk}_{_exam_norm(_choix_promo_gen)}",
+                                help="Les mêmes locaux seront appliqués à chaque matière sélectionnée. Les effectifs seront calculés séparément pour chaque matière.",
+                            )
+                            st.caption(
+                                "Un seul clic enregistrera chaque matière sélectionnée avec son propre effectif total "
+                                "(somme des effectifs de ses promotions), réparti équitablement entre les locaux choisis. "
+                                "Tu pourras ensuite ajuster individuellement une matière dans le réglage détaillé ci-dessous."
+                            )
+                            if st.button(
+                                f"💾 Enregistrer les {len(_selection_bulk)} matière(s) du groupe de {_nb_promos_bulk} promotions",
+                                type="primary",
+                                disabled=(not _selection_bulk or not _locaux_bulk),
+                                key=f"exam_common_bulk_save_{_exam_norm(dept_tag)}_{_nb_promos_bulk}_{_exam_norm(_choix_promo_gen)}",
+                            ):
+                                _nb_enreg_bulk = 0
+                                for _cle_save_bulk in _selection_bulk:
+                                    _info_save_bulk = _groupes_communs_exam[_cle_save_bulk]
+                                    _promos_save_bulk = list(_info_save_bulk["promotions"])
+                                    _total_save_bulk = sum(int(effectifs_par_promo.get(_p, 0)) for _p in _promos_save_bulk)
+                                    if _total_save_bulk <= 0:
+                                        continue
+                                    _base_eff_bulk, _reste_eff_bulk = divmod(_total_save_bulk, len(_locaux_bulk))
+                                    _repart_bulk = {
+                                        _loc: _base_eff_bulk + (1 if _i < _reste_eff_bulk else 0)
+                                        for _i, _loc in enumerate(_locaux_bulk)
+                                    }
+                                    _cle_override_bulk = (
+                                        f"{_exam_norm(dept_tag)}::{_info_save_bulk['base']}::"
+                                        f"{_info_save_bulk['date_key']}::{_info_save_bulk['heure_key']}"
+                                    )
+                                    _common_overrides[_cle_override_bulk] = {
+                                        "matiere": _info_save_bulk["matiere"],
+                                        "promotions": _promos_save_bulk,
+                                        "lieux": list(_locaux_bulk),
+                                        "effectifs": _repart_bulk,
+                                        "nb_amphi": sum(1 for _loc in _locaux_bulk if _exam_norm(_loc).startswith("AMPHI")),
+                                        "nb_salle": sum(1 for _loc in _locaux_bulk if _exam_norm(_loc).startswith("AS")),
+                                    }
+                                    _nb_enreg_bulk += 1
+                                st.session_state["exam_common_room_overrides"] = _common_overrides
+                                if _nb_enreg_bulk:
+                                    st.success(
+                                        f"{_nb_enreg_bulk} matière(s) enregistrée(s) pour le groupe de "
+                                        f"{_nb_promos_bulk} promotions. Les effectifs ont été répartis séparément pour chaque matière."
+                                    )
+                                    st.rerun()
+                                else:
+                                    st.error("Aucune matière n'a pu être enregistrée : vérifie les effectifs des promotions.")
+
                 _common_override_key = f"{_exam_norm(dept_tag)}::{_common_info['base']}::{_common_info['date_key']}::{_common_info['heure_key']}"
                 _ancien_common = _common_overrides.get(_common_override_key, {})
                 if not _lieux_common:
