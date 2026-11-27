@@ -35104,22 +35104,51 @@ if df is not None:
                 _k3.metric("Surveillances disponibles", _total_q)
 
         # ------------------------------------------------------------------
-        # EXTRACTION DU RESPONSABLE DU COURS DEPUIS L'EDT
+        # EXTRACTION DU VRAI CHARGÉ DE MATIÈRE DEPUIS LES SEULES LIGNES COURS
         # ------------------------------------------------------------------
+        # IMPORTANT : ne jamais déduire le chargé de matière à partir des lignes
+        # TD/TP. Pour une matière commune, ces lignes peuvent contenir un autre
+        # enseignant (ex. BELHALLOUCHE LAKHDAR en TP), qui ne doit pas remplacer
+        # l'enseignant du Cours (ex. TOUHAMI SEDDIK).
         edt_c_mat = _exam_col(df_edt_exam, ["Enseignements", "Enseignement", "Matière"])
         edt_c_ens = _exam_col(df_edt_exam, ["Enseignants", "Enseignant", "Chargé de matière"])
         edt_c_promo = _exam_col(df_edt_exam, ["Promotion", "Promotions"])
+        edt_c_code = _exam_col(df_edt_exam, ["Code"])
+        edt_c_dept = _exam_col(df_edt_exam, ["Département", "Departement", "Dépt"])
         responsables = {}
+        responsables_cours_par_matiere = {}
         if not df_edt_exam.empty and edt_c_mat and edt_c_ens and edt_c_promo:
             for _, redit in df_edt_exam.iterrows():
-                mat_base = _exam_matiere_base(redit.get(edt_c_mat, ""))
+                enseignement_source = _exam_txt(redit.get(edt_c_mat, ""))
+                code_source = _exam_norm(redit.get(edt_c_code, "")) if edt_c_code else ""
+                prefixe_source = _exam_norm(enseignement_source).split(" ")[0] if _exam_norm(enseignement_source) else ""
+                # Accepter les deux formats présents dans DATA : Code=COURS ou
+                # Code=Cours-... ; le préfixe de l'intitulé sert de contrôle.
+                ligne_cours = ("COURS" in code_source or prefixe_source in {"COURS", "COUR"})
+                if not ligne_cours or prefixe_source in {"TD", "TP"}:
+                    continue
+
+                # Le fichier DATA peut contenir plusieurs départements : ne lire
+                # que celui choisi dans le générateur lorsqu'une colonne existe.
+                if exam_dept and edt_c_dept:
+                    dept_source = _exam_norm(redit.get(edt_c_dept, ""))
+                    if dept_source and dept_source not in {_exam_norm(exam_dept), _exam_norm(exam_dept_label)}:
+                        continue
+
+                mat_base = _exam_matiere_base(enseignement_source)
                 promo_key = _exam_norm(redit.get(edt_c_promo, ""))
-                if mat_base and promo_key:
-                    cle = (promo_key, mat_base)
-                    responsables.setdefault(cle, [])
-                    for n in _exam_noms(redit.get(edt_c_ens, "")):
-                        if _exam_norm(n) not in {_exam_norm(x) for x in responsables[cle]}:
-                            responsables[cle].append(n)
+                if not mat_base or not promo_key:
+                    continue
+
+                cle = (promo_key, mat_base)
+                responsables.setdefault(cle, [])
+                for n in _exam_noms(redit.get(edt_c_ens, "")):
+                    cle_nom = _exam_norm(n)
+                    if cle_nom and cle_nom not in {_exam_norm(x) for x in responsables[cle]}:
+                        responsables[cle].append(n)
+                    if cle_nom:
+                        responsables_cours_par_matiere.setdefault(mat_base, {})
+                        responsables_cours_par_matiere[mat_base][cle_nom] = n
 
         st.subheader("3. Paramètres de surveillance")
         col_ratio, col_common = st.columns(2)
@@ -35573,12 +35602,18 @@ if df is not None:
                 cle_resp = (examen["_promo_key"], examen["_matiere_base"])
                 resp_candidates = responsables.get(cle_resp, [])
                 responsable_cours = resp_candidates[0] if resp_candidates else ""
-                # Si l'EDT a une matière commune sur plusieurs promotions, rechercher aussi par matière seule.
+                # Si la ligne d'examen regroupe plusieurs promotions et ne porte
+                # pas une clé promotion individuelle, utiliser uniquement les
+                # enseignants des lignes COURS de cette matière dans DATA.
+                # On retient le nom présent le plus souvent ; en cas d'égalité,
+                # on ne choisit pas arbitrairement un enseignant.
                 if not responsable_cours:
-                    for (pk, mb), noms in responsables.items():
-                        if mb == examen["_matiere_base"] and noms:
-                            responsable_cours = noms[0]
-                            break
+                    candidats_cours = responsables_cours_par_matiere.get(examen["_matiere_base"], {})
+                    if candidats_cours:
+                        _max_occ_cours = max(candidats_cours.values())
+                        _meilleurs_cours = [nom for nom, nb in candidats_cours.items() if nb == _max_occ_cours]
+                        if len(_meilleurs_cours) == 1:
+                            responsable_cours = _meilleurs_cours[0]
 
                 for local, nb_etu in plan_lieux:
                     _mats_fixes = local.get("matricules")
