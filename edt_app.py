@@ -29112,6 +29112,160 @@ def _hist_surv_publication_sauver(active):
     return sauvegarde
 
 
+
+def _surv_norm_promotion_etudiant(valeur):
+    """Normalise une promotion pour les comparaisons exactes côté étudiant."""
+    texte = unicodedata.normalize("NFKD", str(valeur or ""))
+    texte = "".join(ch for ch in texte if not unicodedata.combining(ch))
+    return re.sub(r"[^A-Z0-9]+", "", texte.upper())
+
+
+def _surv_etudiant_est_affecte_ligne(ligne, promotion, matricule):
+    """Vérifie la promotion et, si disponible, le matricule réellement affecté au local."""
+    promo_cle = _surv_norm_promotion_etudiant(promotion)
+    matricule = str(matricule or "").strip()
+    promos_ligne = [
+        _surv_norm_promotion_etudiant(x)
+        for x in re.split(r"\s*/\s*", str(ligne.get("Promotion", "") or ""))
+        if str(x).strip()
+    ]
+
+    detail_json = ligne.get("Matricules par promotion JSON", "")
+    if isinstance(detail_json, str) and detail_json.strip():
+        try:
+            detail = json.loads(detail_json)
+            if isinstance(detail, dict):
+                # La présence de la promotion dans le JSON est prioritaire :
+                # les listes de promotions communes restent distinctes dans un même local.
+                cle_trouvee = next((k for k in detail if _surv_norm_promotion_etudiant(k) == promo_cle), None)
+                if cle_trouvee is not None:
+                    liste = detail.get(cle_trouvee) or []
+                    return matricule in {str(x).strip() for x in liste} if matricule else bool(liste)
+        except Exception:
+            pass
+
+    if promo_cle not in promos_ligne:
+        # Certaines anciennes lignes peuvent ne contenir que le détail par promotion.
+        brut_eff = str(ligne.get("Effectifs par promotion", "") or "")
+        if not any(_surv_norm_promotion_etudiant(x.split(":", 1)[0]) == promo_cle
+                   for x in brut_eff.split("|") if ":" in x):
+            return False
+
+    # Pour les lignes sans JSON (anciennes données), contrôler la liste globale si possible.
+    mats = [x.strip() for x in str(ligne.get("Matricules", "") or "").split(";") if x.strip()]
+    if matricule and mats:
+        return matricule in mats
+    return True
+
+
+def _surv_afficher_planning_etudiant(preview_student=None):
+    """Affiche à l'étudiant sa grille d'examens uniquement après publication admin."""
+    st.markdown("## 🗓️ Mon planning des examens")
+    st.caption(
+        "Grille individuelle des examens de votre promotion : matière, chargé de cours, "
+        "date, horaire et local où vous êtes affecté."
+    )
+
+    fiche = _pfe_etudiant_connecte(preview_student=preview_student)
+    if not fiche:
+        st.info("Votre fiche officielle n'a pas pu être identifiée. Vérifiez votre matricule étudiant.")
+        return
+
+    promotion = str(fiche.get("promotion", "")).strip()
+    matricule = str(fiche.get("matricule", "")).strip()
+    departement = str(fiche.get("departement", "")).strip()
+    if not promotion:
+        st.warning("Votre promotion n'est pas renseignée dans la fiche officielle.")
+        return
+
+    publie = _hist_surv_publication_lire()
+    if not publie:
+        st.info("Le planning des examens n'a pas encore été validé et publié par l'administration. Il apparaîtra ici après sa publication.")
+        return
+
+    historique = _hist_surv_charger(force_refresh=True)
+    lignes = []
+    dept_cle = _surv_norm_promotion_etudiant(departement)
+    for ligne in historique:
+        if not _surv_etudiant_est_affecte_ligne(ligne, promotion, matricule):
+            continue
+        dept_ligne = str(ligne.get("Département", "") or "").strip()
+        if dept_cle and dept_ligne:
+            dept_ligne_cle = _surv_norm_promotion_etudiant(dept_ligne)
+            if dept_cle != dept_ligne_cle and dept_cle not in dept_ligne_cle and dept_ligne_cle not in dept_cle:
+                continue
+        lignes.append(dict(ligne))
+
+    if not lignes:
+        st.info(f"Aucun examen publié n'a été trouvé pour votre promotion **{promotion}**.")
+        return
+
+    df = pd.DataFrame(lignes)
+    for col in ("Matière", "Date", "Heure", "Lieu"):
+        if col not in df.columns:
+            df[col] = ""
+    df["Chargé de cours"] = df.get(
+        "Responsable du cours (prioritaire)",
+        df.get("Chargé de matière", pd.Series(["Non renseigné"] * len(df), index=df.index)),
+    )
+    df["Chargé de cours"] = df["Chargé de cours"].fillna("").astype(str).str.strip()
+    df.loc[df["Chargé de cours"].eq(""), "Chargé de cours"] = "Non renseigné"
+    df["_date_tri"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
+    df = df.sort_values(["_date_tri", "Heure", "Matière", "Lieu"], kind="stable")
+    df = df.drop_duplicates(subset=["Matière", "Date", "Heure", "Lieu", "Promotion"])
+
+    st.success(f"{len(df)} affectation(s) d'examen publiée(s) pour **{promotion}**.")
+    st.caption(f"Étudiant : {fiche.get('nom_complet', fiche.get('nom', ''))} · Promotion : {promotion}")
+
+    # Grille : une ligne par date et une colonne par créneau horaire.
+    creneaux = sorted(
+        {str(x).strip() or "Horaire non précisé" for x in df["Heure"].tolist()},
+        key=lambda x: tuple(int(n) for n in re.findall(r"\d+", x)[:2]) if re.findall(r"\d+", x) else (9999, 9999),
+    )
+    dates = []
+    for _, r in df.iterrows():
+        d = str(r.get("Date", "")).strip()
+        j = str(r.get("Jour", "")).strip()
+        cle = (d, j)
+        if cle not in dates:
+            dates.append(cle)
+
+    grille = []
+    for date_txt, jour_txt in dates:
+        ligne_grille = {"JOUR / DATE": f"{jour_txt + ' · ' if jour_txt else ''}{date_txt}"}
+        for heure in creneaux:
+            sous = df[df["Heure"].astype(str).str.strip().eq(heure)].copy()
+            sous = sous[sous["Date"].astype(str).str.strip().eq(date_txt)]
+            blocs = []
+            for _, r in sous.iterrows():
+                matiere = str(r.get("Matière", "")).strip() or "Matière non renseignée"
+                charge = str(r.get("Chargé de cours", "")).strip() or "Non renseigné"
+                lieu = str(r.get("Lieu", "")).strip() or "Local non renseigné"
+                blocs.append(f"📘 {matiere}\n👨‍🏫 Chargé de cours : {charge}\n📍 Lieu : {lieu}")
+            ligne_grille[heure] = "\n\n────────────\n\n".join(blocs) if blocs else "—"
+        grille.append(ligne_grille)
+
+    df_grille = pd.DataFrame(grille, columns=["JOUR / DATE"] + creneaux)
+    st.markdown("### 📅 Grille de mes examens")
+    st.dataframe(
+        df_grille,
+        use_container_width=True,
+        hide_index=True,
+        height=min(760, max(230, 105 + 150 * len(df_grille))),
+        column_config={
+            "JOUR / DATE": st.column_config.TextColumn("📅 JOUR / DATE", width="medium"),
+            **{h: st.column_config.TextColumn(h, width="large") for h in creneaux},
+        },
+    )
+
+    st.markdown("### 📋 Détail des examens")
+    colonnes = ["Matière", "Chargé de cours", "Date", "Jour", "Heure", "Lieu"]
+    for col in colonnes:
+        if col not in df.columns:
+            df[col] = ""
+    st.dataframe(df[colonnes], use_container_width=True, hide_index=True)
+
+
 def _surv_norm_enseignant(valeur):
     """Normalisation des noms pour comparer les affectations sans sous-chaînes."""
     texte = unicodedata.normalize("NFKD", str(valeur or ""))
@@ -33549,18 +33703,18 @@ if df is not None:
             _pub_c1, _pub_c2 = st.columns([3, 2])
             if _surv_historique_compte:
                 if _surv_publication_active:
-                    _pub_c1.success("Le planning est actuellement publié dans les comptes enseignants.")
-                    if _pub_c2.button("🔒 Retirer le planning des comptes enseignants", key="surv_exam_retirer_publication", use_container_width=True):
+                    _pub_c1.success("Le planning est actuellement publié dans les comptes enseignants et étudiants.")
+                    if _pub_c2.button("🔒 Retirer le planning des comptes enseignants et étudiants", key="surv_exam_retirer_publication", use_container_width=True):
                         if _hist_surv_publication_sauver(False):
-                            st.success("Publication retirée. Les enseignants ne voient plus leur planning.")
+                            st.success("Publication retirée. Les enseignants et les étudiants ne voient plus leur planning.")
                         else:
                             st.error("Impossible d'enregistrer le retrait de publication. Vérifiez Supabase.")
                         st.rerun()
                 else:
-                    _pub_c1.warning("Le planning est enregistré, mais il n'est pas encore visible par les enseignants.")
-                    if _pub_c2.button("📢 Publier le planning dans les comptes enseignants", type="primary", key="surv_exam_publier_publication", use_container_width=True):
+                    _pub_c1.warning("Le planning est enregistré, mais il n'est pas encore visible par les enseignants ni les étudiants.")
+                    if _pub_c2.button("📢 Publier le planning dans les comptes enseignants et étudiants", type="primary", key="surv_exam_publier_publication", use_container_width=True):
                         if _hist_surv_publication_sauver(True):
-                            st.success("Planning publié. Chaque enseignant verra uniquement ses propres surveillances.")
+                            st.success("Planning publié. Chaque enseignant verra ses surveillances et chaque étudiant verra sa grille d’examens avec son propre local.")
                         else:
                             st.error("Impossible d'enregistrer la publication. Vérifiez Supabase et le script SQL.")
                         st.rerun()
@@ -38319,6 +38473,10 @@ if df is not None:
             preview_student=_preview_student if espace_choisi == "Étudiant" and _is_admin_auth else None,
         )
     elif portail == "🔐 Portail Étudiant":
+        _surv_afficher_planning_etudiant(
+            preview_student=_preview_student if _is_admin_auth else None
+        )
+        st.divider()
         if _is_admin_auth and _preview_student is None:
             st.warning("Sélectionnez un étudiant dans la navigation centrale pour afficher son espace.")
         else:
