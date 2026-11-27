@@ -28673,11 +28673,11 @@ def _pe_chevauche(c1, c2):
 # ─────────────────────────────────────────────────────────────────────────────
 def _pe_params_defaut():
     return {
-        "date_debut": "2027-01-17",
+        "date_debut": "2027-01-07",
         "date_fin": "2027-01-21",
         "jours_exclus": ["Vendredi", "Samedi"],
         "dates_exclues": [],
-        "creneaux": ["08h30 - 10h00", "10h30 - 12h00", "13h00 - 14h30", "15h00 - 16h30"],
+        "creneaux": ["08h30 - 10h30", "11h00 - 13h00", "13h30 - 15h30", "16h00 - 18h00"],
         "max_par_jour": 2,
         "inclure_td_tp": False,
     }
@@ -28699,6 +28699,14 @@ def _pe_normaliser_store(data):
         return store
     if isinstance(data.get("params"), dict):
         store["params"].update(data["params"])
+        # Migration douce de l'ancien jeu de valeurs par défaut vers les nouvelles
+        # valeurs demandées. Les paramètres personnalisés par l'administrateur
+        # ne sont jamais écrasés.
+        _anciens_creneaux_defaut = ["08h30 - 10h00", "10h30 - 12h00", "13h00 - 14h30", "15h00 - 16h30"]
+        if (store["params"].get("date_debut") == "2027-01-17"
+                and store["params"].get("date_fin") == "2027-01-21"
+                and store["params"].get("creneaux") == _anciens_creneaux_defaut):
+            store["params"].update(_pe_params_defaut())
     ep = data.get("epreuves")
     if isinstance(ep, dict):
         for k, e in ep.items():
@@ -28937,29 +28945,188 @@ def _surv_cle(prefixe, options):
 # ─────────────────────────────────────────────────────────────────────────────
 # 🗂️ HISTORIQUE DES SURVEILLANCES GÉNÉRÉES (persistant)
 # ─────────────────────────────────────────────────────────────────────────────
-def _hist_surv_charger():
-    if "exam_historique" not in st.session_state:
-        data = []
+def _hist_surv_charger(force_refresh=True):
+    """
+    Charge les affectations de surveillance.
+
+    Source principale : Supabase (table surveillances_examens_store, ligne id=1).
+    Compatibilité : si la table ne contient encore aucune ligne, importe une
+    seule fois l'ancien fichier JSON historique du dépôt/serveur.
+
+    Le rechargement à chaque exécution permet à un enseignant déjà connecté
+    de voir une nouvelle répartition dès son prochain rafraîchissement.
+    """
+    data = None
+    erreur_supabase = ""
+
+    if MODE_SUPABASE and supabase is not None:
+        try:
+            rep = (
+                supabase.table("surveillances_examens_store")
+                .select("id,affectations")
+                .eq("id", 1)
+                .limit(1)
+                .execute()
+            )
+            lignes_db = rep.data or []
+            if lignes_db:
+                valeur = lignes_db[0].get("affectations", [])
+                data = valeur if isinstance(valeur, list) else []
+            else:
+                # Migration de l'ancien historique local vers Supabase.
+                ancien = []
+                try:
+                    if os.path.exists(FICHIER_HISTORIQUE_SURVEILLANCES):
+                        with open(FICHIER_HISTORIQUE_SURVEILLANCES, "r", encoding="utf-8") as f:
+                            ancien = json.load(f)
+                except Exception:
+                    ancien = []
+                if not isinstance(ancien, list):
+                    ancien = []
+                ancien = [r for r in ancien if isinstance(r, dict)]
+                supabase.table("surveillances_examens_store").upsert(
+                    {
+                        "id": 1,
+                        "affectations": ancien,
+                        "publication_active": False,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    on_conflict="id",
+                ).execute()
+                data = ancien
+        except Exception as exc:
+            erreur_supabase = str(exc)
+            data = None
+
+    if data is None:
+        # Mode de secours historique : utile si Supabase est momentanément
+        # indisponible. Le message est présenté dans l'interface enseignant/admin.
         try:
             if os.path.exists(FICHIER_HISTORIQUE_SURVEILLANCES):
                 with open(FICHIER_HISTORIQUE_SURVEILLANCES, "r", encoding="utf-8") as f:
                     data = json.load(f)
         except Exception:
             data = []
-        st.session_state["exam_historique"] = [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
-    return st.session_state["exam_historique"]
+        if not isinstance(data, list):
+            data = []
+
+    resultat = [r for r in data if isinstance(r, dict)]
+    st.session_state["exam_historique"] = resultat
+    st.session_state["_exam_hist_supabase_error"] = erreur_supabase
+    return resultat
 
 
 def _hist_surv_sauver(lignes):
-    st.session_state["exam_historique"] = list(lignes)
+    """
+    Enregistre le planning courant dans Supabase et conserve une copie locale
+    de secours. Le format des lignes historiques existantes est inchangé.
+    """
+    donnees = [dict(r) for r in (lignes or []) if isinstance(r, dict)]
+    st.session_state["exam_historique"] = donnees
+
+    erreur_supabase = ""
+    sauvegarde_supabase = False
+    if MODE_SUPABASE and supabase is not None:
+        try:
+            supabase.table("surveillances_examens_store").upsert(
+                {
+                    "id": 1,
+                    "affectations": donnees,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                on_conflict="id",
+            ).execute()
+            sauvegarde_supabase = True
+        except Exception as exc:
+            erreur_supabase = str(exc)
+
+    sauvegarde_locale = False
     try:
         tmp = FICHIER_HISTORIQUE_SURVEILLANCES + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(list(lignes), f, ensure_ascii=False, indent=1, default=str)
+            json.dump(donnees, f, ensure_ascii=False, indent=1, default=str)
         os.replace(tmp, FICHIER_HISTORIQUE_SURVEILLANCES)
-        return True
+        sauvegarde_locale = True
     except Exception:
+        sauvegarde_locale = False
+
+    st.session_state["_exam_hist_supabase_error"] = erreur_supabase
+    st.session_state["_exam_hist_saved_supabase"] = sauvegarde_supabase
+    return sauvegarde_supabase or sauvegarde_locale
+
+
+def _hist_surv_publication_lire():
+    """Indique si le dernier planning est publié aux comptes enseignants."""
+    valeur = None
+    erreur = ""
+    if MODE_SUPABASE and supabase is not None:
+        try:
+            rep = (supabase.table("surveillances_examens_store")
+                   .select("publication_active").eq("id", 1).limit(1).execute())
+            lignes = rep.data or []
+            if lignes:
+                valeur = bool(lignes[0].get("publication_active", False))
+        except Exception as exc:
+            erreur = str(exc)
+    if valeur is None:
+        try:
+            chemin = FICHIER_HISTORIQUE_SURVEILLANCES + ".publication.json"
+            if os.path.exists(chemin):
+                with open(chemin, "r", encoding="utf-8") as f:
+                    valeur = bool(json.load(f).get("publication_active", False))
+        except Exception:
+            valeur = False
+    st.session_state["_exam_hist_publication_error"] = erreur
+    st.session_state["_exam_hist_publication_active"] = bool(valeur)
+    return bool(valeur)
+
+
+def _hist_surv_publication_sauver(active):
+    """Publie ou retire le planning pour tous les comptes enseignants."""
+    active = bool(active)
+    erreur = ""
+    sauvegarde = False
+    if MODE_SUPABASE and supabase is not None:
+        try:
+            supabase.table("surveillances_examens_store").upsert(
+                {"id": 1, "publication_active": active,
+                 "updated_at": datetime.now(timezone.utc).isoformat()},
+                on_conflict="id",
+            ).execute()
+            sauvegarde = True
+        except Exception as exc:
+            erreur = str(exc)
+    try:
+        chemin = FICHIER_HISTORIQUE_SURVEILLANCES + ".publication.json"
+        tmp = chemin + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"publication_active": active,
+                       "updated_at": datetime.now(timezone.utc).isoformat()}, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, chemin)
+        sauvegarde = True
+    except Exception as exc:
+        if not erreur:
+            erreur = str(exc)
+    st.session_state["_exam_hist_publication_error"] = erreur
+    st.session_state["_exam_hist_publication_active"] = active if sauvegarde else False
+    return sauvegarde
+
+
+def _surv_norm_enseignant(valeur):
+    """Normalisation des noms pour comparer les affectations sans sous-chaînes."""
+    texte = unicodedata.normalize("NFKD", str(valeur or ""))
+    texte = "".join(ch for ch in texte if not unicodedata.combining(ch))
+    texte = re.sub(r"[^A-Z0-9]+", " ", texte.upper())
+    return " ".join(texte.split())
+
+
+def _surv_affectation_correspond(nom_connecte, nom_affecte):
+    """Correspondance exacte du nom, y compris les champs contenant un binôme."""
+    cible = _surv_norm_enseignant(nom_connecte)
+    if not cible:
         return False
+    morceaux = re.split(r"\s*(?:/|&|\+|;|\bet\b)\s*", str(nom_affecte or ""), flags=re.IGNORECASE)
+    return any(_surv_norm_enseignant(m) == cible for m in morceaux)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -30161,57 +30328,86 @@ def _etu_excel_bytes(feuilles):
 
 
 def _surv_afficher_listes_etudiants(df_planning, df_etu, dept_label=""):
-    """Section « Listes des étudiants par lieu » : affichage et téléchargement Excel."""
-    st.subheader("7. 👥 Listes des étudiants par lieu")
+    """Listes nominatives distinctes par promotion, même lorsqu'elles partagent un local."""
+    st.subheader("7. 👥 Listes des étudiants par lieu et par promotion")
     if "Matricules" not in df_planning.columns or df_planning["Matricules"].map(_pe_txt).eq("").all():
         st.info("Les listes nominatives sont créées à la génération : relancez la génération de la promotion "
                 "pour obtenir la répartition des étudiants par lieu.")
         return
     std = _etu_standard(df_etu)
     index = std[std["Matricule"].ne("")].drop_duplicates("Matricule").set_index("Matricule")
-    base = df_planning[df_planning["Matricules"].map(_pe_txt).ne("")]
-    promos = sorted({_pe_txt(v) for v in base["Promotion"]}, key=_pe_cle_nat)
+    base = df_planning[df_planning["Matricules"].map(_pe_txt).ne("")].copy()
+
+    def _promotions_ligne(ligne):
+        valeur = _pe_txt(ligne.get("Promotion", ""))
+        return [_pe_txt(x) for x in re.split(r"\s*/\s*", valeur) if _pe_txt(x)]
+
+    promos = sorted({p for _, ligne in base.iterrows() for p in _promotions_ligne(ligne)}, key=_pe_cle_nat)
     promo = st.selectbox("🎓 Promotion", promos, key=_surv_cle("exam_listes_promo", promos))
-    sub = base[base["Promotion"].map(_pe_txt) == promo]
+    sub = base[base.apply(lambda ligne: promo in _promotions_ligne(ligne), axis=1)].copy()
     examens = (sub.assign(_d=sub["Date"].map(lambda x: _surv_info_date(x)[0]))
                .drop_duplicates(["Matière", "Date", "Heure"])
                .sort_values(["_d", "Heure", "Matière"]))
     cles = [(r["Matière"], r["Date"], r["Heure"]) for _, r in examens.iterrows()]
+    if not cles:
+        st.info("Aucune liste nominative n'est disponible pour cette promotion.")
+        return
     exam = st.selectbox("📝 Examen", cles, key=_surv_cle("exam_listes_exam", [promo] + [str(c) for c in cles]),
                         format_func=lambda c: f"{c[0]} — {c[1]} ({c[2]})")
 
-    def _liste(ligne):
-        mats = [m for m in _pe_txt(ligne["Matricules"]).split(";") if m]
+    def _matricules_ligne_promo(ligne, promo_cible):
+        # Le champ JSON conserve des listes séparées pour chaque promotion dans un même local.
+        brut_json = _pe_txt(ligne.get("Matricules par promotion JSON", ""))
+        if brut_json:
+            try:
+                detail = json.loads(brut_json)
+                return [_pe_txt(m) for m in detail.get(promo_cible, []) if _pe_txt(m)]
+            except Exception:
+                pass
+        # Compatibilité avec les anciennes affectations : si les matricules étaient
+        # stockés ensemble, retrouver la promotion depuis le fichier officiel étudiants.
+        mats_anciens = [m for m in _pe_txt(ligne.get("Matricules", "")).split(";") if m]
+        if _promotions_ligne(ligne) == [promo_cible]:
+            return mats_anciens
+        if mats_anciens and promo_cible in _promotions_ligne(ligne):
+            _anciens_info = index.reindex(mats_anciens)
+            if "Promotion" in _anciens_info.columns:
+                return [m for m, p in zip(mats_anciens, _anciens_info["Promotion"].tolist())
+                        if _pe_norm(p) == _pe_norm(promo_cible)]
+        return []
+
+    def _liste(ligne, promo_cible):
+        mats = _matricules_ligne_promo(ligne, promo_cible)
         d = index.reindex(mats).reset_index()
         d["Matricule"] = mats
         for col in ("Nom", "Prénom", "Groupe", "Sous-groupe", "Email", "Téléphone"):
             d[col] = d[col].fillna("") if col in d.columns else ""
         return d[_ETU_COLS]
 
-    def _infos(ligne, nb):
-        return [f"{ligne['Matière']} — Promotion {ligne['Promotion']}",
+    def _infos(ligne, nb, promo_cible):
+        return [f"{ligne['Matière']} — Promotion {promo_cible}",
                 f"Date : {ligne['Date']}   Horaire : {ligne['Heure']}",
-                f"Lieu : {ligne['Lieu']}   Étudiants : {nb}   Capacité : {ligne.get('Capacité', '')}",
+                f"Lieu : {ligne['Lieu']}   Étudiants de {promo_cible} : {nb}   Effectif total du local : {ligne.get('Effectif du lieu', '')}",
                 f"Surveillants : {ligne.get('Permanent responsable du lieu', '')} / {ligne.get('Vacataire co-surveillant', '')}"
                 + (f"   Département : {dept_label}" if dept_label else "")]
 
     lignes = sub[(sub["Matière"] == exam[0]) & (sub["Date"] == exam[1]) & (sub["Heure"] == exam[2])].sort_values("Lieu")
     feuilles = []
     for _, lg in lignes.iterrows():
-        d = _liste(lg)
-        feuilles.append((_pe_txt(lg["Lieu"]), _infos(lg, len(d)), d))
-        with st.expander(f"📍 {lg['Lieu']} — {len(d)} étudiant(s) — surveillants : "
+        d = _liste(lg, promo)
+        if d.empty:
+            continue
+        feuilles.append((f"{_pe_txt(lg['Lieu'])}_{promo}", _infos(lg, len(d), promo), d))
+        with st.expander(f"📍 {lg['Lieu']} — {promo} : {len(d)} étudiant(s) — surveillants : "
                          f"{lg.get('Permanent responsable du lieu', '')} / {lg.get('Vacataire co-surveillant', '')}",
                          expanded=len(lignes) <= 3):
             aff = d.copy()
             aff.insert(0, "N°", range(1, len(aff) + 1))
             st.dataframe(aff, use_container_width=True, hide_index=True)
-            if len(d):
-                st.caption("Répartition : " + " ; ".join(
-                    f"{g or '—'} : {n}" for g, n in d["Groupe"].value_counts().sort_index().items()))
+            st.caption("Cette liste contient uniquement les étudiants de la promotion sélectionnée.")
     c1, c2 = st.columns(2)
     if feuilles:
-        c1.download_button("📥 Listes de cet examen (Excel, une feuille par lieu)", _etu_excel_bytes(feuilles),
+        c1.download_button("📥 Liste de cet examen (Excel, une feuille par local)", _etu_excel_bytes(feuilles),
                            f"Listes_{_surv_nom_fichier(promo)}_{_surv_nom_fichier(exam[0])[:30]}.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                            use_container_width=True, key=f"exam_dl_listes_ex_{_surv_nom_fichier(promo)}")
@@ -30219,8 +30415,10 @@ def _surv_afficher_listes_etudiants(df_planning, df_etu, dept_label=""):
     for i, (_, ex) in enumerate(examens.iterrows(), 1):
         l_ex = sub[(sub["Matière"] == ex["Matière"]) & (sub["Date"] == ex["Date"]) & (sub["Heure"] == ex["Heure"])]
         for _, lg in l_ex.sort_values("Lieu").iterrows():
-            d = _liste(lg)
-            toutes.append((f"{i:02d} {_pe_txt(lg['Matière'])[:12]} {_pe_txt(lg['Lieu'])[:10]}", _infos(lg, len(d)), d))
+            d = _liste(lg, promo)
+            if not d.empty:
+                toutes.append((f"{i:02d} {_pe_txt(lg['Matière'])[:12]} {_pe_txt(lg['Lieu'])[:10]}_{promo}",
+                               _infos(lg, len(d), promo), d))
     if toutes:
         c2.download_button("📥 Toutes les listes de la promotion (Excel)", _etu_excel_bytes(toutes),
                            f"Listes_{_surv_nom_fichier(promo)}_tous_examens.xlsx",
@@ -30270,7 +30468,7 @@ def run_programmation_examens():
     with st.expander("⚙️ Paramètres de la période d'examens (jours, créneaux, règles)",
                      expanded=(not dispos or not slots)):
         c1, c2 = st.columns(2)
-        d0_def = _pe_date(params.get("date_debut")) or _pe_date("2027-01-17")
+        d0_def = _pe_date(params.get("date_debut")) or _pe_date("2027-01-07")
         d1_def = _pe_date(params.get("date_fin")) or _pe_date("2027-01-21")
         nd0 = c1.date_input("📅 Premier jour de la période", value=d0_def, format="DD/MM/YYYY", key=f"pe_p_d0_{pver}")
         nd1 = c2.date_input("📅 Dernier jour de la période", value=d1_def, format="DD/MM/YYYY", key=f"pe_p_d1_{pver}")
@@ -33284,63 +33482,429 @@ if df is not None:
         
             st.stop()  # Empêche l'enseignant d'accéder au reste du code
     elif portail == "📅 Surveillances Examens":
-        FILE_S = "surveillances_2027.xlsx"
-        if os.path.exists(FILE_S):
-            df_surv = pd.read_excel(FILE_S)
-            df_surv.columns = [str(c).strip() for c in df_surv.columns]
-            df_surv['Date_Tri'] = pd.to_datetime(df_surv['Date'], dayfirst=True, errors='coerce')
-            
-            for c in df_surv.columns: 
-                df_surv[c] = df_surv[c].fillna("").astype(str).str.strip()
-                
-            c_prof = 'Surveillant(s)' if 'Surveillant(s)' in df_surv.columns else 'Enseignants'
-            u_nom = user['nom_officiel']
-            u_email = user.get('email', '').lower().strip()
+        st.header("📅 Mes surveillances des examens")
+        st.caption(
+            "Les affectations affichées sont celles publiées par l'administration "
+            "dans le générateur automatique des surveillances."
+        )
 
-            is_master_admin = (u_email == "milouafarid@gmail.com")
+        # Relecture de la source partagée à chaque exécution Streamlit :
+        # une publication administrative devient ainsi visible dans les comptes
+        # individuels sans intervention manuelle de l'enseignant.
+        _surv_historique_compte = _hist_surv_charger(force_refresh=True)
+        _surv_publication_active = _hist_surv_publication_lire()
+        _surv_nom_compte = str(user.get("nom_officiel", "")).strip()
+        _surv_col_perm = "Permanent responsable du lieu"
+        _surv_col_vac = "Vacataire co-surveillant"
 
-            if is_master_admin:
-                tous_les_profs = []
-                for entry in df_surv[c_prof].unique():
-                    for p in entry.split('&'):
-                        clean_p = p.strip()
-                        if clean_p and clean_p not in ["nan", "Non défini", ""]:
-                            tous_les_profs.append(clean_p)
-                liste_profs = sorted(list(set(tous_les_profs)))
-                st.success("🔓 Accès Maître : milouafarid@gmail.com")
-                prof_sel = st.selectbox("🔍 Choisir un enseignant :", liste_profs)
+        if is_admin:
+            _surv_noms_admin = set()
+            for _surv_ligne_admin in _surv_historique_compte:
+                for _surv_col_admin in (_surv_col_perm, _surv_col_vac):
+                    _surv_nom_admin = str(_surv_ligne_admin.get(_surv_col_admin, "")).strip()
+                    if _surv_nom_admin:
+                        _surv_noms_admin.add(_surv_nom_admin)
+            _surv_options_admin = ["Tous les enseignants"] + sorted(_surv_noms_admin, key=str.casefold)
+            _surv_filtre_admin = st.selectbox(
+                "🔎 Consulter les surveillances de :",
+                _surv_options_admin,
+                key="surv_exam_admin_filtre_compte",
+            )
+            if _surv_filtre_admin == "Tous les enseignants":
+                _surv_lignes_compte = list(_surv_historique_compte)
+                _surv_titre_compte = "Planning global des surveillances publiées"
             else:
-                prof_sel = u_nom
-                st.info(f"👤 Espace Personnel : **{u_nom}**")
-
-            df_u_surv = df_surv[df_surv[c_prof].str.contains(prof_sel, case=False, na=False)].sort_values(by='Date_Tri')
-            st.markdown(f"### 📋 Planning de : {prof_sel}")
-            
-            c1, c2, c3 = st.columns(3)
-            nb_mat = len(df_u_surv[df_u_surv['Heure'].str.contains("08h|09h|10h", case=False)])
-            c1.metric("Séances Total", len(df_u_surv))
-            c2.metric("Matin", nb_mat)
-            c3.metric("Après-midi", len(df_u_surv) - nb_mat)
-            
-            st.divider()
-
-            if not df_u_surv.empty:
-                for _, r in df_u_surv.iterrows():
-                    st.markdown(f"""
-                    <div style="background:#f9f9f9;padding:12px;border-radius:8px;border-left:5px solid #1E3A8A;margin-bottom:8px;">
-                        <span style="font-weight:bold;color:#1E3A8A;">📅 {r['Jour']} {r['Date']}</span> | 🕒 {r['Heure']}<br>
-                        <b>📖 {r['matiere']}</b><br>
-                        <small>📍 {r['Salle']} | 🎓 {r['Promotion']} | 👥 {r[c_prof]}</small>
-                    </div>""", unsafe_allow_html=True)
-                
-                buf = io.BytesIO()
-                df_u_surv.drop(columns=['Date_Tri']).to_excel(buf, index=False)
-                st.download_button(f"📥 Télécharger l'EDT de {prof_sel}", buf.getvalue(), f"Surv_{prof_sel}.xlsx")
-            else:
-                st.warning(f"⚠️ Aucune surveillance trouvée pour : {prof_sel}")
+                _surv_lignes_compte = [
+                    _r for _r in _surv_historique_compte
+                    if _surv_affectation_correspond(_surv_filtre_admin, _r.get(_surv_col_perm, ""))
+                    or _surv_affectation_correspond(_surv_filtre_admin, _r.get(_surv_col_vac, ""))
+                ]
+                _surv_titre_compte = f"Planning de surveillance : {_surv_filtre_admin}"
         else:
-            st.error("Le fichier 'surveillances_Semestre 01-2026-2027.xlsx' non établi pour le moment.")
+            _surv_lignes_compte = [
+                _r for _r in _surv_historique_compte
+                if _surv_affectation_correspond(_surv_nom_compte, _r.get(_surv_col_perm, ""))
+                or _surv_affectation_correspond(_surv_nom_compte, _r.get(_surv_col_vac, ""))
+            ]
+            _surv_titre_compte = f"Mes surveillances : {_surv_nom_compte}"
 
+        if not is_admin and not _surv_publication_active:
+            _surv_lignes_compte = []
+
+        _surv_df_compte = pd.DataFrame(_surv_lignes_compte)
+        if not _surv_df_compte.empty:
+            _surv_df_compte["_date_tri_compte"] = pd.to_datetime(
+                _surv_df_compte.get("Date", pd.Series(dtype=str)),
+                dayfirst=True,
+                errors="coerce",
+            )
+            _surv_df_compte = _surv_df_compte.sort_values(
+                by=["_date_tri_compte", "Heure"] if "Heure" in _surv_df_compte.columns else ["_date_tri_compte"],
+                na_position="last",
+            )
+
+        st.markdown(f"### 📋 {_surv_titre_compte}")
+
+        if is_admin:
+            _pub_c1, _pub_c2 = st.columns([3, 2])
+            if _surv_historique_compte:
+                if _surv_publication_active:
+                    _pub_c1.success("Le planning est actuellement publié dans les comptes enseignants.")
+                    if _pub_c2.button("🔒 Retirer le planning des comptes enseignants", key="surv_exam_retirer_publication", use_container_width=True):
+                        if _hist_surv_publication_sauver(False):
+                            st.success("Publication retirée. Les enseignants ne voient plus leur planning.")
+                        else:
+                            st.error("Impossible d'enregistrer le retrait de publication. Vérifiez Supabase.")
+                        st.rerun()
+                else:
+                    _pub_c1.warning("Le planning est enregistré, mais il n'est pas encore visible par les enseignants.")
+                    if _pub_c2.button("📢 Publier le planning dans les comptes enseignants", type="primary", key="surv_exam_publier_publication", use_container_width=True):
+                        if _hist_surv_publication_sauver(True):
+                            st.success("Planning publié. Chaque enseignant verra uniquement ses propres surveillances.")
+                        else:
+                            st.error("Impossible d'enregistrer la publication. Vérifiez Supabase et le script SQL.")
+                        st.rerun()
+            else:
+                st.info("Générez d'abord un planning avant de pouvoir le publier.")
+        elif not _surv_publication_active:
+            st.info("Le planning des surveillances n'a pas encore été publié par l'administration. Il apparaîtra ici dès que l'administrateur aura activé sa publication.")
+
+        _surv_total_compte = len(_surv_df_compte)
+        _surv_matins_compte = 0
+        if not _surv_df_compte.empty and "Heure" in _surv_df_compte.columns:
+            _surv_matins_compte = int(
+                _surv_df_compte["Heure"].astype(str).str.contains(
+                    r"(^|\D)(07|08|09|10|11|12)\s*h?",
+                    case=False,
+                    regex=True,
+                ).sum()
+            )
+        _surv_apresmidi_compte = max(0, _surv_total_compte - _surv_matins_compte)
+
+        _surv_c1, _surv_c2, _surv_c3 = st.columns(3)
+        _surv_c1.metric("Surveillances affectées", _surv_total_compte)
+        _surv_c2.metric("Créneaux du matin", _surv_matins_compte)
+        _surv_c3.metric("Créneaux de l'après-midi", _surv_apresmidi_compte)
+
+        _surv_colonnes_affichage = [
+            "Matière",
+            "Promotion",
+            "Date",
+            "Heure",
+            "Lieu",
+            "Type de lieu",
+            "Effectif du lieu",
+            "Permanent responsable du lieu",
+            "Vacataire co-surveillant",
+            "Binôme",
+            "Département",
+        ]
+        _surv_colonnes_affichage = [
+            c for c in _surv_colonnes_affichage if c in _surv_df_compte.columns
+        ]
+
+        if not _surv_df_compte.empty:
+            st.success(
+                f"{_surv_total_compte} surveillance(s) trouvée(s) "
+                + ("dans le planning publié." if is_admin else "vous sont affectées.")
+            )
+            st.dataframe(
+                _surv_df_compte[_surv_colonnes_affichage].drop(
+                    columns=["_date_tri_compte"], errors="ignore"
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            # Présentation individuelle de chaque affectation pour une lecture
+            # rapide sur téléphone et ordinateur.
+            with st.expander("🗓️ Voir le détail de chaque surveillance", expanded=False):
+                for _surv_i_compte, _surv_r_compte in _surv_df_compte.iterrows():
+                    _surv_date_compte = str(_surv_r_compte.get("Date", ""))
+                    _surv_jour_compte = str(_surv_r_compte.get("Jour", "")).strip()
+                    _surv_heure_compte = str(_surv_r_compte.get("Heure", ""))
+                    _surv_matiere_compte = str(_surv_r_compte.get("Matière", ""))
+                    _surv_lieu_compte = str(_surv_r_compte.get("Lieu", ""))
+                    _surv_promo_compte = str(_surv_r_compte.get("Promotion", ""))
+                    _surv_binome_compte = str(_surv_r_compte.get("Binôme", ""))
+                    st.markdown(
+                        f"""
+                        <div style="background:#f8fafc;padding:13px 15px;border-radius:9px;
+                                    border-left:5px solid #1E3A8A;margin-bottom:10px;">
+                            <div style="font-weight:700;color:#1E3A8A;">
+                                📅 {_html_grp.escape(_surv_jour_compte)} {_html_grp.escape(_surv_date_compte)}
+                                &nbsp; · &nbsp; 🕒 {_html_grp.escape(_surv_heure_compte)}
+                            </div>
+                            <div style="margin-top:6px;font-weight:600;">
+                                📖 {_html_grp.escape(_surv_matiere_compte)}
+                            </div>
+                            <div style="margin-top:5px;color:#334155;">
+                                📍 Local : {_html_grp.escape(_surv_lieu_compte)}
+                                &nbsp; · &nbsp; 🎓 Promotion : {_html_grp.escape(_surv_promo_compte)}
+                            </div>
+                            <div style="margin-top:5px;color:#475569;">
+                                👥 Binôme : {_html_grp.escape(_surv_binome_compte)}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+            # ============================================================
+            # GRILLE DES SURVEILLANCES : affichage + exports PDF et Excel
+            # Une ligne par date et une colonne par créneau horaire.
+            # Chaque cellule regroupe toutes les affectations du créneau.
+            # ============================================================
+            _surv_grille_source = _surv_df_compte.drop(
+                columns=["_date_tri_compte"], errors="ignore"
+            ).copy()
+            _surv_grille_source["_date_aff"] = _surv_grille_source.get(
+                "Date", pd.Series(index=_surv_grille_source.index, dtype=str)
+            ).astype(str).str.strip()
+            _surv_grille_source["_heure_aff"] = _surv_grille_source.get(
+                "Heure", pd.Series(index=_surv_grille_source.index, dtype=str)
+            ).astype(str).str.strip().replace({"": "Horaire non précisé", "nan": "Horaire non précisé"})
+            _surv_grille_source["_jour_aff"] = _surv_grille_source.get(
+                "Jour", pd.Series(index=_surv_grille_source.index, dtype=str)
+            ).astype(str).str.strip()
+
+            def _surv_texte_cellule_grille(_ligne):
+                _parts = []
+                for _champ, _icone in (("Matière", "📘"), ("Promotion", "🎓"), ("Lieu", "📍"),
+                                       ("Permanent responsable du lieu", "👤"),
+                                       ("Vacataire co-surveillant", "👥")):
+                    _val = str(_ligne.get(_champ, "") or "").strip()
+                    if _val and _val.lower() not in {"nan", "none", "nat"}:
+                        _parts.append(f"{_icone} {_val}")
+                return "\n".join(_parts) if _parts else "Surveillance affectée"
+
+            _surv_grille_source["_contenu_grille"] = _surv_grille_source.apply(
+                _surv_texte_cellule_grille, axis=1
+            )
+            _surv_creneaux_grille = list(dict.fromkeys(_surv_grille_source["_heure_aff"].tolist()))
+            _surv_creneaux_grille.sort(key=lambda _h: (
+                (lambda _m: int(_m.group(1))*60 + (int(_m.group(2) or 0) if _m.group(2) else 0))(
+                    re.search(r"(\d{1,2})\s*h\s*(\d{0,2})", _h.lower())
+                ) if re.search(r"(\d{1,2})\s*h\s*(\d{0,2})", _h.lower()) else 9999,
+                _h.casefold()
+            ))
+            _surv_dates_grille = list(dict.fromkeys(_surv_grille_source["_date_aff"].tolist()))
+            _surv_dates_grille.sort(key=lambda _d: pd.to_datetime(_d, dayfirst=True, errors="coerce")
+                                    if pd.notna(pd.to_datetime(_d, dayfirst=True, errors="coerce"))
+                                    else pd.Timestamp.max)
+            _surv_grille_lignes = []
+            for _date_g in _surv_dates_grille:
+                _subset_date_g = _surv_grille_source[_surv_grille_source["_date_aff"] == _date_g]
+                _jours_g = [j for j in _subset_date_g["_jour_aff"].tolist() if j and j.lower() not in {"nan", "none"}]
+                _jour_g = _jours_g[0] if _jours_g else ""
+                _ligne_grille = {"Date / Jour": f"{_jour_g}\n{_date_g}".strip()}
+                for _heure_g in _surv_creneaux_grille:
+                    _cellules_g = _subset_date_g[_subset_date_g["_heure_aff"] == _heure_g]["_contenu_grille"].tolist()
+                    _ligne_grille[_heure_g] = "\n\n──────────\n\n".join(_cellules_g) if _cellules_g else "—"
+                _surv_grille_lignes.append(_ligne_grille)
+            _surv_df_grille = pd.DataFrame(
+                _surv_grille_lignes,
+                columns=["Date / Jour"] + _surv_creneaux_grille
+            )
+
+            st.markdown("#### 🗓️ Grille récapitulative des surveillances")
+            st.caption("Chaque ligne représente une date ; chaque colonne représente un créneau. Les cellules détaillent la matière, la promotion, le local et les enseignants affectés.")
+            st.dataframe(
+                _surv_df_grille,
+                use_container_width=True,
+                hide_index=True,
+                height=min(680, max(230, 115 + 105 * len(_surv_df_grille))),
+            )
+
+            _surv_export_compte = _surv_df_compte.drop(
+                columns=["_date_tri_compte", "Matricules"], errors="ignore"
+            ).copy()
+            _surv_buffer_compte = io.BytesIO()
+            with pd.ExcelWriter(_surv_buffer_compte, engine="openpyxl") as _surv_writer_compte:
+                _surv_df_grille.to_excel(
+                    _surv_writer_compte, sheet_name="Grille", index=False
+                )
+                _surv_export_compte.to_excel(
+                    _surv_writer_compte, sheet_name="Détails", index=False
+                )
+                from openpyxl.styles import Font as _SurvFont, PatternFill as _SurvFill, Alignment as _SurvAlignment, Border as _SurvBorder, Side as _SurvSide
+                from openpyxl.utils import get_column_letter as _surv_get_column_letter
+                _surv_entete_fill = _SurvFill("solid", fgColor="1E3A8A")
+                _surv_entete_font = _SurvFont(bold=True, color="FFFFFF", size=11)
+                _surv_bordure = _SurvBorder(
+                    left=_SurvSide(style="thin", color="B8C4D6"),
+                    right=_SurvSide(style="thin", color="B8C4D6"),
+                    top=_SurvSide(style="thin", color="B8C4D6"),
+                    bottom=_SurvSide(style="thin", color="B8C4D6"),
+                )
+                for _nom_feuille in ("Grille", "Détails"):
+                    _surv_ws_compte = _surv_writer_compte.sheets[_nom_feuille]
+                    _surv_ws_compte.freeze_panes = "B2" if _nom_feuille == "Grille" else "A2"
+                    _surv_ws_compte.sheet_view.showGridLines = False
+                    _surv_ws_compte.auto_filter.ref = _surv_ws_compte.dimensions
+                    for _cellule_entete in _surv_ws_compte[1]:
+                        _cellule_entete.font = _surv_entete_font
+                        _cellule_entete.fill = _surv_entete_fill
+                        _cellule_entete.alignment = _SurvAlignment(
+                            horizontal="center", vertical="center", wrap_text=True
+                        )
+                        _cellule_entete.border = _surv_bordure
+                    _surv_ws_compte.row_dimensions[1].height = 34
+                    for _ligne_excel in _surv_ws_compte.iter_rows(min_row=2):
+                        _hauteur_estimee = 28
+                        for _cellule_excel in _ligne_excel:
+                            _valeur_excel = "" if _cellule_excel.value is None else str(_cellule_excel.value)
+                            _cellule_excel.alignment = _SurvAlignment(
+                                horizontal="center", vertical="center", wrap_text=True
+                            )
+                            _cellule_excel.border = _surv_bordure
+                            _nb_lignes = max(1, _valeur_excel.count("\n") + 1)
+                            _longue_ligne = max((len(x) for x in _valeur_excel.splitlines()), default=1)
+                            _hauteur_estimee = max(_hauteur_estimee, min(180, 16 * _nb_lignes + 13 * max(0, _longue_ligne // 34)))
+                        _surv_ws_compte.row_dimensions[_ligne_excel[0].row].height = min(180, _hauteur_estimee)
+                    for _col_excel in _surv_ws_compte.columns:
+                        _lettre_excel = _surv_get_column_letter(_col_excel[0].column)
+                        _entete_excel = str(_col_excel[0].value or "")
+                        if _nom_feuille == "Grille" and _col_excel[0].column == 1:
+                            _largeur_excel = 18
+                        elif _nom_feuille == "Grille":
+                            _largeur_excel = 34
+                        else:
+                            _largeur_excel = min(max(max(len(str(c.value or "")) for c in _col_excel) + 2, 14), 38)
+                        _surv_ws_compte.column_dimensions[_lettre_excel].width = _largeur_excel
+                    if _nom_feuille == "Grille":
+                        _surv_ws_compte.sheet_properties.pageSetUpPr.fitToPage = True
+                        _surv_ws_compte.page_setup.orientation = "landscape"
+                        _surv_ws_compte.page_setup.fitToWidth = 1
+                        _surv_ws_compte.page_setup.fitToHeight = 0
+                        _surv_ws_compte.print_title_rows = "1:1"
+            _surv_buffer_compte.seek(0)
+            _surv_nom_fichier_compte = re.sub(
+                r"[^A-Za-z0-9_-]+", "_", _surv_nom_compte or "Enseignant"
+            )
+            _surv_col_excel_dl, _surv_col_pdf_dl = st.columns(2)
+            with _surv_col_excel_dl:
+                st.download_button(
+                    "📥 Télécharger la grille + détails (Excel)",
+                    _surv_buffer_compte.getvalue(),
+                    f"Grille_Surveillances_Examens_{_surv_nom_fichier_compte}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="surv_exam_compte_telechargement_excel_grille",
+                )
+
+            # PDF paysage A3 pour conserver une vraie grille lisible même
+            # lorsque plusieurs créneaux sont présents.
+            try:
+                from reportlab.lib import colors as _surv_pdf_colors
+                from reportlab.lib.pagesizes import A3, landscape
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                from reportlab.lib.enums import TA_CENTER, TA_LEFT
+                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+                from reportlab.lib.units import mm
+                _surv_pdf_buffer = io.BytesIO()
+                _surv_pdf_doc = SimpleDocTemplate(
+                    _surv_pdf_buffer, pagesize=landscape(A3),
+                    rightMargin=10*mm, leftMargin=10*mm,
+                    topMargin=12*mm, bottomMargin=12*mm,
+                    title=f"Grille des surveillances - {_surv_titre_compte}",
+                    author="Département d'Électrotechnique - FGE/UDL-SBA",
+                )
+                _surv_styles_pdf = getSampleStyleSheet()
+                _surv_style_titre_pdf = ParagraphStyle(
+                    "SurvTitre", parent=_surv_styles_pdf["Title"], fontName="Helvetica-Bold",
+                    fontSize=15, leading=18, alignment=TA_CENTER, textColor=_surv_pdf_colors.HexColor("#1E3A8A"),
+                    spaceAfter=5*mm,
+                )
+                _surv_style_entete_pdf = ParagraphStyle(
+                    "SurvEntete", parent=_surv_styles_pdf["Normal"], fontName="Helvetica-Bold",
+                    fontSize=8, leading=10, alignment=TA_CENTER, textColor=_surv_pdf_colors.white,
+                )
+                _surv_style_cell_pdf = ParagraphStyle(
+                    "SurvCell", parent=_surv_styles_pdf["Normal"], fontName="Helvetica",
+                    fontSize=7, leading=9, alignment=TA_LEFT, wordWrap="CJK",
+                )
+                _surv_style_date_pdf = ParagraphStyle(
+                    "SurvDate", parent=_surv_style_cell_pdf, fontName="Helvetica-Bold",
+                    alignment=TA_CENTER, textColor=_surv_pdf_colors.HexColor("#1E3A8A"),
+                )
+                _surv_pdf_data = [[Paragraph("DATE / JOUR", _surv_style_entete_pdf)] + [
+                    Paragraph(_html_grp.escape(str(_h)), _surv_style_entete_pdf) for _h in _surv_creneaux_grille
+                ]]
+                for _, _row_pdf in _surv_df_grille.iterrows():
+                    _pdf_row = [Paragraph(_html_grp.escape(str(_row_pdf.get("Date / Jour", "")).replace("\n", "<br/>")), _surv_style_date_pdf)]
+                    for _h_pdf in _surv_creneaux_grille:
+                        _txt_pdf = str(_row_pdf.get(_h_pdf, "—"))
+                        # Les polices PDF standard ne couvrent pas les emojis ;
+                        # on les retire du PDF sans toucher à la grille Excel/web.
+                        _txt_pdf = re.sub(r"[\U0001F000-\U0001FAFF\U00002600-\U000027BF]", "", _txt_pdf)
+                        _txt_pdf = _txt_pdf.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+                        _pdf_row.append(Paragraph(_txt_pdf, _surv_style_cell_pdf))
+                    _surv_pdf_data.append(_pdf_row)
+                _surv_largeur_dispo_pdf = landscape(A3)[0] - 20*mm
+                _surv_largeur_date_pdf = 27*mm
+                _surv_largeur_creneau_pdf = max(25*mm, (_surv_largeur_dispo_pdf - _surv_largeur_date_pdf) / max(1, len(_surv_creneaux_grille)))
+                _surv_largeurs_pdf = [_surv_largeur_date_pdf] + [_surv_largeur_creneau_pdf] * len(_surv_creneaux_grille)
+                _surv_table_pdf = Table(_surv_pdf_data, colWidths=_surv_largeurs_pdf, repeatRows=1, hAlign="CENTER")
+                _surv_table_pdf.setStyle(TableStyle([
+                    ("BACKGROUND", (0,0), (-1,0), _surv_pdf_colors.HexColor("#1E3A8A")),
+                    ("TEXTCOLOR", (0,0), (-1,0), _surv_pdf_colors.white),
+                    ("GRID", (0,0), (-1,-1), 0.45, _surv_pdf_colors.HexColor("#94A3B8")),
+                    ("BACKGROUND", (0,1), (0,-1), _surv_pdf_colors.HexColor("#E8EEF8")),
+                    ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                    ("ALIGN", (0,0), (-1,0), "CENTER"),
+                    ("LEFTPADDING", (0,0), (-1,-1), 4),
+                    ("RIGHTPADDING", (0,0), (-1,-1), 4),
+                    ("TOPPADDING", (0,0), (-1,-1), 5),
+                    ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+                ]))
+                _surv_pdf_elements = [
+                    Paragraph(_html_grp.escape(_surv_titre_compte), _surv_style_titre_pdf),
+                    Paragraph(
+                        f"Département d'Électrotechnique — FGE / UDL-SBA — Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}",
+                        _surv_styles_pdf["Normal"],
+                    ),
+                    Spacer(1, 4*mm), _surv_table_pdf,
+                ]
+                _surv_pdf_doc.build(_surv_pdf_elements)
+                _surv_pdf_buffer.seek(0)
+                with _surv_col_pdf_dl:
+                    st.download_button(
+                        "📄 Télécharger la grille (PDF)",
+                        _surv_pdf_buffer.getvalue(),
+                        f"Grille_Surveillances_Examens_{_surv_nom_fichier_compte}.pdf",
+                        "application/pdf",
+                        use_container_width=True,
+                        key="surv_exam_compte_telechargement_pdf_grille",
+                    )
+            except Exception as _surv_pdf_err:
+                with _surv_col_pdf_dl:
+                    st.error(f"La génération du PDF a échoué : {_surv_pdf_err}")
+
+        else:
+            if is_admin:
+                st.info("Aucune surveillance n'est actuellement enregistrée dans le planning.")
+            else:
+                st.info(
+                    f"Aucune surveillance ne vous est affectée pour le moment, "
+                    f"({ _surv_nom_compte }). Les affectations apparaîtront ici après "
+                    "la publication explicite par l'administration."
+                )
+
+        _surv_erreur_db_compte = st.session_state.get("_exam_hist_supabase_error", "")
+        if not MODE_SUPABASE:
+            st.warning(
+                "⚠️ La connexion Supabase n'est pas active. L'application consulte "
+                "uniquement le fichier historique local ; les publications ne seront "
+                "pas partagées durablement entre les sessions."
+            )
+        elif _surv_erreur_db_compte:
+            st.warning(
+                "⚠️ Impossible de lire la table Supabase « surveillances_examens_store ». "
+                "Le fichier local est utilisé en secours. Vérifiez que le SQL fourni "
+                "a été exécuté et que la clé Supabase configurée autorise l'écriture."
+            )
+            st.caption(str(_surv_erreur_db_compte)[:500])
     elif portail == "🗓️ Programmation Examens":
         if not is_admin:
             st.error("Accès réservé au Bureau des Examens.")
@@ -34171,6 +34735,157 @@ if df is not None:
         df_exam_cible = df_exam if _generer_toutes else df_exam[df_exam["_promo"] == _choix_promo_gen].copy()
 
         # ------------------------------------------------------------------
+        # RÉGLAGE PARTICULIER DES MATIÈRES COMMUNES
+        # Les salles et effectifs définis ici ne concernent que la matière choisie.
+        # ------------------------------------------------------------------
+        _groupes_communs_exam = {}
+        # Une configuration est propre à une épreuve commune précise : matière + date + horaire.
+        # Si la même matière est programmée à plusieurs dates, chaque épreuve possède son réglage.
+        for (_mb_comm, _date_key_comm, _heure_key_comm), _grp_comm in df_exam.groupby(
+                ["_matiere_base", "_date_key", "_heure_key"]):
+            _promos_comm = sorted({_exam_txt(v) for v in _grp_comm["_promo"] if _exam_txt(v)}, key=_pe_cle_nat)
+            if len(_promos_comm) >= 2:
+                _groupes_communs_exam[(_mb_comm, _date_key_comm, _heure_key_comm)] = {
+                    "base": _mb_comm, "date_key": _date_key_comm, "heure_key": _heure_key_comm,
+                    "date": _exam_txt(_grp_comm.iloc[0]["_date"]), "heure": _exam_txt(_grp_comm.iloc[0]["_heure"]),
+                    "promotions": _promos_comm, "matiere": _exam_txt(_grp_comm.iloc[0]["_matiere"])
+                }
+        _common_overrides = st.session_state.setdefault("exam_common_room_overrides", {})
+        if _groupes_communs_exam:
+            st.subheader("🔗 Locaux et effectifs particuliers — matières communes")
+            st.caption("Ce réglage est indépendant des locaux habituels des promotions. Il s'applique uniquement à l'examen de la matière commune sélectionnée ; les autres matières gardent leurs effectifs et leurs locaux actuels.")
+            _common_options = sorted(
+                _groupes_communs_exam.keys(),
+                key=lambda k: (_groupes_communs_exam[k]["matiere"].casefold(), _groupes_communs_exam[k]["date_key"], _groupes_communs_exam[k]["heure_key"])
+            )
+            _common_sel = st.selectbox(
+                "📘 Sélectionner la matière commune à configurer",
+                _common_options,
+                format_func=lambda k: f"{_groupes_communs_exam[k]['matiere']} — {' / '.join(_groupes_communs_exam[k]['promotions'])} — {_groupes_communs_exam[k]['date']} ({_groupes_communs_exam[k]['heure']})",
+                key=_surv_cle("exam_common_room_subject", _common_options),
+            )
+            _common_info = _groupes_communs_exam[_common_sel]
+            _common_promos = _common_info["promotions"]
+            _common_effectif_total = sum(int(effectifs_par_promo.get(_p, 0)) for _p in _common_promos)
+            st.metric("Effectif total de cette matière commune", _common_effectif_total)
+            _col_lieu_edt_common = _exam_col(df_edt_exam, ["Lieu", "Salle", "Local"])
+            _col_dept_edt_common = _exam_col(df_edt_exam, ["Département", "Departement", "Dépt"])
+            _lieux_common = []
+            if _col_lieu_edt_common and not df_edt_exam.empty:
+                _df_lieux_common = df_edt_exam.copy()
+                if exam_dept and _col_dept_edt_common:
+                    _df_lieux_common = _df_lieux_common[_df_lieux_common[_col_dept_edt_common].map(_exam_norm).isin({_exam_norm(exam_dept_label), _exam_norm(exam_dept)})]
+                for _v_common in _df_lieux_common[_col_lieu_edt_common].tolist():
+                    _nom_common = _exam_txt(_v_common)
+                    if re.fullmatch(r"AS\s*0?(?:[1-9]|1[0-9]|20)", _nom_common, flags=re.I) or re.fullmatch(r"Amphi\s*0?(?:[1-9]|1[0-2])", _nom_common, flags=re.I):
+                        if _nom_common not in _lieux_common:
+                            _lieux_common.append(_nom_common)
+            _amphis_common = sorted([x for x in _lieux_common if _exam_norm(x).startswith("AMPHI")], key=_pe_cle_nat)
+            _salles_common = sorted([x for x in _lieux_common if _exam_norm(x).startswith("AS")], key=_pe_cle_nat)
+            _common_override_key = f"{_exam_norm(dept_tag)}::{_common_info['base']}::{_common_info['date_key']}::{_common_info['heure_key']}"
+            _ancien_common = _common_overrides.get(_common_override_key, {})
+            if not _lieux_common:
+                st.warning("Aucun local autorisé n'a été trouvé dans l'EDT du département pour configurer cette matière commune.")
+            else:
+                _c_am, _c_sa = st.columns(2)
+                _nb_am_common = int(_c_am.number_input("Nombre d'amphis pour cette matière", min_value=0, max_value=len(_amphis_common), value=min(int(_ancien_common.get("nb_amphi", 1)), len(_amphis_common)), key=f"exam_common_nb_am_{_exam_norm(_common_sel)}"))
+                _nb_sa_common = int(_c_sa.number_input("Nombre de salles pour cette matière", min_value=0, max_value=len(_salles_common), value=min(int(_ancien_common.get("nb_salle", 1)), len(_salles_common)), key=f"exam_common_nb_sa_{_exam_norm(_common_sel)}"))
+                _lieux_selection_common = []
+                _cc1, _cc2 = st.columns(2)
+                with _cc1:
+                    st.markdown("**🏛️ Amphis**")
+                    for _i_common in range(_nb_am_common):
+                        _opts_common = [x for x in _amphis_common if x not in _lieux_selection_common]
+                        if not _opts_common:
+                            break
+                        _prev_common = (_ancien_common.get("lieux", []) or [])
+                        _default_common = next((x for x in _prev_common if x in _opts_common and x not in _lieux_selection_common), _opts_common[0])
+                        _pick_common = st.selectbox(f"Amphi commun {_i_common+1}", _opts_common, index=_opts_common.index(_default_common), key=f"exam_common_am_pick_{_exam_norm(_common_sel)}_{_i_common}")
+                        _lieux_selection_common.append(_pick_common)
+                with _cc2:
+                    st.markdown("**🏫 Salles**")
+                    for _i_common in range(_nb_sa_common):
+                        _opts_common = [x for x in _salles_common if x not in _lieux_selection_common]
+                        if not _opts_common:
+                            break
+                        _prev_common = (_ancien_common.get("lieux", []) or [])
+                        _default_common = next((x for x in _prev_common if x in _opts_common and x not in _lieux_selection_common), _opts_common[0])
+                        _pick_common = st.selectbox(f"Salle commune {_i_common+1}", _opts_common, index=_opts_common.index(_default_common), key=f"exam_common_sa_pick_{_exam_norm(_common_sel)}_{_i_common}")
+                        _lieux_selection_common.append(_pick_common)
+                if _lieux_selection_common:
+                    _base_common, _reste_common = divmod(_common_effectif_total, len(_lieux_selection_common))
+                    _default_eff_common = [int(_ancien_common.get("effectifs", {}).get(x, _base_common + (1 if i < _reste_common else 0))) for i, x in enumerate(_lieux_selection_common)]
+                    _common_editor = st.data_editor(
+                        pd.DataFrame({"Local": _lieux_selection_common, "Effectif étudiants": _default_eff_common}),
+                        hide_index=True, use_container_width=True, disabled=["Local"],
+                        column_config={"Effectif étudiants": st.column_config.NumberColumn("Effectif étudiants", min_value=0, max_value=max(_common_effectif_total, 1), step=1, required=True)},
+                        key=f"exam_common_eff_editor_{_exam_norm(_common_sel)}_{'|'.join(_lieux_selection_common)}_{_common_effectif_total}",
+                    )
+                    _effs_common_saisis = [max(0, int(v)) if pd.notna(v) else 0 for v in _common_editor["Effectif étudiants"].tolist()]
+                    _total_common_saisi = sum(_effs_common_saisis)
+                    _cm1, _cm2 = st.columns(2)
+                    _cm1.metric("Étudiants à répartir", _common_effectif_total)
+                    _cm2.metric("Effectifs attribués aux locaux", _total_common_saisi, delta=_total_common_saisi-_common_effectif_total, delta_color="off")
+                    if _total_common_saisi != _common_effectif_total:
+                        st.warning("La somme des effectifs par local doit être égale à l'effectif total des promotions concernées.")
+                    if st.button("💾 Enregistrer les locaux et effectifs de cette matière commune", type="primary", key=f"exam_common_save_{_exam_norm(_common_sel)}"):
+                        if not _lieux_selection_common:
+                            st.error("Sélectionnez au moins un local.")
+                        elif _total_common_saisi != _common_effectif_total:
+                            st.error("La somme des effectifs par local ne correspond pas à l'effectif total.")
+                        else:
+                            _common_overrides[_common_override_key] = {
+                                "matiere": _common_info["matiere"], "promotions": list(_common_promos),
+                                "lieux": list(_lieux_selection_common), "effectifs": dict(zip(_lieux_selection_common, _effs_common_saisis)),
+                                "nb_amphi": _nb_am_common, "nb_salle": _nb_sa_common,
+                            }
+                            st.session_state["exam_common_room_overrides"] = _common_overrides
+                            st.success("Réglage particulier enregistré. Il sera utilisé uniquement pour cette matière commune.")
+                            st.rerun()
+                else:
+                    st.info("Sélectionnez au moins un amphi ou une salle pour cette matière commune.")
+            if _common_override_key in _common_overrides:
+                st.success("Un réglage particulier est enregistré pour cette matière commune.")
+        else:
+            st.caption("Aucune matière commune entre plusieurs promotions n'a été détectée dans les épreuves sélectionnées.")
+
+        # Si une matière commune est réglée alors qu'une seule promotion est
+        # sélectionnée, ajouter uniquement les lignes de cette matière pour les
+        # autres promotions liées. Les autres matières de ces promotions restent
+        # hors de la portée de génération.
+        _common_overrides_scope = st.session_state.get("exam_common_room_overrides", {})
+        _extra_common_rows = []
+        _common_scope_remove = []
+        for _base_common_scope, _cfg_common_scope in _common_overrides_scope.items():
+            _dept_prefix_scope = f"{_exam_norm(dept_tag)}::"
+            if not str(_base_common_scope).startswith(_dept_prefix_scope):
+                continue
+            _parts_scope = str(_base_common_scope).split("::", 3)
+            if len(_parts_scope) != 4:
+                continue
+            _, _base_matiere_scope, _date_key_scope, _heure_key_scope = _parts_scope
+            _promos_scope = list((_cfg_common_scope or {}).get("promotions", []))
+            if not _promos_scope:
+                continue
+            _dans_cible_scope = (
+                df_exam_cible["_matiere_base"].eq(_base_matiere_scope)
+                & df_exam_cible["_date_key"].eq(_date_key_scope)
+                & df_exam_cible["_heure_key"].eq(_heure_key_scope)
+            ).any()
+            if _dans_cible_scope:
+                _extra_common_rows.append(df_exam[
+                    df_exam["_matiere_base"].eq(_base_matiere_scope)
+                    & df_exam["_date_key"].eq(_date_key_scope)
+                    & df_exam["_heure_key"].eq(_heure_key_scope)
+                    & df_exam["_promo"].isin(_promos_scope)
+                ])
+                _common_scope_remove.append((_base_matiere_scope, _date_key_scope, _heure_key_scope, _promos_scope))
+        if _extra_common_rows:
+            df_exam_cible = pd.concat([df_exam_cible] + _extra_common_rows, ignore_index=False).drop_duplicates(
+                subset=["_matiere_base", "_promo_key", "_date_key", "_heure_key"]
+            )
+
+        # ------------------------------------------------------------------
         # MOTEUR D'AFFECTATION : aucune double réservation de local ou prof
         # ------------------------------------------------------------------
         if st.button("🚀 GÉNÉRER LE PLANNING SANS CHEVAUCHEMENT", type="primary", use_container_width=True, key="exam_generate_no_conflict"):
@@ -34183,10 +34898,25 @@ if df is not None:
             # Historique : on remplace uniquement la portée générée (département + promotion) ;
             # tout le reste est conservé et occupe déjà les enseignants et les locaux.
             _historique = _hist_surv_charger()
+            def _dans_portee_commune_a_regenerer(_r_hist):
+                _base_hist = _exam_matiere_base(_r_hist.get("Matière", ""))
+                _promos_hist_ligne = [
+                    _exam_txt(x) for x in re.split(r"\s*/\s*", _exam_txt(_r_hist.get("Promotion", "")))
+                    if _exam_txt(x)
+                ]
+                return any(
+                    _base_hist == _base_scope
+                    and _exam_norm(_r_hist.get("Date", "")) == _date_scope
+                    and _exam_norm(_r_hist.get("Heure", "")) == _heure_scope
+                    and bool(set(_promos_hist_ligne).intersection(set(_promos_scope)))
+                    for _base_scope, _date_scope, _heure_scope, _promos_scope in _common_scope_remove
+                )
+
             _conserves = [
                 r for r in _historique
                 if not (r.get("Département", "") == dept_tag
-                        and (_generer_toutes or _exam_txt(r.get("Promotion")) == _choix_promo_gen))
+                        and (_generer_toutes or _exam_txt(r.get("Promotion")) == _choix_promo_gen
+                             or _dans_portee_commune_a_regenerer(r)))
             ]
             for _r in _conserves:
                 _jour_r = _exam_norm(_r.get("Date", ""))
@@ -34269,13 +34999,28 @@ if df is not None:
                 candidats.sort()
                 return candidats[0] if candidats else None
 
+            _common_exam_deja_traite = set()
+            _common_overrides_generation = st.session_state.get("exam_common_room_overrides", {})
             for _, examen in df_exam_cible.sort_values(["_date", "_heure", "_promo", "_matiere"]).iterrows():
                 matiere = examen["_matiere"]
                 promo = examen["_promo"]
                 jour = examen["_date"]
                 heure = examen["_heure"]
                 plage = _exam_plage(heure)
-                effectif = int(effectifs_par_promo.get(promo, 0))
+                _override_common = _common_overrides_generation.get(
+                    f"{_exam_norm(dept_tag)}::{examen['_matiere_base']}::{examen['_date_key']}::{examen['_heure_key']}"
+                )
+                _promos_override = list((_override_common or {}).get("promotions", []))
+                _utiliser_override_common = bool(_override_common and promo in _promos_override)
+                _cle_common_exam = (examen["_matiere_base"], _exam_norm(jour), _exam_norm(heure))
+                if _utiliser_override_common:
+                    if _cle_common_exam in _common_exam_deja_traite:
+                        continue
+                    _common_exam_deja_traite.add(_cle_common_exam)
+                    promo = " / ".join(_promos_override)
+                    effectif = sum(int(effectifs_par_promo.get(_p_com, 0)) for _p_com in _promos_override)
+                else:
+                    effectif = int(effectifs_par_promo.get(promo, 0))
                 if effectif <= 0:
                     erreurs.append({"Matière": matiere, "Promotion": promo, "Date": jour, "Heure": heure, "Problème": "Effectif nul ou non renseigné"})
                     continue
@@ -34286,26 +35031,37 @@ if df is not None:
                 locaux = []
                 _plans_loc = st.session_state.get("exam_loc_plan", {})
                 _res_loc = st.session_state.get("exam_loc_reservations", {})
-                _depts_ok = {_exam_norm(dept_tag), _exam_norm(exam_dept_label)} - {""}
-                _cand_loc = [(k, r) for k, r in _res_loc.items()
-                             if _exam_norm(r.get("promotion", "")) == _exam_norm(promo)]
-                _cand_dept = [(k, r) for k, r in _cand_loc if _exam_norm(r.get("departement", "")) in _depts_ok]
-                for _k_loc, _r_loc in (_cand_dept or _cand_loc)[:1]:
-                    _plan_loc = _plans_loc.get(_k_loc, {})
-                    _lieux_res = list(_r_loc.get("lieux", []))
-                    if _plan_loc.get("effectifs") and set(_plan_loc["effectifs"]) == set(_lieux_res):
-                        _effs_loc = dict(_plan_loc["effectifs"])
-                    else:  # pas encore de répartition détaillée : répartition équilibrée
-                        _b_loc, _r2_loc = divmod(effectif, max(1, len(_lieux_res)))
-                        _effs_loc = {n: _b_loc + (1 if i < _r2_loc else 0) for i, n in enumerate(_lieux_res)}
-                    for _n_loc in _lieux_res:
+                if _utiliser_override_common:
+                    _effectifs_override = dict(_override_common.get("effectifs", {}))
+                    for _nom_loc_override in _override_common.get("lieux", []):
                         locaux.append({
-                            "lieu": _n_loc,
-                            "type": "Amphi" if "AMPHI" in _exam_norm(_n_loc) else "Salle",
-                            "capacite": int(_effs_loc.get(_n_loc, 0)),
-                            "attribue": int(_effs_loc.get(_n_loc, 0)),
-                            "matricules": (_plan_loc.get("matricules", {}) or {}).get(_n_loc),
+                            "lieu": _nom_loc_override,
+                            "type": "Amphi" if "AMPHI" in _exam_norm(_nom_loc_override) else "Salle",
+                            "capacite": int(_effectifs_override.get(_nom_loc_override, 0)),
+                            "attribue": int(_effectifs_override.get(_nom_loc_override, 0)),
+                            "matricules": None,
                         })
+                else:
+                    _depts_ok = {_exam_norm(dept_tag), _exam_norm(exam_dept_label)} - {""}
+                    _cand_loc = [(k, r) for k, r in _res_loc.items()
+                                 if _exam_norm(r.get("promotion", "")) == _exam_norm(promo)]
+                    _cand_dept = [(k, r) for k, r in _cand_loc if _exam_norm(r.get("departement", "")) in _depts_ok]
+                    for _k_loc, _r_loc in (_cand_dept or _cand_loc)[:1]:
+                        _plan_loc = _plans_loc.get(_k_loc, {})
+                        _lieux_res = list(_r_loc.get("lieux", []))
+                        if _plan_loc.get("effectifs") and set(_plan_loc["effectifs"]) == set(_lieux_res):
+                            _effs_loc = dict(_plan_loc["effectifs"])
+                        else:  # pas encore de répartition détaillée : répartition équilibrée
+                            _b_loc, _r2_loc = divmod(effectif, max(1, len(_lieux_res)))
+                            _effs_loc = {n: _b_loc + (1 if i < _r2_loc else 0) for i, n in enumerate(_lieux_res)}
+                        for _n_loc in _lieux_res:
+                            locaux.append({
+                                "lieu": _n_loc,
+                                "type": "Amphi" if "AMPHI" in _exam_norm(_n_loc) else "Salle",
+                                "capacite": int(_effs_loc.get(_n_loc, 0)),
+                                "attribue": int(_effs_loc.get(_n_loc, 0)),
+                                "matricules": (_plan_loc.get("matricules", {}) or {}).get(_n_loc),
+                            })
                 if not locaux:
                     erreurs.append({"Matière": matiere, "Promotion": promo, "Date": jour, "Heure": heure,
                                     "Problème": "Aucun local réservé pour cette promotion : confirmez d'abord "
@@ -34323,8 +35079,25 @@ if df is not None:
                         "Problème": f"Capacité insuffisante : {effectif - manque}/{effectif} places attribuées disponibles"
                     })
                     continue
-                liste_matricules = _matricules_par_promo.get(_exam_norm(promo), [])
+                if _utiliser_override_common:
+                    # Conserver une liste de matricules indépendante pour chaque promotion.
+                    # L'épreuve et les locaux restent communs, mais les listes ne sont jamais fusionnées.
+                    _listes_matricules_par_promo = {}
+                    for _p_com in _promos_override:
+                        _liste_p = []
+                        _vus_p = set()
+                        for _mat_common in _matricules_par_promo.get(_exam_norm(_p_com), []):
+                            _mat_common = _exam_txt(_mat_common)
+                            if _mat_common and _mat_common not in _vus_p:
+                                _vus_p.add(_mat_common)
+                                _liste_p.append(_mat_common)
+                        _listes_matricules_par_promo[_p_com] = _liste_p
+                    liste_matricules = [m for _p in _promos_override for m in _listes_matricules_par_promo.get(_p, [])]
+                else:
+                    liste_matricules = _matricules_par_promo.get(_exam_norm(promo), [])
+                    _listes_matricules_par_promo = {promo: list(liste_matricules)}
                 curseur = 0
+                _curseurs_promo_common = {p: 0 for p in _listes_matricules_par_promo}
 
                 _id_exam = (examen["_matiere_base"], _exam_norm(jour), _exam_norm(heure))
                 cle_resp = (examen["_promo_key"], examen["_matiere_base"])
@@ -34339,10 +35112,31 @@ if df is not None:
 
                 for local, nb_etu in plan_lieux:
                     _mats_fixes = local.get("matricules")
-                    if _mats_fixes and len(_mats_fixes) == nb_etu:
+                    _detail_effectifs_promo = {}
+                    _detail_matricules_promo = {}
+                    if _utiliser_override_common:
+                        # Répartir les places de chaque local entre les promotions, sans
+                        # fusionner leurs listes. L'ordre des promotions est stable et chaque
+                        # matricule n'est affecté qu'une seule fois.
+                        _places_restantes_local = int(nb_etu)
+                        for _p_com in _promos_override:
+                            _liste_p_com = _listes_matricules_par_promo.get(_p_com, [])
+                            _debut_p_com = _curseurs_promo_common.get(_p_com, 0)
+                            _a_prendre_p_com = min(_places_restantes_local, max(0, len(_liste_p_com) - _debut_p_com))
+                            _tranche_p_com = _liste_p_com[_debut_p_com:_debut_p_com + _a_prendre_p_com]
+                            _curseurs_promo_common[_p_com] = _debut_p_com + _a_prendre_p_com
+                            _detail_effectifs_promo[_p_com] = len(_tranche_p_com)
+                            _detail_matricules_promo[_p_com] = list(_tranche_p_com)
+                            _places_restantes_local -= len(_tranche_p_com)
+                        tranche = [m for _p in _promos_override for m in _detail_matricules_promo.get(_p, [])]
+                    elif _mats_fixes and len(_mats_fixes) == nb_etu:
                         tranche = list(_mats_fixes)   # liste modifiée à la main (déplacements inclus)
+                        _detail_effectifs_promo[promo] = len(tranche)
+                        _detail_matricules_promo[promo] = list(tranche)
                     else:
                         tranche = liste_matricules[curseur:curseur + nb_etu]
+                        _detail_effectifs_promo[promo] = len(tranche)
+                        _detail_matricules_promo[promo] = list(tranche)
                     curseur += nb_etu
                     # Responsable du cours prioritaire dans le binôme, mais le Permanent
                     # demeure obligatoirement responsable du local.
@@ -34385,10 +35179,26 @@ if df is not None:
                         "Vacataire co-surveillant": equipe[1]["nom"],
                         "Binôme": equipe[0]["nom"] + " / " + equipe[1]["nom"],
                         "Département": dept_tag,
-                        "Matricules": ";".join(tranche)
+                        "Matricules": ";".join(tranche),
+                        # Champs dédiés : même local, listes clairement séparées par promotion.
+                        "Effectifs par promotion": " | ".join(
+                            f"{_p}: {_detail_effectifs_promo.get(_p, 0)}"
+                            for _p in (_promos_override if _utiliser_override_common else [promo])
+                        ),
+                        "Listes de matricules par promotion": "\n".join(
+                            f"{_p} ({len(_detail_matricules_promo.get(_p, []))}) : "
+                            + ";".join(_detail_matricules_promo.get(_p, []))
+                            for _p in (_promos_override if _utiliser_override_common else [promo])
+                        ),
+                        "Matricules par promotion JSON": json.dumps(
+                            _detail_matricules_promo, ensure_ascii=False
+                        )
                     })
 
             _hist_surv_sauver(_conserves + planning)
+            # Une nouvelle génération ne doit jamais être visible automatiquement :
+            # l'administrateur décide ensuite de la publier depuis « Surveillances Examens ».
+            _hist_surv_publication_sauver(False)
             st.session_state["exam_erreurs_sans_conflit"] = pd.DataFrame(erreurs)
             st.rerun()
 
@@ -34400,8 +35210,13 @@ if df is not None:
             st.success(_msg_h)
         _hist_tout = _hist_surv_charger()
         _hist_dept = [r for r in _hist_tout if r.get("Département", "") == dept_tag]
-        _promos_hist = sorted({_exam_txt(r.get("Promotion")) for r in _hist_dept if _exam_txt(r.get("Promotion"))},
-                              key=_pe_cle_nat)
+        _promos_hist_set = set()
+        for _r_hist_promo in _hist_dept:
+            _promos_hist_set.update(
+                _exam_txt(_p_hist) for _p_hist in re.split(r"\s*/\s*", _exam_txt(_r_hist_promo.get("Promotion", "")))
+                if _exam_txt(_p_hist)
+            )
+        _promos_hist = sorted(_promos_hist_set, key=_pe_cle_nat)
         st.caption(f"{len(_hist_dept)} affectation(s) enregistrée(s) pour ce département "
                    f"({len(_promos_hist)} promotion(s)) — {len(_hist_tout)} au total, tous départements confondus.")
         if _hist_tout:
@@ -34422,9 +35237,13 @@ if df is not None:
                     _reste = [r for r in _hist_tout if r.get("Département", "") != dept_tag]
                 else:
                     _reste = [r for r in _hist_tout
-                              if not (r.get("Département", "") == dept_tag and _exam_txt(r.get("Promotion")) == _portee_eff)]
+                              if not (r.get("Département", "") == dept_tag
+                                      and _portee_eff in [
+                                          _exam_txt(x) for x in re.split(r"\s*/\s*", _exam_txt(r.get("Promotion", "")))
+                                      ])]
                 _nb_eff = len(_hist_tout) - len(_reste)
                 _hist_surv_sauver(_reste)
+                _hist_surv_publication_sauver(False)
                 if _deprog_eff:
                     _st_pe = _pe_store()
                     for _k_pe, _e_pe in _st_pe["epreuves"].items():
@@ -34446,7 +35265,11 @@ if df is not None:
         # RÉSULTATS, VALIDATION DES CONFLITS ET EXPORT EXCEL
         # ------------------------------------------------------------------
         df_planning = pd.DataFrame([r for r in _hist_dept
-                                    if _promos_ok_g is None or _pe_norm(r.get("Promotion")) in _promos_ok_g])
+                                    if _promos_ok_g is None or any(
+                                        _pe_norm(_p) in _promos_ok_g
+                                        for _p in re.split(r"\s*/\s*", _exam_txt(r.get("Promotion", "")))
+                                        if _exam_txt(_p)
+                                    )])
         df_erreurs = st.session_state.get("exam_erreurs_sans_conflit")
         compteurs = {}
         if not df_planning.empty:
