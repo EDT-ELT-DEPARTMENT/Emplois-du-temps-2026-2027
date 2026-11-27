@@ -33898,13 +33898,8 @@ if df is not None:
                 "uniquement le fichier historique local ; les publications ne seront "
                 "pas partagées durablement entre les sessions."
             )
-        elif _surv_erreur_db_compte:
-            st.warning(
-                "⚠️ Impossible de lire la table Supabase « surveillances_examens_store ». "
-                "Le fichier local est utilisé en secours. Vérifiez que le SQL fourni "
-                "a été exécuté et que la clé Supabase configurée autorise l'écriture."
-            )
-            st.caption(str(_surv_erreur_db_compte)[:500])
+        # Les erreurs techniques Supabase sont conservées dans la session pour le diagnostic,
+        # mais ne sont plus affichées dans l’interface enseignant intégrée (st.iframe).
     elif portail == "🗓️ Programmation Examens":
         if not is_admin:
             st.error("Accès réservé au Bureau des Examens.")
