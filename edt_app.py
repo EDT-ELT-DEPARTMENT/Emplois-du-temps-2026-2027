@@ -31153,18 +31153,39 @@ def run_programmation_examens():
         if not autres_promos:
             st.info("Une seule promotion est disponible.")
         else:
+            # Les boutons d'ajout groupé sont volontairement placés hors du formulaire :
+            # Streamlit ne permet pas d'utiliser un bouton classique à l'intérieur d'un form.
+            # Chaque bouton ajoute en un clic toutes les promotions proposées pour cette matière,
+            # tout en conservant les choix manuels déjà présents dans le multiselect.
+            for k in cles:
+                e = ep[k]
+                suggestions = [p for p in suggestions_communes_cours.get((promo, e["base"]), [])
+                               if p in autres_promos]
+                if suggestions:
+                    st.caption(
+                        "🔎 Suggestions détectées dans DATA (Cours de même intitulé et même enseignant) : "
+                        + " / ".join(suggestions)
+                        + " — sélectionnez manuellement les promotions à lier, ou ajoutez toute cette suggestion en un clic."
+                    )
+                    cle_widget = f"pe_com_{dtag}_{promo}_{e['base']}_{ver}"
+                    if st.button(
+                        "➕ Sélectionner toutes les promotions suggérées",
+                        key=f"pe_com_suggest_all_{dtag}_{promo}_{e['base']}_{ver}",
+                        help="Ajoute d'un seul coup toutes les promotions de cette suggestion au choix de cette matière. "
+                             "Les promotions déjà sélectionnées manuellement sont conservées.",
+                    ):
+                        deja_selectionnees = st.session_state.get(cle_widget, _pe_commune_avec(store, k))
+                        deja_selectionnees = [p for p in deja_selectionnees if p in autres_promos]
+                        st.session_state[cle_widget] = list(dict.fromkeys(deja_selectionnees + suggestions))
+                        st.rerun()
+
             with st.form(f"pe_form_com_{dtag}_{promo}_{ver}"):
                 choix = {}
                 for k in cles:
                     e = ep[k]
                     liees = [p for p in _pe_commune_avec(store, k) if p in autres_promos]
-                    suggestions = suggestions_communes_cours.get((promo, e["base"]), [])
-                    if suggestions:
-                        st.caption(
-                            "🔎 Suggestions détectées dans DATA (Cours de même intitulé) : "
-                            + " / ".join(suggestions)
-                            + " — sélectionnez manuellement les promotions à lier."
-                        )
+                    suggestions = [p for p in suggestions_communes_cours.get((promo, e["base"]), [])
+                                   if p in autres_promos]
                     choix[k] = st.multiselect(
                         f"📘 {e['matiere']}  ·  {e['charge'] or 'chargé non renseigné'}",
                         autres_promos, default=liees,
@@ -31172,8 +31193,9 @@ def run_programmation_examens():
                         placeholder="Matière commune avec… (laisser vide si propre à cette promotion)",
                         help=(
                             "Suggestions issues du fichier DATA : "
-                            + (", ".join(suggestions) if suggestions else "aucune autre promotion avec le même intitulé de Cours.")
-                            + ". Rien n'est sélectionné ni enregistré automatiquement."
+                            + (", ".join(suggestions) if suggestions else "aucune autre promotion avec le même intitulé de Cours et le même enseignant.")
+                            + ". Utilisez le bouton au-dessus pour sélectionner toutes les promotions suggérées d'un coup, "
+                              "ou faites votre sélection manuellement. Rien n'est enregistré avant validation du formulaire."
                         ),
                     )
                 soumis = st.form_submit_button("💾 Enregistrer les matières communes", type="primary")
