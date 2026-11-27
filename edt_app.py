@@ -1488,6 +1488,42 @@ def trouver_matiere_promo(nom_ens_complet, df_edt):
 
     return df_filtre
 
+def _filtrer_etudiants_sans_conge_academique(df_source, colonne_conge=None, exiger_colonne=False):
+    """Retourne une copie sans les étudiants dont « Congé académique » vaut OUI.
+
+    La détection du nom de colonne ignore les accents, espaces, tirets et
+    ponctuations. Seule la valeur affirmative OUI déclenche l'exclusion.
+    """
+    if df_source is None:
+        return pd.DataFrame(), colonne_conge, 0
+    df = df_source.copy()
+
+    def _normaliser_entete_conge(valeur):
+        import unicodedata
+        texte = unicodedata.normalize("NFKD", str(valeur or ""))
+        texte = "".join(c for c in texte if not unicodedata.combining(c))
+        return re.sub(r"[^a-z0-9]", "", texte.casefold())
+
+    if not colonne_conge or colonne_conge not in df.columns:
+        colonne_conge = next(
+            (c for c in df.columns if _normaliser_entete_conge(c) == "congeacademique"),
+            None,
+        )
+
+    if not colonne_conge:
+        if exiger_colonne:
+            raise ValueError(
+                "La colonne « Congé académique » est introuvable dans le fichier étudiant source. "
+                "La liste n'a pas été générée afin d'éviter d'inclure des étudiants en congé académique."
+            )
+        return df, None, 0
+
+    valeurs = df[colonne_conge].fillna("").astype(str).str.strip().str.upper()
+    masque_conge = valeurs.isin({"OUI", "OUI.", "YES", "TRUE", "1"})
+    nombre_exclus = int(masque_conge.sum())
+    return df.loc[~masque_conge].copy(), colonne_conge, nombre_exclus
+
+
 def trouver_toutes_promos_matiere(nom_matiere, df_edt, df_etu):
     """
     ✨ NOUVEAU: Trouve TOUTES les promotions qui ont une matière commune
@@ -1495,6 +1531,11 @@ def trouver_toutes_promos_matiere(nom_matiere, df_edt, df_etu):
     """
     if df_edt.empty or nom_matiere.strip() == "":
         return [], pd.DataFrame(), ""
+
+    # Les listes d'étudiants des matières communes excluent les congés académiques.
+    df_etu, _col_conge_matiere, _nb_conge_matiere = _filtrer_etudiants_sans_conge_academique(
+        df_etu, exiger_colonne=False
+    )
     
     # 1. Trouver TOUTES les lignes de l'EDT avec cette matière
     mask_matiere = df_edt["Enseignements"].astype(str).str.strip().str.lower() == nom_matiere.strip().lower()
@@ -1745,7 +1786,14 @@ def creer_zip_listes_etudiants_par_promotion(
         nom = re.sub(r"\s+", " ", nom)
         return nom or "Promotion non renseignée"
 
-    df = df_source.copy()
+    # Exclure systématiquement les étudiants en congé académique de toutes les
+    # listes par promotion, y compris les ZIP globaux et les listes des matières communes.
+    df, _col_conge_liste, _nb_conge_exclus = _filtrer_etudiants_sans_conge_academique(
+        df_source, exiger_colonne=True
+    )
+    if df.empty:
+        raise ValueError("Aucun étudiant actif à exporter après exclusion des congés académiques.")
+
     col_promo_interne = "__PROMOTION_ZIP_LISTES__"
     df[col_promo_interne] = df[colonne_promotion].map(
         lambda valeur: valeur_propre(valeur) or "Promotion non renseignée"
@@ -20540,13 +20588,13 @@ td,th{{word-wrap:break-word;}}
                         _col_sous_groupe_zip,
                     )
                     st.download_button(
-                        label="📦 Télécharger toutes les promotions (Excel séparés dans un ZIP)",
+                        label="📦 Télécharger toutes les promotions (hors congé académique) — ZIP",
                         data=_zip_listes_toutes_promos,
                         file_name="Listes des étudiants_Toutes les promotions.zip",
                         mime="application/zip",
                         use_container_width=True,
                         key="dl_toutes_listes_etudiants_promotions_zip",
-                        help="Un fichier Excel par promotion, nommé « Liste des étudiants_Nom de la Promotion.xlsx », trié alphabétiquement et mis en forme.",
+                        help="Un fichier Excel par promotion. Les étudiants dont la colonne « Congé académique » vaut OUI sont automatiquement exclus.",
                     )
                 except Exception as _err_zip_liste_etu:
                     st.error(f"❌ Impossible de préparer le ZIP des listes par promotion : {str(_err_zip_liste_etu)[:250]}")
@@ -20720,7 +20768,7 @@ td,th{{word-wrap:break-word;}}
                             [p for p in df_actifs[cols_map_temp['promotion']].dropna().astype(str).unique() if str(p).strip()],
                             key=lambda p: _normaliser_entete_export_liste_etu(p)
                         )
-                        _option_zip_toutes_promotions = "📦 Toutes les promotions — pack ZIP (tous statuts)"
+                        _option_zip_toutes_promotions = "📦 Toutes les promotions — pack ZIP (hors congé académique)"
                         promo_choix = st.selectbox(
                             "🎓 Promotion :",
                             options=["Toutes", _option_zip_toutes_promotions] + promos_list,
@@ -20728,8 +20776,8 @@ td,th{{word-wrap:break-word;}}
                         )
 
                         if promo_choix == _option_zip_toutes_promotions:
-                            # Le pack ZIP est volontairement basé sur la source complète :
-                            # toutes les promotions et tous les statuts sont conservés.
+                            # Le pack ZIP part de la source complète, mais exclut automatiquement
+                            # tous les étudiants dont « Congé académique » vaut OUI.
                             try:
                                 _zip_depuis_select_promo = creer_zip_listes_etudiants_par_promotion(
                                     df_etu_edt,
@@ -20740,15 +20788,15 @@ td,th{{word-wrap:break-word;}}
                                     _col_sous_groupe_zip or cols_map_temp.get('sous_groupe'),
                                 )
                                 st.download_button(
-                                    label=f"📦 Télécharger toutes les listes en ZIP ({len(df_etu_edt)} étudiants)",
+                                    label="📦 Télécharger toutes les listes en ZIP (hors congé académique)",
                                     data=_zip_depuis_select_promo,
                                     file_name="Listes des étudiants_Toutes les promotions.zip",
                                     mime="application/zip",
                                     use_container_width=True,
                                     key="dl_toutes_listes_etudiants_promotions_zip_depuis_select_promo",
                                     help=(
-                                        "Un classeur Excel coloré par promotion, noms et prénoms triés "
-                                        "alphabétiquement, cellules ajustées au contenu."
+                                        "Un classeur Excel coloré par promotion. Les étudiants dont la colonne "
+                                        "« Congé académique » vaut OUI sont exclus automatiquement."
                                     ),
                                 )
                             except Exception as _erreur_zip_depuis_promo:
