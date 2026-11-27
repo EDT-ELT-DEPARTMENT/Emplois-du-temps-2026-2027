@@ -28598,6 +28598,67 @@ def _pe_nom_matiere(v):
     return s.strip()
 
 
+
+def _pe_suggestions_communes_cours(df_edt, dept=None, promos_ok=None):
+    """
+    Détecte les matières communes potentielles dans le fichier DATA.
+    Seules les lignes COURS sont prises en compte. Le titre est comparé
+    après retrait du préfixe « Cours » et normalisation des accents/casse.
+    Cette fonction ne crée aucune liaison : elle fournit des suggestions.
+    Retour : {(promotion, base_matiere): [autres_promotions, ...]}.
+    """
+    resultat = {}
+    if not isinstance(df_edt, pd.DataFrame) or df_edt.empty:
+        return resultat
+
+    cols = {_pe_norm(c): c for c in df_edt.columns}
+    c_mat = cols.get("ENSEIGNEMENTS") or cols.get("ENSEIGNEMENT") or cols.get("MATIERE")
+    c_promo = cols.get("PROMOTION") or cols.get("PROMOTIONS")
+    c_code = cols.get("CODE")
+    c_ens = cols.get("ENSEIGNANTS") or cols.get("ENSEIGNANT")
+    if not c_mat or not c_promo:
+        return resultat
+
+    idx_dept = _pe_index_departements(df_edt)[0] if dept else {}
+    groupes = {}
+
+    for _, lig in df_edt.iterrows():
+        promo = _pe_txt(lig.get(c_promo))
+        brut = _pe_txt(lig.get(c_mat))
+        if not promo or _pe_norm(promo) in {"NAN", "NONE", "NON DEFINI"}:
+            continue
+        if promos_ok is not None and _pe_norm(promo) not in promos_ok:
+            continue
+
+        code = _pe_txt(lig.get(c_code)).upper() if c_code else ""
+        prefixe = _pe_norm(brut).split(" ")[0] if _pe_norm(brut) else ""
+        # Même règle d'identification de la nature que dans _pe_matieres_par_promo.
+        if not ("COURS" in code or prefixe in {"COURS", "COUR"}):
+            continue
+
+        nom = _pe_nom_matiere(brut)
+        if _pe_promo_a_sections(promo):
+            nom = _pe_sans_section(nom)
+        base = _pe_norm(nom)
+        if not base or base in {"NAN", "NONE", "NON DEFINI"}:
+            continue
+
+        if dept:
+            enseignants = _pe_noms_enseignants(lig.get(c_ens)) if c_ens else []
+            enseignants = [n for n in enseignants if _pe_dept_de(n, idx_dept) == dept]
+            if not enseignants:
+                continue
+
+        groupes.setdefault(base, {"promos": set()})["promos"].add(promo)
+
+    for base, info in groupes.items():
+        promos_matiere = sorted(info["promos"], key=_pe_cle_nat)
+        if len(promos_matiere) >= 2:
+            for promo in promos_matiere:
+                resultat[(promo, base)] = [p for p in promos_matiere if p != promo]
+    return resultat
+
+
 def _pe_noms_enseignants(v):
     """Découpe une cellule « enseignants » en noms distincts."""
     morceaux = re.split(r"\s*(?:&|\+|/|;|\\|\bet\b)\s*", _pe_txt(v), flags=re.I)
@@ -29159,11 +29220,11 @@ def _surv_etudiant_est_affecte_ligne(ligne, promotion, matricule):
 
 
 def _surv_afficher_planning_etudiant(preview_student=None):
-    """Affiche à l'étudiant sa grille d'examens uniquement après publication admin."""
+    """Affiche à l'étudiant sa grille d'examens publiée, avec les équipes par local."""
     st.markdown("## 🗓️ Mon planning des examens")
     st.caption(
-        "Grille individuelle des examens de votre promotion : matière, chargé de cours, "
-        "date, horaire et local où vous êtes affecté."
+        "Grille individuelle des examens : matière, chargé de matière, date, horaire et local. "
+        "Les équipes de surveillance affectées aux locaux ne sont pas affichées dans le compte étudiant."
     )
 
     fiche = _pfe_etudiant_connecte(preview_student=preview_student)
@@ -29201,15 +29262,28 @@ def _surv_afficher_planning_etudiant(preview_student=None):
         return
 
     df = pd.DataFrame(lignes)
-    for col in ("Matière", "Date", "Heure", "Lieu"):
+    for col in ("Matière", "Date", "Heure", "Lieu", "Jour"):
         if col not in df.columns:
             df[col] = ""
-    df["Chargé de cours"] = df.get(
-        "Responsable du cours (prioritaire)",
-        df.get("Chargé de matière", pd.Series(["Non renseigné"] * len(df), index=df.index)),
+
+    def _surv_valeur_colonne_etudiant(noms, defaut=""):
+        for nom in noms:
+            if nom in df.columns:
+                return df[nom].fillna("").astype(str).str.strip()
+        return pd.Series([defaut] * len(df), index=df.index, dtype=str)
+
+    df["Chargé de matière"] = _surv_valeur_colonne_etudiant(
+        ["Responsable du cours (prioritaire)", "Chargé de matière", "Chargé de cours"], "Non renseigné"
     )
-    df["Chargé de cours"] = df["Chargé de cours"].fillna("").astype(str).str.strip()
-    df.loc[df["Chargé de cours"].eq(""), "Chargé de cours"] = "Non renseigné"
+    df["Responsable"] = _surv_valeur_colonne_etudiant(
+        ["Permanent responsable du lieu", "Responsable"], "Non renseigné"
+    )
+    df["Co-surveillant"] = _surv_valeur_colonne_etudiant(
+        ["Vacataire co-surveillant", "Co-surveillant"], "Non renseigné"
+    )
+    for col in ("Chargé de matière", "Responsable", "Co-surveillant"):
+        df.loc[df[col].eq("") | df[col].str.lower().isin({"nan", "none"}), col] = "Non renseigné"
+
     df["_date_tri"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
     df = df.sort_values(["_date_tri", "Heure", "Matière", "Lieu"], kind="stable")
     df = df.drop_duplicates(subset=["Matière", "Date", "Heure", "Lieu", "Promotion"])
@@ -29217,7 +29291,6 @@ def _surv_afficher_planning_etudiant(preview_student=None):
     st.success(f"{len(df)} affectation(s) d'examen publiée(s) pour **{promotion}**.")
     st.caption(f"Étudiant : {fiche.get('nom_complet', fiche.get('nom', ''))} · Promotion : {promotion}")
 
-    # Grille : une ligne par date et une colonne par créneau horaire.
     creneaux = sorted(
         {str(x).strip() or "Horaire non précisé" for x in df["Heure"].tolist()},
         key=lambda x: tuple(int(n) for n in re.findall(r"\d+", x)[:2]) if re.findall(r"\d+", x) else (9999, 9999),
@@ -29239,9 +29312,12 @@ def _surv_afficher_planning_etudiant(preview_student=None):
             blocs = []
             for _, r in sous.iterrows():
                 matiere = str(r.get("Matière", "")).strip() or "Matière non renseignée"
-                charge = str(r.get("Chargé de cours", "")).strip() or "Non renseigné"
+                charge = str(r.get("Chargé de matière", "")).strip() or "Non renseigné"
                 lieu = str(r.get("Lieu", "")).strip() or "Local non renseigné"
-                blocs.append(f"📘 {matiere}\n👨‍🏫 Chargé de cours : {charge}\n📍 Lieu : {lieu}")
+                blocs.append(
+                    f"📘 {matiere} ({charge})\n"
+                    f"📍 Lieu : {lieu}"
+                )
             ligne_grille[heure] = "\n\n────────────\n\n".join(blocs) if blocs else "—"
         grille.append(ligne_grille)
 
@@ -29251,7 +29327,7 @@ def _surv_afficher_planning_etudiant(preview_student=None):
         df_grille,
         use_container_width=True,
         hide_index=True,
-        height=min(760, max(230, 105 + 150 * len(df_grille))),
+        height=min(850, max(260, 115 + 190 * len(df_grille))),
         column_config={
             "JOUR / DATE": st.column_config.TextColumn("📅 JOUR / DATE", width="medium"),
             **{h: st.column_config.TextColumn(h, width="large") for h in creneaux},
@@ -29259,11 +29335,126 @@ def _surv_afficher_planning_etudiant(preview_student=None):
     )
 
     st.markdown("### 📋 Détail des examens")
-    colonnes = ["Matière", "Chargé de cours", "Date", "Jour", "Heure", "Lieu"]
+    colonnes = ["Matière", "Chargé de matière", "Date", "Jour", "Heure", "Lieu"]
     for col in colonnes:
         if col not in df.columns:
             df[col] = ""
-    st.dataframe(df[colonnes], use_container_width=True, hide_index=True)
+    df_detail = df[colonnes].copy()
+    st.dataframe(df_detail, use_container_width=True, hide_index=True)
+
+    # Téléchargements étudiants : mêmes informations que l'affichage web.
+    # Les responsables et co-surveillants restent réservés aux comptes enseignant/administration.
+    st.markdown("### 📥 Télécharger mon planning")
+    col_excel_etu, col_pdf_etu = st.columns(2)
+    nom_fichier_etu = re.sub(r"[^A-Za-z0-9_-]+", "_", str(fiche.get("nom_complet", matricule) or matricule))
+    with col_excel_etu:
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
+            buffer_excel_etu = io.BytesIO()
+            with pd.ExcelWriter(buffer_excel_etu, engine="openpyxl") as writer:
+                df_grille.to_excel(writer, sheet_name="Grille examens", index=False)
+                df_detail.to_excel(writer, sheet_name="Détails examens", index=False)
+                for nom_feuille in ("Grille examens", "Détails examens"):
+                    ws = writer.sheets[nom_feuille]
+                    ws.freeze_panes = "B2" if nom_feuille == "Grille examens" else "A2"
+                    ws.sheet_view.showGridLines = False
+                    ws.auto_filter.ref = ws.dimensions
+                    for cell in ws[1]:
+                        cell.font = Font(bold=True, color="FFFFFF", size=10)
+                        cell.fill = PatternFill("solid", fgColor="1E3A8A")
+                        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                    ws.row_dimensions[1].height = 32
+                    for row in ws.iter_rows(min_row=2):
+                        max_lines = 1
+                        for cell in row:
+                            value = "" if cell.value is None else str(cell.value)
+                            cell.alignment = Alignment(vertical="center", horizontal="left", wrap_text=True)
+                            max_lines = max(max_lines, value.count("\n") + 1)
+                        ws.row_dimensions[row[0].row].height = min(220, max(30, 16 * max_lines + 12))
+                    for col in ws.columns:
+                        letter = get_column_letter(col[0].column)
+                        if nom_feuille == "Grille examens":
+                            ws.column_dimensions[letter].width = 20 if col[0].column == 1 else 48
+                        else:
+                            ws.column_dimensions[letter].width = min(34, max(16, max(len(str(c.value or "")) for c in col) + 2))
+                    if nom_feuille == "Grille examens":
+                        ws.sheet_properties.pageSetUpPr.fitToPage = True
+                        ws.page_setup.orientation = "landscape"
+                        ws.page_setup.fitToWidth = 1
+                        ws.page_setup.fitToHeight = 0
+                        ws.print_title_rows = "1:1"
+            buffer_excel_etu.seek(0)
+            st.download_button(
+                "📊 Télécharger Excel",
+                buffer_excel_etu.getvalue(),
+                f"Planning_Examens_{nom_fichier_etu}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key=f"surv_etu_excel_{matricule}",
+            )
+        except Exception as exc:
+            st.error(f"La préparation du fichier Excel a échoué : {exc}")
+
+    with col_pdf_etu:
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A3, landscape
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER, TA_LEFT
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.units import mm
+            buffer_pdf_etu = io.BytesIO()
+            doc_pdf_etu = SimpleDocTemplate(
+                buffer_pdf_etu, pagesize=landscape(A3),
+                rightMargin=9*mm, leftMargin=9*mm, topMargin=10*mm, bottomMargin=10*mm,
+                title=f"Planning des examens - {promotion}",
+                author="Département d'Électrotechnique - FGE/UDL-SBA",
+            )
+            styles_etu = getSampleStyleSheet()
+            titre_etu = ParagraphStyle("TitrePlanningExamensEtu", parent=styles_etu["Title"], fontName="Helvetica-Bold", fontSize=15, leading=18, alignment=TA_CENTER, textColor=colors.HexColor("#1E3A8A"), spaceAfter=4*mm)
+            entete_etu = ParagraphStyle("EntetePlanningExamensEtu", parent=styles_etu["Normal"], fontName="Helvetica-Bold", fontSize=8, leading=10, alignment=TA_CENTER, textColor=colors.white)
+            cellule_etu = ParagraphStyle("CellulePlanningExamensEtu", parent=styles_etu["Normal"], fontName="Helvetica", fontSize=7, leading=9, alignment=TA_LEFT, wordWrap="CJK")
+            date_etu = ParagraphStyle("DatePlanningExamensEtu", parent=cellule_etu, fontName="Helvetica-Bold", alignment=TA_CENTER, textColor=colors.HexColor("#1E3A8A"))
+            data_pdf_etu = [[Paragraph("JOUR / DATE", entete_etu)] + [Paragraph(str(h), entete_etu) for h in creneaux]]
+            for _, row in df_grille.iterrows():
+                ligne_pdf = [Paragraph(str(row.get("JOUR / DATE", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>"), date_etu)]
+                for h in creneaux:
+                    valeur = str(row.get(h, "—"))
+                    valeur = re.sub(r"[\U0001F000-\U0001FAFF\U00002600-\U000027BF]", "", valeur)
+                    valeur = valeur.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+                    ligne_pdf.append(Paragraph(valeur, cellule_etu))
+                data_pdf_etu.append(ligne_pdf)
+            largeur_page_etu = landscape(A3)[0] - 18*mm
+            largeur_date_etu = 28*mm
+            largeur_creneau_etu = max(30*mm, (largeur_page_etu-largeur_date_etu)/max(1, len(creneaux)))
+            table_pdf_etu = Table(data_pdf_etu, colWidths=[largeur_date_etu]+[largeur_creneau_etu]*len(creneaux), repeatRows=1, hAlign="CENTER")
+            table_pdf_etu.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1E3A8A")),
+                ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+                ("GRID", (0,0), (-1,-1), 0.45, colors.HexColor("#94A3B8")),
+                ("BACKGROUND", (0,1), (0,-1), colors.HexColor("#E8EEF8")),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                ("LEFTPADDING", (0,0), (-1,-1), 4), ("RIGHTPADDING", (0,0), (-1,-1), 4),
+                ("TOPPADDING", (0,0), (-1,-1), 5), ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+            ]))
+            doc_pdf_etu.build([
+                Paragraph("PLANNING INDIVIDUEL DES EXAMENS", titre_etu),
+                Paragraph(f"Étudiant : {str(fiche.get('nom_complet', fiche.get('nom', '')))} · Matricule : {matricule} · Promotion : {promotion}", styles_etu["Normal"]),
+                Spacer(1, 4*mm), table_pdf_etu,
+            ])
+            buffer_pdf_etu.seek(0)
+            st.download_button(
+                "📄 Télécharger PDF",
+                buffer_pdf_etu.getvalue(),
+                f"Planning_Examens_{nom_fichier_etu}.pdf",
+                "application/pdf",
+                use_container_width=True,
+                key=f"surv_etu_pdf_{matricule}",
+            )
+        except Exception as exc:
+            st.error(f"La préparation du fichier PDF a échoué : {exc}")
 
 
 def _surv_norm_enseignant(valeur):
@@ -30748,6 +30939,8 @@ def run_programmation_examens():
 
     # ── Matières issues de l'EDT ──────────────────────────────────────────
     mpp = _pe_matieres_par_promo(df_edt, bool(params.get("inclure_td_tp", False)), dept, promos_ok)
+    # Suggestions DATA : Cours de même intitulé, sans liaison automatique.
+    suggestions_communes_cours = _pe_suggestions_communes_cours(df_edt, dept, promos_ok)
     if not mpp:
         st.error("❌ Aucune matière trouvée dans l'EDT pour ce département "
                  "(colonnes Enseignements, Promotion, Code, Enseignants attendues).")
@@ -30953,11 +31146,23 @@ def run_programmation_examens():
                 for k in cles:
                     e = ep[k]
                     liees = [p for p in _pe_commune_avec(store, k) if p in autres_promos]
+                    suggestions = suggestions_communes_cours.get((promo, e["base"]), [])
+                    if suggestions:
+                        st.caption(
+                            "🔎 Suggestions détectées dans DATA (Cours de même intitulé) : "
+                            + " / ".join(suggestions)
+                            + " — sélectionnez manuellement les promotions à lier."
+                        )
                     choix[k] = st.multiselect(
                         f"📘 {e['matiere']}  ·  {e['charge'] or 'chargé non renseigné'}",
                         autres_promos, default=liees,
                         key=f"pe_com_{dtag}_{promo}_{e['base']}_{ver}",
                         placeholder="Matière commune avec… (laisser vide si propre à cette promotion)",
+                        help=(
+                            "Suggestions issues du fichier DATA : "
+                            + (", ".join(suggestions) if suggestions else "aucune autre promotion avec le même intitulé de Cours.")
+                            + ". Rien n'est sélectionné ni enregistré automatiquement."
+                        ),
                     )
                 soumis = st.form_submit_button("💾 Enregistrer les matières communes", type="primary")
             if soumis:
@@ -33687,6 +33892,18 @@ if df is not None:
 
         _surv_df_compte = pd.DataFrame(_surv_lignes_compte)
         if not _surv_df_compte.empty:
+            # Présenter explicitement le chargé de matière et les deux rôles
+            # de surveillance dans le tableau, la grille et les exports.
+            if "Responsable du cours (prioritaire)" in _surv_df_compte.columns:
+                _surv_df_compte["Chargé de matière"] = _surv_df_compte["Responsable du cours (prioritaire)"].fillna("").astype(str).str.strip()
+            elif "Chargé de matière" not in _surv_df_compte.columns:
+                _surv_df_compte["Chargé de matière"] = "Non renseigné"
+            _surv_df_compte["Responsable"] = _surv_df_compte.get(
+                "Permanent responsable du lieu", pd.Series([""] * len(_surv_df_compte), index=_surv_df_compte.index)
+            ).fillna("").astype(str).str.strip()
+            _surv_df_compte["Co-surveillant"] = _surv_df_compte.get(
+                "Vacataire co-surveillant", pd.Series([""] * len(_surv_df_compte), index=_surv_df_compte.index)
+            ).fillna("").astype(str).str.strip()
             _surv_df_compte["_date_tri_compte"] = pd.to_datetime(
                 _surv_df_compte.get("Date", pd.Series(dtype=str)),
                 dayfirst=True,
@@ -33748,8 +33965,11 @@ if df is not None:
             "Lieu",
             "Type de lieu",
             "Effectif du lieu",
+            "Chargé de matière",
             "Permanent responsable du lieu",
             "Vacataire co-surveillant",
+            "Responsable",
+            "Co-surveillant",
             "Binôme",
             "Département",
         ]
@@ -33781,6 +34001,9 @@ if df is not None:
                     _surv_lieu_compte = str(_surv_r_compte.get("Lieu", ""))
                     _surv_promo_compte = str(_surv_r_compte.get("Promotion", ""))
                     _surv_binome_compte = str(_surv_r_compte.get("Binôme", ""))
+                    _surv_charge_compte = str(_surv_r_compte.get("Chargé de matière", _surv_r_compte.get("Responsable du cours (prioritaire)", "Non renseigné")))
+                    _surv_responsable_compte = str(_surv_r_compte.get("Responsable", _surv_r_compte.get("Permanent responsable du lieu", "Non renseigné")))
+                    _surv_cosurveillant_compte = str(_surv_r_compte.get("Co-surveillant", _surv_r_compte.get("Vacataire co-surveillant", "Non renseigné")))
                     st.markdown(
                         f"""
                         <div style="background:#f8fafc;padding:13px 15px;border-radius:9px;
@@ -33789,15 +34012,16 @@ if df is not None:
                                 📅 {_html_grp.escape(_surv_jour_compte)} {_html_grp.escape(_surv_date_compte)}
                                 &nbsp; · &nbsp; 🕒 {_html_grp.escape(_surv_heure_compte)}
                             </div>
-                            <div style="margin-top:6px;font-weight:600;">
-                                📖 {_html_grp.escape(_surv_matiere_compte)}
+                            <div style="margin-top:6px;font-weight:700;">
+                                📖 {_html_grp.escape(_surv_matiere_compte)} ({_html_grp.escape(_surv_charge_compte)})
                             </div>
                             <div style="margin-top:5px;color:#334155;">
-                                📍 Local : {_html_grp.escape(_surv_lieu_compte)}
+                                📍 Lieu : {_html_grp.escape(_surv_lieu_compte)}
                                 &nbsp; · &nbsp; 🎓 Promotion : {_html_grp.escape(_surv_promo_compte)}
                             </div>
                             <div style="margin-top:5px;color:#475569;">
-                                👥 Binôme : {_html_grp.escape(_surv_binome_compte)}
+                                👤 Responsable : {_html_grp.escape(_surv_responsable_compte)}<br/>
+                                👥 Co-surveillant : {_html_grp.escape(_surv_cosurveillant_compte)}
                             </div>
                         </div>
                         """,
@@ -33823,14 +34047,16 @@ if df is not None:
             ).astype(str).str.strip()
 
             def _surv_texte_cellule_grille(_ligne):
-                _parts = []
-                for _champ, _icone in (("Matière", "📘"), ("Promotion", "🎓"), ("Lieu", "📍"),
-                                       ("Permanent responsable du lieu", "👤"),
-                                       ("Vacataire co-surveillant", "👥")):
-                    _val = str(_ligne.get(_champ, "") or "").strip()
-                    if _val and _val.lower() not in {"nan", "none", "nat"}:
-                        _parts.append(f"{_icone} {_val}")
-                return "\n".join(_parts) if _parts else "Surveillance affectée"
+                _matiere = str(_ligne.get("Matière", "") or "").strip() or "Matière non renseignée"
+                _charge = str(_ligne.get("Chargé de matière", _ligne.get("Responsable du cours (prioritaire)", "")) or "").strip() or "Non renseigné"
+                _promotion = str(_ligne.get("Promotion", "") or "").strip()
+                _lieu = str(_ligne.get("Lieu", "") or "").strip() or "Local non renseigné"
+                _responsable = str(_ligne.get("Responsable", _ligne.get("Permanent responsable du lieu", "")) or "").strip() or "Non renseigné"
+                _cosurv = str(_ligne.get("Co-surveillant", _ligne.get("Vacataire co-surveillant", "")) or "").strip() or "Non renseigné"
+                _parts = [f"📘 {_matiere} ({_charge})", f"📍 Lieu : {_lieu}", f"👤 Responsable : {_responsable}", f"👥 Co-surveillant : {_cosurv}"]
+                if _promotion:
+                    _parts.append(f"🎓 Promotion : {_promotion}")
+                return "\n".join(_parts)
 
             _surv_grille_source["_contenu_grille"] = _surv_grille_source.apply(
                 _surv_texte_cellule_grille, axis=1
@@ -33862,7 +34088,7 @@ if df is not None:
             )
 
             st.markdown("#### 🗓️ Grille récapitulative des surveillances")
-            st.caption("Chaque ligne représente une date ; chaque colonne représente un créneau. Les cellules détaillent la matière, la promotion, le local et les enseignants affectés.")
+            st.caption("Chaque ligne représente une date ; chaque colonne représente un créneau. Chaque épreuve indique la matière et son chargé, puis le local, le responsable du local et le co-surveillant. Les exports Excel et PDF reprennent ces mêmes informations.")
             st.dataframe(
                 _surv_df_grille,
                 use_container_width=True,
