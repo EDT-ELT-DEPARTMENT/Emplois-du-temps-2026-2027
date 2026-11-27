@@ -35194,98 +35194,120 @@ if df is not None:
         if _groupes_communs_exam:
             st.subheader("🔗 Locaux et effectifs particuliers — matières communes")
             st.caption("Ce réglage est indépendant des locaux habituels des promotions. Il s'applique uniquement à l'examen de la matière commune sélectionnée ; les autres matières gardent leurs effectifs et leurs locaux actuels.")
-            _common_options = sorted(
+            _common_options_toutes = sorted(
                 _groupes_communs_exam.keys(),
                 key=lambda k: (_groupes_communs_exam[k]["matiere"].casefold(), _groupes_communs_exam[k]["date_key"], _groupes_communs_exam[k]["heure_key"])
             )
-            _common_sel = st.selectbox(
-                "📘 Sélectionner la matière commune à configurer",
-                _common_options,
-                format_func=lambda k: f"{_groupes_communs_exam[k]['matiere']} — {' / '.join(_groupes_communs_exam[k]['promotions'])} — {_groupes_communs_exam[k]['date']} ({_groupes_communs_exam[k]['heure']})",
-                key=_surv_cle("exam_common_room_subject", _common_options),
-            )
-            _common_info = _groupes_communs_exam[_common_sel]
-            _common_promos = _common_info["promotions"]
-            _common_effectif_total = sum(int(effectifs_par_promo.get(_p, 0)) for _p in _common_promos)
-            st.metric("Effectif total de cette matière commune", _common_effectif_total)
-            _col_lieu_edt_common = _exam_col(df_edt_exam, ["Lieu", "Salle", "Local"])
-            _col_dept_edt_common = _exam_col(df_edt_exam, ["Département", "Departement", "Dépt"])
-            _lieux_common = []
-            if _col_lieu_edt_common and not df_edt_exam.empty:
-                _df_lieux_common = df_edt_exam.copy()
-                if exam_dept and _col_dept_edt_common:
-                    _df_lieux_common = _df_lieux_common[_df_lieux_common[_col_dept_edt_common].map(_exam_norm).isin({_exam_norm(exam_dept_label), _exam_norm(exam_dept)})]
-                for _v_common in _df_lieux_common[_col_lieu_edt_common].tolist():
-                    _nom_common = _exam_txt(_v_common)
-                    if re.fullmatch(r"AS\s*0?(?:[1-9]|1[0-9]|20)", _nom_common, flags=re.I) or re.fullmatch(r"Amphi\s*0?(?:[1-9]|1[0-2])", _nom_common, flags=re.I):
-                        if _nom_common not in _lieux_common:
-                            _lieux_common.append(_nom_common)
-            _amphis_common = sorted([x for x in _lieux_common if _exam_norm(x).startswith("AMPHI")], key=_pe_cle_nat)
-            _salles_common = sorted([x for x in _lieux_common if _exam_norm(x).startswith("AS")], key=_pe_cle_nat)
-            _common_override_key = f"{_exam_norm(dept_tag)}::{_common_info['base']}::{_common_info['date_key']}::{_common_info['heure_key']}"
-            _ancien_common = _common_overrides.get(_common_override_key, {})
-            if not _lieux_common:
-                st.warning("Aucun local autorisé n'a été trouvé dans l'EDT du département pour configurer cette matière commune.")
+            # Quand une promotion précise est choisie pour la génération,
+            # ne proposer que les matières communes auxquelles elle participe.
+            # Le mode "Toutes les promotions" conserve la liste complète.
+            if _generer_toutes:
+                _common_options = list(_common_options_toutes)
             else:
-                _c_am, _c_sa = st.columns(2)
-                _nb_am_common = int(_c_am.number_input("Nombre d'amphis pour cette matière", min_value=0, max_value=len(_amphis_common), value=min(int(_ancien_common.get("nb_amphi", 1)), len(_amphis_common)), key=f"exam_common_nb_am_{_exam_norm(_common_sel)}"))
-                _nb_sa_common = int(_c_sa.number_input("Nombre de salles pour cette matière", min_value=0, max_value=len(_salles_common), value=min(int(_ancien_common.get("nb_salle", 1)), len(_salles_common)), key=f"exam_common_nb_sa_{_exam_norm(_common_sel)}"))
-                _lieux_selection_common = []
-                _cc1, _cc2 = st.columns(2)
-                with _cc1:
-                    st.markdown("**🏛️ Amphis**")
-                    for _i_common in range(_nb_am_common):
-                        _opts_common = [x for x in _amphis_common if x not in _lieux_selection_common]
-                        if not _opts_common:
-                            break
-                        _prev_common = (_ancien_common.get("lieux", []) or [])
-                        _default_common = next((x for x in _prev_common if x in _opts_common and x not in _lieux_selection_common), _opts_common[0])
-                        _pick_common = st.selectbox(f"Amphi commun {_i_common+1}", _opts_common, index=_opts_common.index(_default_common), key=f"exam_common_am_pick_{_exam_norm(_common_sel)}_{_i_common}")
-                        _lieux_selection_common.append(_pick_common)
-                with _cc2:
-                    st.markdown("**🏫 Salles**")
-                    for _i_common in range(_nb_sa_common):
-                        _opts_common = [x for x in _salles_common if x not in _lieux_selection_common]
-                        if not _opts_common:
-                            break
-                        _prev_common = (_ancien_common.get("lieux", []) or [])
-                        _default_common = next((x for x in _prev_common if x in _opts_common and x not in _lieux_selection_common), _opts_common[0])
-                        _pick_common = st.selectbox(f"Salle commune {_i_common+1}", _opts_common, index=_opts_common.index(_default_common), key=f"exam_common_sa_pick_{_exam_norm(_common_sel)}_{_i_common}")
-                        _lieux_selection_common.append(_pick_common)
-                if _lieux_selection_common:
-                    _base_common, _reste_common = divmod(_common_effectif_total, len(_lieux_selection_common))
-                    _default_eff_common = [int(_ancien_common.get("effectifs", {}).get(x, _base_common + (1 if i < _reste_common else 0))) for i, x in enumerate(_lieux_selection_common)]
-                    _common_editor = st.data_editor(
-                        pd.DataFrame({"Local": _lieux_selection_common, "Effectif étudiants": _default_eff_common}),
-                        hide_index=True, use_container_width=True, disabled=["Local"],
-                        column_config={"Effectif étudiants": st.column_config.NumberColumn("Effectif étudiants", min_value=0, max_value=max(_common_effectif_total, 1), step=1, required=True)},
-                        key=f"exam_common_eff_editor_{_exam_norm(_common_sel)}_{'|'.join(_lieux_selection_common)}_{_common_effectif_total}",
-                    )
-                    _effs_common_saisis = [max(0, int(v)) if pd.notna(v) else 0 for v in _common_editor["Effectif étudiants"].tolist()]
-                    _total_common_saisi = sum(_effs_common_saisis)
-                    _cm1, _cm2 = st.columns(2)
-                    _cm1.metric("Étudiants à répartir", _common_effectif_total)
-                    _cm2.metric("Effectifs attribués aux locaux", _total_common_saisi, delta=_total_common_saisi-_common_effectif_total, delta_color="off")
-                    if _total_common_saisi != _common_effectif_total:
-                        st.warning("La somme des effectifs par local doit être égale à l'effectif total des promotions concernées.")
-                    if st.button("💾 Enregistrer les locaux et effectifs de cette matière commune", type="primary", key=f"exam_common_save_{_exam_norm(_common_sel)}"):
-                        if not _lieux_selection_common:
-                            st.error("Sélectionnez au moins un local.")
-                        elif _total_common_saisi != _common_effectif_total:
-                            st.error("La somme des effectifs par local ne correspond pas à l'effectif total.")
-                        else:
-                            _common_overrides[_common_override_key] = {
-                                "matiere": _common_info["matiere"], "promotions": list(_common_promos),
-                                "lieux": list(_lieux_selection_common), "effectifs": dict(zip(_lieux_selection_common, _effs_common_saisis)),
-                                "nb_amphi": _nb_am_common, "nb_salle": _nb_sa_common,
-                            }
-                            st.session_state["exam_common_room_overrides"] = _common_overrides
-                            st.success("Réglage particulier enregistré. Il sera utilisé uniquement pour cette matière commune.")
-                            st.rerun()
+                _promo_gen_key_common = _exam_norm(_choix_promo_gen)
+                _common_options = [
+                    k for k in _common_options_toutes
+                    if _promo_gen_key_common in {
+                        _exam_norm(p) for p in _groupes_communs_exam[k]["promotions"]
+                    }
+                ]
+            if _common_options:
+                _common_sel = st.selectbox(
+                    "📘 Sélectionner la matière commune à configurer",
+                    _common_options,
+                    format_func=lambda k: f"{_groupes_communs_exam[k]['matiere']} — {' / '.join(_groupes_communs_exam[k]['promotions'])} — {_groupes_communs_exam[k]['date']} ({_groupes_communs_exam[k]['heure']})",
+                    key=_surv_cle("exam_common_room_subject", (_choix_promo_gen, _common_options)),
+                    help=("La liste est automatiquement filtrée selon la promotion choisie pour la génération."
+                          if not _generer_toutes else "Toutes les matières communes détectées sont affichées."),
+                )
+            else:
+                st.info(
+                    f"Aucune matière commune n'est liée à la promotion « {_choix_promo_gen} ». "
+                    "Choisis une autre promotion ou sélectionne « Toutes les promotions » pour afficher toutes les matières communes."
+                )
+            if _common_options:
+                _common_info = _groupes_communs_exam[_common_sel]
+                _common_promos = _common_info["promotions"]
+                _common_effectif_total = sum(int(effectifs_par_promo.get(_p, 0)) for _p in _common_promos)
+                st.metric("Effectif total de cette matière commune", _common_effectif_total)
+                _col_lieu_edt_common = _exam_col(df_edt_exam, ["Lieu", "Salle", "Local"])
+                _col_dept_edt_common = _exam_col(df_edt_exam, ["Département", "Departement", "Dépt"])
+                _lieux_common = []
+                if _col_lieu_edt_common and not df_edt_exam.empty:
+                    _df_lieux_common = df_edt_exam.copy()
+                    if exam_dept and _col_dept_edt_common:
+                        _df_lieux_common = _df_lieux_common[_df_lieux_common[_col_dept_edt_common].map(_exam_norm).isin({_exam_norm(exam_dept_label), _exam_norm(exam_dept)})]
+                    for _v_common in _df_lieux_common[_col_lieu_edt_common].tolist():
+                        _nom_common = _exam_txt(_v_common)
+                        if re.fullmatch(r"AS\s*0?(?:[1-9]|1[0-9]|20)", _nom_common, flags=re.I) or re.fullmatch(r"Amphi\s*0?(?:[1-9]|1[0-2])", _nom_common, flags=re.I):
+                            if _nom_common not in _lieux_common:
+                                _lieux_common.append(_nom_common)
+                _amphis_common = sorted([x for x in _lieux_common if _exam_norm(x).startswith("AMPHI")], key=_pe_cle_nat)
+                _salles_common = sorted([x for x in _lieux_common if _exam_norm(x).startswith("AS")], key=_pe_cle_nat)
+                _common_override_key = f"{_exam_norm(dept_tag)}::{_common_info['base']}::{_common_info['date_key']}::{_common_info['heure_key']}"
+                _ancien_common = _common_overrides.get(_common_override_key, {})
+                if not _lieux_common:
+                    st.warning("Aucun local autorisé n'a été trouvé dans l'EDT du département pour configurer cette matière commune.")
                 else:
-                    st.info("Sélectionnez au moins un amphi ou une salle pour cette matière commune.")
-            if _common_override_key in _common_overrides:
-                st.success("Un réglage particulier est enregistré pour cette matière commune.")
+                    _c_am, _c_sa = st.columns(2)
+                    _nb_am_common = int(_c_am.number_input("Nombre d'amphis pour cette matière", min_value=0, max_value=len(_amphis_common), value=min(int(_ancien_common.get("nb_amphi", 1)), len(_amphis_common)), key=f"exam_common_nb_am_{_exam_norm(_common_sel)}"))
+                    _nb_sa_common = int(_c_sa.number_input("Nombre de salles pour cette matière", min_value=0, max_value=len(_salles_common), value=min(int(_ancien_common.get("nb_salle", 1)), len(_salles_common)), key=f"exam_common_nb_sa_{_exam_norm(_common_sel)}"))
+                    _lieux_selection_common = []
+                    _cc1, _cc2 = st.columns(2)
+                    with _cc1:
+                        st.markdown("**🏛️ Amphis**")
+                        for _i_common in range(_nb_am_common):
+                            _opts_common = [x for x in _amphis_common if x not in _lieux_selection_common]
+                            if not _opts_common:
+                                break
+                            _prev_common = (_ancien_common.get("lieux", []) or [])
+                            _default_common = next((x for x in _prev_common if x in _opts_common and x not in _lieux_selection_common), _opts_common[0])
+                            _pick_common = st.selectbox(f"Amphi commun {_i_common+1}", _opts_common, index=_opts_common.index(_default_common), key=f"exam_common_am_pick_{_exam_norm(_common_sel)}_{_i_common}")
+                            _lieux_selection_common.append(_pick_common)
+                    with _cc2:
+                        st.markdown("**🏫 Salles**")
+                        for _i_common in range(_nb_sa_common):
+                            _opts_common = [x for x in _salles_common if x not in _lieux_selection_common]
+                            if not _opts_common:
+                                break
+                            _prev_common = (_ancien_common.get("lieux", []) or [])
+                            _default_common = next((x for x in _prev_common if x in _opts_common and x not in _lieux_selection_common), _opts_common[0])
+                            _pick_common = st.selectbox(f"Salle commune {_i_common+1}", _opts_common, index=_opts_common.index(_default_common), key=f"exam_common_sa_pick_{_exam_norm(_common_sel)}_{_i_common}")
+                            _lieux_selection_common.append(_pick_common)
+                    if _lieux_selection_common:
+                        _base_common, _reste_common = divmod(_common_effectif_total, len(_lieux_selection_common))
+                        _default_eff_common = [int(_ancien_common.get("effectifs", {}).get(x, _base_common + (1 if i < _reste_common else 0))) for i, x in enumerate(_lieux_selection_common)]
+                        _common_editor = st.data_editor(
+                            pd.DataFrame({"Local": _lieux_selection_common, "Effectif étudiants": _default_eff_common}),
+                            hide_index=True, use_container_width=True, disabled=["Local"],
+                            column_config={"Effectif étudiants": st.column_config.NumberColumn("Effectif étudiants", min_value=0, max_value=max(_common_effectif_total, 1), step=1, required=True)},
+                            key=f"exam_common_eff_editor_{_exam_norm(_common_sel)}_{'|'.join(_lieux_selection_common)}_{_common_effectif_total}",
+                        )
+                        _effs_common_saisis = [max(0, int(v)) if pd.notna(v) else 0 for v in _common_editor["Effectif étudiants"].tolist()]
+                        _total_common_saisi = sum(_effs_common_saisis)
+                        _cm1, _cm2 = st.columns(2)
+                        _cm1.metric("Étudiants à répartir", _common_effectif_total)
+                        _cm2.metric("Effectifs attribués aux locaux", _total_common_saisi, delta=_total_common_saisi-_common_effectif_total, delta_color="off")
+                        if _total_common_saisi != _common_effectif_total:
+                            st.warning("La somme des effectifs par local doit être égale à l'effectif total des promotions concernées.")
+                        if st.button("💾 Enregistrer les locaux et effectifs de cette matière commune", type="primary", key=f"exam_common_save_{_exam_norm(_common_sel)}"):
+                            if not _lieux_selection_common:
+                                st.error("Sélectionnez au moins un local.")
+                            elif _total_common_saisi != _common_effectif_total:
+                                st.error("La somme des effectifs par local ne correspond pas à l'effectif total.")
+                            else:
+                                _common_overrides[_common_override_key] = {
+                                    "matiere": _common_info["matiere"], "promotions": list(_common_promos),
+                                    "lieux": list(_lieux_selection_common), "effectifs": dict(zip(_lieux_selection_common, _effs_common_saisis)),
+                                    "nb_amphi": _nb_am_common, "nb_salle": _nb_sa_common,
+                                }
+                                st.session_state["exam_common_room_overrides"] = _common_overrides
+                                st.success("Réglage particulier enregistré. Il sera utilisé uniquement pour cette matière commune.")
+                                st.rerun()
+                    else:
+                        st.info("Sélectionnez au moins un amphi ou une salle pour cette matière commune.")
+                if _common_override_key in _common_overrides:
+                    st.success("Un réglage particulier est enregistré pour cette matière commune.")
         else:
             st.caption("Aucune matière commune entre plusieurs promotions n'a été détectée dans les épreuves sélectionnées.")
 
